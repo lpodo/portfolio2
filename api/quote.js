@@ -12,52 +12,53 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'ticker is required' });
   }
 
-  const apiKey = process.env.FMP_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: 'FMP_API_KEY not configured' });
-  }
-
-  const base = 'https://financialmodelingprep.com/stable';
-
   try {
-    // 1. Get regular quote
-    const quoteRes = await fetch(`${base}/quote?symbol=${encodeURIComponent(ticker)}&apikey=${apiKey}`);
-    if (!quoteRes.ok) throw new Error(`Quote HTTP ${quoteRes.status}`);
-    const quoteData = await quoteRes.json();
-    const quote = Array.isArray(quoteData) ? quoteData[0] : quoteData;
+    // Direct Yahoo Finance fetch - no library, no crumb
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d&includePrePost=true`;
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': '*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Origin': 'https://finance.yahoo.com',
+        'Referer': 'https://finance.yahoo.com/',
+      }
+    });
 
-    if (!quote || !quote.price) {
+    if (!response.ok) {
+      return res.status(response.status).json({ error: `Yahoo HTTP ${response.status}` });
+    }
+
+    const data = await response.json();
+    const meta = data?.chart?.result?.[0]?.meta;
+
+    if (!meta || !meta.regularMarketPrice) {
       return res.status(404).json({ error: `Ticker not found: ${ticker}` });
     }
 
-    let price = quote.price;
+    const marketState = meta.currentTradingPeriod ? 'KNOWN' : 'CLOSED';
+    let price = meta.regularMarketPrice;
     let priceType = 'regular';
 
-    // 2. Try aftermarket quote — returns data only during extended hours
-    try {
-      const amRes = await fetch(`${base}/aftermarket-quote?symbol=${encodeURIComponent(ticker)}&apikey=${apiKey}`);
-      if (amRes.ok) {
-        const amData = await amRes.json();
-        const am = Array.isArray(amData) ? amData[0] : amData;
-        if (am && am.price && am.price > 0) {
-          price = am.price;
-          priceType = 'extended';
-        }
-      }
-    } catch (e) {
-      // aftermarket not available — use regular price
+    if (meta.preMarketPrice && meta.preMarketTime > meta.regularMarketTime) {
+      price = meta.preMarketPrice;
+      priceType = 'pre-market';
+    } else if (meta.postMarketPrice && meta.postMarketTime > meta.regularMarketTime) {
+      price = meta.postMarketPrice;
+      priceType = 'post-market';
     }
 
     return res.status(200).json({
-      ticker: quote.symbol || ticker,
+      ticker: meta.symbol || ticker,
       price: price,
       priceType: priceType,
-      regularMarketPrice: quote.price,
-      change: quote.change || null,
-      changesPercentage: quote.changesPercentage || null,
-      currency: null, // FMP stable doesn't return currency in quote
-      exchangeName: quote.exchange || null,
-      shortName: quote.name || null,
+      regularMarketPrice: meta.regularMarketPrice,
+      preMarketPrice: meta.preMarketPrice || null,
+      postMarketPrice: meta.postMarketPrice || null,
+      currency: meta.currency || null,
+      exchangeName: meta.fullExchangeName || meta.exchangeName || null,
+      shortName: meta.shortName || null,
     });
 
   } catch (err) {
