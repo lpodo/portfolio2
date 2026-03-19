@@ -1,7 +1,8 @@
-import yahooFinance from 'yahoo-finance2';
+import YahooFinance from 'yahoo-finance2';
+
+const yf = new YahooFinance();
 
 export default async function handler(req, res) {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -16,14 +17,12 @@ export default async function handler(req, res) {
   }
 
   try {
-    const quote = await yahooFinance.quote(ticker, {}, { validateResult: false });
+    const quote = await yf.quote(ticker);
 
     if (!quote) {
       return res.status(404).json({ error: 'ticker not found' });
     }
 
-    // Determine best price based on market state
-    // marketState: PRE, REGULAR, POST, CLOSED, PREPRE
     const marketState = quote.marketState || 'CLOSED';
     let price = quote.regularMarketPrice;
     let priceType = 'regular';
