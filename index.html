@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#0d1117">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Portfolio">
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<title>Portfolio Terminal</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0a0c10;
+    --bg2: #0d1117;
+    --border: #1e2736;
+    --text: #c8d6e5;
+    --bright: #e2e8f0;
+    --dim: #4a5568;
+    --green: #00ff88;
+    --red: #ff4466;
+    --font: 'Courier New', 'Lucida Console', monospace;
+  }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; }
+
+  .header {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .header-sub { font-size: 10px; color: var(--dim); letter-spacing: 3px; text-transform: uppercase; margin-bottom: 3px; }
+  .header-title { font-size: 20px; font-weight: bold; color: var(--bright); letter-spacing: 1px; }
+
+  .btn { background: transparent; border: 1px solid var(--dim); color: var(--dim); font-family: var(--font); font-size: 10px; letter-spacing: 2px; padding: 7px 12px; cursor: pointer; text-transform: uppercase; }
+  .btn-green { border-color: var(--green); color: var(--green); }
+  .btn-primary { background: var(--green); color: var(--bg); border: none; font-weight: bold; padding: 9px 18px; font-size: 12px; cursor: pointer; font-family: var(--font); }
+  .btn-icon { border: none; font-size: 14px; padding: 2px 5px; cursor: pointer; background: transparent; color: var(--dim); font-family: var(--font); }
+  .btn-icon:hover { color: var(--bright); }
+
+  .main { padding: 16px 18px; }
+
+
+  .api-bar { background: var(--bg2); border: 1px solid var(--border); padding: 10px 14px; margin-bottom: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .api-bar label { font-size: 9px; color: var(--dim); letter-spacing: 2px; white-space: nowrap; }
+  .api-bar input { flex: 1; min-width: 160px; }
+  .api-status { font-size: 10px; width: 100%; margin-top: 2px; }
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 400px; }
+  th { text-align: right; padding: 5px 4px; font-size: 9px; color: var(--dim); letter-spacing: 1px; font-weight: normal; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th:first-child { text-align: left; }
+  td { padding: 4px 4px; text-align: right; font-size: 13px; }
+  td:first-child { text-align: left; font-weight: bold; color: var(--bright); letter-spacing: 1px; }
+  tr:hover td { background: var(--bg2); }
+  .pos { color: var(--green); font-weight: bold; }
+  .neg { color: var(--red); font-weight: bold; }
+  .muted { color: var(--dim); }
+  .empty { text-align: center; color: var(--dim); padding: 36px 0; font-size: 11px; letter-spacing: 3px; }
+
+  .totals-bar { display: flex; justify-content: flex-end; gap: 22px; flex-wrap: wrap; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .total-block { text-align: right; }
+  .total-label { font-size: 9px; color: var(--dim); letter-spacing: 2px; margin-bottom: 2px; }
+  .total-value { font-size: 13px; font-weight: bold; }
+
+  .add-form { background: var(--bg2); border: 1px solid var(--border); padding: 12px 14px; margin-top: 14px; }
+  .form-label { font-size: 9px; color: var(--dim); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 10px; }
+  .form-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 9px; color: var(--dim); letter-spacing: 2px; }
+  input[type=number], input[type=password], input[type=search] {
+    background: var(--bg); border: 1px solid var(--border); color: var(--bright);
+    font-family: var(--font); font-size: 13px; padding: 7px 8px; outline: none;
+    -webkit-appearance: none; appearance: none;
+  }
+  input:focus { border-color: var(--dim); }
+  .edit-input { background: var(--bg); border: 1px solid var(--border); color: var(--bright); font-family: var(--font); font-size: 12px; padding: 2px 5px; width: 70px; }
+  .fetch-btn { border: 1px solid var(--dim); color: var(--dim); font-family: var(--font); font-size: 10px; padding: 2px 7px; cursor: pointer; background: transparent; }
+  .err { color: var(--red); font-size: 11px; margin-top: 7px; }
+  .note { margin-top: 16px; font-size: 10px; color: var(--dim); line-height: 1.6; }
+
+  /* Portfolio switcher */
+  .portfolio-switcher {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.7); z-index: 200;
+    display: flex; align-items: flex-start; justify-content: center;
+    padding-top: 80px;
+    display: none;
+  }
+  .portfolio-switcher.open { display: flex; }
+  .portfolio-dropdown {
+    background: var(--bg2); border: 1px solid var(--border);
+    min-width: 260px; max-width: 90vw; max-height: 60vh;
+    overflow-y: auto;
+  }
+  .portfolio-dropdown-title {
+    font-size: 9px; color: var(--dim); letter-spacing: 3px;
+    padding: 12px 14px 8px; border-bottom: 1px solid var(--border);
+    text-transform: uppercase;
+  }
+  .portfolio-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; cursor: pointer; border-bottom: 1px solid #131720;
+    transition: background 0.15s;
+  }
+  .portfolio-item:hover { background: #131720; }
+  .portfolio-item.active { color: var(--green); }
+  .portfolio-item-name { font-size: 13px; font-weight: bold; letter-spacing: 1px; }
+  .portfolio-item-count { font-size: 10px; color: var(--dim); }
+  .portfolio-add-row {
+    padding: 10px 14px; display: flex; gap: 8px; align-items: center;
+    border-top: 1px solid var(--border);
+  }
+  .portfolio-add-row input {
+    flex: 1; background: var(--bg); border: 1px solid var(--border);
+    color: var(--bright); font-family: var(--font); font-size: 12px;
+    padding: 6px 8px; outline: none; text-transform: uppercase;
+  }
+  .header-title-btn {
+    background: transparent; border: none; cursor: pointer;
+    font-family: var(--font); font-size: 20px; font-weight: bold;
+    color: var(--bright); letter-spacing: 1px; padding: 0;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .header-title-btn:hover { color: var(--green); }
+  .header-title-arrow { font-size: 10px; color: var(--dim); }
+
+  /* Settings panel */
+  .settings-panel {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: var(--bg2); border-top: 1px solid var(--border);
+    padding: 14px 18px 20px; z-index: 160;
+    transform: translateY(100%); transition: transform 0.25s ease;
+  }
+  .settings-panel.open { transform: translateY(0); }
+  .settings-title { font-size: 9px; color: var(--dim); letter-spacing: 3px; text-transform: uppercase; margin-bottom: 14px; }
+  .key-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+  .key-row label { font-size: 9px; color: var(--dim); letter-spacing: 2px; white-space: nowrap; min-width: 90px; }
+  .key-row input { flex: 1; min-width: 0; }
+  .settings-note { font-size: 10px; color: var(--dim); margin-top: 8px; }
+  .overlay { display: none; position: fixed; inset: 0; z-index: 150; }
+  .overlay.open { display: block; }
+
+  @media (max-width: 480px) {
+    .header { padding: 11px 14px; }
+    .main { padding: 12px 14px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="header-sub">Portfolio Terminal</div>
+    <button class="header-title-btn" onclick="toggleSwitcher()">
+      <span id="portfolioTitle">MY PORTFOLIO</span>
+      <span class="header-title-arrow">&#9660;</span>
+    </button>
+  </div>
+  <button class="btn btn-green" id="refreshAllBtn" onclick="refreshAll()">&#8635; Refresh All</button>
+</div>
+
+<div class="main">
+
+  <div id="tableArea"></div>
+
+  <div class="add-form">
+    <div class="form-label">+ Добавить позицию</div>
+    <div class="form-row" style="margin-bottom:8px">
+      <div class="field" style="width:100%">
+        <label>TICKER</label>
+        <input type="search" id="fTicker" placeholder="EOG, AAPL, MPC..."
+          inputmode="text" autocomplete="off" autocorrect="off"
+          autocapitalize="characters" spellcheck="false"
+          style="width:100%;max-width:280px"
+          oninput="this.value=this.value.toUpperCase().replace(/[^A-Z.]/g,'')"
+          onkeydown="if(event.key==='Enter'){document.getElementById('fQty').focus()}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label>QTY</label>
+        <input type="number" id="fQty" placeholder="10" min="0" step="any" style="width:78px" onkeydown="if(event.key==='Enter')addPosition()">
+      </div>
+      <div class="field">
+        <label>ENTRY $</label>
+        <input type="number" id="fEntry" placeholder="150.00" min="0" step="any" style="width:98px" onkeydown="if(event.key==='Enter')addPosition()">
+      </div>
+      <div class="field">
+        <label>CURRENT $ (опц.)</label>
+        <input type="number" id="fCurrent" placeholder="&#8212;" min="0" step="any" style="width:98px" onkeydown="if(event.key==='Enter')addPosition()">
+      </div>
+      <button class="btn-primary" onclick="addPosition()">ADD</button>
+    </div>
+    <div class="err" id="addErr"></div>
+  </div>
+
+  <div class="note" id="mainNote"></div>
+  <div style="height:60px"></div>
+</div>
+
+<!-- Portfolio Switcher -->
+<div class="portfolio-switcher" id="portfolioSwitcher" onclick="closeSwitcherOutside(event)">
+  <div class="portfolio-dropdown">
+    <div class="portfolio-dropdown-title">Portfolios</div>
+    <div id="portfolioList"></div>
+    <div class="portfolio-add-row">
+      <input type="search" id="newPortfolioName" placeholder="NEW PORTFOLIO NAME"
+        inputmode="text" autocomplete="off" autocorrect="off"
+        autocapitalize="characters" spellcheck="false"
+        style="-webkit-appearance:none"
+        oninput="this.value=this.value.toUpperCase()"
+        onkeydown="if(event.key==='Enter')addPortfolio()">
+      <button class="btn btn-green" onclick="addPortfolio()" style="white-space:nowrap">+ ADD</button>
+    </div>
+  </div>
+</div>
+
+<!-- Overlay -->
+<div class="overlay" id="overlay" onclick="closeSettings()"></div>
+
+<!-- Settings panel -->
+<div class="settings-panel" id="settingsPanel">
+  <div class="settings-title">&#9881; Настройки</div>
+
+  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">ИСТОЧНИК ЦЕН — BACKEND URL</div>
+  <div class="key-row">
+    <label>API URL</label>
+    <input type="text" id="apiKeyInput" placeholder="https://your-app.vercel.app" autocomplete="off">
+    <button class="btn btn-green" onclick="saveApiKey()">OK</button>
+  </div>
+  <div class="api-status" id="apiStatus"></div>
+
+  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">JSONBIN — ОБЛАЧНОЕ ХРАНИЛИЩЕ</div>
+  <div class="key-row">
+    <label>MASTER KEY</label>
+    <input type="password" id="jbKeyInput" placeholder="jsonbin.io → API Keys" autocomplete="new-password">
+    <button class="btn btn-green" onclick="saveJbKey()">OK</button>
+  </div>
+  <div class="key-row" style="margin-top:6px">
+    <label>BIN ID</label>
+    <input type="text" id="jbBinInput" placeholder="вставь с другого устройства" style="font-size:11px">
+    <button class="btn btn-green" onclick="manualCloudLoad()">OK</button>
+    <button class="btn" onclick="clearJbBin()">✕</button>
+  </div>
+  <div class="api-status" id="jbStatus"></div>
+  <div style="margin-top:10px">
+    <button class="btn btn-green" onclick="migrateToCloud()" style="width:100%;padding:9px;font-size:11px;letter-spacing:1px">
+      &#8593; МИГРИРОВАТЬ ЛОКАЛЬНЫЕ ДАННЫЕ В ОБЛАКО
+    </button>
+  </div>
+  <div class="settings-note" id="settingsNote"></div>
+</div>
+
+<!-- Settings toggle button -->
+<div style="position:fixed;bottom:0;left:0;right:0;background:var(--bg2);border-top:1px solid var(--border);padding:10px 18px;display:flex;justify-content:space-between;align-items:center;z-index:98">
+  <span style="font-size:10px;color:var(--dim)" id="providerLabel"></span>
+  <button class="btn btn-green" onclick="toggleSettings()" style="font-size:11px;padding:6px 14px">&#9881; НАСТРОЙКИ</button>
+</div>
+
+<script>
+// --- Multi-portfolio ---
+var portfolios = {};  // { id: { name, positions } }
+var currentPortfolioId = null;
+
+function getPortfolios() {
+  try { return JSON.parse(localStorage.getItem('pt_portfolios') || '{}'); } catch(e) { return {}; }
+}
+function savePortfolios() {
+  try { localStorage.setItem('pt_portfolios', JSON.stringify(portfolios)); } catch(e) {}
+}
+function initPortfolios() {
+  portfolios = getPortfolios();
+  // Migrate legacy data (pt_v3) into default portfolio if no portfolios exist
+  if (Object.keys(portfolios).length === 0) {
+    var legacy = [];
+    try { legacy = JSON.parse(localStorage.getItem('pt_v3') || '[]'); } catch(e) {}
+    var id = 'p_' + Date.now();
+    portfolios[id] = { name: 'MY PORTFOLIO', positions: legacy };
+    savePortfolios();
+  }
+  // Restore last active portfolio
+  currentPortfolioId = localStorage.getItem('pt_current');
+  if (!currentPortfolioId || !portfolios[currentPortfolioId]) {
+    currentPortfolioId = Object.keys(portfolios)[0];
+  }
+}
+function currentPortfolio() {
+  return portfolios[currentPortfolioId] || { name: 'MY PORTFOLIO', positions: [] };
+}
+
+var positions = [];
+var loadingSet = {};
+var editId = null;
+var sortKey = null;
+var sortDir = 1;
+try { var _s = JSON.parse(localStorage.getItem('pt_sort')); if (_s && _s.key) { sortKey = _s.key; sortDir = _s.dir || 1; } } catch(e) {}
+
+// --- Local storage ---
+function loadLocal() {
+  positions = currentPortfolio().positions;
+}
+function saveLocal() {
+  portfolios[currentPortfolioId].positions = positions;
+  savePortfolios();
+}
+
+// --- Portfolio switcher ---
+function toggleSwitcher() {
+  var el = document.getElementById('portfolioSwitcher');
+  el.classList.toggle('open');
+  if (el.classList.contains('open')) renderSwitcher();
+}
+function closeSwitcher() {
+  document.getElementById('portfolioSwitcher').classList.remove('open');
+}
+function closeSwitcherOutside(e) {
+  if (e.target === document.getElementById('portfolioSwitcher')) closeSwitcher();
+}
+function renderSwitcher() {
+  var list = document.getElementById('portfolioList');
+  var html = '';
+  Object.keys(portfolios).forEach(function(id) {
+    var p = portfolios[id];
+    var active = id === currentPortfolioId;
+    html += '<div class="portfolio-item' + (active ? ' active' : '') + '" style="display:flex;align-items:center">'
+      + '<div onclick="switchPortfolio(\'' + id + '\')" style="flex:1;cursor:pointer;min-width:0">'
+      + '<span class="portfolio-item-name">' + p.name + '</span> '
+      + '<span class="portfolio-item-count">' + p.positions.length + ' pos' + (active ? ' &#10003;' : '') + '</span>'
+      + '</div>'
+      + '<button class="btn-icon" onclick="renamePortfolio(\'' + id + '\')" title="Rename" style="font-size:13px;padding:4px 7px">&#9998;</button>'
+      + '<button class="btn-icon" onclick="deletePortfolio(\'' + id + '\')" title="Delete" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
+      + '</div>';
+  });
+  list.innerHTML = html;
+}
+function switchPortfolio(id) {
+  if (!portfolios[id]) return;
+  currentPortfolioId = id;
+  localStorage.setItem('pt_current', id);
+  loadLocal();
+  editId = null;
+  loadingSet = {};
+  document.getElementById('portfolioTitle').textContent = portfolios[id].name;
+  closeSwitcher();
+  render();
+  cloudLoad(function(loaded) { if (loaded) render(); });
+}
+function addPortfolio() {
+  var name = document.getElementById('newPortfolioName').value.trim();
+  if (!name) return;
+  var id = 'p_' + Date.now();
+  portfolios[id] = { name: name, positions: [] };
+  savePortfolios();
+  save(); // sync to cloud
+  document.getElementById('newPortfolioName').value = '';
+  // Switch without triggering cloudLoad
+  currentPortfolioId = id;
+  localStorage.setItem('pt_current', id);
+  loadLocal();
+  editId = null; loadingSet = {};
+  document.getElementById('portfolioTitle').textContent = name;
+  renderSwitcher();
+  render();
+}
+
+function renamePortfolio(id) {
+  var p = portfolios[id];
+  if (!p) return;
+  var newName = prompt('Rename portfolio:', p.name);
+  if (!newName || !newName.trim()) return;
+  portfolios[id].name = newName.trim().toUpperCase();
+  savePortfolios();
+  save();
+  if (id === currentPortfolioId) {
+    document.getElementById('portfolioTitle').textContent = portfolios[id].name;
+  }
+  renderSwitcher();
+}
+
+function deletePortfolio(id) {
+  if (Object.keys(portfolios).length <= 1) {
+    alert('Cannot delete the last portfolio.');
+    return;
+  }
+  var p = portfolios[id];
+  if (!p) return;
+  if (!confirm('Delete "' + p.name + '"? This cannot be undone.')) return;
+  delete portfolios[id];
+  savePortfolios();
+  save();
+  if (currentPortfolioId === id) {
+    currentPortfolioId = Object.keys(portfolios)[0];
+    localStorage.setItem('pt_current', currentPortfolioId);
+    loadLocal();
+    editId = null; loadingSet = {};
+    document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
+    render();
+  }
+  renderSwitcher();
+}
+
+// --- JSONBin ---
+function getJbKey() { return localStorage.getItem('pt_jbkey') || ''; }
+function getJbBin() { return localStorage.getItem('pt_jbbin') || ''; }
+
+function saveJbKey() {
+  var k = document.getElementById('jbKeyInput').value.trim();
+  if (!k) return;
+  localStorage.setItem('pt_jbkey', k);
+  // Also save bin id if entered
+  var b = document.getElementById('jbBinInput').value.trim();
+  if (b) localStorage.setItem('pt_jbbin', b);
+  updateSettingsUI();
+  // Auto-load if bin id is present
+  if (getJbBin()) manualCloudLoad();
+}
+function saveBinId() {
+  var b = document.getElementById('jbBinInput').value.trim();
+  if (b) localStorage.setItem('pt_jbbin', b);
+}
+function clearJbBin() {
+  localStorage.removeItem('pt_jbbin');
+  document.getElementById('jbBinInput').value = '';
+  updateJbStatus('Bin ID сброшен — создастся заново при следующем сохранении', 'var(--dim)');
+}
+function manualCloudLoad() {
+  var key = getJbKey();
+  var bin = document.getElementById('jbBinInput').value.trim() || getJbBin();
+  if (!key) { updateJbStatus('✗ Сначала введи Master Key', 'var(--red)'); return; }
+  if (!bin) { updateJbStatus('✗ Введи Bin ID', 'var(--red)'); return; }
+  // Save bin id in case it was typed fresh
+  localStorage.setItem('pt_jbbin', bin);
+  document.getElementById('jbBinInput').value = bin;
+  updateJbStatus('Загружаю...', 'var(--dim)');
+  cloudLoad(function(loaded) {
+    if (loaded) { render(); closeSettings(); }
+  });
+}
+
+function migrateToCloud() {
+  var key = getJbKey();
+  if (!key) {
+    updateJbStatus('✗ Сначала введи Master Key выше', 'var(--red)');
+    return;
+  }
+  // Load from localStorage fresh
+  var local = [];
+  try { local = JSON.parse(localStorage.getItem(STORAGE) || '[]'); } catch(e) {}
+  if (!local.length) {
+    updateJbStatus('✗ Локальных данных нет — нечего мигрировать', 'var(--dim)');
+    return;
+  }
+  var binId = getJbBin();
+  updateJbStatus('Создаю bin и загружаю ' + local.length + ' позиций...', 'var(--dim)');
+
+  function doCreate() {
+    return fetch('https://api.jsonbin.io/v3/b', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Master-Key': key, 'X-Bin-Name': 'portfolio' },
+      body: JSON.stringify({ portfolios: portfolios })
+    }).then(function(r) { return r.json(); }).then(function(res) {
+      var id = res.metadata && res.metadata.id;
+      if (!id) throw new Error('no_id: ' + JSON.stringify(res));
+      localStorage.setItem('pt_jbbin', id);
+      document.getElementById('jbBinInput').value = id;
+      positions = local;
+      saveLocal();
+      updateJbStatus('✓ Создан bin ' + id + ' — ' + local.length + ' позиций мигрировано', 'var(--green)');
+      updateSettingsUI();
+      render();
+    });
+  }
+
+  function doUpdate(id) {
+    return fetch('https://api.jsonbin.io/v3/b/' + id, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Master-Key': key },
+      body: JSON.stringify({ portfolios: portfolios })
+    }).then(function(r) {
+      if (!r.ok) throw new Error('http_' + r.status);
+      positions = local;
+      saveLocal();
+      updateJbStatus('✓ Bin ' + id + ' обновлён — ' + local.length + ' позиций', 'var(--green)');
+      updateSettingsUI();
+      render();
+    });
+  }
+
+  (binId ? doUpdate(binId) : doCreate()).catch(function(e) {
+    updateJbStatus('✗ Ошибка: ' + e.message, 'var(--red)');
+  });
+}
+
+function updateJbStatus(msg, color) {
+  var el = document.getElementById('jbStatus');
+  if (el) { el.textContent = msg; el.style.color = color || 'var(--dim)'; }
+}
+
+function cloudSave() {
+  var key = getJbKey();
+  if (!key) return; // no key — local only
+  var data = { portfolios: portfolios };
+  var binId = getJbBin();
+  if (!binId) {
+    // Create new bin
+    fetch('https://api.jsonbin.io/v3/b', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Master-Key': key, 'X-Bin-Name': 'portfolio' },
+      body: JSON.stringify(data)
+    }).then(function(r) { return r.json(); }).then(function(res) {
+      var id = res.metadata && res.metadata.id;
+      if (!id) throw new Error('no_id');
+      localStorage.setItem('pt_jbbin', id);
+      document.getElementById('jbBinInput').value = id;
+      updateJbStatus('✓ Облако: bin создан и сохранён', 'var(--green)');
+    }).catch(function() { updateJbStatus('✗ Ошибка создания bin', 'var(--red)'); });
+  } else {
+    fetch('https://api.jsonbin.io/v3/b/' + binId, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Master-Key': key },
+      body: JSON.stringify(data)
+    }).then(function(r) {
+      if (!r.ok) throw new Error('http_' + r.status);
+      updateJbStatus('✓ Облако: сохранено ' + new Date().toLocaleTimeString(), 'var(--green)');
+    }).catch(function() { updateJbStatus('✗ Ошибка сохранения', 'var(--red)'); });
+  }
+}
+
+function cloudLoad(callback) {
+  var key = getJbKey();
+  var binId = getJbBin();
+  if (!key || !binId) { callback(false); return; }
+  updateJbStatus('Загрузка из облака...', 'var(--dim)');
+  fetch('https://api.jsonbin.io/v3/b/' + binId + '/latest', {
+    headers: { 'X-Master-Key': key }
+  }).then(function(r) {
+    if (!r.ok) throw new Error('http_' + r.status);
+    return r.json();
+  }).then(function(res) {
+    var data = res.record;
+    if (data && data.portfolios && typeof data.portfolios === 'object') {
+      // New multi-portfolio format
+      portfolios = data.portfolios;
+      savePortfolios();
+      // Restore current portfolio
+      if (!portfolios[currentPortfolioId]) {
+        currentPortfolioId = Object.keys(portfolios)[0];
+        localStorage.setItem('pt_current', currentPortfolioId);
+      }
+      loadLocal();
+      document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
+      updateJbStatus('✓ Загружено из облака', 'var(--green)');
+      callback(true);
+    } else if (data && Array.isArray(data.positions)) {
+      // Legacy format - migrate into current portfolio
+      portfolios[currentPortfolioId].positions = data.positions;
+      savePortfolios();
+      loadLocal();
+      updateJbStatus('✓ Загружено из облака (legacy): ' + data.positions.length + ' позиций', 'var(--green)');
+      callback(true);
+    } else { callback(false); }
+  }).catch(function(e) {
+    updateJbStatus('✗ Ошибка загрузки из облака', 'var(--red)');
+    callback(false);
+  });
+}
+
+function load() { loadLocal(); }
+function save() {
+  saveLocal();
+  cloudSave();
+}
+function getApiKey() { return localStorage.getItem('pt_finnhub') || ''; }
+function saveApiKey() {
+  var k = document.getElementById('apiKeyInput').value.trim();
+  if (!k) return;
+  localStorage.setItem('pt_finnhub', k);
+  updateSettingsUI();
+}
+function toggleSettings() {
+  var p = document.getElementById('settingsPanel');
+  var o = document.getElementById('overlay');
+  p.classList.toggle('open');
+  o.classList.toggle('open');
+}
+function closeSettings() {
+  document.getElementById('settingsPanel').classList.remove('open');
+  document.getElementById('overlay').classList.remove('open');
+}
+function updateSettingsUI() {
+  var k = getApiKey();
+  document.getElementById('apiKeyInput').value = k;
+  var st = document.getElementById('apiStatus');
+  if (k) { st.textContent = '✓ Ключ сохранён'; st.style.color = 'var(--green)'; }
+  else { st.textContent = ''; }
+  var jbKey = getJbKey();
+  var jbBin = getJbBin();
+  if (document.getElementById('jbKeyInput')) document.getElementById('jbKeyInput').value = jbKey;
+  if (document.getElementById('jbBinInput')) document.getElementById('jbBinInput').value = jbBin;
+  document.getElementById('settingsNote').textContent = 'Цены: Yahoo Finance через Vercel backend. Облако: jsonbin.io.';
+  var cloudStatus = jbKey ? (jbBin ? '&#9729; Облако' : '&#9729; Облако') : '&#128190; Локально';
+  var srcStatus = k ? '&#10003; Yahoo Finance' : '&#9888; Нужен Backend URL';
+  document.getElementById('providerLabel').innerHTML = srcStatus + ' &nbsp;|&nbsp; ' + cloudStatus;
+  document.getElementById('mainNote').textContent = '* Цены через Yahoo Finance — все биржи, extended hours.';
+}
+function showKeyStatus() { updateSettingsUI(); }
+
+function fetchPrice(ticker) {
+  var baseUrl = getApiKey();
+  if (!baseUrl) return Promise.reject(new Error('no_key'));
+  // Remove trailing slash
+  baseUrl = baseUrl.replace(/\/+$/, '');
+  var url = baseUrl + '/api/quote?ticker=' + encodeURIComponent(ticker);
+  return fetch(url).then(function(r) {
+    if (!r.ok) throw new Error('http_' + r.status);
+    return r.json();
+  }).then(function(data) {
+    if (!data || !data.price || data.error) throw new Error(data.error || 'no_price');
+    return data.price;
+  });
+}
+
+function f2(n) {
+  if (n === null || n === undefined || isNaN(n)) return '&mdash;';
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fSign(n) {
+  if (n === null || n === undefined || isNaN(n)) return '&mdash;';
+  return (n >= 0 ? '+' : '') + f2(n);
+}
+function fPct(n) {
+  if (n === null || n === undefined || isNaN(n)) return '&mdash;';
+  return (n >= 0 ? '+' : '') + f2(n) + '%';
+}
+function cls(n) {
+  if (n === null || n === undefined || isNaN(n)) return 'muted';
+  return n >= 0 ? 'pos' : 'neg';
+}
+
+function addPosition() {
+  document.getElementById('addErr').textContent = '';
+  var ticker = document.getElementById('fTicker').value.trim().toUpperCase();
+  var qty = parseFloat(document.getElementById('fQty').value);
+  var entry = parseFloat(document.getElementById('fEntry').value);
+  var curRaw = document.getElementById('fCurrent').value.trim();
+  var current = curRaw ? parseFloat(curRaw) : null;
+  if (!ticker) { document.getElementById('addErr').textContent = 'Введи тикер'; return; }
+  if (!qty || qty <= 0) { document.getElementById('addErr').textContent = 'Введи количество'; return; }
+  if (!entry || entry <= 0) { document.getElementById('addErr').textContent = 'Введи цену входа'; return; }
+  positions.push({ id: Date.now(), ticker: ticker, qty: qty, entry: entry, current: current });
+  save();
+  ['fTicker','fQty','fEntry','fCurrent'].forEach(function(id) { document.getElementById(id).value = ''; });
+  render();
+}
+
+function removePosition(id) {
+  positions = positions.filter(function(p) { return p.id !== id; });
+  save(); render();
+}
+function startEdit(id) { editId = id; render(); }
+function cancelEdit() { editId = null; render(); }
+function saveEdit(id) {
+  var qty = parseFloat(document.getElementById('editQty').value);
+  var entry = parseFloat(document.getElementById('editEntry').value);
+  var curRaw = document.getElementById('editCurrent').value.trim();
+  var pos = null;
+  for (var i = 0; i < positions.length; i++) { if (positions[i].id === id) { pos = positions[i]; break; } }
+  var current = curRaw ? parseFloat(curRaw) : (pos ? pos.current : null);
+  if (!qty || !entry) return;
+  positions = positions.map(function(p) {
+    return p.id === id ? { id: p.id, ticker: p.ticker, qty: qty, entry: entry, current: current } : p;
+  });
+  save(); editId = null; render();
+}
+
+function refreshPrice(id) {
+  var pos = null;
+  for (var i = 0; i < positions.length; i++) { if (positions[i].id === id) { pos = positions[i]; break; } }
+  if (!pos) return;
+  if (!getApiKey()) { document.getElementById('apiKeyInput').focus(); return; }
+  loadingSet[id] = true; render();
+  fetchPrice(pos.ticker).then(function(price) {
+    positions = positions.map(function(p) {
+      if (p.id === id) { return { id: p.id, ticker: p.ticker, qty: p.qty, entry: p.entry, current: price }; }
+      return p;
+    });
+    save();
+  }).catch(function(e) {
+    positions = positions.map(function(p) {
+      if (p.id === id) { return Object.assign({}, p, { fetchErr: true }); }
+      return p;
+    });
+  }).finally(function() {
+    delete loadingSet[id]; render();
+  });
+}
+
+function refreshAll() {
+  if (!getApiKey()) { toggleSettings(); return; }
+  var btn = document.getElementById('refreshAllBtn');
+  btn.innerHTML = 'UPDATING...';
+  btn.disabled = true;
+  var promises = positions.map(function(p) { return refreshPrice(p.id) || Promise.resolve(); });
+  Promise.all(promises).then(function() {
+    btn.innerHTML = '&#8635; Refresh All';
+    btn.disabled = false;
+  });
+}
+
+
+function thBtn(key, label, align) {
+  var arrow = sortKey === key ? (sortDir === 1 ? ' &#9650;' : ' &#9660;') : '';
+  var al = align === 'left' ? 'left' : 'right';
+  return '<th style="text-align:' + al + ';cursor:pointer;user-select:none" onclick="sortBy(\'' + key + '\')">' + label + arrow + '</th>';
+}
+function sortBy(key) {
+  if (sortKey === key) { sortDir *= -1; } else { sortKey = key; sortDir = 1; }
+  try { localStorage.setItem('pt_sort', JSON.stringify({key: sortKey, dir: sortDir})); } catch(e) {}
+  render();
+}
+
+function getSorted() {
+  if (!sortKey) return positions.slice();
+  return positions.slice().sort(function(a, b) {
+    var va, vb;
+    if (sortKey === 'ticker') { va = a.ticker; vb = b.ticker; return sortDir * va.localeCompare(vb); }
+    if (sortKey === 'qty')    { va = a.qty; vb = b.qty; }
+    if (sortKey === 'entry')  { va = a.entry; vb = b.entry; }
+    if (sortKey === 'current'){ va = a.current !== null ? a.current : -Infinity; vb = b.current !== null ? b.current : -Infinity; }
+    if (sortKey === 'pnl')    { va = (a.current !== null) ? (a.current - a.entry) * a.qty : -Infinity; vb = (b.current !== null) ? (b.current - b.entry) * b.qty : -Infinity; }
+    if (sortKey === 'pnlpct') { va = (a.current !== null && a.entry) ? (a.current - a.entry) / a.entry : -Infinity; vb = (b.current !== null && b.entry) ? (b.current - b.entry) / b.entry : -Infinity; }
+    return sortDir * (va > vb ? 1 : va < vb ? -1 : 0);
+  });
+}
+function render() {
+  var area = document.getElementById('tableArea');
+
+  if (positions.length === 0) {
+    area.innerHTML = '<div class="empty">NO POSITIONS &mdash; ADD ONE BELOW</div>';
+    return;
+  }
+
+  var rows = '';
+  getSorted().forEach(function(p) {
+    var pnl = (p.current !== null && p.current !== undefined) ? p.current - p.entry : null;
+    var pnlPct = (pnl !== null && p.entry) ? (pnl / p.entry) * 100 : null;
+    var isLoading = !!loadingSet[p.id];
+    var isEdit = editId === p.id;
+
+    var curCell;
+    if (isLoading) {
+      curCell = '<span class="muted">...</span>';
+    } else if (p.fetchErr) {
+      curCell = '<button class="fetch-btn" style="color:var(--red);border-color:var(--red)" onclick="refreshPrice(' + p.id + ')">ERR ↻</button>';
+    } else if (p.current !== null && p.current !== undefined) {
+      curCell = '$' + f2(p.current);
+    } else {
+      curCell = '<button class="fetch-btn" onclick="refreshPrice(' + p.id + ')">FETCH</button>';
+    }
+
+    var qtyCell = isEdit ? '<input class="edit-input" id="editQty" type="number" value="' + p.qty + '">' : (Number.isInteger(p.qty) ? p.qty : p.qty.toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:4}));
+    var entryCell = isEdit ? '<input class="edit-input" id="editEntry" type="number" value="' + p.entry + '">' : '$' + f2(p.entry);
+    var curEditCell = isEdit
+      ? '<input class="edit-input" id="editCurrent" type="number" value="' + (p.current !== null && p.current !== undefined ? p.current : '') + '" placeholder="&mdash;">'
+      : curCell;
+
+    var actions = isEdit
+      ? '<button class="btn-icon" style="color:var(--green)" onclick="saveEdit(' + p.id + ')">&#10003;</button>'
+        + '<button class="btn-icon" onclick="cancelEdit()">&#10005;</button>'
+      : '<button class="btn-icon" onclick="refreshPrice(' + p.id + ')">&#8635;</button>'
+        + '<button class="btn-icon" onclick="startEdit(' + p.id + ')">&#9998;</button>'
+        + '<button class="btn-icon" onclick="removePosition(' + p.id + ')">&#10005;</button>';
+
+    rows += '<tr>'
+      + '<td>' + p.ticker + '</td>'
+      + '<td>' + qtyCell + '</td>'
+      + '<td>' + entryCell + '</td>'
+      + '<td>' + curEditCell + '</td>'
+      + '<td class="' + cls(pnl) + '">' + fSign(pnl !== null ? pnl * p.qty : null) + '</td>'
+      + '<td class="' + cls(pnlPct) + '">' + fPct(pnlPct) + '</td>'
+      + '<td style="white-space:nowrap">' + actions + '</td>'
+      + '</tr>';
+  });
+
+  var totCost = 0, totVal = 0, hasAny = false;
+  positions.forEach(function(p) {
+    if (p.current !== null && p.current !== undefined) {
+      totCost += p.qty * p.entry;
+      totVal += p.qty * p.current;
+      hasAny = true;
+    }
+  });
+  var totPnL = totVal - totCost;
+  var totPct = totCost ? (totPnL / totCost) * 100 : null;
+
+  var totalsHtml = '';
+  if (hasAny) {
+    var c = totPnL >= 0 ? 'pos' : 'neg';
+    totalsHtml = '<div class="totals-bar">'
+      + '<div class="total-block"><div class="total-label">VALUE</div><div class="total-value" style="color:var(--bright)">$' + f2(totVal) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">P&amp;L</div><div class="total-value ' + c + '">' + fSign(totPnL) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + c + '">' + fPct(totPct) + '</div></div>'
+      + '</div>';
+  }
+
+  area.innerHTML = '<div class="table-wrap">'
+    + '<table>'
+    + '<thead><tr>'
+    + thBtn('ticker', 'TICKER', 'left')
+    + thBtn('qty', 'QTY')
+    + thBtn('entry', 'ENTRY')
+    + thBtn('current', 'CURRENT')
+    + thBtn('pnl', 'P&amp;L $')
+    + thBtn('pnlpct', 'P&amp;L %')
+    + '<th></th>'
+    + '</tr></thead>'
+    + '<tbody>' + rows + '</tbody>'
+    + '</table>'
+    + '</div>'
+    + totalsHtml;
+
+  if (editId) {
+    var el = document.getElementById('editQty');
+    if (el) el.focus();
+  }
+}
+
+initPortfolios();
+loadLocal();
+document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
+showKeyStatus();
+render();
+cloudLoad(function(loaded) { if (loaded) render(); });
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('sw.js').then(function(reg) {
+      console.log('SW registered:', reg.scope);
+    }).catch(function(e) {
+      console.log('SW error:', e);
+    });
+  });
+}
+</script>
+</body>
+</html>
