@@ -605,7 +605,7 @@ function updateSettingsUI() {
   var jbBin = getJbBin();
   if (document.getElementById('jbKeyInput')) document.getElementById('jbKeyInput').value = jbKey;
   if (document.getElementById('jbBinInput')) document.getElementById('jbBinInput').value = jbBin;
-  document.getElementById('settingsNote').textContent = 'Цены: Yahoo Finance через Vercel backend. Облако: jsonbin.io.';
+  document.getElementById('settingsNote').textContent = 'Цены: Yahoo Finance через Cloudflare Worker. Облако: jsonbin.io.';
   var cloudStatus = jbKey ? (jbBin ? '&#9729; Облако' : '&#9729; Облако') : '&#128190; Локально';
   var srcStatus = k ? '&#10003; Yahoo Finance' : '&#9888; Нужен Backend URL';
   document.getElementById('providerLabel').innerHTML = srcStatus + ' &nbsp;|&nbsp; ' + cloudStatus;
@@ -613,10 +613,10 @@ function updateSettingsUI() {
 }
 function showKeyStatus() { updateSettingsUI(); }
 
+var __priceType = 'regular';
 function fetchPrice(ticker) {
   var baseUrl = getApiKey();
   if (!baseUrl) return Promise.reject(new Error('no_key'));
-  // Remove trailing slash
   baseUrl = baseUrl.replace(/\/+$/, '');
   var url = baseUrl + '/api/quote?ticker=' + encodeURIComponent(ticker);
   return fetch(url).then(function(r) {
@@ -624,6 +624,7 @@ function fetchPrice(ticker) {
     return r.json();
   }).then(function(data) {
     if (!data || !data.price || data.error) throw new Error(data.error || 'no_price');
+    __priceType = data.priceType || 'regular';
     return data.price;
   });
 }
@@ -689,7 +690,7 @@ function refreshPrice(id) {
   loadingSet[id] = true; render();
   fetchPrice(pos.ticker).then(function(price) {
     positions = positions.map(function(p) {
-      if (p.id === id) { return { id: p.id, ticker: p.ticker, qty: p.qty, entry: p.entry, current: price }; }
+      if (p.id === id) { return { id: p.id, ticker: p.ticker, qty: p.qty, entry: p.entry, current: price, priceType: __priceType }; }
       return p;
     });
     save();
@@ -785,7 +786,7 @@ function render() {
       + '<td>' + entryCell + '</td>'
       + '<td>' + curEditCell + '</td>'
       + '<td class="' + cls(pnl) + '">' + fSign(pnl !== null ? pnl * p.qty : null) + '</td>'
-      + '<td class="' + cls(pnlPct) + '">' + fPct(pnlPct) + '</td>'
+      + '<td class="' + cls(pnlPct) + '">' + fPct(pnlPct) + (p.priceType && p.priceType !== 'regular' ? ' <span style="font-size:10px;opacity:0.7" title="' + p.priceType + '">&#9790;</span>' : '') + '</td>'
       + '<td style="white-space:nowrap">' + actions + '</td>'
       + '</tr>';
   });
