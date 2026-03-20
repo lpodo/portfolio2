@@ -11,23 +11,14 @@ export default {
       });
     }
 
-    // Debug endpoint — shows raw Yahoo v7 response fields
+    // Debug — returns full raw Yahoo response
     if (url.pathname === '/api/debug') {
       const ticker = url.searchParams.get('ticker') || 'EOG';
-      const yahooUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(ticker)}&fields=regularMarketPrice,preMarketPrice,postMarketPrice,marketState,preMarketTime,postMarketTime,regularMarketTime,currency,fullExchangeName,shortName`;
+      const yahooUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(ticker)}`;
       const response = await fetch(yahooUrl, { headers: yahooHeaders() });
-      const data = await response.json();
-      const q = data?.quoteResponse?.result?.[0] || {};
-      return json({
-        marketState: q.marketState,
-        regularMarketPrice: q.regularMarketPrice,
-        regularMarketTime: q.regularMarketTime,
-        preMarketPrice: q.preMarketPrice,
-        preMarketTime: q.preMarketTime,
-        postMarketPrice: q.postMarketPrice,
-        postMarketTime: q.postMarketTime,
-        currency: q.currency,
-        exchangeName: q.fullExchangeName,
+      const text = await response.text();
+      return new Response(text, {
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
       });
     }
 
@@ -39,40 +30,39 @@ export default {
     if (!ticker) return json({ error: 'ticker is required' }, 400);
 
     try {
-      const yahooUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(ticker)}&fields=regularMarketPrice,preMarketPrice,postMarketPrice,marketState,preMarketTime,postMarketTime,regularMarketTime,currency,fullExchangeName,shortName,symbol`;
-
+      const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d&includePrePost=true`;
       const response = await fetch(yahooUrl, { headers: yahooHeaders() });
       if (!response.ok) return json({ error: `Yahoo HTTP ${response.status}` }, response.status);
 
       const data = await response.json();
-      const q = data?.quoteResponse?.result?.[0];
+      const meta = data?.chart?.result?.[0]?.meta;
 
-      if (!q || !q.regularMarketPrice) {
+      if (!meta || !meta.regularMarketPrice) {
         return json({ error: `Ticker not found: ${ticker}` }, 404);
       }
 
-      let price = q.regularMarketPrice;
+      let price = meta.regularMarketPrice;
       let priceType = 'regular';
 
-      if (q.marketState === 'PRE' && q.preMarketPrice > 0) {
-        price = q.preMarketPrice;
+      if (meta.marketState === 'PRE' && meta.preMarketPrice > 0) {
+        price = meta.preMarketPrice;
         priceType = 'pre-market';
-      } else if ((q.marketState === 'POST' || q.marketState === 'POSTPOST') && q.postMarketPrice > 0) {
-        price = q.postMarketPrice;
+      } else if ((meta.marketState === 'POST' || meta.marketState === 'POSTPOST') && meta.postMarketPrice > 0) {
+        price = meta.postMarketPrice;
         priceType = 'post-market';
       }
 
       return json({
-        ticker: q.symbol || ticker,
+        ticker: meta.symbol || ticker,
         price,
         priceType,
-        marketState: q.marketState || null,
-        regularMarketPrice: q.regularMarketPrice,
-        preMarketPrice: q.preMarketPrice || null,
-        postMarketPrice: q.postMarketPrice || null,
-        currency: q.currency || null,
-        exchangeName: q.fullExchangeName || null,
-        shortName: q.shortName || null,
+        marketState: meta.marketState || null,
+        regularMarketPrice: meta.regularMarketPrice,
+        preMarketPrice: meta.preMarketPrice || null,
+        postMarketPrice: meta.postMarketPrice || null,
+        currency: meta.currency || null,
+        exchangeName: meta.fullExchangeName || meta.exchangeName || null,
+        shortName: meta.shortName || null,
       });
 
     } catch (err) {
@@ -94,9 +84,6 @@ function yahooHeaders() {
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-    }
+    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
   });
 }
