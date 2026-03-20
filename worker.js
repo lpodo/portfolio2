@@ -11,14 +11,40 @@ export default {
       });
     }
 
-    // Debug — returns full raw Yahoo v8 meta object
+    // Debug — returns extended hours price extraction
     if (url.pathname === '/api/debug') {
       const ticker = url.searchParams.get('ticker') || 'EOG';
-      const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d&includePrePost=true`;
+      const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=1d&includePrePost=true`;
       const response = await fetch(yahooUrl, { headers: yahooHeaders() });
       const data = await response.json();
-      const meta = data?.chart?.result?.[0]?.meta || {};
-      return json(meta);
+      const result = data?.chart?.result?.[0];
+      const meta = result?.meta || {};
+      const timestamps = result?.timestamp || [];
+      const closes = result?.indicators?.quote?.[0]?.close || [];
+      const preStart = meta.currentTradingPeriod?.pre?.start;
+      const preEnd = meta.currentTradingPeriod?.pre?.end;
+      const postStart = meta.currentTradingPeriod?.post?.start;
+      const postEnd = meta.currentTradingPeriod?.post?.end;
+      // Find last pre-market close
+      let prePrice = null, postPrice = null;
+      for (let i = timestamps.length - 1; i >= 0; i--) {
+        const t = timestamps[i];
+        if (t >= preStart && t < preEnd && closes[i]) { prePrice = closes[i]; break; }
+      }
+      for (let i = timestamps.length - 1; i >= 0; i--) {
+        const t = timestamps[i];
+        if (t >= postStart && t < postEnd && closes[i]) { postPrice = closes[i]; break; }
+      }
+      return json({
+        marketState: meta.marketState,
+        regularMarketPrice: meta.regularMarketPrice,
+        preMarketPrice: prePrice,
+        postMarketPrice: postPrice,
+        totalDataPoints: timestamps.length,
+        preStart, preEnd, postStart, postEnd,
+        firstTimestamp: timestamps[0],
+        lastTimestamp: timestamps[timestamps.length - 1],
+      });
     }
 
     if (url.pathname !== '/api/quote') {
@@ -29,25 +55,47 @@ export default {
     if (!ticker) return json({ error: 'ticker is required' }, 400);
 
     try {
-      const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d&includePrePost=true`;
+      // Use 1m interval to get pre/post market candles
+      const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=1d&includePrePost=true`;
       const response = await fetch(yahooUrl, { headers: yahooHeaders() });
       if (!response.ok) return json({ error: `Yahoo HTTP ${response.status}` }, response.status);
 
       const data = await response.json();
-      const meta = data?.chart?.result?.[0]?.meta;
+      const result = data?.chart?.result?.[0];
+      const meta = result?.meta;
 
       if (!meta || !meta.regularMarketPrice) {
         return json({ error: `Ticker not found: ${ticker}` }, 404);
       }
 
+      const timestamps = result?.timestamp || [];
+      const closes = result?.indicators?.quote?.[0]?.close || [];
+      const preStart = meta.currentTradingPeriod?.pre?.start;
+      const preEnd = meta.currentTradingPeriod?.pre?.end;
+      const postStart = meta.currentTradingPeriod?.post?.start;
+      const postEnd = meta.currentTradingPeriod?.post?.end;
+
+      // Extract latest pre/post market price from candle data
+      let prePrice = null, postPrice = null;
+      for (let i = timestamps.length - 1; i >= 0; i--) {
+        const t = timestamps[i];
+        if (!prePrice && preStart && preEnd && t >= preStart && t < preEnd && closes[i]) {
+          prePrice = closes[i];
+        }
+        if (!postPrice && postStart && postEnd && t >= postStart && t < postEnd && closes[i]) {
+          postPrice = closes[i];
+        }
+        if (prePrice && postPrice) break;
+      }
+
       let price = meta.regularMarketPrice;
       let priceType = 'regular';
 
-      if (meta.marketState === 'PRE' && meta.preMarketPrice > 0) {
-        price = meta.preMarketPrice;
+      if (meta.marketState === 'PRE' && prePrice) {
+        price = prePrice;
         priceType = 'pre-market';
-      } else if ((meta.marketState === 'POST' || meta.marketState === 'POSTPOST') && meta.postMarketPrice > 0) {
-        price = meta.postMarketPrice;
+      } else if ((meta.marketState === 'POST' || meta.marketState === 'POSTPOST') && postPrice) {
+        price = postPrice;
         priceType = 'post-market';
       }
 
@@ -57,8 +105,8 @@ export default {
         priceType,
         marketState: meta.marketState || null,
         regularMarketPrice: meta.regularMarketPrice,
-        preMarketPrice: meta.preMarketPrice || null,
-        postMarketPrice: meta.postMarketPrice || null,
+        preMarketPrice: prePrice,
+        postMarketPrice: postPrice,
         currency: meta.currency || null,
         exchangeName: meta.fullExchangeName || meta.exchangeName || null,
         shortName: meta.shortName || null,
