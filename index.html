@@ -9,6 +9,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Portfolio">
 <link rel="manifest" href="./manifest.json">
+<link rel="icon" type="image/png" sizes="32x32" href="./icon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="./icon-16.png">
 <link rel="apple-touch-icon" href="./icon-192.png">
 <title>Portfolio Terminal</title>
 <style>
@@ -176,7 +178,7 @@
     <div class="form-row" style="margin-bottom:8px">
       <div class="field" style="width:100%">
         <label>TICKER</label>
-        <input type="search" id="fTicker" placeholder="EOG, AAPL, MPC..."
+        <input type="search" id="fTicker" placeholder="AAPL, MSFT, CJPU.L..."
           inputmode="text" autocomplete="off" autocorrect="off"
           autocapitalize="characters" spellcheck="false"
           style="width:100%;max-width:280px"
@@ -233,7 +235,7 @@
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">ИСТОЧНИК ЦЕН — BACKEND URL</div>
   <div class="key-row">
     <label>API URL</label>
-    <input type="text" id="apiKeyInput" placeholder="https://your-app.vercel.app" autocomplete="off">
+    <input type="text" id="apiKeyInput" placeholder="https://your-worker.workers.dev" autocomplete="off">
     <button class="btn btn-green" onclick="saveApiKey()">OK</button>
   </div>
   <div class="api-status" id="apiStatus"></div>

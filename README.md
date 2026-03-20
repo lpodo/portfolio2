@@ -2,42 +2,50 @@
 
 ## What it is
 
-A PWA stock portfolio tracker. Minimalist, no dependencies, works from any device.
+A PWA stock portfolio tracker with a Cloudflare Worker backend. Supports all major exchanges, extended hours (pre/post market), and cross-device sync via JSONBin.
 
 ## Hosting & Access
 
-* **GitHub Pages**: `lpodo.github.io/portfolio`
-* **Repository**: `lpodo/portfolio`
+* **GitHub Pages**: `lpodo.github.io/portfolio2` — frontend
+* **Cloudflare Workers**: `portfolio2.lpodolskiy.workers.dev` — price backend
+* **Repository**: `lpodo/portfolio2`
 * **PWA**: installed on Android as an app (icon on home screen)
 
 ## Stack
 
 * Pure HTML/JS/CSS — **single file `index.html`**, no frameworks or build tools
-* Additional PWA files: `manifest.json`, `sw.js`, `icon-192.png`, `icon-512.png`
+* **Cloudflare Worker** (`worker.js`) — serverless proxy to Yahoo Finance, no CORS issues
+* Additional PWA files: `manifest.json`, `sw.js`, `icon-192.png`, `icon-512.png`, `icon-32.png`, `icon-16.png`
 * No npm, webpack, React — maximum portability
 
-## Price Sources
+## Price Source
 
-* **Finnhub API** — real-time stock prices, free, no rate limits
-  * Endpoint: `https://finnhub.io/api/v1/quote?symbol={ticker}&token={key}`
-  * Price field: `data.c`
-  * Key stored in `localStorage` under `pt_finnhub`
-* **Extended hours** — no reliable free source exists:
-  * Polygon: $29/month
-  * Alpaca paid: $9/month
-  * Alpha Vantage: blocks CORS requests from browser (confirmed)
-  * Yahoo Finance: intentionally blocks browser requests from any domain
+* **Yahoo Finance** via Cloudflare Worker — free, all major exchanges, extended hours
+  * Regular session: `regularMarketPrice`
+  * Pre-market (4:00–9:30 ET): extracted from 1m candles in pre-market window
+  * Post-market (16:00–20:00 ET): extracted from 1m candles in post-market window
+  * Extended hours shown with 🌙 indicator in the UI
+  * Worker endpoint: `/api/quote?ticker=AAPL`
+  * Debug endpoint: `/api/debug?ticker=AAPL`
+
+## Exchange Support
+
+* NYSE / NASDAQ — ✅ real-time
+* LSE (e.g. `CJPU.L`) — ✅ works
+* Other Yahoo Finance tickers — ✅ use Yahoo format (e.g. `7203.T`, `AIR.PA`)
+* Extended hours — ✅ NYSE/NASDAQ only (LSE has no pre/post market)
 
 ## Data Storage
 
-* **localStorage** — primary on-device cache, key `pt_portfolios` (multi-portfolio), legacy `pt_v3` auto-migrated on first launch
+* **localStorage** — primary on-device cache, key `pt_portfolios`
 * **JSONBin.io** — cloud storage for cross-device sync
   * Master Key: `localStorage['pt_jbkey']`
   * Bin ID: `localStorage['pt_jbbin']`
-  * Bin is created automatically on first save
-  * On app open — auto-loads from cloud if keys are present
+  * Bin created automatically on first save
+  * Auto-loads from cloud on app open if keys present
   * "Migrate" button — moves local data to cloud
-* Sort state saved in `localStorage['pt_sort']`
+* Sort state: `localStorage['pt_sort']`
+* Backend URL: `localStorage['pt_finnhub']` (legacy key name, stores Worker URL)
 
 ## Position Structure
 
@@ -47,48 +55,56 @@ A PWA stock portfolio tracker. Minimalist, no dependencies, works from any devic
   "ticker": "EOG",
   "qty": 8,
   "entry": 134.00,
-  "current": 135.72
+  "current": 139.76,
+  "priceType": "pre-market"
 }
 ```
 
 ## Features
 
-* Add position: ticker + quantity + entry price + current price (optional)
+* Multiple portfolios — tap name in header to switch, add, rename, delete
+* Add position: ticker + qty + entry price + current price (optional)
 * Inline edit (✎) and delete (✕)
-* Price update: FETCH button per row or ↻ Refresh All (parallel requests)
-* Sort by any column (TICKER, QTY, ENTRY, CURRENT, P&L $, P&L %) — click header to sort, click again to reverse, persists across sessions
-* P&L $ calculated for full position: `(current - entry) × qty`
-* P&L % calculated per share: `(current - entry) / entry × 100`
-* Summary row after table: VALUE (total current value), P&L (total), RETURN (%)
-* Multiple portfolios — tap portfolio name in header to switch, add, rename, or delete
-* Add form at the bottom, below the table
-* TICKER field: `type="search"` + `autocapitalize="characters"` — fix for Android numeric keyboard
+* Price update: FETCH per row or ↻ Refresh All (parallel requests)
+* Sort by any column — persists across sessions
+* P&L $ for full position: `(current - entry) × qty`
+* P&L % per share: `(current - entry) / entry × 100`
+* Extended hours indicator: 🌙 shown after P&L % when price is pre/post market
+* Summary row: VALUE, P&L, RETURN
 
 ## Settings (bottom panel)
 
-* Slides up from bottom via ⚙ SETTINGS button
-* Finnhub API Key
-* JSONBin Master Key + Bin ID (with OK button to load from cloud)
-* "Migrate local data to cloud" button
+* Backend URL (Cloudflare Worker)
+* Finnhub API Key (legacy, not used — backend handles prices)
+* JSONBin Master Key + Bin ID
+* Migrate local data to cloud
 
 ## PWA
 
-* `manifest.json`: all paths relative (`./`), `start_url: "."`, `scope: "."`
-* `sw.js`: caches `index.html`, `manifest.json`, `icon-192.png`; network-first for finnhub/jsonbin
-* Service worker registered at the end of `index.html`
-* **Increment cache version in `sw.js` (`portfolio-v2`, `portfolio-v3`, etc.) with every deploy**
+* `manifest.json`: relative paths, `start_url: "."`, `scope: "."`
+* `sw.js`: caches app shell; network-first for worker/jsonbin requests
+* **Increment cache version in `sw.js` with every deploy**
 
-## What We Don't Do (decisions are final)
+## Cloudflare Worker
 
-* No CORS proxies — unreliable (corsproxy.io, allorigins go down)
-* No Polygon — paid ($29/month) for snapshot endpoint
-* No Alpha Vantage — blocks CORS requests from browser (confirmed)
-* No Yahoo Finance — blocks all browser requests regardless of domain
+* File: `worker.js`
+* Config: `wrangler.toml`
+* No dependencies — pure fetch, no npm packages
+* Deploy: connected to GitHub, auto-deploys on push
+* Free tier: 100,000 requests/day
+
+## What We Don't Do
+
+* No CORS proxies — unreliable
+* No Vercel for this project — blocks Yahoo Finance requests
+* No Railway — no permanent free tier
+* No FMP free tier — only AAPL as demo ticker
+* No Alpha Vantage — CORS blocked from browser
 * No frameworks — complicates PWA and deployment
-* No request delays — Finnhub has no rate limits on free tier
 
 ## How to Start a New Dev Session
 
-1. Paste the contents of this file
-2. Paste the contents of the current `index.html` from the repository
-3. Describe what needs to be changed
+1. Paste this README
+2. Paste current `index.html` from repository
+3. Paste current `worker.js` from repository
+4. Describe what needs to be changed
