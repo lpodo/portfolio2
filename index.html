@@ -301,7 +301,10 @@ function initPortfolios() {
 }
 function getCurrency() {
   var p = currentPortfolio();
-  return p.currency || '$';
+  // Legacy portfolios (no currency field) get $
+  // New portfolios can have empty string = no symbol
+  if (p.currency !== undefined) return p.currency;
+  return '$';
 }
 function currentPortfolio() {
   return portfolios[currentPortfolioId] || { name: 'MY PORTFOLIO', positions: [] };
@@ -343,7 +346,7 @@ function renderSwitcher() {
     var active = id === currentPortfolioId;
     html += '<div class="portfolio-item' + (active ? ' active' : '') + '" style="display:flex;align-items:center">'
       + '<div onclick="switchPortfolio(\'' + id + '\')" style="flex:1;cursor:pointer;min-width:0">'
-      + '<span class="portfolio-item-name">' + p.name + '</span> <span style="color:var(--dim);font-size:10px">' + (p.currency || '$') + '</span> '
+      + '<span class="portfolio-item-name">' + p.name + '</span>' + (p.currency ? ' <span style="color:var(--dim);font-size:10px">' + p.currency + '</span>' : '') + ' '
       + '<span class="portfolio-item-count">' + p.positions.length + ' pos' + (active ? ' &#10003;' : '') + '</span>'
       + '</div>'
       + '<button class="btn-icon" onclick="renamePortfolio(\'' + id + '\')" title="Rename" style="font-size:13px;padding:4px 7px">&#9998;</button>'
@@ -367,7 +370,7 @@ function switchPortfolio(id) {
 function addPortfolio() {
   var name = document.getElementById('newPortfolioName').value.trim();
   if (!name) return;
-  var cur = document.getElementById('newPortfolioCurrency').value.trim() || '$';
+  var cur = document.getElementById('newPortfolioCurrency').value.trim();
   var id = 'p_' + Date.now();
   portfolios[id] = { name: name, positions: [], currency: cur };
   savePortfolios();
@@ -392,7 +395,7 @@ function renamePortfolio(id) {
   var newCur = prompt('Currency symbol:', p.currency || '$');
   if (newCur === null) return;
   portfolios[id].name = newName.trim().toUpperCase();
-  portfolios[id].currency = newCur.trim() || '$';
+  portfolios[id].currency = newCur.trim();
   savePortfolios();
   save();
   if (id === currentPortfolioId) {
@@ -784,7 +787,7 @@ function render() {
     }
 
     var qtyCell = isEdit ? '<input class="edit-input" id="editQty" type="number" value="' + p.qty + '">' : (Number.isInteger(p.qty) ? p.qty : p.qty.toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:4}));
-    var entryCell = isEdit ? '<input class="edit-input" id="editEntry" type="number" value="' + p.entry + '">' : '$' + f2(p.entry);
+    var entryCell = isEdit ? '<input class="edit-input" id="editEntry" type="number" value="' + p.entry + '">' : getCurrency() + f2(p.entry);
     var curEditCell = isEdit
       ? '<input class="edit-input" id="editCurrent" type="number" value="' + (p.current !== null && p.current !== undefined ? p.current : '') + '" placeholder="&mdash;">'
       : curCell;
@@ -823,7 +826,7 @@ function render() {
   if (hasAny) {
     var c = totPnL >= 0 ? 'pos' : 'neg';
     totalsHtml = '<div class="totals-bar">'
-      + '<div class="total-block"><div class="total-label">VALUE</div><div class="total-value" style="color:var(--bright)">$' + f2(totVal) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">VALUE</div><div class="total-value" style="color:var(--bright)">' + getCurrency() + f2(totVal) + '</div></div>'
       + '<div class="total-block"><div class="total-label">P&amp;L</div><div class="total-value ' + c + '">' + fSign(totPnL) + '</div></div>'
       + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + c + '">' + fPct(totPct) + '</div></div>'
       + '</div>';
