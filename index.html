@@ -786,7 +786,7 @@ function render() {
       + '<td>' + entryCell + '</td>'
       + '<td>' + curEditCell + '</td>'
       + '<td class="' + cls(pnl) + '">' + fSign(pnl !== null ? pnl * p.qty : null) + '</td>'
-      + '<td class="' + cls(pnlPct) + '">' + fPct(pnlPct) + (p.priceType && p.priceType !== 'regular' ? ' <span style="font-size:10px;opacity:0.7" title="' + p.priceType + '">&#9790;</span>' : '') + '</td>'
+      + '<td class="' + cls(pnlPct) + '">' + fPct(pnlPct) + (p.priceType && p.priceType !== 'regular' ? ' <span style="font-size:11px;color:#f0c040" title="' + p.priceType + '">🌙</span>' : '') + '</td>'
       + '<td style="white-space:nowrap">' + actions + '</td>'
       + '</tr>';
   });
