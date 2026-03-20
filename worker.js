@@ -88,13 +88,25 @@ export default {
         if (prePrice && postPrice) break;
       }
 
+      // Determine market state by current time vs trading periods
+      const now = Math.floor(Date.now() / 1000);
+      let marketState = meta.marketState || null;
+      if (!marketState) {
+        const regStart = meta.currentTradingPeriod?.regular?.start;
+        const regEnd = meta.currentTradingPeriod?.regular?.end;
+        if (preStart && preEnd && now >= preStart && now < preEnd) marketState = 'PRE';
+        else if (regStart && regEnd && now >= regStart && now < regEnd) marketState = 'REGULAR';
+        else if (postStart && postEnd && now >= postStart && now < postEnd) marketState = 'POST';
+        else marketState = 'CLOSED';
+      }
+
       let price = meta.regularMarketPrice;
       let priceType = 'regular';
 
-      if (meta.marketState === 'PRE' && prePrice) {
+      if (marketState === 'PRE' && prePrice) {
         price = prePrice;
         priceType = 'pre-market';
-      } else if ((meta.marketState === 'POST' || meta.marketState === 'POSTPOST') && postPrice) {
+      } else if ((marketState === 'POST' || marketState === 'POSTPOST') && postPrice) {
         price = postPrice;
         priceType = 'post-market';
       }
@@ -103,7 +115,7 @@ export default {
         ticker: meta.symbol || ticker,
         price,
         priceType,
-        marketState: meta.marketState || null,
+        marketState: marketState,
         regularMarketPrice: meta.regularMarketPrice,
         preMarketPrice: prePrice,
         postMarketPrice: postPrice,
