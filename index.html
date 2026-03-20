@@ -192,11 +192,11 @@
         <input type="number" id="fQty" placeholder="10" min="0" step="any" style="width:78px" onkeydown="if(event.key==='Enter')addPosition()">
       </div>
       <div class="field">
-        <label>ENTRY $</label>
+        <label>ENTRY</label>
         <input type="number" id="fEntry" placeholder="150.00" min="0" step="any" style="width:98px" onkeydown="if(event.key==='Enter')addPosition()">
       </div>
       <div class="field">
-        <label>CURRENT $ (опц.)</label>
+        <label>CURRENT (опц.)</label>
         <input type="number" id="fCurrent" placeholder="&#8212;" min="0" step="any" style="width:98px" onkeydown="if(event.key==='Enter')addPosition()">
       </div>
       <button class="btn-primary" onclick="addPosition()">ADD</button>
@@ -214,11 +214,16 @@
     <div class="portfolio-dropdown-title">Portfolios</div>
     <div id="portfolioList"></div>
     <div class="portfolio-add-row">
-      <input type="search" id="newPortfolioName" placeholder="NEW PORTFOLIO NAME"
+      <input type="search" id="newPortfolioName" placeholder="NAME"
         inputmode="text" autocomplete="off" autocorrect="off"
         autocapitalize="characters" spellcheck="false"
-        style="-webkit-appearance:none"
+        style="-webkit-appearance:none;flex:2"
         oninput="this.value=this.value.toUpperCase()"
+        onkeydown="if(event.key==='Enter')addPortfolio()">
+      <input type="search" id="newPortfolioCurrency" placeholder="$"
+        inputmode="text" autocomplete="off" autocorrect="off"
+        spellcheck="false"
+        style="-webkit-appearance:none;width:44px;flex:none;text-align:center"
         onkeydown="if(event.key==='Enter')addPortfolio()">
       <button class="btn btn-green" onclick="addPortfolio()" style="white-space:nowrap">+ ADD</button>
     </div>
@@ -294,6 +299,10 @@ function initPortfolios() {
     currentPortfolioId = Object.keys(portfolios)[0];
   }
 }
+function getCurrency() {
+  var p = currentPortfolio();
+  return p.currency || '$';
+}
 function currentPortfolio() {
   return portfolios[currentPortfolioId] || { name: 'MY PORTFOLIO', positions: [] };
 }
@@ -334,7 +343,7 @@ function renderSwitcher() {
     var active = id === currentPortfolioId;
     html += '<div class="portfolio-item' + (active ? ' active' : '') + '" style="display:flex;align-items:center">'
       + '<div onclick="switchPortfolio(\'' + id + '\')" style="flex:1;cursor:pointer;min-width:0">'
-      + '<span class="portfolio-item-name">' + p.name + '</span> '
+      + '<span class="portfolio-item-name">' + p.name + '</span> <span style="color:var(--dim);font-size:10px">' + (p.currency || '$') + '</span> '
       + '<span class="portfolio-item-count">' + p.positions.length + ' pos' + (active ? ' &#10003;' : '') + '</span>'
       + '</div>'
       + '<button class="btn-icon" onclick="renamePortfolio(\'' + id + '\')" title="Rename" style="font-size:13px;padding:4px 7px">&#9998;</button>'
@@ -358,11 +367,13 @@ function switchPortfolio(id) {
 function addPortfolio() {
   var name = document.getElementById('newPortfolioName').value.trim();
   if (!name) return;
+  var cur = document.getElementById('newPortfolioCurrency').value.trim() || '$';
   var id = 'p_' + Date.now();
-  portfolios[id] = { name: name, positions: [] };
+  portfolios[id] = { name: name, positions: [], currency: cur };
   savePortfolios();
   save(); // sync to cloud
   document.getElementById('newPortfolioName').value = '';
+  document.getElementById('newPortfolioCurrency').value = '';
   // Switch without triggering cloudLoad
   currentPortfolioId = id;
   localStorage.setItem('pt_current', id);
@@ -376,9 +387,12 @@ function addPortfolio() {
 function renamePortfolio(id) {
   var p = portfolios[id];
   if (!p) return;
-  var newName = prompt('Rename portfolio:', p.name);
+  var newName = prompt('Portfolio name:', p.name);
   if (!newName || !newName.trim()) return;
+  var newCur = prompt('Currency symbol:', p.currency || '$');
+  if (newCur === null) return;
   portfolios[id].name = newName.trim().toUpperCase();
+  portfolios[id].currency = newCur.trim() || '$';
   savePortfolios();
   save();
   if (id === currentPortfolioId) {
@@ -764,7 +778,7 @@ function render() {
     } else if (p.fetchErr) {
       curCell = '<button class="fetch-btn" style="color:var(--red);border-color:var(--red)" onclick="refreshPrice(' + p.id + ')">ERR ↻</button>';
     } else if (p.current !== null && p.current !== undefined) {
-      curCell = '$' + f2(p.current);
+      curCell = getCurrency() + f2(p.current);
     } else {
       curCell = '<button class="fetch-btn" onclick="refreshPrice(' + p.id + ')">FETCH</button>';
     }
@@ -822,7 +836,7 @@ function render() {
     + thBtn('qty', 'QTY')
     + thBtn('entry', 'ENTRY')
     + thBtn('current', 'CURRENT')
-    + thBtn('pnl', 'P&amp;L $')
+    + thBtn('pnl', 'P&amp;L')
     + thBtn('pnlpct', 'P&amp;L %')
     + '<th style="width:16px;padding:0"></th>'
     + '<th></th>'
