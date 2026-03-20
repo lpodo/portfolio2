@@ -258,9 +258,12 @@
     <button class="btn" onclick="clearJbBin()">✕</button>
   </div>
   <div class="api-status" id="jbStatus"></div>
-  <div style="margin-top:10px">
-    <button class="btn btn-green" onclick="migrateToCloud()" style="width:100%;padding:9px;font-size:11px;letter-spacing:1px">
-      &#8593; МИГРИРОВАТЬ ЛОКАЛЬНЫЕ ДАННЫЕ В ОБЛАКО
+  <div style="margin-top:10px;display:flex;gap:8px">
+    <button class="btn btn-green" onclick="syncFromCloud()" style="flex:1;padding:9px;font-size:11px;letter-spacing:1px">
+      &#8595; SYNC FROM CLOUD
+    </button>
+    <button class="btn" onclick="migrateToCloud()" style="flex:1;padding:9px;font-size:10px;letter-spacing:0px;border-color:var(--red);color:var(--red)">
+      &#8593; OVERWRITE CLOUD
     </button>
   </div>
   <div class="settings-note" id="settingsNote"></div>
@@ -463,6 +466,21 @@ function manualCloudLoad() {
     if (loaded) { render(); closeSettings(); }
   });
 }
+
+function syncFromCloud() {
+  if (!getJbKey()) { updateJbStatus('✗ Нужен Master Key', 'var(--red)'); return; }
+  if (!getJbBin()) { updateJbStatus('✗ Нужен Bin ID', 'var(--red)'); return; }
+  updateJbStatus('Синхронизация...', 'var(--dim)');
+  cloudLoad(function(loaded) {
+    if (loaded) {
+      render();
+      updateJbStatus('✓ Синхронизировано', 'var(--green)');
+    } else {
+      updateJbStatus('✗ Ошибка синхронизации', 'var(--red)');
+    }
+  });
+}
+
 
 function migrateToCloud() {
   var key = getJbKey();
