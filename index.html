@@ -656,7 +656,12 @@ function fetchPrice(ticker) {
   if (!baseUrl) return Promise.reject(new Error('no_key'));
   baseUrl = baseUrl.replace(/\/+$/, '');
   var url = baseUrl + '/api/quote?ticker=' + encodeURIComponent(ticker);
-  return fetch(url).then(function(r) {
+  // 10 second timeout
+  var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  var timer = controller ? setTimeout(function() { controller.abort(); }, 10000) : null;
+  var opts = controller ? { signal: controller.signal } : {};
+  return fetch(url, opts).then(function(r) {
+    if (timer) clearTimeout(timer);
     if (!r.ok) throw new Error('http_' + r.status);
     return r.json();
   }).then(function(data) {
@@ -730,16 +735,15 @@ function refreshPrice(id) {
       if (p.id === id) { return { id: p.id, ticker: p.ticker, qty: p.qty, entry: p.entry, current: price, priceType: __priceType }; }
       return p;
     });
-    saveLocal(); // local only — cloud save happens after all done
-    render();
+    saveLocal();
   }).catch(function(e) {
     positions = positions.map(function(p) {
       if (p.id === id) { return Object.assign({}, p, { fetchErr: true }); }
       return p;
     });
-    render();
   }).finally(function() {
     delete loadingSet[id];
+    render();
   });
 }
 
