@@ -11,87 +11,68 @@ export default {
       });
     }
 
-    // Debug endpoint — shows raw Yahoo response
+    // Debug endpoint — shows raw Yahoo v7 response fields
     if (url.pathname === '/api/debug') {
       const ticker = url.searchParams.get('ticker') || 'EOG';
-      const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d&includePrePost=true`;
+      const yahooUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(ticker)}&fields=regularMarketPrice,preMarketPrice,postMarketPrice,marketState,preMarketTime,postMarketTime,regularMarketTime,currency,fullExchangeName,shortName`;
       const response = await fetch(yahooUrl, { headers: yahooHeaders() });
       const data = await response.json();
-      const meta = data?.chart?.result?.[0]?.meta || {};
+      const q = data?.quoteResponse?.result?.[0] || {};
       return json({
-        marketState: meta.marketState,
-        regularMarketPrice: meta.regularMarketPrice,
-        regularMarketTime: meta.regularMarketTime,
-        preMarketPrice: meta.preMarketPrice,
-        preMarketTime: meta.preMarketTime,
-        postMarketPrice: meta.postMarketPrice,
-        postMarketTime: meta.postMarketTime,
+        marketState: q.marketState,
+        regularMarketPrice: q.regularMarketPrice,
+        regularMarketTime: q.regularMarketTime,
+        preMarketPrice: q.preMarketPrice,
+        preMarketTime: q.preMarketTime,
+        postMarketPrice: q.postMarketPrice,
+        postMarketTime: q.postMarketTime,
+        currency: q.currency,
+        exchangeName: q.fullExchangeName,
       });
     }
 
     if (url.pathname !== '/api/quote') {
-      return new Response(JSON.stringify({ error: 'Not found' }), {
-        status: 404,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-      });
+      return json({ error: 'Not found' }, 404);
     }
 
     const ticker = url.searchParams.get('ticker');
     if (!ticker) return json({ error: 'ticker is required' }, 400);
 
     try {
-      // v8 chart with pre/post data
-      const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d&includePrePost=true`;
+      const yahooUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(ticker)}&fields=regularMarketPrice,preMarketPrice,postMarketPrice,marketState,preMarketTime,postMarketTime,regularMarketTime,currency,fullExchangeName,shortName,symbol`;
 
       const response = await fetch(yahooUrl, { headers: yahooHeaders() });
-
       if (!response.ok) return json({ error: `Yahoo HTTP ${response.status}` }, response.status);
 
       const data = await response.json();
-      const meta = data?.chart?.result?.[0]?.meta;
+      const q = data?.quoteResponse?.result?.[0];
 
-      if (!meta || !meta.regularMarketPrice) {
+      if (!q || !q.regularMarketPrice) {
         return json({ error: `Ticker not found: ${ticker}` }, 404);
       }
 
-      let price = meta.regularMarketPrice;
+      let price = q.regularMarketPrice;
       let priceType = 'regular';
 
-      // Check pre-market: time must be more recent than regular market close
-      if (meta.preMarketPrice && meta.preMarketPrice > 0 &&
-          meta.preMarketTime && meta.regularMarketTime &&
-          meta.preMarketTime > meta.regularMarketTime) {
-        price = meta.preMarketPrice;
+      if (q.marketState === 'PRE' && q.preMarketPrice > 0) {
+        price = q.preMarketPrice;
         priceType = 'pre-market';
-      }
-      // Check post-market
-      else if (meta.postMarketPrice && meta.postMarketPrice > 0 &&
-               meta.postMarketTime && meta.regularMarketTime &&
-               meta.postMarketTime > meta.regularMarketTime) {
-        price = meta.postMarketPrice;
-        priceType = 'post-market';
-      }
-      // Fallback: use marketState
-      else if (meta.marketState === 'PRE' && meta.preMarketPrice > 0) {
-        price = meta.preMarketPrice;
-        priceType = 'pre-market';
-      }
-      else if ((meta.marketState === 'POST' || meta.marketState === 'POSTPOST') && meta.postMarketPrice > 0) {
-        price = meta.postMarketPrice;
+      } else if ((q.marketState === 'POST' || q.marketState === 'POSTPOST') && q.postMarketPrice > 0) {
+        price = q.postMarketPrice;
         priceType = 'post-market';
       }
 
       return json({
-        ticker: meta.symbol || ticker,
+        ticker: q.symbol || ticker,
         price,
         priceType,
-        marketState: meta.marketState,
-        regularMarketPrice: meta.regularMarketPrice,
-        preMarketPrice: meta.preMarketPrice || null,
-        postMarketPrice: meta.postMarketPrice || null,
-        currency: meta.currency || null,
-        exchangeName: meta.fullExchangeName || meta.exchangeName || null,
-        shortName: meta.shortName || null,
+        marketState: q.marketState || null,
+        regularMarketPrice: q.regularMarketPrice,
+        preMarketPrice: q.preMarketPrice || null,
+        postMarketPrice: q.postMarketPrice || null,
+        currency: q.currency || null,
+        exchangeName: q.fullExchangeName || null,
+        shortName: q.shortName || null,
       });
 
     } catch (err) {
