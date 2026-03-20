@@ -11,15 +11,14 @@ export default {
       });
     }
 
-    // Debug — returns full raw Yahoo response
+    // Debug — returns full raw Yahoo v8 meta object
     if (url.pathname === '/api/debug') {
       const ticker = url.searchParams.get('ticker') || 'EOG';
-      const yahooUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(ticker)}`;
+      const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d&includePrePost=true`;
       const response = await fetch(yahooUrl, { headers: yahooHeaders() });
-      const text = await response.text();
-      return new Response(text, {
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-      });
+      const data = await response.json();
+      const meta = data?.chart?.result?.[0]?.meta || {};
+      return json(meta);
     }
 
     if (url.pathname !== '/api/quote') {
