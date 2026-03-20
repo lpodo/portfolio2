@@ -725,19 +725,21 @@ function refreshPrice(id) {
   if (!pos) return;
   if (!getApiKey()) { document.getElementById('apiKeyInput').focus(); return; }
   loadingSet[id] = true; render();
-  fetchPrice(pos.ticker).then(function(price) {
+  return fetchPrice(pos.ticker).then(function(price) {
     positions = positions.map(function(p) {
       if (p.id === id) { return { id: p.id, ticker: p.ticker, qty: p.qty, entry: p.entry, current: price, priceType: __priceType }; }
       return p;
     });
-    save();
+    saveLocal(); // local only — cloud save happens after all done
+    render();
   }).catch(function(e) {
     positions = positions.map(function(p) {
       if (p.id === id) { return Object.assign({}, p, { fetchErr: true }); }
       return p;
     });
+    render();
   }).finally(function() {
-    delete loadingSet[id]; render();
+    delete loadingSet[id];
   });
 }
 
@@ -748,6 +750,7 @@ function refreshAll() {
   btn.disabled = true;
   var promises = positions.map(function(p) { return refreshPrice(p.id) || Promise.resolve(); });
   Promise.all(promises).then(function() {
+    cloudSave(); // single cloud save after all prices updated
     btn.innerHTML = '&#8635; Refresh All';
     btn.disabled = false;
   });
