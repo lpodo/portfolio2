@@ -788,7 +788,8 @@ function render() {
       + '<td>' + entryCell + '</td>'
       + '<td>' + curEditCell + '</td>'
       + '<td class="' + cls(pnl) + '">' + fSign(pnl !== null ? pnl * p.qty : null) + '</td>'
-      + '<td class="' + cls(pnlPct) + '">' + fPct(pnlPct) + (p.priceType && p.priceType !== 'regular' ? ' <span style="font-size:11px;color:#f0c040" title="' + p.priceType + '">🌙</span>' : '') + '</td>'
+      + '<td class="' + cls(pnlPct) + '">' + fPct(pnlPct) + '</td>'
+      + '<td style="width:16px;padding:0 2px;text-align:center">' + (p.priceType && p.priceType !== 'regular' ? '<span style="font-size:11px;color:#f0c040" title="' + p.priceType + '">🌙</span>' : '') + '</td>'
       + '<td style="white-space:nowrap">' + actions + '</td>'
       + '</tr>';
   });
@@ -823,6 +824,7 @@ function render() {
     + thBtn('current', 'CURRENT')
     + thBtn('pnl', 'P&amp;L $')
     + thBtn('pnlpct', 'P&amp;L %')
+    + '<th style="width:16px;padding:0"></th>'
     + '<th></th>'
     + '</tr></thead>'
     + '<tbody>' + rows + '</tbody>'
