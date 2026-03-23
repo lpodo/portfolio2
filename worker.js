@@ -113,8 +113,6 @@ async function getQuote(ticker) {
       price: regularMarketPrice,
       priceType: 'regular',
       regularMarketPrice,
-      preMarketPrice: null,
-      postMarketPrice: null,
       currency: meta.currency || null,
       exchangeName: meta.fullExchangeName || meta.exchangeName || null,
       shortName: meta.shortName || null,
@@ -145,15 +143,13 @@ async function getQuote(ticker) {
     }
 
     if (lastPrice != null) {
-      // If last candle matches regularMarketPrice — it's just regular close, no moon
       const priceType = (Math.abs(lastPrice - regularMarketPrice) < 0.001) ? 'regular' : 'extended';
       return {
         ticker: meta.symbol || ticker,
         price: lastPrice,
         priceType,
+        lastCandleTime: lastTime,
         regularMarketPrice,
-        preMarketPrice: priceType === 'extended' ? lastPrice : null,
-        postMarketPrice: null,
         currency: meta.currency || null,
         exchangeName: meta.fullExchangeName || meta.exchangeName || null,
         shortName: meta.shortName || null,
@@ -167,8 +163,6 @@ async function getQuote(ticker) {
     price: regularMarketPrice,
     priceType: 'regular',
     regularMarketPrice,
-    preMarketPrice: null,
-    postMarketPrice: null,
     currency: meta.currency || null,
     exchangeName: meta.fullExchangeName || meta.exchangeName || null,
     shortName: meta.shortName || null,
