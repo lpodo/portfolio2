@@ -13,52 +13,13 @@ export default {
 
     const ticker = url.searchParams.get('ticker') || 'EOG';
 
-    // Debug (original): processed quote result - same as /api/quote but for any ticker
+    // Debug: processed result (same logic as /api/quote)
     if (url.pathname === '/api/debug') {
-      const r1 = await fetch(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`,
-        { headers: yahooHeaders() }
-      );
-      const d1 = await r1.json();
-      const meta1 = d1?.chart?.result?.[0]?.meta;
-      if (!meta1) return json({ error: 'no meta' });
-      const ms = meta1.marketState || 'CLOSED';
-      let price = meta1.regularMarketPrice;
-      let priceType = 'regular';
-      if (ms !== 'REGULAR') {
-        const r2 = await fetch(
-          `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=1d&includePrePost=true`,
-          { headers: yahooHeaders() }
-        );
-        if (r2.ok) {
-          const d2 = await r2.json();
-          const res2 = d2?.chart?.result?.[0];
-          const ts = res2?.timestamp || [];
-          const cl = res2?.indicators?.quote?.[0]?.close || [];
-          const tp = meta1.currentTradingPeriod;
-          const s = ms === 'PRE' ? tp?.pre?.start : tp?.post?.start;
-          const e = ms === 'PRE' ? tp?.pre?.end : tp?.post?.end;
-          for (let i = ts.length - 1; i >= 0; i--) {
-            if (s && e && ts[i] >= s && ts[i] < e && cl[i] != null) {
-              price = cl[i]; priceType = ms === 'PRE' ? 'pre-market' : 'post-market'; break;
-            }
-          }
-        }
-      }
-      return json({
-        ticker: meta1.symbol || ticker,
-        price, priceType,
-        marketState: ms,
-        regularMarketPrice: meta1.regularMarketPrice,
-        preMarketPrice: priceType === 'pre-market' ? price : null,
-        postMarketPrice: priceType === 'post-market' ? price : null,
-        currency: meta1.currency || null,
-        exchangeName: meta1.fullExchangeName || meta1.exchangeName || null,
-        shortName: meta1.shortName || null,
-      });
+      const result = await getQuote(ticker);
+      return json(result);
     }
 
-    // Debug 1: raw meta from fast 1d request
+    // Debug1: raw meta from fast 1d request
     if (url.pathname === '/api/debug1') {
       const r = await fetch(
         `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`,
@@ -69,7 +30,7 @@ export default {
       return json({ status: r.status, meta });
     }
 
-    // Debug 2: last 10 candles from pre and post windows
+    // Debug2: last candles + pre/post windows
     if (url.pathname === '/api/debug2') {
       const r = await fetch(
         `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=5d&includePrePost=true`,
@@ -86,13 +47,11 @@ export default {
       const postStart = meta.currentTradingPeriod?.post?.start;
       const postEnd   = meta.currentTradingPeriod?.post?.end;
 
-      // Last 30 points regardless of window — to see what's actually at the end
       const lastCandles = [];
       for (let i = Math.max(0, timestamps.length - 30); i < timestamps.length; i++) {
         if (closes[i] != null) lastCandles.push({ t: timestamps[i], price: closes[i] });
       }
 
-      // Also collect by current trading period windows
       const preCandles = [], postCandles = [];
       for (let i = 0; i < timestamps.length; i++) {
         const t = timestamps[i];
@@ -107,7 +66,6 @@ export default {
         totalPoints: timestamps.length,
         currentTradingPeriod: meta.currentTradingPeriod,
         regularMarketPrice: meta.regularMarketPrice,
-        marketState: meta.marketState,
         lastCandles,
         preCandles: preCandles.slice(-10),
         postCandles: postCandles.slice(-10),
@@ -118,92 +76,104 @@ export default {
       return json({ error: 'Not found' }, 404);
     }
 
-    // PRODUCTION QUOTE LOGIC
     const t = url.searchParams.get('ticker');
     if (!t) return json({ error: 'ticker is required' }, 400);
 
     try {
-      // Step 1: fast request
-      const r1 = await fetch(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?interval=1d&range=1d`,
-        { headers: yahooHeaders() }
-      );
-      if (!r1.ok) return json({ error: `Yahoo HTTP ${r1.status}` }, r1.status);
-      const d1 = await r1.json();
-      const meta = d1?.chart?.result?.[0]?.meta;
-      if (!meta || !meta.regularMarketPrice) return json({ error: `Ticker not found: ${t}` }, 404);
-
-      const marketState = meta.marketState || 'CLOSED';
-
-      // Step 2: if not regular session, get extended hours candles
-      if (marketState !== 'REGULAR') {
-        const r2 = await fetch(
-          `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?interval=1m&range=1d&includePrePost=true`,
-          { headers: yahooHeaders() }
-        );
-        if (r2.ok) {
-          const d2 = await r2.json();
-          const result2 = d2?.chart?.result?.[0];
-          const timestamps = result2?.timestamp || [];
-          const closes = result2?.indicators?.quote?.[0]?.close || [];
-          const tp = meta.currentTradingPeriod;
-
-          let extPrice = null;
-          let extType = null;
-
-          if (marketState === 'PRE') {
-            const s = tp?.pre?.start, e = tp?.pre?.end;
-            for (let i = timestamps.length - 1; i >= 0; i--) {
-              if (s && e && timestamps[i] >= s && timestamps[i] < e && closes[i] != null) {
-                extPrice = closes[i]; extType = 'pre-market'; break;
-              }
-            }
-          } else {
-            // POST, POSTPOST, CLOSED — look for post-market data
-            const s = tp?.post?.start, e = tp?.post?.end;
-            for (let i = timestamps.length - 1; i >= 0; i--) {
-              if (s && e && timestamps[i] >= s && timestamps[i] < e && closes[i] != null) {
-                extPrice = closes[i]; extType = 'post-market'; break;
-              }
-            }
-          }
-
-          if (extPrice != null) {
-            return json({
-              ticker: meta.symbol || t,
-              price: extPrice,
-              priceType: extType,
-              marketState,
-              regularMarketPrice: meta.regularMarketPrice,
-              preMarketPrice: extType === 'pre-market' ? extPrice : null,
-              postMarketPrice: extType === 'post-market' ? extPrice : null,
-              currency: meta.currency || null,
-              exchangeName: meta.fullExchangeName || meta.exchangeName || null,
-              shortName: meta.shortName || null,
-            });
-          }
-        }
-      }
-
-      // Fallback: return regular market price
-      return json({
-        ticker: meta.symbol || t,
-        price: meta.regularMarketPrice,
-        priceType: 'regular',
-        marketState,
-        regularMarketPrice: meta.regularMarketPrice,
-        preMarketPrice: null,
-        postMarketPrice: null,
-        currency: meta.currency || null,
-        exchangeName: meta.fullExchangeName || meta.exchangeName || null,
-        shortName: meta.shortName || null,
-      });
-
+      const result = await getQuote(t);
+      if (result.error) return json(result, 404);
+      return json(result);
     } catch (err) {
       return json({ error: err.message || 'Failed to fetch quote' }, 500);
     }
   }
 };
+
+async function getQuote(ticker) {
+  // Step 1: fast request
+  const r1 = await fetch(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`,
+    { headers: yahooHeaders() }
+  );
+  if (!r1.ok) return { error: `Yahoo HTTP ${r1.status}` };
+
+  const d1 = await r1.json();
+  const meta = d1?.chart?.result?.[0]?.meta;
+  if (!meta || !meta.regularMarketPrice) return { error: `Ticker not found: ${ticker}` };
+
+  const now = Math.floor(Date.now() / 1000);
+  const regular = meta.currentTradingPeriod?.regular;
+  const regularMarketPrice = meta.regularMarketPrice;
+  const regularMarketTime = meta.regularMarketTime;
+
+  // Step 2: are we in active regular session with trades?
+  if (regular && now >= regular.start && now < regular.end && regularMarketTime >= regular.start) {
+    return {
+      ticker: meta.symbol || ticker,
+      price: regularMarketPrice,
+      priceType: 'regular',
+      regularMarketPrice,
+      preMarketPrice: null,
+      postMarketPrice: null,
+      currency: meta.currency || null,
+      exchangeName: meta.fullExchangeName || meta.exchangeName || null,
+      shortName: meta.shortName || null,
+    };
+  }
+
+  // Step 3: all other cases — get last candle from extended data
+  const r2 = await fetch(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=5d&includePrePost=true`,
+    { headers: yahooHeaders() }
+  );
+
+  if (r2.ok) {
+    const d2 = await r2.json();
+    const result2 = d2?.chart?.result?.[0];
+    const timestamps = result2?.timestamp || [];
+    const closes = result2?.indicators?.quote?.[0]?.close || [];
+
+    // Find last non-null candle
+    let lastPrice = null;
+    let lastTime = null;
+    for (let i = timestamps.length - 1; i >= 0; i--) {
+      if (closes[i] != null) {
+        lastPrice = closes[i];
+        lastTime = timestamps[i];
+        break;
+      }
+    }
+
+    if (lastPrice != null) {
+      // If last candle matches regularMarketPrice — it's just regular close, no moon
+      const priceType = (Math.abs(lastPrice - regularMarketPrice) < 0.001) ? 'regular' : 'extended';
+      return {
+        ticker: meta.symbol || ticker,
+        price: lastPrice,
+        priceType,
+        regularMarketPrice,
+        preMarketPrice: priceType === 'extended' ? lastPrice : null,
+        postMarketPrice: null,
+        currency: meta.currency || null,
+        exchangeName: meta.fullExchangeName || meta.exchangeName || null,
+        shortName: meta.shortName || null,
+      };
+    }
+  }
+
+  // Fallback: return regular close
+  return {
+    ticker: meta.symbol || ticker,
+    price: regularMarketPrice,
+    priceType: 'regular',
+    regularMarketPrice,
+    preMarketPrice: null,
+    postMarketPrice: null,
+    currency: meta.currency || null,
+    exchangeName: meta.fullExchangeName || meta.exchangeName || null,
+    shortName: meta.shortName || null,
+  };
+}
 
 function yahooHeaders() {
   return {
