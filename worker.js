@@ -86,7 +86,13 @@ export default {
       const postStart = meta.currentTradingPeriod?.post?.start;
       const postEnd   = meta.currentTradingPeriod?.post?.end;
 
-      // Collect last 10 candles from each window
+      // Last 30 points regardless of window — to see what's actually at the end
+      const lastCandles = [];
+      for (let i = Math.max(0, timestamps.length - 30); i < timestamps.length; i++) {
+        if (closes[i] != null) lastCandles.push({ t: timestamps[i], price: closes[i] });
+      }
+
+      // Also collect by current trading period windows
       const preCandles = [], postCandles = [];
       for (let i = 0; i < timestamps.length; i++) {
         const t = timestamps[i];
@@ -102,6 +108,7 @@ export default {
         currentTradingPeriod: meta.currentTradingPeriod,
         regularMarketPrice: meta.regularMarketPrice,
         marketState: meta.marketState,
+        lastCandles,
         preCandles: preCandles.slice(-10),
         postCandles: postCandles.slice(-10),
       });
