@@ -1,4 +1,4 @@
-var CACHE = 'portfolio-v21';
+var CACHE = 'portfolio-v22';
 
 self.addEventListener('install', function(e) {
   e.waitUntil(
@@ -22,7 +22,11 @@ self.addEventListener('activate', function(e) {
 });
 
 self.addEventListener('fetch', function(e) {
-  if (e.request.url.includes('finnhub.io') || e.request.url.includes('jsonbin.io')) return;
+  // Never cache API requests
+  if (e.request.url.includes('workers.dev') ||
+      e.request.url.includes('finnhub.io') ||
+      e.request.url.includes('jsonbin.io') ||
+      e.request.url.includes('financialmodelingprep.com')) return;
   e.respondWith(
     caches.match(e.request).then(function(cached) {
       return cached || fetch(e.request).then(function(resp) {
