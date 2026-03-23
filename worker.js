@@ -13,6 +13,51 @@ export default {
 
     const ticker = url.searchParams.get('ticker') || 'EOG';
 
+    // Debug (original): processed quote result - same as /api/quote but for any ticker
+    if (url.pathname === '/api/debug') {
+      const r1 = await fetch(
+        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`,
+        { headers: yahooHeaders() }
+      );
+      const d1 = await r1.json();
+      const meta1 = d1?.chart?.result?.[0]?.meta;
+      if (!meta1) return json({ error: 'no meta' });
+      const ms = meta1.marketState || 'CLOSED';
+      let price = meta1.regularMarketPrice;
+      let priceType = 'regular';
+      if (ms !== 'REGULAR') {
+        const r2 = await fetch(
+          `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=1d&includePrePost=true`,
+          { headers: yahooHeaders() }
+        );
+        if (r2.ok) {
+          const d2 = await r2.json();
+          const res2 = d2?.chart?.result?.[0];
+          const ts = res2?.timestamp || [];
+          const cl = res2?.indicators?.quote?.[0]?.close || [];
+          const tp = meta1.currentTradingPeriod;
+          const s = ms === 'PRE' ? tp?.pre?.start : tp?.post?.start;
+          const e = ms === 'PRE' ? tp?.pre?.end : tp?.post?.end;
+          for (let i = ts.length - 1; i >= 0; i--) {
+            if (s && e && ts[i] >= s && ts[i] < e && cl[i] != null) {
+              price = cl[i]; priceType = ms === 'PRE' ? 'pre-market' : 'post-market'; break;
+            }
+          }
+        }
+      }
+      return json({
+        ticker: meta1.symbol || ticker,
+        price, priceType,
+        marketState: ms,
+        regularMarketPrice: meta1.regularMarketPrice,
+        preMarketPrice: priceType === 'pre-market' ? price : null,
+        postMarketPrice: priceType === 'post-market' ? price : null,
+        currency: meta1.currency || null,
+        exchangeName: meta1.fullExchangeName || meta1.exchangeName || null,
+        shortName: meta1.shortName || null,
+      });
+    }
+
     // Debug 1: raw meta from fast 1d request
     if (url.pathname === '/api/debug1') {
       const r = await fetch(
@@ -27,7 +72,7 @@ export default {
     // Debug 2: last 10 candles from pre and post windows
     if (url.pathname === '/api/debug2') {
       const r = await fetch(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=1d&includePrePost=true`,
+        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=5d&includePrePost=true`,
         { headers: yahooHeaders() }
       );
       const d = await r.json();
