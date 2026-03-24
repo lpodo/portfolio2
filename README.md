@@ -24,11 +24,11 @@ Yahoo Finance via Cloudflare Worker — free, all major exchanges, extended hour
 
 **Algorithm:**
 
-1. Fast request `interval=1d` → get `regularMarketPrice`, `regularMarketTime`, `currentTradingPeriod`
-2. If `now >= regular.start && now < regular.end && regularMarketTime >= regular.start` → return `regularMarketPrice`, `priceType: "regular"` (one request)
-3. Otherwise → second request `interval=1m&range=5d&includePrePost=true` → find last non-null candle
-4. If `lastCandle.price ≈ regularMarketPrice` → `priceType: "regular"`
-5. Otherwise → `priceType: "extended"`
+1. Fast request `interval=1d` → get `regularMarketPrice`, `regularMarketTime`, `currentTradingPeriod` 
+2. If `now >= regular.start && now < regular.end && regularMarketTime >= regular.start` → return `regularMarketPrice`, `priceType: "regular"` (one request) 
+3. Otherwise → second request `interval=1m&range=5d&includePrePost=true` → find last non-null candle 
+4. If `lastCandle.price ≈ regularMarketPrice` → `priceType: "regular"` 
+5. Otherwise → `priceType: "extended"` 
 **Worker endpoints:**
 - `/api/quote?ticker=AAPL` — production quote
 - `/api/debug?ticker=AAPL` — processed result (same logic, any ticker)
