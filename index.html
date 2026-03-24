@@ -799,7 +799,7 @@ function marketIcon(state) {
   if (!state || state === 'REGULAR') return '';
   if (state === 'PRE' || state === 'POST') return '<span style="font-size:11px;color:#7090b0" title="' + state.toLowerCase() + '-market">🌙</span>';
   // CLOSED
-  return '<span style="font-size:10px;color:#2a5a8c;line-height:1" title="market closed">✦</span>';
+  return '<span style="font-size:11px;color:#4a5568" title="market closed">🌙</span>';
 }
 function render() {
   var area = document.getElementById('tableArea');
