@@ -119,3 +119,12 @@ Current version: `portfolio-v22`
 2. Paste current `index.html` from repository
 3. Paste current `worker.js` from repository
 4. Describe what needs to be changed
+
+## Unused Files (legacy, safe to delete)
+
+These files are leftovers from earlier attempts with Vercel and Railway and are no longer used:
+
+- `api/quote.js` — Vercel serverless function (replaced by Cloudflare Worker)
+- `vercel.json` — Vercel configuration
+- `server.js` — Express server for Railway
+- `package.json` — npm dependencies for Railway/Vercel
