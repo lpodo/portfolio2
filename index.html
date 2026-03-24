@@ -651,6 +651,7 @@ function updateSettingsUI() {
 function showKeyStatus() { updateSettingsUI(); }
 
 var __priceType = 'regular';
+var __marketState = 'CLOSED';
 function fetchPrice(ticker) {
   var baseUrl = getApiKey();
   if (!baseUrl) return Promise.reject(new Error('no_key'));
@@ -667,6 +668,7 @@ function fetchPrice(ticker) {
   }).then(function(data) {
     if (!data || !data.price || data.error) throw new Error(data.error || 'no_price');
     __priceType = data.priceType || 'regular';
+    __marketState = data.marketState || 'CLOSED';
     return data.price;
   });
 }
@@ -737,7 +739,7 @@ function refreshPrice(id) {
   loadingSet[id] = true; render();
   return fetchPrice(pos.ticker).then(function(price) {
     positions = positions.map(function(p) {
-      if (p.id === id) { return { id: p.id, ticker: p.ticker, qty: p.qty, entry: p.entry, current: price, priceType: __priceType }; }
+      if (p.id === id) { return { id: p.id, ticker: p.ticker, qty: p.qty, entry: p.entry, current: price, priceType: __priceType, marketState: __marketState }; }
       return p;
     });
     saveLocal();
@@ -793,6 +795,12 @@ function getSorted() {
     return sortDir * (va > vb ? 1 : va < vb ? -1 : 0);
   });
 }
+function marketIcon(state) {
+  if (!state || state === 'REGULAR') return '';
+  if (state === 'PRE' || state === 'POST') return '<span style="font-size:11px;color:#7090b0" title="' + state.toLowerCase() + '-market">🌙</span>';
+  // CLOSED
+  return '<span style="font-size:10px;color:#444;line-height:1" title="market closed">✦</span>';
+}
 function render() {
   var area = document.getElementById('tableArea');
 
@@ -839,7 +847,7 @@ function render() {
       + '<td>' + curEditCell + '</td>'
       + '<td class="' + cls(pnl) + '">' + fSign(pnl !== null ? pnl * p.qty : null) + '</td>'
       + '<td class="' + cls(pnlPct) + '">' + fPct(pnlPct) + '</td>'
-      + '<td style="width:16px;padding:0 2px;text-align:center">' + (p.priceType && p.priceType !== 'regular' ? '<span style="font-size:11px;color:#f0c040" title="' + p.priceType + '">🌙</span>' : '') + '</td>'
+      + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(p.marketState) + '</td>'
       + '<td style="white-space:nowrap">' + actions + '</td>'
       + '</tr>';
   });

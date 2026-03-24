@@ -112,11 +112,21 @@ async function getQuote(ticker) {
       ticker: meta.symbol || ticker,
       price: regularMarketPrice,
       priceType: 'regular',
+      marketState: 'REGULAR',
       regularMarketPrice,
       currency: meta.currency || null,
       exchangeName: meta.fullExchangeName || meta.exchangeName || null,
       shortName: meta.shortName || null,
     };
+  }
+
+  // Determine marketState from currentTradingPeriod
+  const tp = meta.currentTradingPeriod;
+  let marketState = 'CLOSED';
+  if (tp) {
+    if (now >= tp.pre.start && now < tp.pre.end)         marketState = 'PRE';
+    else if (now >= tp.regular.start && now < tp.regular.end) marketState = 'REGULAR';
+    else if (now >= tp.post.start && now < tp.post.end)  marketState = 'POST';
   }
 
   // Step 3: all other cases — get last candle from extended data
@@ -148,6 +158,7 @@ async function getQuote(ticker) {
         ticker: meta.symbol || ticker,
         price: lastPrice,
         priceType,
+        marketState,
         lastCandleTime: lastTime,
         regularMarketPrice,
         currency: meta.currency || null,
@@ -162,6 +173,7 @@ async function getQuote(ticker) {
     ticker: meta.symbol || ticker,
     price: regularMarketPrice,
     priceType: 'regular',
+    marketState,
     regularMarketPrice,
     currency: meta.currency || null,
     exchangeName: meta.fullExchangeName || meta.exchangeName || null,
