@@ -27,9 +27,8 @@ Yahoo Finance via Cloudflare Worker — free, all major exchanges, extended hour
 1. Fast request `interval=1d` → get `regularMarketPrice`, `regularMarketTime`, `currentTradingPeriod`
 2. If `now >= regular.start && now < regular.end && regularMarketTime >= regular.start` → return `regularMarketPrice`, `priceType: "regular"` (one request)
 3. Otherwise → second request `interval=1m&range=5d&includePrePost=true` → find last non-null candle
-4. If `lastCandle.price ≈ regularMarketPrice` → `priceType: "regular"` (no moon icon)
-5. Otherwise → `priceType: "extended"` (moon icon 🌙 shown in UI)
-
+4. If `lastCandle.price ≈ regularMarketPrice` → `priceType: "regular"`
+5. Otherwise → `priceType: "extended"`
 **Worker endpoints:**
 - `/api/quote?ticker=AAPL` — production quote
 - `/api/debug?ticker=AAPL` — processed result (same logic, any ticker)
@@ -95,8 +94,8 @@ Yahoo Finance via Cloudflare Worker — free, all major exchanges, extended hour
 - P&L % per share: `(current - entry) / entry × 100`
 - Market state indicator after P&L %:
   - No icon — regular session
-  - 🌙 blue — pre-market or post-market
-  - ✦ gray — market closed
+  - 🌙 — pre-market or post-market
+  - ✦ (gray) — market closed
 - Summary: VALUE, P&L, RETURN
 
 ## Cloud Sync (Settings panel)
