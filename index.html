@@ -182,7 +182,7 @@
           inputmode="text" autocomplete="off" autocorrect="off"
           autocapitalize="characters" spellcheck="false"
           style="width:100%;max-width:280px"
-          oninput="this.value=this.value.toUpperCase().replace(/[^A-Z.]/g,'')"
+          oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9.\-]/g,'')"
           onkeydown="if(event.key==='Enter'){document.getElementById('fQty').focus()}">
       </div>
     </div>
