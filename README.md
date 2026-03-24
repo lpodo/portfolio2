@@ -93,7 +93,10 @@ Yahoo Finance via Cloudflare Worker — free, all major exchanges, extended hour
 - Sort by any column — persists across sessions
 - P&L $ for full position: `(current - entry) × qty`
 - P&L % per share: `(current - entry) / entry × 100`
-- Extended hours indicator: 🌙 after P&L % when price is pre/post market
+- Market state indicator after P&L %:
+  - No icon — regular session
+  - 🌙 blue — pre-market or post-market
+  - ✦ gray — market closed
 - Summary: VALUE, P&L, RETURN
 
 ## Cloud Sync (Settings panel)
@@ -110,8 +113,7 @@ Caches app shell for offline use. API requests are **never cached**:
 - `jsonbin.io` — cloud storage
 - `finnhub.io` — legacy
 
-**IMPORTANT: increment cache version in `sw.js` on every deploy.**
-Current version: `portfolio-v22`
+**IMPORTANT: increment cache version string in `sw.js` on every deploy** (e.g. `portfolio-v1` → `portfolio-v2`).
 
 ## How to Start a New Dev Session
 
