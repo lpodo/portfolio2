@@ -1,4 +1,4 @@
-# Portfolio Terminal
+# Portfolio Terminal 2
 
 ## What it is
 
@@ -6,46 +6,59 @@ A PWA stock portfolio tracker with a Cloudflare Worker backend. Supports all maj
 
 ## Hosting & Access
 
-* **GitHub Pages**: `lpodo.github.io/portfolio2` — frontend
-* **Cloudflare Workers**: `portfolio2.lpodolskiy.workers.dev` — price backend
-* **Repository**: `lpodo/portfolio2`
-* **PWA**: installed on Android as an app (icon on home screen)
+- **GitHub Pages**: `lpodo.github.io/portfolio2` — frontend
+- **Cloudflare Workers**: `portfolio2.lpodolskiy.workers.dev` — price backend
+- **Repository**: `lpodo/portfolio2`
+- **PWA**: installable on Android/iOS as home screen app
 
 ## Stack
 
-* Pure HTML/JS/CSS — **single file `index.html`**, no frameworks or build tools
-* **Cloudflare Worker** (`worker.js`) — serverless proxy to Yahoo Finance, no CORS issues
-* Additional PWA files: `manifest.json`, `sw.js`, `icon-192.png`, `icon-512.png`, `icon-32.png`, `icon-16.png`
-* No npm, webpack, React — maximum portability
+- Pure HTML/JS/CSS — **single file `index.html`**, no frameworks or build tools
+- **Cloudflare Worker** (`worker.js`) — serverless proxy to Yahoo Finance, bypasses CORS
+- PWA files: `manifest.json`, `sw.js`, `icon-192.png`, `icon-512.png`, `icon-32.png`, `icon-16.png`
+- No npm, webpack, React — maximum portability
 
 ## Price Source
 
-* **Yahoo Finance** via Cloudflare Worker — free, all major exchanges, extended hours
-  * Regular session: `regularMarketPrice`
-  * Pre-market (4:00–9:30 ET): extracted from 1m candles in pre-market window
-  * Post-market (16:00–20:00 ET): extracted from 1m candles in post-market window
-  * Extended hours shown with 🌙 indicator in the UI
-  * Worker endpoint: `/api/quote?ticker=AAPL`
-  * Debug endpoint: `/api/debug?ticker=AAPL`
+Yahoo Finance via Cloudflare Worker — free, all major exchanges, extended hours.
+
+**Algorithm:**
+
+1. Fast request `interval=1d` → get `regularMarketPrice`, `regularMarketTime`, `currentTradingPeriod`
+2. If `now >= regular.start && now < regular.end && regularMarketTime >= regular.start` → return `regularMarketPrice`, `priceType: "regular"` (one request)
+3. Otherwise → second request `interval=1m&range=5d&includePrePost=true` → find last non-null candle
+4. If `lastCandle.price ≈ regularMarketPrice` → `priceType: "regular"` (no moon icon)
+5. Otherwise → `priceType: "extended"` (moon icon 🌙 shown in UI)
+
+**Worker endpoints:**
+- `/api/quote?ticker=AAPL` — production quote
+- `/api/debug?ticker=AAPL` — processed result (same logic, any ticker)
+- `/api/debug1?ticker=AAPL` — raw meta from Yahoo 1d request
+- `/api/debug2?ticker=AAPL` — last candles + pre/post windows from 5d request
 
 ## Exchange Support
 
-* NYSE / NASDAQ — ✅ real-time
-* LSE (e.g. `CJPU.L`) — ✅ works
-* Other Yahoo Finance tickers — ✅ use Yahoo format (e.g. `7203.T`, `AIR.PA`)
-* Extended hours — ✅ NYSE/NASDAQ only (LSE has no pre/post market)
+| Exchange | Ticker format | Example |
+|---|---|---|
+| NYSE / NASDAQ | no suffix | `EOG`, `AAPL` |
+| LSE (London) | `.L` | `CJPU.L` |
+| Xetra (Germany) | `.DE` | `CEBZ.DE` |
+| Euronext Paris | `.PA` | `AIR.PA` |
+| Euronext Amsterdam | `.AS` | `ASML.AS` |
+| Tokyo | `.T` | `7203.T` |
+| Milan | `.MI` | `ENI.MI` |
+| Oslo | `.OL` | `EQNR.OL` |
 
 ## Data Storage
 
-* **localStorage** — primary on-device cache, key `pt_portfolios`
-* **JSONBin.io** — cloud storage for cross-device sync
-  * Master Key: `localStorage['pt_jbkey']`
-  * Bin ID: `localStorage['pt_jbbin']`
-  * Bin created automatically on first save
-  * Auto-loads from cloud on app open if keys present
-  * "Migrate" button — moves local data to cloud
-* Sort state: `localStorage['pt_sort']`
-* Backend URL: `localStorage['pt_finnhub']` (legacy key name, stores Worker URL)
+- **localStorage** — primary on-device storage
+  - `pt_portfolios` — all portfolios and positions
+  - `pt_current` — active portfolio ID
+  - `pt_finnhub` — backend URL (legacy key name, stores Cloudflare Worker URL)
+  - `pt_sort` — sort state
+- **JSONBin.io** — cloud sync for cross-device access
+  - `pt_jbkey` — master key
+  - `pt_jbbin` — bin ID (created automatically on first save)
 
 ## Position Structure
 
@@ -55,52 +68,50 @@ A PWA stock portfolio tracker with a Cloudflare Worker backend. Supports all maj
   "ticker": "EOG",
   "qty": 8,
   "entry": 134.00,
-  "current": 139.76,
-  "priceType": "pre-market"
+  "current": 140.75,
+  "priceType": "regular"
+}
+```
+
+## Portfolio Structure
+
+```json
+{
+  "name": "OIL & GAS",
+  "currency": "$",
+  "positions": []
 }
 ```
 
 ## Features
 
-* Multiple portfolios — tap name in header to switch, add, rename, delete
-* Add position: ticker + qty + entry price + current price (optional)
-* Inline edit (✎) and delete (✕)
-* Price update: FETCH per row or ↻ Refresh All (parallel requests)
-* Sort by any column — persists across sessions
-* P&L $ for full position: `(current - entry) × qty`
-* P&L % per share: `(current - entry) / entry × 100`
-* Extended hours indicator: 🌙 shown after P&L % when price is pre/post market
-* Summary row: VALUE, P&L, RETURN
+- Multiple portfolios — tap name in header to switch, add, rename, delete
+- Currency symbol per portfolio — set at creation, editable via rename
+- Add position: ticker + qty + entry price + current price (optional)
+- Inline edit (✎) and delete (✕)
+- Price update: ↻ per row or Refresh All (parallel)
+- Sort by any column — persists across sessions
+- P&L $ for full position: `(current - entry) × qty`
+- P&L % per share: `(current - entry) / entry × 100`
+- Extended hours indicator: 🌙 after P&L % when price is pre/post market
+- Summary: VALUE, P&L, RETURN
 
-## Settings (bottom panel)
+## Cloud Sync (Settings panel)
 
-* Backend URL (Cloudflare Worker)
-* Finnhub API Key (legacy, not used — backend handles prices)
-* JSONBin Master Key + Bin ID
-* Migrate local data to cloud
+- **↓ SYNC FROM CLOUD** — pull latest data from JSONBin to current device
+- **↑ OVERWRITE CLOUD** — push local data to JSONBin (destructive — overwrites cloud)
+- Auto-save to cloud on every change
+- Auto-load from cloud on app open
 
-## PWA
+## Service Worker
 
-* `manifest.json`: relative paths, `start_url: "."`, `scope: "."`
-* `sw.js`: caches app shell; network-first for worker/jsonbin requests
-* **Increment cache version in `sw.js` with every deploy**
+Caches app shell for offline use. API requests are **never cached**:
+- `workers.dev` — Cloudflare Worker (prices)
+- `jsonbin.io` — cloud storage
+- `finnhub.io` — legacy
 
-## Cloudflare Worker
-
-* File: `worker.js`
-* Config: `wrangler.toml`
-* No dependencies — pure fetch, no npm packages
-* Deploy: connected to GitHub, auto-deploys on push
-* Free tier: 100,000 requests/day
-
-## What We Don't Do
-
-* No CORS proxies — unreliable
-* No Vercel for this project — blocks Yahoo Finance requests
-* No Railway — no permanent free tier
-* No FMP free tier — only AAPL as demo ticker
-* No Alpha Vantage — CORS blocked from browser
-* No frameworks — complicates PWA and deployment
+**IMPORTANT: increment cache version in `sw.js` on every deploy.**
+Current version: `portfolio-v22`
 
 ## How to Start a New Dev Session
 

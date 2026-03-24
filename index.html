@@ -178,7 +178,7 @@
     <div class="form-row" style="margin-bottom:8px">
       <div class="field" style="width:100%">
         <label>TICKER</label>
-        <input type="search" id="fTicker" placeholder="AAPL, MSFT, CJPU.L..."
+        <input type="search" id="fTicker" placeholder="NVDA, CJPU.L, CEBZ.DE..."
           inputmode="text" autocomplete="off" autocorrect="off"
           autocapitalize="characters" spellcheck="false"
           style="width:100%;max-width:280px"
@@ -727,8 +727,13 @@ function saveEdit(id) {
 function refreshPrice(id) {
   var pos = null;
   for (var i = 0; i < positions.length; i++) { if (positions[i].id === id) { pos = positions[i]; break; } }
-  if (!pos) return;
-  if (!getApiKey()) { document.getElementById('apiKeyInput').focus(); return; }
+  if (!pos) return Promise.resolve();
+  if (!getApiKey()) { document.getElementById('apiKeyInput').focus(); return Promise.resolve(); }
+  // Clear fetchErr before retrying
+  positions = positions.map(function(p) {
+    if (p.id === id) { var q = Object.assign({}, p); delete q.fetchErr; return q; }
+    return p;
+  });
   loadingSet[id] = true; render();
   return fetchPrice(pos.ticker).then(function(price) {
     positions = positions.map(function(p) {
@@ -752,9 +757,12 @@ function refreshAll() {
   var btn = document.getElementById('refreshAllBtn');
   btn.innerHTML = 'UPDATING...';
   btn.disabled = true;
-  var promises = positions.map(function(p) { return refreshPrice(p.id) || Promise.resolve(); });
+  var promises = positions.map(function(p) { return refreshPrice(p.id); });
   Promise.all(promises).then(function() {
-    cloudSave(); // single cloud save after all prices updated
+    cloudSave();
+  }).catch(function() {
+    // ignore individual errors — they're handled in refreshPrice
+  }).finally(function() {
     btn.innerHTML = '&#8635; Refresh All';
     btn.disabled = false;
   });
