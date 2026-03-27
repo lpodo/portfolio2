@@ -693,12 +693,12 @@ function cls(n) {
 function addPosition() {
   document.getElementById('addErr').textContent = '';
   var ticker = document.getElementById('fTicker').value.trim().toUpperCase();
-  var qty = parseFloat(document.getElementById('fQty').value);
+  var qty = document.getElementById('fQty').value.trim() === '' ? null : parseFloat(document.getElementById('fQty').value);
   var entry = parseFloat(document.getElementById('fEntry').value);
   var curRaw = document.getElementById('fCurrent').value.trim();
   var current = curRaw ? parseFloat(curRaw) : null;
   if (!ticker) { document.getElementById('addErr').textContent = 'Введи тикер'; return; }
-  if (!qty || qty <= 0) { document.getElementById('addErr').textContent = 'Введи количество'; return; }
+  if (qty === null || isNaN(qty) || qty < 0) { document.getElementById('addErr').textContent = 'Введи количество'; return; }
   if (!entry || entry <= 0) { document.getElementById('addErr').textContent = 'Введи цену входа'; return; }
   positions.push({ id: Date.now(), ticker: ticker, qty: qty, entry: entry, current: current });
   save();
@@ -713,13 +713,13 @@ function removePosition(id) {
 function startEdit(id) { editId = id; render(); }
 function cancelEdit() { editId = null; render(); }
 function saveEdit(id) {
-  var qty = parseFloat(document.getElementById('editQty').value);
+  var qty = document.getElementById('editQty').value.trim() === '' ? null : parseFloat(document.getElementById('editQty').value);
   var entry = parseFloat(document.getElementById('editEntry').value);
   var curRaw = document.getElementById('editCurrent').value.trim();
   var pos = null;
   for (var i = 0; i < positions.length; i++) { if (positions[i].id === id) { pos = positions[i]; break; } }
   var current = curRaw ? parseFloat(curRaw) : (pos ? pos.current : null);
-  if (!qty || !entry) return;
+  if (qty === null || isNaN(qty) || qty < 0 || !entry) return;
   positions = positions.map(function(p) {
     return p.id === id ? { id: p.id, ticker: p.ticker, qty: qty, entry: entry, current: current } : p;
   });
@@ -827,7 +827,7 @@ function render() {
       curCell = '<button class="fetch-btn" onclick="refreshPrice(' + p.id + ')">FETCH</button>';
     }
 
-    var qtyCell = isEdit ? '<input class="edit-input" id="editQty" type="number" value="' + p.qty + '">' : (Number.isInteger(p.qty) ? p.qty : p.qty.toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:4}));
+    var qtyCell = isEdit ? '<input class="edit-input" id="editQty" type="number" value="' + p.qty + '">' : (p.qty === 0 ? '<span style="color:var(--dim)">&mdash;</span>' : (Number.isInteger(p.qty) ? p.qty : p.qty.toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:4})));
     var entryCell = isEdit ? '<input class="edit-input" id="editEntry" type="number" value="' + p.entry + '">' : getCurrency() + f2(p.entry);
     var curEditCell = isEdit
       ? '<input class="edit-input" id="editCurrent" type="number" value="' + (p.current !== null && p.current !== undefined ? p.current : '') + '" placeholder="&mdash;">'
@@ -845,7 +845,7 @@ function render() {
       + '<td>' + qtyCell + '</td>'
       + '<td>' + entryCell + '</td>'
       + '<td>' + curEditCell + '</td>'
-      + '<td class="' + cls(pnl) + '">' + fSign(pnl !== null ? pnl * p.qty : null) + '</td>'
+      + '<td class="' + cls(pnl) + '">' + (p.qty === 0 ? '<span style="color:var(--dim)">&mdash;</span>' : fSign(pnl !== null ? pnl * p.qty : null)) + '</td>'
       + '<td class="' + cls(pnlPct) + '">' + fPct(pnlPct) + '</td>'
       + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(p.marketState) + '</td>'
       + '<td style="white-space:nowrap">' + actions + '</td>'
