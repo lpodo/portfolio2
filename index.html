@@ -243,14 +243,12 @@
     <input type="text" id="apiKeyInput" placeholder="https://your-worker.workers.dev" autocomplete="off">
     <button class="btn btn-green" onclick="saveApiKey()">OK</button>
   </div>
-  <div class="api-status" id="apiStatus"></div>
-
-  <div class="key-row" style="margin-top:10px">
+  <div class="key-row" style="margin-top:6px">
     <label>API TOKEN</label>
-    <input type="password" id="apiTokenInput" placeholder="токен для воркера" autocomplete="new-password">
+    <input type="password" id="apiTokenInput" placeholder="секретный токен" style="font-size:11px" autocomplete="new-password">
     <button class="btn btn-green" onclick="saveToken()">OK</button>
   </div>
-  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">JSONBIN — ОБЛАЧНОЕ ХРАНИЛИЩЕ</div>
+  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">ОБЛАЧНОЕ ХРАНИЛИЩЕ — JSONBIN</div>
   <div class="key-row">
     <label>MASTER KEY</label>
     <input type="password" id="jbKeyInput" placeholder="jsonbin.io → API Keys" autocomplete="new-password">
@@ -647,9 +645,7 @@ function updateSettingsUI() {
   var k = getApiKey();
   document.getElementById('apiKeyInput').value = k;
   if (document.getElementById('apiTokenInput')) document.getElementById('apiTokenInput').value = getToken();
-  var st = document.getElementById('apiStatus');
-  if (k) { st.textContent = '✓ Ключ сохранён'; st.style.color = 'var(--green)'; }
-  else { st.textContent = ''; }
+
   var jbKey = getJbKey();
   var jbBin = getJbBin();
   if (document.getElementById('jbKeyInput')) document.getElementById('jbKeyInput').value = jbKey;
