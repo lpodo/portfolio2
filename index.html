@@ -245,6 +245,11 @@
   </div>
   <div class="api-status" id="apiStatus"></div>
 
+  <div class="key-row" style="margin-top:10px">
+    <label>API TOKEN</label>
+    <input type="password" id="apiTokenInput" placeholder="токен для воркера" autocomplete="new-password">
+    <button class="btn btn-green" onclick="saveToken()">OK</button>
+  </div>
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">JSONBIN — ОБЛАЧНОЕ ХРАНИЛИЩЕ</div>
   <div class="key-row">
     <label>MASTER KEY</label>
@@ -616,6 +621,12 @@ function save() {
   cloudSave();
 }
 function getApiKey() { return localStorage.getItem('pt_finnhub') || ''; }
+function getToken() { return localStorage.getItem('pt_token') || ''; }
+function saveToken() {
+  var t = document.getElementById('apiTokenInput').value.trim();
+  localStorage.setItem('pt_token', t);
+  updateSettingsUI();
+}
 function saveApiKey() {
   var k = document.getElementById('apiKeyInput').value.trim();
   if (!k) return;
@@ -635,6 +646,7 @@ function closeSettings() {
 function updateSettingsUI() {
   var k = getApiKey();
   document.getElementById('apiKeyInput').value = k;
+  if (document.getElementById('apiTokenInput')) document.getElementById('apiTokenInput').value = getToken();
   var st = document.getElementById('apiStatus');
   if (k) { st.textContent = '✓ Ключ сохранён'; st.style.color = 'var(--green)'; }
   else { st.textContent = ''; }
@@ -656,7 +668,8 @@ function fetchPrice(ticker) {
   var baseUrl = getApiKey();
   if (!baseUrl) return Promise.reject(new Error('no_key'));
   baseUrl = baseUrl.replace(/\/+$/, '');
-  var url = baseUrl + '/api/quote?ticker=' + encodeURIComponent(ticker);
+  var token = getToken();
+  var url = baseUrl + '/api/quote?ticker=' + encodeURIComponent(ticker) + (token ? '&token=' + encodeURIComponent(token) : '');
   // 10 second timeout
   var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
   var timer = controller ? setTimeout(function() { controller.abort(); }, 10000) : null;

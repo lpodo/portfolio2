@@ -11,6 +11,13 @@ export default {
       });
     }
 
+    // Token check
+    const token = url.searchParams.get('token') || '';
+    const validToken = env.API_TOKEN || '';
+    if (!validToken || token !== validToken) {
+      return json({ error: 'Forbidden' }, 403);
+    }
+
     const ticker = url.searchParams.get('ticker') || 'EOG';
 
     // Debug: processed result (same logic as /api/quote)
