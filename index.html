@@ -942,7 +942,7 @@ function render() {
         + '</tr>';
     });
     area.innerHTML = '<div class="table-wrap">'
-      + '<table style="width:100%;table-layout:fixed">'
+      + '<table style="width:100%;table-layout:fixed;min-width:0">'
       + '<colgroup><col style="width:30%"><col style="width:40%"><col style="width:30%"></colgroup>'
       + '<thead><tr>'
       + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortWeight(&apos;ticker&apos;)">' + (weightSort.key==='ticker' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'TICKER</th>'
