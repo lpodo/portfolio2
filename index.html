@@ -942,11 +942,12 @@ function render() {
         + '</tr>';
     });
     area.innerHTML = '<div class="table-wrap">'
-      + '<table>'
+      + '<table style="width:100%;table-layout:fixed">'
+      + '<colgroup><col style="width:30%"><col style="width:40%"><col style="width:30%"></colgroup>'
       + '<thead><tr>'
-      + '<th style="text-align:left;padding:5px 2px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortWeight(&apos;ticker&apos;)">' + (weightSort.key==='ticker' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'TICKER</th>'
-      + '<th style="text-align:right;padding:5px 2px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortWeight(&apos;value&apos;)">' + (weightSort.key==='value' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'VALUE</th>'
-      + '<th style="text-align:right;padding:5px 2px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortWeight(&apos;weight&apos;)">' + (weightSort.key==='weight' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'WEIGHT</th>'
+      + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortWeight(&apos;ticker&apos;)">' + (weightSort.key==='ticker' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'TICKER</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortWeight(&apos;value&apos;)">' + (weightSort.key==='value' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'VALUE</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortWeight(&apos;weight&apos;)">' + (weightSort.key==='weight' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'WEIGHT</th>'
       + '</tr></thead>'
       + '<tbody>' + weightRows + '</tbody>'
       + '</table>'
