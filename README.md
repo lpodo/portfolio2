@@ -27,22 +27,25 @@ Yahoo Finance via Cloudflare Worker — free, all major exchanges, extended hour
 1. Fast request `interval=1d` → get `regularMarketPrice`, `regularMarketTime`, `currentTradingPeriod`
 2. If `now >= regular.start && now < regular.end && regularMarketTime >= regular.start` → return `regularMarketPrice`, `priceType: "regular"` (one request)
 3. Otherwise → second request `interval=1m&range=5d&includePrePost=true` → find last non-null candle
-4. If `lastCandle.price ≈ regularMarketPrice` → `priceType: "regular"` 
-5. Otherwise → `priceType: "extended"` 
+4. If `lastCandle.price ≈ regularMarketPrice` → `priceType: "regular"` (no icon)
+5. Otherwise → `priceType: "extended"` (market state icon shown)
 
 **Market state** is determined from `currentTradingPeriod` windows vs `now` and returned in every response.
 
 **Worker endpoints:**
-- `/api/quote?ticker=AAPL&token=TOKEN` — production quote
-- `/api/debug?ticker=AAPL&token=TOKEN` — processed result (same logic)
-- `/api/debug1?ticker=AAPL&token=TOKEN` — raw meta from Yahoo 1d request
-- `/api/debug2?ticker=AAPL&token=TOKEN` — last candles + pre/post windows from 5d request
+- `/api/quote?ticker=AAPL` — production quote
+- `/api/debug?ticker=AAPL` — processed result (same logic)
+- `/api/debug1?ticker=AAPL` — raw meta from Yahoo 1d request
+- `/api/debug2?ticker=AAPL` — last candles + pre/post windows from 5d request
 
-All endpoints require `?token=` parameter matching `API_TOKEN` env variable in Cloudflare.
+All endpoints require `X-API-Token: TOKEN` header. To call from curl:
+```
+curl -H "X-API-Token: YOUR_TOKEN" https://portfolio2.lpodolskiy.workers.dev/api/quote?ticker=AAPL
+```
 
 ## Security
 
-The worker is protected by a secret token stored as a Cloudflare environment variable `API_TOKEN`. Every request must include `?token=TOKEN`. To rotate the token: update `API_TOKEN` in Cloudflare → Settings → Variables and Secrets, then update in the app settings.
+The worker is protected by a secret token passed in the `X-API-Token` request header. The token is stored as a Cloudflare **Secret** (not Variable) under `API_TOKEN` — secrets persist across deployments. To rotate: update `API_TOKEN` in Cloudflare → Settings → Variables and Secrets → Secret, then update in the app settings.
 
 ## Exchange Support
 

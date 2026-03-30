@@ -11,8 +11,8 @@ export default {
       });
     }
 
-    // Token check
-    const token = url.searchParams.get('token') || '';
+    // Token check — must be in X-API-Token header
+    const token = request.headers.get('X-API-Token') || '';
     const validToken = env.API_TOKEN || '';
     if (!validToken || token !== validToken) {
       return json({ error: 'Forbidden' }, 403);
