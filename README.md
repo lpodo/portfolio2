@@ -27,10 +27,10 @@ Yahoo Finance via Cloudflare Worker — free, all major exchanges, extended hour
 1. Fast request `interval=1d` → get `regularMarketPrice`, `regularMarketTime`, `currentTradingPeriod`
 2. If `now >= regular.start && now < regular.end && regularMarketTime >= regular.start` → return `regularMarketPrice`, `priceType: "regular"` (one request)
 3. Otherwise → second request `interval=1m&range=5d&includePrePost=true` → find last non-null candle
-4. If `lastCandle.price ≈ regularMarketPrice` → `priceType: "regular"` (no icon)
-5. Otherwise → `priceType: "extended"` (market state icon shown)
+4. If `lastCandle.price ≈ regularMarketPrice` → `priceType: "regular"`
+5. Otherwise → `priceType: "extended"`
 
-**Market state** is determined from `currentTradingPeriod` windows vs `now` and returned in every response.
+**Market state** (`REGULAR` / `PRE` / `POST` / `CLOSED`) is determined from `currentTradingPeriod` windows vs `now` and returned in every response.
 
 **Worker endpoints:**
 - `/api/quote?ticker=AAPL` — production quote
@@ -110,9 +110,13 @@ Note: `qty: 0` is allowed — used for watchlist candidates. Shows `—` in QTY 
 - P&L $ for full position: `(current - entry) × qty`
 - P&L % per share: `(current - entry) / entry × 100`
 - Market state indicator after P&L %:
-  - No icon — regular session
-  - 🌙 blue — pre-market or post-market
-  - ✦ gray — market closed
+  - No icon — regular session (REGULAR)
+  - 🌙 blue — pre or post market (PRE / POST)
+  - ✦ gray — market closed (CLOSED)
+- Weight view — toggle with ⋮ button next to Refresh All:
+  - Shows TICKER, VALUE, WEIGHT % columns
+  - Sortable by any column
+  - Totals row unchanged
 - Summary: VALUE, P&L, RETURN
 
 ## Cloud Sync (Settings panel)

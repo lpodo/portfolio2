@@ -319,6 +319,7 @@ function currentPortfolio() {
 
 var positions = [];
 var viewMode = 'main'; // main | weight
+var weightSort = { key: 'weight', dir: -1 }; // default: weight descending
 var loadingSet = {};
 var editId = null;
 var sortKey = null;
@@ -695,6 +696,10 @@ function fSign(n) {
   if (n === null || n === undefined || isNaN(n)) return '&mdash;';
   return (n >= 0 ? '+' : '') + f2(n);
 }
+function fPctNoSign(n) {
+  if (n === null || n === undefined || isNaN(n)) return '&mdash;';
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
+}
 function fPct(n) {
   if (n === null || n === undefined || isNaN(n)) return '&mdash;';
   return (n >= 0 ? '+' : '') + f2(n) + '%';
@@ -809,6 +814,29 @@ function getSorted() {
     return sortDir * (va > vb ? 1 : va < vb ? -1 : 0);
   });
 }
+function sortWeight(key) {
+  if (weightSort.key === key) {
+    weightSort.dir = -weightSort.dir;
+  } else {
+    weightSort.key = key;
+    weightSort.dir = key === 'ticker' ? 1 : -1;
+  }
+  render();
+}
+function getWeightSorted(items, totVal) {
+  return items.slice().sort(function(a, b) {
+    var va, vb;
+    if (weightSort.key === 'ticker') { va = a.ticker; vb = b.ticker; return weightSort.dir * va.localeCompare(vb); }
+    if (weightSort.key === 'value') {
+      va = (a.current !== null && a.qty > 0) ? a.qty * a.current : -Infinity;
+      vb = (b.current !== null && b.qty > 0) ? b.qty * b.current : -Infinity;
+    } else { // weight same as value
+      va = (a.current !== null && a.qty > 0) ? a.qty * a.current : -Infinity;
+      vb = (b.current !== null && b.qty > 0) ? b.qty * b.current : -Infinity;
+    }
+    return weightSort.dir * (va > vb ? 1 : va < vb ? -1 : 0);
+  });
+}
 function toggleView() {
   viewMode = viewMode === 'main' ? 'weight' : 'main';
   document.getElementById('viewToggleBtn').style.borderColor = viewMode === 'weight' ? 'var(--green)' : '';
@@ -896,7 +924,7 @@ function render() {
   // Weight view
   if (viewMode === 'weight') {
     var weightRows = '';
-    getSorted().forEach(function(p) {
+    getWeightSorted(getSorted(), totVal).forEach(function(p) {
       if (p.current === null || p.current === undefined || p.qty === 0) {
         weightRows += '<tr>'
           + '<td style="text-align:left">' + p.ticker + '</td>'
@@ -910,15 +938,15 @@ function render() {
       weightRows += '<tr>'
         + '<td style="text-align:left">' + p.ticker + '</td>'
         + '<td>' + getCurrency() + f2(posVal) + '</td>'
-        + '<td>' + fPct(weight) + '</td>'
+        + '<td>' + fPctNoSign(weight) + '</td>'
         + '</tr>';
     });
     area.innerHTML = '<div class="table-wrap">'
       + '<table>'
       + '<thead><tr>'
-      + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">TICKER</th>'
-      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">VALUE</th>'
-      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">WEIGHT</th>'
+      + '<th style="text-align:left;padding:5px 2px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortWeight('ticker')">' + (weightSort.key==='ticker' ? (weightSort.dir>0?'▲':'▼')+' ' : '') + 'TICKER</th>'
+      + '<th style="text-align:right;padding:5px 2px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortWeight('value')">' + (weightSort.key==='value' ? (weightSort.dir>0?'▲':'▼')+' ' : '') + 'VALUE</th>'
+      + '<th style="text-align:right;padding:5px 2px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortWeight('weight')">' + (weightSort.key==='weight' ? (weightSort.dir>0?'▲':'▼')+' ' : '') + 'WEIGHT</th>'
       + '</tr></thead>'
       + '<tbody>' + weightRows + '</tbody>'
       + '</table>'
