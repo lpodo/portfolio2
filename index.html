@@ -167,6 +167,7 @@
     </button>
   </div>
   <button class="btn btn-green" id="refreshAllBtn" onclick="refreshAll()">&#8635; Refresh All</button>
+  <button class="btn" id="viewToggleBtn" onclick="toggleView()" style="margin-left:8px" title="Weight view">&#8942;</button>
 </div>
 
 <div class="main">
@@ -317,6 +318,7 @@ function currentPortfolio() {
 }
 
 var positions = [];
+var viewMode = 'main'; // main | weight
 var loadingSet = {};
 var editId = null;
 var sortKey = null;
@@ -807,6 +809,12 @@ function getSorted() {
     return sortDir * (va > vb ? 1 : va < vb ? -1 : 0);
   });
 }
+function toggleView() {
+  viewMode = viewMode === 'main' ? 'weight' : 'main';
+  document.getElementById('viewToggleBtn').style.borderColor = viewMode === 'weight' ? 'var(--green)' : '';
+  document.getElementById('viewToggleBtn').style.color = viewMode === 'weight' ? 'var(--green)' : '';
+  render();
+}
 function marketIcon(state) {
   if (!state || state === 'REGULAR') return '';
   if (state === 'PRE' || state === 'POST') return '<span style="font-size:11px;color:#7090b0" title="' + state.toLowerCase() + '-market">🌙</span>';
@@ -883,6 +891,40 @@ function render() {
       + '<div class="total-block"><div class="total-label">P&amp;L</div><div class="total-value ' + c + '">' + fSign(totPnL) + '</div></div>'
       + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + c + '">' + fPct(totPct) + '</div></div>'
       + '</div>';
+  }
+
+  // Weight view
+  if (viewMode === 'weight') {
+    var weightRows = '';
+    getSorted().forEach(function(p) {
+      if (p.current === null || p.current === undefined || p.qty === 0) {
+        weightRows += '<tr>'
+          + '<td style="text-align:left">' + p.ticker + '</td>'
+          + '<td><span class="muted">&mdash;</span></td>'
+          + '<td><span class="muted">&mdash;</span></td>'
+          + '</tr>';
+        return;
+      }
+      var posVal = p.qty * p.current;
+      var weight = totVal > 0 ? (posVal / totVal) * 100 : null;
+      weightRows += '<tr>'
+        + '<td style="text-align:left">' + p.ticker + '</td>'
+        + '<td>' + getCurrency() + f2(posVal) + '</td>'
+        + '<td>' + fPct(weight) + '</td>'
+        + '</tr>';
+    });
+    area.innerHTML = '<div class="table-wrap">'
+      + '<table>'
+      + '<thead><tr>'
+      + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">TICKER</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">VALUE</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">WEIGHT</th>'
+      + '</tr></thead>'
+      + '<tbody>' + weightRows + '</tbody>'
+      + '</table>'
+      + '</div>'
+      + totalsHtml;
+    return;
   }
 
   area.innerHTML = '<div class="table-wrap">'
