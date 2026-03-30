@@ -119,6 +119,20 @@ Note: `qty: 0` is allowed — used for watchlist candidates. Shows `—` in QTY 
   - Totals row unchanged
 - Summary: VALUE, P&L, RETURN
 
+## Backup / Restore (Settings panel)
+
+- **↓ BACKUP** — downloads `portfolio-backup-YYYY-MM-DD.json` with all portfolios to Downloads folder
+- **↑ RESTORE** — loads a backup JSON file, asks for confirmation before overwriting current data
+
+Backup format:
+```json
+{
+  "version": 1,
+  "date": "2026-03-30T...",
+  "portfolios": { ... }
+}
+```
+
 ## Cloud Sync (Settings panel)
 
 - **↓ SYNC FROM CLOUD** — pull latest data from JSONBin to current device

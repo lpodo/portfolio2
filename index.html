@@ -270,6 +270,17 @@
       &#8593; OVERWRITE CLOUD
     </button>
   </div>
+  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">BACKUP / RESTORE</div>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-green" onclick="backupData()" style="flex:1;padding:9px;font-size:11px;letter-spacing:1px">
+      &#8595; BACKUP
+    </button>
+    <button class="btn" onclick="document.getElementById('restoreInput').click()" style="flex:1;padding:9px;font-size:11px;letter-spacing:1px">
+      &#8593; RESTORE
+    </button>
+    <input type="file" id="restoreInput" accept=".json" style="display:none" onchange="restoreData(event)">
+  </div>
+  <div class="api-status" id="backupStatus"></div>
   <div class="settings-note" id="settingsNote"></div>
 </div>
 
@@ -471,6 +482,53 @@ function manualCloudLoad() {
   cloudLoad(function(loaded) {
     if (loaded) { render(); closeSettings(); }
   });
+}
+
+function backupData() {
+  var data = {
+    version: 1,
+    date: new Date().toISOString(),
+    portfolios: portfolios
+  };
+  var json = JSON.stringify(data, null, 2);
+  var blob = new Blob([json], { type: 'application/json' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'portfolio-backup-' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  var el = document.getElementById('backupStatus');
+  if (el) { el.textContent = '✓ Backup скачан'; el.style.color = 'var(--green)'; }
+}
+
+function restoreData(event) {
+  var file = event.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var data = JSON.parse(e.target.result);
+      if (!data.portfolios) throw new Error('invalid format');
+      if (!confirm('Восстановить данные из backup? Текущие данные будут перезаписаны.')) return;
+      portfolios = data.portfolios;
+      savePortfolios();
+      // Switch to first portfolio
+      currentPortfolioId = Object.keys(portfolios)[0];
+      localStorage.setItem('pt_current', currentPortfolioId);
+      loadLocal();
+      render();
+      document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
+      renderSwitcher();
+      var el = document.getElementById('backupStatus');
+      if (el) { el.textContent = '✓ Данные восстановлены'; el.style.color = 'var(--green)'; }
+    } catch(err) {
+      var el = document.getElementById('backupStatus');
+      if (el) { el.textContent = '✗ Ошибка: неверный формат файла'; el.style.color = 'var(--red)'; }
+    }
+    event.target.value = '';
+  };
+  reader.readAsText(file);
 }
 
 function syncFromCloud() {
