@@ -1075,9 +1075,9 @@ function render() {
       if (p.current == null) {
         marketRows += '<tr>'
           + '<td style="text-align:left">' + p.ticker + '</td>'
-          + '<td style="padding:6px 4px"><span class="muted">&mdash;</span></td>'
-          + '<td style="padding:6px 4px"><span class="muted">&mdash;</span></td>'
-          + '<td style="padding:6px 4px"><span class="muted">&mdash;</span></td>'
+          + '<td style="padding:4px 4px"><span class="muted">&mdash;</span></td>'
+          + '<td style="padding:4px 4px"><span class="muted">&mdash;</span></td>'
+          + '<td style="padding:4px 4px"><span class="muted">&mdash;</span></td>'
           + '</tr>';
         return;
       }
@@ -1086,9 +1086,9 @@ function render() {
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
       marketRows += '<tr>'
         + '<td style="text-align:left">' + p.ticker + '</td>'
-        + '<td style="text-align:right;padding:6px 4px">' + getCurrency() + f2(regPrice) + '</td>'
-        + '<td style="text-align:right;padding:6px 4px">' + getCurrency() + f2(p.current) + '</td>'
-        + '<td style="text-align:right;padding:6px 4px" class="' + deltaClass + '">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
+        + '<td style="text-align:right;padding:4px 4px">' + getCurrency() + f2(regPrice) + '</td>'
+        + '<td style="text-align:right;padding:4px 4px">' + getCurrency() + f2(p.current) + '</td>'
+        + '<td style="text-align:right;padding:4px 4px" class="' + deltaClass + '">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
         + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(p.marketState) + '</td>'
         + '</tr>';
     });
@@ -1127,8 +1127,8 @@ function render() {
       var weight = totVal > 0 ? (posVal / totVal) * 100 : null;
       weightRows += '<tr>'
         + '<td style="text-align:left">' + p.ticker + '</td>'
-        + '<td style="padding:6px 4px">' + getCurrency() + f2(posVal) + '</td>'
-        + '<td style="padding:6px 4px">' + fPctNoSign(weight) + '</td>'
+        + '<td style="padding:4px 4px">' + getCurrency() + f2(posVal) + '</td>'
+        + '<td style="padding:4px 4px">' + fPctNoSign(weight) + '</td>'
         + '</tr>';
     });
     area.innerHTML = '<div class="table-wrap">'
