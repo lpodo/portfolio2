@@ -166,8 +166,9 @@
       <span class="header-title-arrow">&#9660;</span>
     </button>
   </div>
-  <button class="btn btn-green" id="refreshAllBtn" onclick="refreshAll()">&#8635; Refresh All</button>
-  <button class="btn" id="viewToggleBtn" onclick="toggleView()" style="margin-left:8px" title="Weight view">&#8942;</button>
+  <button class="btn btn-green" id="refreshAllBtn" onclick="refreshAll()">&#8635; Refresh</button>
+  <button class="btn" id="viewToggleBtn" onclick="toggleView()" style="margin-left:8px" title="Weight view">&#9878;</button>
+  <button class="btn" id="marketViewBtn" onclick="toggleMarket()" style="margin-left:8px" title="Market view">📈</button>
 </div>
 
 <div class="main">
@@ -331,6 +332,7 @@ function currentPortfolio() {
 var positions = [];
 var viewMode = 'main'; // main | weight
 var weightSort = { key: 'weight', dir: -1 }; // default: weight descending
+var marketSort = { key: null, dir: -1 }; // null = portfolio order
 var loadingSet = {};
 var editId = null;
 var sortKey = null;
@@ -755,6 +757,7 @@ function showKeyStatus() { updateSettingsUI(); }
 
 var __priceType = 'regular';
 var __marketState = 'CLOSED';
+var __regularMarketPrice = null;
 function fetchPrice(ticker) {
   var baseUrl = getApiKey();
   if (!baseUrl) return Promise.reject(new Error('no_key'));
@@ -776,6 +779,7 @@ function fetchPrice(ticker) {
     if (!data || !data.price || data.error) throw new Error(data.error || 'no_price');
     __priceType = data.priceType || 'regular';
     __marketState = data.marketState || 'CLOSED';
+    __regularMarketPrice = data.regularMarketPrice || data.price;
     return data.price;
   });
 }
@@ -850,7 +854,7 @@ function refreshPrice(id) {
   loadingSet[id] = true; render();
   return fetchPrice(pos.ticker).then(function(price) {
     positions = positions.map(function(p) {
-      if (p.id === id) { return { id: p.id, ticker: p.ticker, qty: p.qty, entry: p.entry, current: price, priceType: __priceType, marketState: __marketState }; }
+      if (p.id === id) { return { id: p.id, ticker: p.ticker, qty: p.qty, entry: p.entry, current: price, priceType: __priceType, marketState: __marketState, regularMarketPrice: __regularMarketPrice }; }
       return p;
     });
     saveLocal();
@@ -874,7 +878,7 @@ function refreshAll() {
   Promise.all(promises).then(function() {
   }).catch(function() {
   }).finally(function() {
-    btn.innerHTML = '&#8635; Refresh All';
+    btn.innerHTML = '&#8635; Refresh';
     btn.disabled = false;
   });
 }
@@ -927,8 +931,60 @@ function getWeightSorted(items, totVal) {
     return weightSort.dir * (va > vb ? 1 : va < vb ? -1 : 0);
   });
 }
+function toggleMarket() {
+  if (viewMode === 'market') {
+    viewMode = 'main';
+  } else {
+    viewMode = 'market';
+    marketSort = { key: null, dir: -1 };
+    if (getApiKey()) refreshAll();
+  }
+  document.getElementById('marketViewBtn').style.borderColor = viewMode === 'market' ? 'var(--green)' : '';
+  document.getElementById('marketViewBtn').style.color = viewMode === 'market' ? 'var(--green)' : '';
+  // Reset weight button
+  document.getElementById('viewToggleBtn').innerHTML = viewMode === 'weight' ? '&#916;' : '&#9878;';
+  document.getElementById('viewToggleBtn').style.borderColor = viewMode === 'weight' ? 'var(--green)' : '';
+  document.getElementById('viewToggleBtn').style.color = viewMode === 'weight' ? 'var(--green)' : '';
+  render();
+}
+
+function sortMarket(key) {
+  if (marketSort.key === key) {
+    if (marketSort.dir === -1) marketSort.dir = 1;
+    else marketSort.key = null; // third click → reset to portfolio order
+  } else {
+    marketSort.key = key;
+    marketSort.dir = -1;
+  }
+  render();
+}
+
+function getMarketSorted(items) {
+  if (!marketSort.key) return items.slice(); // portfolio order
+  return items.slice().sort(function(a, b) {
+    var va, vb;
+    if (marketSort.key === 'ticker') {
+      return marketSort.dir * a.ticker.localeCompare(b.ticker);
+    }
+    // delta%
+    va = (a.current != null && a.regularMarketPrice) ? (a.current - a.regularMarketPrice) / a.regularMarketPrice * 100 : null;
+    vb = (b.current != null && b.regularMarketPrice) ? (b.current - b.regularMarketPrice) / b.regularMarketPrice * 100 : null;
+    if (va === null) va = -Infinity;
+    if (vb === null) vb = -Infinity;
+    return marketSort.dir * (va > vb ? 1 : va < vb ? -1 : 0);
+  });
+}
+
 function toggleView() {
-  viewMode = viewMode === 'main' ? 'weight' : 'main';
+  if (viewMode === 'weight') {
+    viewMode = 'main';
+  } else {
+    viewMode = 'weight';
+    // reset market
+    document.getElementById('marketViewBtn').style.borderColor = '';
+    document.getElementById('marketViewBtn').style.color = '';
+  }
+  document.getElementById('viewToggleBtn').innerHTML = viewMode === 'weight' ? '&#916;' : '&#9878;';
   document.getElementById('viewToggleBtn').style.borderColor = viewMode === 'weight' ? 'var(--green)' : '';
   document.getElementById('viewToggleBtn').style.color = viewMode === 'weight' ? 'var(--green)' : '';
   render();
@@ -1009,6 +1065,47 @@ function render() {
       + '<div class="total-block"><div class="total-label">P&amp;L</div><div class="total-value ' + c + '">' + fSign(totPnL) + '</div></div>'
       + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + c + '">' + fPct(totPct) + '</div></div>'
       + '</div>';
+  }
+
+  // Market view
+  if (viewMode === 'market') {
+    var marketRows = '';
+    getMarketSorted(getSorted()).forEach(function(p) {
+      if (p.current == null) {
+        marketRows += '<tr>'
+          + '<td style="text-align:left;padding:6px 4px">' + p.ticker + '</td>'
+          + '<td style="padding:6px 4px"><span class="muted">&mdash;</span></td>'
+          + '<td style="padding:6px 4px"><span class="muted">&mdash;</span></td>'
+          + '<td style="padding:6px 4px"><span class="muted">&mdash;</span></td>'
+          + '</tr>';
+        return;
+      }
+      var regPrice = p.regularMarketPrice || p.current;
+      var delta = regPrice ? (p.current - regPrice) / regPrice * 100 : null;
+      var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
+      marketRows += '<tr>'
+        + '<td style="text-align:left;padding:6px 4px">' + p.ticker + '</td>'
+        + '<td style="text-align:right;padding:6px 4px">' + getCurrency() + f2(regPrice) + '</td>'
+        + '<td style="text-align:right;padding:6px 4px">' + getCurrency() + f2(p.current) + '</td>'
+        + '<td style="text-align:right;padding:6px 4px" class="' + deltaClass + '">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
+        + '</tr>';
+    });
+    var mkTickerArrow = marketSort.key === 'ticker' ? (marketSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
+    var mkDeltaArrow = marketSort.key === 'delta' ? (marketSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
+    area.innerHTML = '<div class="table-wrap">'
+      + '<table style="width:100%;table-layout:fixed;min-width:0">'
+      + '<colgroup><col style="width:22%"><col style="width:26%"><col style="width:26%"><col style="width:26%"></colgroup>'
+      + '<thead><tr>'
+      + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortMarket(&apos;ticker&apos;)">TICKER' + mkTickerArrow + '</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">CLOSE</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">CURRENT</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortMarket(&apos;delta&apos;)">&#916;%' + mkDeltaArrow + '</th>'
+      + '</tr></thead>'
+      + '<tbody>' + marketRows + '</tbody>'
+      + '</table>'
+      + '</div>'
+      + totalsHtml;
+    return;
   }
 
   // Weight view
