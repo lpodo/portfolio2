@@ -764,6 +764,7 @@ function showKeyStatus() { updateSettingsUI(); }
 var __priceType = 'regular';
 var __marketState = 'CLOSED';
 var __regularMarketPrice = null;
+var __previousClose = null;
 function fetchPrice(ticker) {
   var baseUrl = getApiKey();
   if (!baseUrl) return Promise.reject(new Error('no_key'));
@@ -786,6 +787,7 @@ function fetchPrice(ticker) {
     __priceType = data.priceType || 'regular';
     __marketState = data.marketState || 'CLOSED';
     __regularMarketPrice = data.regularMarketPrice || data.price;
+    __previousClose = data.previousClose || null;
     return data.price;
   });
 }
@@ -860,7 +862,7 @@ function refreshPrice(id) {
   loadingSet[id] = true; render();
   return fetchPrice(pos.ticker).then(function(price) {
     positions = positions.map(function(p) {
-      if (p.id === id) { return { id: p.id, ticker: p.ticker, qty: p.qty, entry: p.entry, current: price, priceType: __priceType, marketState: __marketState, regularMarketPrice: __regularMarketPrice }; }
+      if (p.id === id) { return { id: p.id, ticker: p.ticker, qty: p.qty, entry: p.entry, current: price, priceType: __priceType, marketState: __marketState, regularMarketPrice: __regularMarketPrice, previousClose: __previousClose }; }
       return p;
     });
     saveLocal();
@@ -1081,7 +1083,7 @@ function render() {
           + '</tr>';
         return;
       }
-      var regPrice = p.regularMarketPrice || p.current;
+      var regPrice = p.previousClose || p.regularMarketPrice || p.current;
       var delta = regPrice ? (p.current - regPrice) / regPrice * 100 : null;
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
       marketRows += '<tr>'
