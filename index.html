@@ -45,7 +45,7 @@
   .btn { background: transparent; border: 1px solid var(--dim); color: var(--dim); font-family: var(--font); font-size: 10px; letter-spacing: 2px; padding: 7px 12px; cursor: pointer; text-transform: uppercase; }
   .btn-green { border-color: var(--green); color: var(--green); }
   .btn-primary { background: var(--green); color: var(--bg); border: none; font-weight: bold; padding: 9px 18px; font-size: 12px; cursor: pointer; font-family: var(--font); }
-  .btn-icon { border: none; font-size: 14px; padding: 0px 4px; cursor: pointer; background: transparent; color: var(--dim); font-family: var(--font); line-height: 1; }
+  .btn-icon { border: none; font-size: 14px; padding: 0px 5px; cursor: pointer; background: transparent; color: var(--dim); font-family: var(--font); line-height: 1; }
   .btn-icon:hover { color: var(--bright); }
 
   .main { padding: 16px 18px; }
@@ -59,7 +59,7 @@
   table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 400px; }
   th { text-align: right; padding: 5px 4px; font-size: 9px; color: var(--dim); letter-spacing: 1px; font-weight: normal; border-bottom: 1px solid var(--border); white-space: nowrap; }
   th:first-child { text-align: left; }
-  td { padding: 4px 4px; text-align: right; font-size: 13px; }
+  td { padding: 5px 4px; text-align: right; font-size: 13px; }
   td:first-child { text-align: left; font-weight: bold; color: var(--bright); letter-spacing: 1px; }
   tr:hover td { background: var(--bg2); }
   .pos { color: var(--green); font-weight: bold; }
@@ -1075,9 +1075,9 @@ function render() {
       if (p.current == null) {
         marketRows += '<tr>'
           + '<td style="text-align:left">' + p.ticker + '</td>'
-          + '<td style="padding:4px 4px"><span class="muted">&mdash;</span></td>'
-          + '<td style="padding:4px 4px"><span class="muted">&mdash;</span></td>'
-          + '<td style="padding:4px 4px"><span class="muted">&mdash;</span></td>'
+          + '<td style="padding:5px 4px"><span class="muted">&mdash;</span></td>'
+          + '<td style="padding:5px 4px"><span class="muted">&mdash;</span></td>'
+          + '<td style="padding:5px 4px"><span class="muted">&mdash;</span></td>'
           + '</tr>';
         return;
       }
@@ -1086,9 +1086,9 @@ function render() {
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
       marketRows += '<tr>'
         + '<td style="text-align:left">' + p.ticker + '</td>'
-        + '<td style="text-align:right;padding:4px 4px">' + getCurrency() + f2(regPrice) + '</td>'
-        + '<td style="text-align:right;padding:4px 4px">' + getCurrency() + f2(p.current) + '</td>'
-        + '<td style="text-align:right;padding:4px 4px" class="' + deltaClass + '">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
+        + '<td style="text-align:right;padding:5px 4px">' + getCurrency() + f2(regPrice) + '</td>'
+        + '<td style="text-align:right;padding:5px 4px">' + getCurrency() + f2(p.current) + '</td>'
+        + '<td style="text-align:right;padding:5px 4px" class="' + deltaClass + '">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
         + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(p.marketState) + '</td>'
         + '</tr>';
     });
@@ -1127,8 +1127,8 @@ function render() {
       var weight = totVal > 0 ? (posVal / totVal) * 100 : null;
       weightRows += '<tr>'
         + '<td style="text-align:left">' + p.ticker + '</td>'
-        + '<td style="padding:4px 4px">' + getCurrency() + f2(posVal) + '</td>'
-        + '<td style="padding:4px 4px">' + fPctNoSign(weight) + '</td>'
+        + '<td style="padding:5px 4px">' + getCurrency() + f2(posVal) + '</td>'
+        + '<td style="padding:5px 4px">' + fPctNoSign(weight) + '</td>'
         + '</tr>';
     });
     area.innerHTML = '<div class="table-wrap">'
