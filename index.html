@@ -45,7 +45,7 @@
   .btn { background: transparent; border: 1px solid var(--dim); color: var(--dim); font-family: var(--font); font-size: 10px; letter-spacing: 2px; padding: 7px 12px; cursor: pointer; text-transform: uppercase; }
   .btn-green { border-color: var(--green); color: var(--green); }
   .btn-primary { background: var(--green); color: var(--bg); border: none; font-weight: bold; padding: 9px 18px; font-size: 12px; cursor: pointer; font-family: var(--font); }
-  .btn-icon { border: none; font-size: 14px; padding: 2px 5px; cursor: pointer; background: transparent; color: var(--dim); font-family: var(--font); }
+  .btn-icon { border: none; font-size: 14px; padding: 0px 4px; cursor: pointer; background: transparent; color: var(--dim); font-family: var(--font); line-height: 1; }
   .btn-icon:hover { color: var(--bright); }
 
   .main { padding: 16px 18px; }
@@ -1147,7 +1147,7 @@ function render() {
   }
 
   area.innerHTML = '<div class="table-wrap">'
-    + '<table style="table-layout:fixed;min-width:0">'
+    + '<table>'
     + '<thead><tr>'
     + thBtn('ticker', 'TICKER', 'left')
     + thBtn('qty', 'QTY')
