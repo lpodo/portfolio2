@@ -167,8 +167,14 @@
     </button>
   </div>
   <button class="btn btn-green" id="refreshAllBtn" onclick="refreshAll()">&#8635; Refresh</button>
-  <button class="btn" id="viewToggleBtn" onclick="toggleView()" style="margin-left:8px" title="Weight view">&#9878;</button>
-  <button class="btn" id="marketViewBtn" onclick="toggleMarket()" style="margin-left:8px" title="Market view">📈</button>
+  <div style="position:relative;margin-left:8px">
+    <button class="btn" id="viewMenuBtn" onclick="toggleViewMenu()" style="padding:7px 10px">&#8942;</button>
+    <div id="viewMenu" style="display:none;position:absolute;right:0;top:110%;background:var(--bg2);border:1px solid var(--border);z-index:200;min-width:110px">
+      <div onclick="setView('main')" id="vmMain" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">P&amp;L</div>
+      <div onclick="setView('weight')" id="vmWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">WEIGHTS</div>
+      <div onclick="setView('market')" id="vmMarket" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">MARKET</div>
+    </div>
+  </div>
 </div>
 
 <div class="main">
@@ -931,22 +937,6 @@ function getWeightSorted(items, totVal) {
     return weightSort.dir * (va > vb ? 1 : va < vb ? -1 : 0);
   });
 }
-function toggleMarket() {
-  if (viewMode === 'market') {
-    viewMode = 'main';
-  } else {
-    viewMode = 'market';
-    marketSort = { key: null, dir: -1 };
-    if (getApiKey()) refreshAll();
-  }
-  document.getElementById('marketViewBtn').style.borderColor = viewMode === 'market' ? 'var(--green)' : '';
-  document.getElementById('marketViewBtn').style.color = viewMode === 'market' ? 'var(--green)' : '';
-  // Reset weight button
-  document.getElementById('viewToggleBtn').innerHTML = viewMode === 'weight' ? '&#916;' : '&#9878;';
-  document.getElementById('viewToggleBtn').style.borderColor = viewMode === 'weight' ? 'var(--green)' : '';
-  document.getElementById('viewToggleBtn').style.color = viewMode === 'weight' ? 'var(--green)' : '';
-  render();
-}
 
 function sortMarket(key) {
   if (marketSort.key === key) {
@@ -975,20 +965,31 @@ function getMarketSorted(items) {
   });
 }
 
-function toggleView() {
-  if (viewMode === 'weight') {
-    viewMode = 'main';
-  } else {
-    viewMode = 'weight';
-    // reset market
-    document.getElementById('marketViewBtn').style.borderColor = '';
-    document.getElementById('marketViewBtn').style.color = '';
-  }
-  document.getElementById('viewToggleBtn').innerHTML = viewMode === 'weight' ? '&#916;' : '&#9878;';
-  document.getElementById('viewToggleBtn').style.borderColor = viewMode === 'weight' ? 'var(--green)' : '';
-  document.getElementById('viewToggleBtn').style.color = viewMode === 'weight' ? 'var(--green)' : '';
+function toggleViewMenu() {
+  var menu = document.getElementById('viewMenu');
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+function setView(mode) {
+  viewMode = mode;
+  // Highlight active item
+  ['vmMain','vmWeight','vmMarket'].forEach(function(id) {
+    document.getElementById(id).style.color = '';
+  });
+  var activeId = mode === 'main' ? 'vmMain' : mode === 'weight' ? 'vmWeight' : 'vmMarket';
+  document.getElementById(activeId).style.color = 'var(--green)';
+  document.getElementById('viewMenu').style.display = 'none';
+  if (mode === 'weight') weightSort = { key: 'weight', dir: -1 };
+  if (mode === 'market') marketSort = { key: null, dir: -1 };
   render();
 }
+// Close menu on outside click
+document.addEventListener('click', function(e) {
+  var menu = document.getElementById('viewMenu');
+  var btn = document.getElementById('viewMenuBtn');
+  if (menu && btn && !menu.contains(e.target) && !btn.contains(e.target)) {
+    menu.style.display = 'none';
+  }
+});
 function marketIcon(state) {
   if (!state || state === 'REGULAR') return '';
   if (state === 'PRE' || state === 'POST') return '<span style="font-size:11px;color:#7090b0" title="' + state.toLowerCase() + '-market">🌙</span>';
@@ -1088,18 +1089,20 @@ function render() {
         + '<td style="text-align:right;padding:6px 4px">' + getCurrency() + f2(regPrice) + '</td>'
         + '<td style="text-align:right;padding:6px 4px">' + getCurrency() + f2(p.current) + '</td>'
         + '<td style="text-align:right;padding:6px 4px" class="' + deltaClass + '">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
+        + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(p.marketState) + '</td>'
         + '</tr>';
     });
     var mkTickerArrow = marketSort.key === 'ticker' ? (marketSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
     var mkDeltaArrow = marketSort.key === 'delta' ? (marketSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
     area.innerHTML = '<div class="table-wrap">'
       + '<table style="width:100%;table-layout:fixed;min-width:0">'
-      + '<colgroup><col style="width:22%"><col style="width:26%"><col style="width:26%"><col style="width:26%"></colgroup>'
+      + '<colgroup><col style="width:22%"><col style="width:25%"><col style="width:25%"><col style="width:22%"><col style="width:6%"></colgroup>'
       + '<thead><tr>'
       + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortMarket(&apos;ticker&apos;)">TICKER' + mkTickerArrow + '</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">CLOSE</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">CURRENT</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortMarket(&apos;delta&apos;)">&#916;%' + mkDeltaArrow + '</th>'
+      + '<th style="width:16px;padding:0"></th>'
       + '</tr></thead>'
       + '<tbody>' + marketRows + '</tbody>'
       + '</table>'
