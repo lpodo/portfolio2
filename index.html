@@ -958,9 +958,11 @@ function getMarketSorted(items) {
     if (marketSort.key === 'ticker') {
       return marketSort.dir * a.ticker.localeCompare(b.ticker);
     }
-    // delta%
-    va = (a.current != null && a.regularMarketPrice) ? (a.current - a.regularMarketPrice) / a.regularMarketPrice * 100 : null;
-    vb = (b.current != null && b.regularMarketPrice) ? (b.current - b.regularMarketPrice) / b.regularMarketPrice * 100 : null;
+    // delta% — use previousClose same as render
+    var aBase = a.previousClose || a.regularMarketPrice;
+    var bBase = b.previousClose || b.regularMarketPrice;
+    va = (a.current != null && aBase) ? (a.current - aBase) / aBase * 100 : null;
+    vb = (b.current != null && bBase) ? (b.current - bBase) / bBase * 100 : null;
     if (va === null) va = -Infinity;
     if (vb === null) vb = -Infinity;
     return marketSort.dir * (va > vb ? 1 : va < vb ? -1 : 0);
