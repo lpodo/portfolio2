@@ -385,6 +385,7 @@ function switchPortfolio(id) {
   document.getElementById('portfolioTitle').textContent = portfolios[id].name;
   closeSwitcher();
   render();
+  if (getApiKey()) refreshAll();
 }
 function addPortfolio() {
   var name = document.getElementById('newPortfolioName').value.trim();
@@ -864,51 +865,13 @@ function refreshPrice(id) {
   });
 }
 
-function refreshAllPortfolios() {
-  if (!getApiKey()) return;
-  // Refresh prices for all portfolios, not just current
-  var allPromises = [];
-  Object.keys(portfolios).forEach(function(pid) {
-    var portfolio = portfolios[pid];
-    if (!portfolio.positions) return;
-    portfolio.positions.forEach(function(p) {
-      var promise = fetchPrice(p.ticker).then(function(price) {
-        p.current = price;
-        p.priceType = __priceType;
-        p.marketState = __marketState;
-      }).catch(function() {});
-      allPromises.push(promise);
-    });
-  });
-  Promise.all(allPromises).then(function() {
-    savePortfolios();
-    loadLocal();
-    render();
-  });
-}
-
 function refreshAll() {
   if (!getApiKey()) { toggleSettings(); return; }
   var btn = document.getElementById('refreshAllBtn');
   btn.innerHTML = 'UPDATING...';
   btn.disabled = true;
-  var allPromises = [];
-  Object.keys(portfolios).forEach(function(pid) {
-    var portfolio = portfolios[pid];
-    if (!portfolio.positions) return;
-    portfolio.positions.forEach(function(p) {
-      var promise = fetchPrice(p.ticker).then(function(price) {
-        p.current = price;
-        p.priceType = __priceType;
-        p.marketState = __marketState;
-      }).catch(function() {});
-      allPromises.push(promise);
-    });
-  });
-  Promise.all(allPromises).then(function() {
-    savePortfolios();
-    loadLocal();
-    render();
+  var promises = positions.map(function(p) { return refreshPrice(p.id); });
+  Promise.all(promises).then(function() {
   }).catch(function() {
   }).finally(function() {
     btn.innerHTML = '&#8635; Refresh All';
@@ -1113,7 +1076,7 @@ showKeyStatus();
 render();
 cloudLoad(function(loaded) {
   if (loaded) render();
-  if (getApiKey()) refreshAllPortfolios();
+  if (getApiKey()) refreshAll();
 });
 </script>
 <script>
