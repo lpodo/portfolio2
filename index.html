@@ -59,7 +59,7 @@
   table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 400px; }
   th { text-align: right; padding: 5px 4px; font-size: 9px; color: var(--dim); letter-spacing: 1px; font-weight: normal; border-bottom: 1px solid var(--border); white-space: nowrap; }
   th:first-child { text-align: left; }
-  td { padding: 6px 4px; text-align: right; font-size: 13px; }
+  td { padding: 4px 4px; text-align: right; font-size: 13px; }
   td:first-child { text-align: left; font-weight: bold; color: var(--bright); letter-spacing: 1px; }
   tr:hover td { background: var(--bg2); }
   .pos { color: var(--green); font-weight: bold; }
@@ -1127,8 +1127,8 @@ function render() {
       var weight = totVal > 0 ? (posVal / totVal) * 100 : null;
       weightRows += '<tr>'
         + '<td style="text-align:left">' + p.ticker + '</td>'
-        + '<td>' + getCurrency() + f2(posVal) + '</td>'
-        + '<td>' + fPctNoSign(weight) + '</td>'
+        + '<td style="padding:6px 4px">' + getCurrency() + f2(posVal) + '</td>'
+        + '<td style="padding:6px 4px">' + fPctNoSign(weight) + '</td>'
         + '</tr>';
     });
     area.innerHTML = '<div class="table-wrap">'
