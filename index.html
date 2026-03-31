@@ -516,12 +516,16 @@ function restoreData(event) {
       // Switch to first portfolio
       currentPortfolioId = Object.keys(portfolios)[0];
       localStorage.setItem('pt_current', currentPortfolioId);
+      // Set fresh timestamp so other devices know this is newer
+      localStorage.setItem('pt_cloud_ts', '');
       loadLocal();
       render();
       document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
       renderSwitcher();
+      // Push to cloud immediately
+      cloudSave();
       var el = document.getElementById('backupStatus');
-      if (el) { el.textContent = '✓ Данные восстановлены'; el.style.color = 'var(--green)'; }
+      if (el) { el.textContent = '✓ Данные восстановлены и сохранены в облако'; el.style.color = 'var(--green)'; }
     } catch(err) {
       var el = document.getElementById('backupStatus');
       if (el) { el.textContent = '✗ Ошибка: неверный формат файла'; el.style.color = 'var(--red)'; }
@@ -608,8 +612,32 @@ function updateJbStatus(msg, color) {
 function cloudSave() {
   var key = getJbKey();
   if (!key) return; // no key — local only
-  var data = { portfolios: portfolios };
   var binId = getJbBin();
+  if (!binId) {
+    // No bin yet — safe to create
+    _doCloudSave(key, binId);
+    return;
+  }
+  // Check if cloud has been updated since our last load
+  fetch('https://api.jsonbin.io/v3/b/' + binId + '/meta', {
+    headers: { 'X-Master-Key': key }
+  }).then(function(r) { return r.json(); }).then(function(res) {
+    var cloudTs = res.metadata && res.metadata.updatedAt ? res.metadata.updatedAt : null;
+    var localTs = localStorage.getItem('pt_cloud_ts');
+    if (cloudTs && localTs && cloudTs !== localTs) {
+      // Cloud is newer — block save
+      updateJbStatus('✗ Данные в облаке более новые. Сначала синхронизируйте данные (↓ SYNC FROM CLOUD)', 'var(--red)');
+      return;
+    }
+    _doCloudSave(key, binId);
+  }).catch(function() {
+    // If meta check fails — proceed with save
+    _doCloudSave(key, binId);
+  });
+}
+
+function _doCloudSave(key, binId) {
+  var data = { portfolios: portfolios };
   if (!binId) {
     // Create new bin
     fetch('https://api.jsonbin.io/v3/b', {
@@ -620,6 +648,7 @@ function cloudSave() {
       var id = res.metadata && res.metadata.id;
       if (!id) throw new Error('no_id');
       localStorage.setItem('pt_jbbin', id);
+      localStorage.setItem('pt_cloud_ts', res.metadata.updatedAt || new Date().toISOString());
       document.getElementById('jbBinInput').value = id;
       updateJbStatus('✓ Облако: bin создан и сохранён', 'var(--green)');
     }).catch(function() { updateJbStatus('✗ Ошибка создания bin', 'var(--red)'); });
@@ -630,6 +659,9 @@ function cloudSave() {
       body: JSON.stringify(data)
     }).then(function(r) {
       if (!r.ok) throw new Error('http_' + r.status);
+      return r.json();
+    }).then(function(res) {
+      localStorage.setItem('pt_cloud_ts', res.metadata && res.metadata.updatedAt ? res.metadata.updatedAt : new Date().toISOString());
       updateJbStatus('✓ Облако: сохранено ' + new Date().toLocaleTimeString(), 'var(--green)');
     }).catch(function() { updateJbStatus('✗ Ошибка сохранения', 'var(--red)'); });
   }
@@ -658,6 +690,7 @@ function cloudLoad(callback) {
       }
       loadLocal();
       document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
+      localStorage.setItem('pt_cloud_ts', res.metadata && res.metadata.updatedAt ? res.metadata.updatedAt : new Date().toISOString());
       updateJbStatus('✓ Загружено из облака', 'var(--green)');
       callback(true);
     } else if (data && Array.isArray(data.positions)) {
@@ -838,7 +871,8 @@ function refreshAll() {
   btn.disabled = true;
   var promises = positions.map(function(p) { return refreshPrice(p.id); });
   Promise.all(promises).then(function() {
-    cloudSave();
+    // No cloudSave here — price updates should not overwrite cloud data
+    // cloudSave is called only on structural changes (add/edit/delete)
   }).catch(function() {
     // ignore individual errors — they're handled in refreshPrice
   }).finally(function() {
