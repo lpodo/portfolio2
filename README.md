@@ -10,6 +10,7 @@ A PWA stock portfolio tracker with a Cloudflare Worker backend. Supports all maj
 - **Cloudflare Workers**: `portfolio2.lpodolskiy.workers.dev` — price backend
 - **Repository**: `lpodo/portfolio2`
 - **PWA**: installable on Android/iOS as home screen app
+- **Header buttons**: Refresh (updates current portfolio prices), ⋮ (view mode dropdown: P&L / WEIGHTS / MARKET)
 
 ## Stack
 
@@ -113,10 +114,11 @@ Note: `qty: 0` is allowed — used for watchlist candidates. Shows `—` in QTY 
   - No icon — regular session (REGULAR)
   - 🌙 blue — pre or post market (PRE / POST)
   - ✦ gray — market closed (CLOSED)
-- Weight view — toggle with ⋮ button next to Refresh All:
-  - Shows TICKER, VALUE, WEIGHT % columns
-  - Sortable by any column
-  - Totals row unchanged
+- Three view modes via ⋮ dropdown menu (next to Refresh button):
+  - **P&L** — default view with full position details
+  - **WEIGHTS** — TICKER / VALUE / WEIGHT %; sortable by any column
+  - **MARKET** — TICKER / CLOSE (prev session) / CURRENT / Δ%; sortable by TICKER or Δ% (3rd click resets to portfolio order); market state icon included
+- Totals row unchanged across all views
 - Summary: VALUE, P&L, RETURN
 
 ## Backup / Restore (Settings panel)
