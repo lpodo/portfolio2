@@ -137,7 +137,7 @@ Backup format:
 
 - `cloudSave` is called only on structural changes (add/edit/delete position, portfolio changes) — never on price updates
 - After every `cloudLoad` or `cloudSave`, the cloud timestamp is stored in `pt_cloud_ts`
-- Before `cloudSave`, the cloud metadata is checked — if the cloud is newer than `pt_cloud_ts`, save is blocked with: *"Данные в облаке более новые. Сначала синхронизируйте данные"*
+- Before `cloudSave`, the cloud metadata is checked — if the cloud is newer than `pt_cloud_ts`, save is blocked with an error message prompting the user to sync first
 - After **RESTORE**, data is immediately pushed to cloud to mark it as the authoritative version
 
 ## Cloud Sync (Settings panel)

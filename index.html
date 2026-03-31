@@ -385,7 +385,6 @@ function switchPortfolio(id) {
   document.getElementById('portfolioTitle').textContent = portfolios[id].name;
   closeSwitcher();
   render();
-  cloudLoad(function(loaded) { if (loaded) render(); });
 }
 function addPortfolio() {
   var name = document.getElementById('newPortfolioName').value.trim();
