@@ -59,7 +59,7 @@
   table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 400px; }
   th { text-align: right; padding: 5px 4px; font-size: 9px; color: var(--dim); letter-spacing: 1px; font-weight: normal; border-bottom: 1px solid var(--border); white-space: nowrap; }
   th:first-child { text-align: left; }
-  td { padding: 4px 4px; text-align: right; font-size: 13px; }
+  td { padding: 6px 4px; text-align: right; font-size: 13px; }
   td:first-child { text-align: left; font-weight: bold; color: var(--bright); letter-spacing: 1px; }
   tr:hover td { background: var(--bg2); }
   .pos { color: var(--green); font-weight: bold; }
@@ -1074,7 +1074,7 @@ function render() {
     getMarketSorted(getSorted()).forEach(function(p) {
       if (p.current == null) {
         marketRows += '<tr>'
-          + '<td style="text-align:left;padding:6px 4px">' + p.ticker + '</td>'
+          + '<td style="text-align:left">' + p.ticker + '</td>'
           + '<td style="padding:6px 4px"><span class="muted">&mdash;</span></td>'
           + '<td style="padding:6px 4px"><span class="muted">&mdash;</span></td>'
           + '<td style="padding:6px 4px"><span class="muted">&mdash;</span></td>'
@@ -1085,7 +1085,7 @@ function render() {
       var delta = regPrice ? (p.current - regPrice) / regPrice * 100 : null;
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
       marketRows += '<tr>'
-        + '<td style="text-align:left;padding:6px 4px">' + p.ticker + '</td>'
+        + '<td style="text-align:left">' + p.ticker + '</td>'
         + '<td style="text-align:right;padding:6px 4px">' + getCurrency() + f2(regPrice) + '</td>'
         + '<td style="text-align:right;padding:6px 4px">' + getCurrency() + f2(p.current) + '</td>'
         + '<td style="text-align:right;padding:6px 4px" class="' + deltaClass + '">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
