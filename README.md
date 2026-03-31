@@ -133,6 +133,14 @@ Backup format:
 }
 ```
 
+## Data Architecture
+
+**Cloud (JSONBin)** stores only structural data — portfolios, positions, entry prices. Prices are never saved to cloud.
+
+**Prices** are always fetched live from Yahoo Finance via Cloudflare Worker. After every `cloudLoad`, `refreshAll` is triggered automatically to populate current prices for all portfolios.
+
+This means the cloud stays clean and conflict-free, and prices are always up to date.
+
 ## Sync & Conflict Prevention
 
 - `cloudSave` is called only on structural changes (add/edit/delete position, portfolio changes) — never on price updates

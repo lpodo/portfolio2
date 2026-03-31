@@ -479,7 +479,7 @@ function manualCloudLoad() {
   document.getElementById('jbBinInput').value = bin;
   updateJbStatus('Загружаю...', 'var(--dim)');
   cloudLoad(function(loaded) {
-    if (loaded) { render(); closeSettings(); }
+    if (loaded) { render(); closeSettings(); if (getApiKey()) refreshAll(); }
   });
 }
 
@@ -542,6 +542,7 @@ function syncFromCloud() {
     if (loaded) {
       render();
       updateJbStatus('✓ Синхронизировано', 'var(--green)');
+      if (getApiKey()) refreshAll();
     } else {
       updateJbStatus('✗ Ошибка синхронизации', 'var(--red)');
     }
@@ -863,17 +864,52 @@ function refreshPrice(id) {
   });
 }
 
+function refreshAllPortfolios() {
+  if (!getApiKey()) return;
+  // Refresh prices for all portfolios, not just current
+  var allPromises = [];
+  Object.keys(portfolios).forEach(function(pid) {
+    var portfolio = portfolios[pid];
+    if (!portfolio.positions) return;
+    portfolio.positions.forEach(function(p) {
+      var promise = fetchPrice(p.ticker).then(function(price) {
+        p.current = price;
+        p.priceType = __priceType;
+        p.marketState = __marketState;
+      }).catch(function() {});
+      allPromises.push(promise);
+    });
+  });
+  Promise.all(allPromises).then(function() {
+    savePortfolios();
+    loadLocal();
+    render();
+  });
+}
+
 function refreshAll() {
   if (!getApiKey()) { toggleSettings(); return; }
   var btn = document.getElementById('refreshAllBtn');
   btn.innerHTML = 'UPDATING...';
   btn.disabled = true;
-  var promises = positions.map(function(p) { return refreshPrice(p.id); });
-  Promise.all(promises).then(function() {
-    // No cloudSave here — price updates should not overwrite cloud data
-    // cloudSave is called only on structural changes (add/edit/delete)
+  var allPromises = [];
+  Object.keys(portfolios).forEach(function(pid) {
+    var portfolio = portfolios[pid];
+    if (!portfolio.positions) return;
+    portfolio.positions.forEach(function(p) {
+      var promise = fetchPrice(p.ticker).then(function(price) {
+        p.current = price;
+        p.priceType = __priceType;
+        p.marketState = __marketState;
+      }).catch(function() {});
+      allPromises.push(promise);
+    });
+  });
+  Promise.all(allPromises).then(function() {
+    savePortfolios();
+    loadLocal();
+    render();
   }).catch(function() {
-    // ignore individual errors — they're handled in refreshPrice
   }).finally(function() {
     btn.innerHTML = '&#8635; Refresh All';
     btn.disabled = false;
@@ -1075,7 +1111,10 @@ loadLocal();
 document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
 showKeyStatus();
 render();
-cloudLoad(function(loaded) { if (loaded) render(); });
+cloudLoad(function(loaded) {
+  if (loaded) render();
+  if (getApiKey()) refreshAllPortfolios();
+});
 </script>
 <script>
 if ('serviceWorker' in navigator) {
