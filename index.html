@@ -375,7 +375,10 @@ function closeSwitcherOutside(e) {
 }
 function renderSwitcher() {
   var list = document.getElementById('portfolioList');
-  var html = '';
+  var summaryActive = viewMode === 'summary';
+  var html = '<div class="portfolio-item' + (summaryActive ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer" onclick="switchToSummary()">'
+    + '<div style="flex:1"><span class="portfolio-item-name">&#931; SUMMARY</span></div>'
+    + '</div>';
   Object.keys(portfolios).forEach(function(id) {
     var p = portfolios[id];
     var active = id === currentPortfolioId;
@@ -390,6 +393,14 @@ function renderSwitcher() {
   });
   list.innerHTML = html;
 }
+function switchToSummary() {
+  viewMode = 'summary';
+  document.getElementById('portfolioTitle').textContent = 'SUMMARY';
+  closeSwitcher();
+  if (getApiKey()) refreshAllPortfolios();
+  render();
+}
+
 function switchPortfolio(id) {
   if (!portfolios[id]) return;
   currentPortfolioId = id;
@@ -397,6 +408,7 @@ function switchPortfolio(id) {
   loadLocal();
   editId = null;
   loadingSet = {};
+  if (viewMode === 'summary') viewMode = 'main';
   document.getElementById('portfolioTitle').textContent = portfolios[id].name;
   closeSwitcher();
   render();
@@ -890,11 +902,42 @@ function refreshPrice(id) {
   });
 }
 
+function refreshAllPortfolios() {
+  if (!getApiKey()) return;
+  var allPromises = [];
+  Object.keys(portfolios).forEach(function(pid) {
+    var portfolio = portfolios[pid];
+    if (!portfolio.positions) return;
+    portfolio.positions.forEach(function(p) {
+      var promise = fetchPrice(p.ticker).then(function(price) {
+        p.current = price;
+        p.priceType = __priceType;
+        p.marketState = __marketState;
+        p.regularMarketPrice = __regularMarketPrice;
+        p.previousClose = __previousClose;
+      }).catch(function() {});
+      allPromises.push(promise);
+    });
+  });
+  return Promise.all(allPromises).then(function() {
+    savePortfolios();
+    loadLocal();
+    render();
+  });
+}
+
 function refreshAll() {
   if (!getApiKey()) { toggleSettings(); return; }
   var btn = document.getElementById('refreshAllBtn');
   btn.innerHTML = 'UPDATING...';
   btn.disabled = true;
+  if (viewMode === 'summary') {
+    refreshAllPortfolios().finally(function() {
+      btn.innerHTML = '&#8635; Refresh';
+      btn.disabled = false;
+    });
+    return;
+  }
   var promises = positions.map(function(p) { return refreshPrice(p.id); });
   Promise.all(promises).then(function() {
   }).catch(function() {
@@ -1083,6 +1126,63 @@ function render() {
       + '<div class="total-block"><div class="total-label">P&amp;L</div><div class="total-value ' + c + '">' + fSign(totPnL) + '</div></div>'
       + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + c + '">' + fPct(totPct) + '</div></div>'
       + '</div>';
+  }
+
+  // Summary view
+  if (viewMode === 'summary') {
+    var totalVal = 0, totalCost = 0;
+    var portfolioStats = Object.keys(portfolios).map(function(pid) {
+      var p = portfolios[pid];
+      var val = 0, cost = 0, hasAny = false;
+      (p.positions || []).forEach(function(pos) {
+        if (pos.current != null && pos.qty > 0) {
+          val += pos.qty * pos.current;
+          cost += pos.qty * pos.entry;
+          hasAny = true;
+        }
+      });
+      totalVal += val;
+      totalCost += cost;
+      return { id: pid, name: p.name, currency: p.currency || '$', val: hasAny ? val : null, cost: hasAny ? cost : null };
+    });
+
+    var summaryRows = '';
+    portfolioStats.forEach(function(s) {
+      var pnl = s.val !== null ? s.val - s.cost : null;
+      var ret = (pnl !== null && s.cost) ? pnl / s.cost * 100 : null;
+      var weight = (s.val !== null && totalVal > 0) ? s.val / totalVal * 100 : null;
+      var c = pnl === null ? '' : (pnl >= 0 ? 'pos' : 'neg');
+      summaryRows += '<tr style="cursor:pointer" onclick="switchPortfolio('' + s.id + '')">'
+        + '<td style="text-align:left">' + s.name + '</td>'
+        + '<td>' + (s.val !== null ? s.currency + f2(s.val) : '&mdash;') + '</td>'
+        + '<td class="' + c + '">' + (pnl !== null ? fSign(pnl) : '&mdash;') + '</td>'
+        + '<td class="' + c + '">' + (ret !== null ? fPct(ret) : '&mdash;') + '</td>'
+        + '<td>' + (weight !== null ? fPctNoSign(weight) : '&mdash;') + '</td>'
+        + '</tr>';
+    });
+
+    var totPnL = totalVal - totalCost;
+    var totRet = totalCost ? totPnL / totalCost * 100 : null;
+    var c = totPnL >= 0 ? 'pos' : 'neg';
+
+    area.innerHTML = '<div class="table-wrap">'
+      + '<table style="width:100%;table-layout:fixed;min-width:0">'
+      + '<colgroup><col style="width:28%"><col style="width:20%"><col style="width:18%"><col style="width:18%"><col style="width:16%"></colgroup>'
+      + '<thead><tr>'
+      + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">VALUE</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">P&amp;L</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">RETURN</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">SHARE</th>'
+      + '</tr></thead>'
+      + '<tbody>' + summaryRows + '</tbody>'
+      + '</table></div>'
+      + '<div class="totals-bar">'
+      + '<div class="total-block"><div class="total-label">TOTAL VALUE</div><div class="total-value" style="color:var(--bright)">' + f2(totalVal) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">P&amp;L</div><div class="total-value ' + c + '">' + fSign(totPnL) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + c + '">' + (totRet !== null ? fPct(totRet) : '&mdash;') + '</div></div>'
+      + '</div>';
+    return;
   }
 
   // Market view

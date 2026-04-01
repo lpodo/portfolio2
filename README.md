@@ -117,7 +117,9 @@ Note: `qty: 0` is allowed — used for watchlist candidates. Shows `—` in QTY 
 - Three view modes via ⋮ dropdown menu (next to Refresh button):
   - **P&L** — default view with full position details
   - **WEIGHTS** — TICKER / VALUE / WEIGHT %; sortable by any column
-  - **MARKET** — TICKER / CLOSE (prev session) / CURRENT / Δ%; sortable by TICKER or Δ% (3rd click resets to portfolio order); market state icon included
+  - **MARKET** — TICKER / CLOSE / CURRENT / Δ%; sortable by TICKER or Δ% (3rd click resets to portfolio order); market state icon included
+    - CLOSE = `chartPreviousClose` (previous session close) — always used as Δ% base during REGULAR session
+    - During CLOSED/PRE/POST: CLOSE = `regularMarketPrice` by default; if **CONTINUOUS Δ% ACROSS SESSIONS** is enabled in settings, uses `chartPreviousClose` instead
 - Totals row unchanged across all views
 - Summary: VALUE, P&L, RETURN
 
