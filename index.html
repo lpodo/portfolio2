@@ -181,7 +181,7 @@
 
   <div id="tableArea"></div>
 
-  <div class="add-form" id="addForm">
+  <div class="add-form">
     <div class="form-label">+ Добавить позицию</div>
     <div class="form-row" style="margin-bottom:8px">
       <div class="field" style="width:100%">
@@ -411,10 +411,6 @@ function switchPortfolio(id) {
   loadLocal();
   editId = null;
   loadingSet = {};
-  // Hide/show add form
-  var addForm = document.getElementById('addForm');
-  if (addForm) addForm.style.display = viewMode === 'summary' ? 'none' : '';
-
   if (viewMode === 'summary') {
     viewMode = 'main';
     document.getElementById('viewMenuBtn').disabled = false;
@@ -1177,8 +1173,7 @@ function render() {
     var c = totPnL >= 0 ? 'pos' : 'neg';
 
     area.innerHTML = '<div class="table-wrap">'
-      + '<table style="width:100%;table-layout:fixed;min-width:0">'
-      + '<colgroup><col style="width:22%"><col style="width:22%"><col style="width:20%"><col style="width:20%"><col style="width:16%"></colgroup>'
+      + '<table>'
       + '<thead><tr>'
       + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">VALUE</th>'
