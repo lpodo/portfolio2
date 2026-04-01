@@ -288,6 +288,13 @@
     <input type="file" id="restoreInput" accept=".json" style="display:none" onchange="restoreData(event)">
   </div>
   <div class="api-status" id="backupStatus"></div>
+  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">MARKET VIEW</div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px;color:var(--dim);letter-spacing:1px">
+      <input type="checkbox" id="resetDeltaChk" onchange="saveResetDelta()" style="width:14px;height:14px;cursor:pointer">
+      RESET Δ% AFTER SESSION CLOSE
+    </label>
+  </div>
   <div class="settings-note" id="settingsNote"></div>
 </div>
 
@@ -721,6 +728,11 @@ function save() {
   saveLocal();
   cloudSave();
 }
+function getResetDelta() { return localStorage.getItem('pt_reset_delta') === '1'; }
+function saveResetDelta() {
+  var v = document.getElementById('resetDeltaChk').checked ? '1' : '0';
+  localStorage.setItem('pt_reset_delta', v);
+}
 function getApiKey() { return localStorage.getItem('pt_finnhub') || ''; }
 function getToken() { return localStorage.getItem('pt_token') || ''; }
 function saveToken() {
@@ -748,6 +760,7 @@ function updateSettingsUI() {
   var k = getApiKey();
   document.getElementById('apiKeyInput').value = k;
   if (document.getElementById('apiTokenInput')) document.getElementById('apiTokenInput').value = getToken();
+  if (document.getElementById('resetDeltaChk')) document.getElementById('resetDeltaChk').checked = getResetDelta();
 
   var jbKey = getJbKey();
   var jbBin = getJbBin();
@@ -959,8 +972,8 @@ function getMarketSorted(items) {
       return marketSort.dir * a.ticker.localeCompare(b.ticker);
     }
     // delta% — use previousClose same as render
-    var aBase = a.previousClose || a.regularMarketPrice;
-    var bBase = b.previousClose || b.regularMarketPrice;
+    var aBase = (a.marketState === 'REGULAR') ? (a.previousClose || a.regularMarketPrice) : ((getResetDelta() ? a.previousClose : a.regularMarketPrice) || a.regularMarketPrice);
+    var bBase = (b.marketState === 'REGULAR') ? (b.previousClose || b.regularMarketPrice) : ((getResetDelta() ? b.previousClose : b.regularMarketPrice) || b.regularMarketPrice);
     va = (a.current != null && aBase) ? (a.current - aBase) / aBase * 100 : null;
     vb = (b.current != null && bBase) ? (b.current - bBase) / bBase * 100 : null;
     if (va === null) va = -Infinity;
@@ -1085,7 +1098,12 @@ function render() {
           + '</tr>';
         return;
       }
-      var regPrice = p.previousClose || p.regularMarketPrice || p.current;
+      var regPrice;
+      if (p.marketState === 'REGULAR') {
+        regPrice = p.previousClose || p.regularMarketPrice || p.current;
+      } else {
+        regPrice = (getResetDelta() ? p.previousClose : p.regularMarketPrice) || p.current;
+      }
       var delta = regPrice ? (p.current - regPrice) / regPrice * 100 : null;
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
       marketRows += '<tr>'
