@@ -1388,10 +1388,10 @@ function render() {
       + '</table>'
       + '</div>';
     if (posFxNeeded.length === 0) {
-      area.innerHTML = weightTableHtml + totalsHtml;
+      area.innerHTML = weightTableHtml + '<div id="totalsSlot">' + totalsHtml + '</div>';
       document.getElementById('weightTbody').innerHTML = buildWeightRows({});
     } else {
-      area.innerHTML = weightTableHtml + totalsHtml;
+      area.innerHTML = weightTableHtml + '<div id="totalsSlot">' + totalsHtml + '</div>';
       var wFxMap2 = {};
       var baseUrl3 = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
       var token3 = getToken();
@@ -1429,9 +1429,9 @@ function render() {
     + '</div>';
 
   if (posFxNeeded.length === 0) {
-    area.innerHTML = tableHtml + renderTotals({});
+    area.innerHTML = tableHtml + '<div id="totalsSlot">' + renderTotals({}) + '</div>';
   } else {
-    area.innerHTML = tableHtml; // render table immediately, totals come async
+    area.innerHTML = tableHtml + '<div id="totalsSlot"></div>'; // totals come async
     var fxMap = {};
     var baseUrl2 = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
     var token2 = getToken();
@@ -1444,9 +1444,8 @@ function render() {
       }).catch(function() {});
     });
     Promise.all(fxP).then(function() {
-      var totDiv = document.createElement('div');
-      totDiv.innerHTML = renderTotals(fxMap);
-      area.appendChild(totDiv.firstChild);
+      var slot = document.getElementById('totalsSlot');
+      if (slot) slot.innerHTML = renderTotals(fxMap);
     });
   }
 
