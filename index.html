@@ -1132,7 +1132,7 @@ function render() {
     }
 
     var qtyCell = isEdit ? '<input class="edit-input" id="editQty" type="number" value="' + p.qty + '">' : (p.qty === 0 ? '<span style="color:var(--dim)">&mdash;</span>' : (Number.isInteger(p.qty) ? p.qty : p.qty.toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:4})));
-    var entryCell = isEdit ? '<input class="edit-input" id="editEntry" type="number" value="' + p.entry + '">' : getCurrency() + f2(p.entry);
+    var entryCell = isEdit ? '<input class="edit-input" id="editEntry" type="number" value="' + p.entry + '">' : getPositionCurrencySymbol(p) + f2(p.entry);
     var curEditCell = isEdit
       ? '<input class="edit-input" id="editCurrent" type="number" value="' + (p.current !== null && p.current !== undefined ? p.current : '') + '" placeholder="&mdash;">'
       : curCell;
