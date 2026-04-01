@@ -181,7 +181,7 @@
 
   <div id="tableArea"></div>
 
-  <div class="add-form">
+  <div class="add-form" id="addForm">
     <div class="form-label">+ Добавить позицию</div>
     <div class="form-row" style="margin-bottom:8px">
       <div class="field" style="width:100%">
@@ -376,9 +376,7 @@ function closeSwitcherOutside(e) {
 function renderSwitcher() {
   var list = document.getElementById('portfolioList');
   var summaryActive = viewMode === 'summary';
-  var html = '<div class="portfolio-item' + (summaryActive ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer" onclick="switchToSummary()">'
-    + '<div style="flex:1"><span class="portfolio-item-name">&#931; SUMMARY</span></div>'
-    + '</div>';
+  var html = '';
   Object.keys(portfolios).forEach(function(id) {
     var p = portfolios[id];
     var active = id === currentPortfolioId;
@@ -391,11 +389,16 @@ function renderSwitcher() {
       + '<button class="btn-icon" onclick="deletePortfolio(\'' + id + '\')" title="Delete" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
       + '</div>';
   });
+  html += '<div class="portfolio-item' + (summaryActive ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);margin-top:4px;padding-top:4px" onclick="switchToSummary()">'
+    + '<div style="flex:1"><span class="portfolio-item-name">&#931; SUMMARY</span></div>'
+    + '</div>';
   list.innerHTML = html;
 }
 function switchToSummary() {
   viewMode = 'summary';
   document.getElementById('portfolioTitle').textContent = 'SUMMARY';
+  document.getElementById('viewMenuBtn').disabled = true;
+  document.getElementById('viewMenuBtn').style.opacity = '0.3';
   closeSwitcher();
   if (getApiKey()) refreshAllPortfolios();
   render();
@@ -408,7 +411,15 @@ function switchPortfolio(id) {
   loadLocal();
   editId = null;
   loadingSet = {};
-  if (viewMode === 'summary') viewMode = 'main';
+  // Hide/show add form
+  var addForm = document.getElementById('addForm');
+  if (addForm) addForm.style.display = viewMode === 'summary' ? 'none' : '';
+
+  if (viewMode === 'summary') {
+    viewMode = 'main';
+    document.getElementById('viewMenuBtn').disabled = false;
+    document.getElementById('viewMenuBtn').style.opacity = '';
+  }
   document.getElementById('portfolioTitle').textContent = portfolios[id].name;
   closeSwitcher();
   render();
@@ -1167,7 +1178,7 @@ function render() {
 
     area.innerHTML = '<div class="table-wrap">'
       + '<table style="width:100%;table-layout:fixed;min-width:0">'
-      + '<colgroup><col style="width:28%"><col style="width:20%"><col style="width:18%"><col style="width:18%"><col style="width:16%"></colgroup>'
+      + '<colgroup><col style="width:22%"><col style="width:22%"><col style="width:20%"><col style="width:20%"><col style="width:16%"></colgroup>'
       + '<thead><tr>'
       + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">VALUE</th>'
