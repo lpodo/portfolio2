@@ -228,10 +228,16 @@
         style="-webkit-appearance:none;flex:2"
         oninput="this.value=this.value.toUpperCase()"
         onkeydown="if(event.key==='Enter')addPortfolio()">
+      <input type="search" id="newPortfolioCurrencyCode" placeholder="USD"
+        inputmode="text" autocomplete="off" autocorrect="off" autocapitalize="characters"
+        spellcheck="false"
+        style="-webkit-appearance:none;width:52px;flex:none;text-align:center"
+        oninput="this.value=this.value.toUpperCase();autoFillSymbol()"
+        onkeydown="if(event.key==='Enter')addPortfolio()">
       <input type="search" id="newPortfolioCurrency" placeholder="$"
         inputmode="text" autocomplete="off" autocorrect="off"
         spellcheck="false"
-        style="-webkit-appearance:none;width:44px;flex:none;text-align:center"
+        style="-webkit-appearance:none;width:36px;flex:none;text-align:center"
         onkeydown="if(event.key==='Enter')addPortfolio()">
       <button class="btn btn-green" onclick="addPortfolio()" style="white-space:nowrap">+ ADD</button>
     </div>
@@ -331,6 +337,17 @@ function initPortfolios() {
     currentPortfolioId = Object.keys(portfolios)[0];
   }
 }
+var CURRENCY_SYMBOLS = {
+  'USD':'$','EUR':'€','GBP':'£','JPY':'¥','CHF':'Fr','CAD':'C$','AUD':'A$',
+  'NOK':'kr','SEK':'kr','DKK':'kr','BRL':'R$','RUB':'₽','CNY':'¥','HKD':'HK$',
+  'SGD':'S$','INR':'₹','KRW':'₩','MXN':'MX$','ZAR':'R','TRY':'₺','PLN':'zł',
+  'CZK':'Kč','HUF':'Ft','ILS':'₪'
+};
+function autoFillSymbol() {
+  var code = document.getElementById('newPortfolioCurrencyCode').value.trim();
+  var sym = CURRENCY_SYMBOLS[code];
+  if (sym) document.getElementById('newPortfolioCurrency').value = sym;
+}
 function getCurrency() {
   var p = currentPortfolio();
   // Legacy portfolios (no currency field) get $
@@ -425,12 +442,14 @@ function addPortfolio() {
   var name = document.getElementById('newPortfolioName').value.trim();
   if (!name) return;
   var cur = document.getElementById('newPortfolioCurrency').value.trim();
+  var curCode = document.getElementById('newPortfolioCurrencyCode').value.trim() || 'USD';
   var id = 'p_' + Date.now();
-  portfolios[id] = { name: name, positions: [], currency: cur };
+  portfolios[id] = { name: name, positions: [], currency: cur, currencyCode: curCode };
   savePortfolios();
   save(); // sync to cloud
   document.getElementById('newPortfolioName').value = '';
   document.getElementById('newPortfolioCurrency').value = '';
+  document.getElementById('newPortfolioCurrencyCode').value = '';
   // Switch without triggering cloudLoad
   currentPortfolioId = id;
   localStorage.setItem('pt_current', id);
@@ -446,9 +465,12 @@ function renamePortfolio(id) {
   if (!p) return;
   var newName = prompt('Portfolio name:', p.name);
   if (!newName || !newName.trim()) return;
-  var newCur = prompt('Currency symbol:', p.currency || '$');
+  var newCurCode = prompt('Currency code (e.g. USD, EUR):', p.currencyCode || 'USD');
+  if (newCurCode === null) return;
+  var newCur = prompt('Currency symbol (e.g. $, €):', p.currency || (CURRENCY_SYMBOLS[newCurCode.trim().toUpperCase()] || '$'));
   if (newCur === null) return;
   portfolios[id].name = newName.trim().toUpperCase();
+  portfolios[id].currencyCode = newCurCode.trim().toUpperCase() || 'USD';
   portfolios[id].currency = newCur.trim();
   savePortfolios();
   save();
@@ -1137,7 +1159,7 @@ function render() {
 
   // Summary view
   if (viewMode === 'summary') {
-    var totalVal = 0, totalCost = 0;
+    // Collect portfolio stats
     var portfolioStats = Object.keys(portfolios).map(function(pid) {
       var p = portfolios[pid];
       var val = 0, cost = 0, hasAny = false;
@@ -1148,18 +1170,34 @@ function render() {
           hasAny = true;
         }
       });
-      totalVal += val;
-      totalCost += cost;
-      return { id: pid, name: p.name, currency: p.currency || '$', val: hasAny ? val : null, cost: hasAny ? cost : null };
+      return {
+        id: pid, name: p.name,
+        currency: p.currency || '$',
+        currencyCode: (p.currencyCode || 'USD').toUpperCase(),
+        val: hasAny ? val : null, cost: hasAny ? cost : null
+      };
     });
 
-    var summaryRows = '';
-    portfolioStats.forEach(function(s) {
-      var pnl = s.val !== null ? s.val - s.cost : null;
-      var ret = (pnl !== null && s.cost) ? pnl / s.cost * 100 : null;
-      var weight = (s.val !== null && totalVal > 0) ? s.val / totalVal * 100 : null;
-      var c = pnl === null ? '' : (pnl >= 0 ? 'pos' : 'neg');
-      summaryRows += '<tr style="cursor:pointer" onclick="switchPortfolio(&apos;' + s.id + '&apos;)">'
+    // Get unique non-USD currencies and fetch FX rates
+    var fxRates = {}; // currencyCode → rate to USD
+    var nonUSD = [];
+    portfolioStats.forEach(function(s) { if (s.currencyCode !== 'USD' && nonUSD.indexOf(s.currencyCode) === -1) nonUSD.push(s.currencyCode); });
+
+    function renderSummaryWithRates() {
+      var totalValUSD = 0, totalCostUSD = 0;
+      portfolioStats.forEach(function(s) {
+        var rate = s.currencyCode === 'USD' ? 1 : (fxRates[s.currencyCode] || 1);
+        if (s.val !== null) { totalValUSD += s.val * rate; totalCostUSD += s.cost * rate; }
+      });
+
+      var summaryRows = '';
+      portfolioStats.forEach(function(s) {
+        var pnl = s.val !== null ? s.val - s.cost : null;
+        var ret = (pnl !== null && s.cost) ? pnl / s.cost * 100 : null;
+        var rate = s.currencyCode === 'USD' ? 1 : (fxRates[s.currencyCode] || 1);
+        var weight = (s.val !== null && totalValUSD > 0) ? (s.val * rate) / totalValUSD * 100 : null;
+        var c = pnl === null ? '' : (pnl >= 0 ? 'pos' : 'neg');
+        summaryRows += '<tr style="cursor:pointer" onclick="switchPortfolio(&apos;' + s.id + '&apos;)">'
         + '<td style="text-align:left">' + s.name + '</td>'
         + '<td>' + (s.val !== null ? s.currency + f2(s.val) : '&mdash;') + '</td>'
         + '<td class="' + c + '">' + (pnl !== null ? fSign(pnl) : '&mdash;') + '</td>'
@@ -1168,9 +1206,9 @@ function render() {
         + '</tr>';
     });
 
-    var totPnL = totalVal - totalCost;
-    var totRet = totalCost ? totPnL / totalCost * 100 : null;
-    var c = totPnL >= 0 ? 'pos' : 'neg';
+      var totPnL = totalValUSD - totalCostUSD;
+      var totRet = totalCostUSD ? totPnL / totalCostUSD * 100 : null;
+      var c = totPnL >= 0 ? 'pos' : 'neg';
 
     area.innerHTML = '<div class="table-wrap">'
       + '<table>'
@@ -1184,10 +1222,30 @@ function render() {
       + '<tbody>' + summaryRows + '</tbody>'
       + '</table></div>'
       + '<div class="totals-bar">'
-      + '<div class="total-block"><div class="total-label">TOTAL VALUE</div><div class="total-value" style="color:var(--bright)">' + f2(totalVal) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">TOTAL VALUE</div><div class="total-value" style="color:var(--bright)">$' + f2(totalValUSD) + '</div></div>'
       + '<div class="total-block"><div class="total-label">P&amp;L</div><div class="total-value ' + c + '">' + fSign(totPnL) + '</div></div>'
       + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + c + '">' + (totRet !== null ? fPct(totRet) : '&mdash;') + '</div></div>'
       + '</div>';
+    } // end renderSummaryWithRates
+
+    if (nonUSD.length === 0) {
+      renderSummaryWithRates();
+    } else {
+      // Fetch FX rates from worker
+      var baseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
+      var token = getToken();
+      var fxPromises = nonUSD.map(function(code) {
+        var ticker = code + 'USD=X';
+        var url = baseUrl + '/api/quote?ticker=' + encodeURIComponent(ticker);
+        var opts = token ? { headers: { 'X-API-Token': token } } : {};
+        return fetch(url, opts).then(function(r) { return r.json(); }).then(function(d) {
+          if (d.price) fxRates[code] = d.price;
+        }).catch(function() {});
+      });
+      Promise.all(fxPromises).then(function() {
+        renderSummaryWithRates();
+      });
+    }
     return;
   }
 
