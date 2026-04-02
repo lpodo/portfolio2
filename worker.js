@@ -111,6 +111,13 @@ async function getQuote(ticker) {
 
   const now = Math.floor(Date.now() / 1000);
   const regular = meta.currentTradingPeriod?.regular;
+  // Normalize GBp (pence) to GBP (pounds) — LSE stocks
+  const rawCurrency = meta.currency || null;
+  if (rawCurrency === 'GBp') {
+    meta.currency = 'GBP';
+    meta.regularMarketPrice = meta.regularMarketPrice / 100;
+    meta.chartPreviousClose = meta.chartPreviousClose ? meta.chartPreviousClose / 100 : null;
+  }
   const regularMarketPrice = meta.regularMarketPrice;
   const regularMarketTime = meta.regularMarketTime;
 

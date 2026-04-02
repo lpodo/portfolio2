@@ -1407,8 +1407,8 @@ function render() {
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
       marketRows += '<tr>'
         + '<td style="text-align:left">' + p.ticker + '</td>'
-        + '<td style="text-align:right;padding:5px 4px">' + getCurrency() + f2(regPrice) + '</td>'
-        + '<td style="text-align:right;padding:5px 4px">' + getCurrency() + f2(p.current) + '</td>'
+        + '<td style="text-align:right;padding:5px 4px">' + getPositionCurrencySymbol(p) + f2(regPrice) + '</td>'
+        + '<td style="text-align:right;padding:5px 4px">' + getPositionCurrencySymbol(p) + f2(p.current) + '</td>'
         + '<td style="text-align:right;padding:5px 4px" class="' + deltaClass + '">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
         + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(p.marketState) + '</td>'
       + '<td style="padding:0 2px;font-size:9px;color:var(--dim);white-space:nowrap">' + (getPositionCurrencyCode(p)) + '</td>'
