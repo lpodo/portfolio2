@@ -234,7 +234,9 @@
         style="-webkit-appearance:none;width:52px;flex:none;text-align:center"
         oninput="this.value=this.value.toUpperCase()"
         onkeydown="if(event.key==='Enter')addPortfolio()">
-
+      <label style="display:flex;align-items:center;gap:4px;font-size:9px;color:var(--dim);letter-spacing:1px;white-space:nowrap;cursor:pointer">
+        <input type="checkbox" id="newPortfolioWatchlist" style="width:13px;height:13px"> IDX
+      </label>
       <button class="btn btn-green" onclick="addPortfolio()" style="white-space:nowrap">+ ADD</button>
     </div>
   </div>
