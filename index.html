@@ -339,6 +339,17 @@ var CURRENCY_SYMBOLS = {
   'SGD':'S$','INR':'₹','KRW':'₩','MXN':'MX$','ZAR':'R','TRY':'₺','PLN':'zł',
   'CZK':'Kč','HUF':'Ft','ILS':'₪'
 };
+function updateAddForm() {
+  var wl = isWatchlist();
+  var fields = ['fQty','fEntry','fCurrent'];
+  fields.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.parentElement.style.display = wl ? 'none' : '';
+  });
+}
+function isWatchlist() {
+  return !!(currentPortfolio().watchlist);
+}
 function getCurrency() {
   // Returns symbol for portfolio base currency
   var p = currentPortfolio();
@@ -398,7 +409,7 @@ function renderSwitcher() {
     html += '<div class="portfolio-item' + (active ? ' active' : '') + '" style="display:flex;align-items:center">'
       + '<div onclick="switchPortfolio(\'' + id + '\')" style="flex:1;cursor:pointer;min-width:0">'
       + '<span class="portfolio-item-name">' + p.name + '</span> <span style="color:var(--dim);font-size:10px">' + (p.currencyCode || 'USD') + '</span> '
-      + '<span class="portfolio-item-count">' + p.positions.length + ' pos' + (active ? ' &#10003;' : '') + '</span>'
+      + '<span class="portfolio-item-count">' + (p.watchlist ? 'idx ' : '') + p.positions.length + ' pos' + (active ? ' &#10003;' : '') + '</span>'
       + '</div>'
       + '<button class="btn-icon" onclick="renamePortfolio(\'' + id + '\')" title="Rename" style="font-size:13px;padding:4px 7px">&#9998;</button>'
       + '<button class="btn-icon" onclick="deletePortfolio(\'' + id + '\')" title="Delete" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
@@ -426,12 +437,16 @@ function switchPortfolio(id) {
   loadLocal();
   editId = null;
   loadingSet = {};
-  if (viewMode === 'summary') {
+  if (viewMode === 'summary') viewMode = 'main';
+  var btn = document.getElementById('viewMenuBtn');
+  if (portfolios[id].watchlist) {
     viewMode = 'main';
-    document.getElementById('viewMenuBtn').disabled = false;
-    document.getElementById('viewMenuBtn').style.opacity = '';
+    btn.disabled = true; btn.style.opacity = '0.3';
+  } else {
+    btn.disabled = false; btn.style.opacity = '';
   }
   document.getElementById('portfolioTitle').textContent = portfolios[id].name;
+  updateAddForm();
   closeSwitcher();
   render();
   if (getApiKey()) refreshAll();
@@ -440,16 +455,15 @@ function addPortfolio() {
   var name = document.getElementById('newPortfolioName').value.trim();
   if (!name) return;
   var curCode = (document.getElementById('newPortfolioCurrencyCode').value.trim() || 'USD').toUpperCase();
+  var isWatchlist = document.getElementById('newPortfolioWatchlist').checked;
   var errEl = document.getElementById('addErr');
-  if (errEl) errEl.textContent = 'Проверка валюты...';
-  validateCurrencyCode(curCode, function(valid) {
-    if (!valid) {
-      if (errEl) errEl.textContent = 'Неверный код валюты: ' + curCode;
-      return;
-    }
+  if (!isWatchlist) {
+    if (errEl) errEl.textContent = 'Проверка валюты...';
+  }
+  function doCreate() {
     if (errEl) errEl.textContent = '';
     var id = 'p_' + Date.now();
-    portfolios[id] = { name: name, positions: [], currencyCode: curCode };
+    portfolios[id] = { name: name, positions: [], currencyCode: curCode, watchlist: isWatchlist };
     savePortfolios();
     save();
     document.getElementById('newPortfolioName').value = '';
@@ -460,9 +474,11 @@ function addPortfolio() {
     loadLocal();
     editId = null; loadingSet = {};
     document.getElementById('portfolioTitle').textContent = name;
+    document.getElementById('newPortfolioWatchlist').checked = false;
     renderSwitcher();
     render();
-  }); // end validateCurrencyCode
+  }
+  } // end _dummy
 }
 
 function renamePortfolio(id) {
@@ -838,6 +854,7 @@ var __marketState = 'CLOSED';
 var __regularMarketPrice = null;
 var __previousClose = null;
 var __currency = null;
+var __shortName = null;
 function fetchPrice(ticker) {
   var baseUrl = getApiKey();
   if (!baseUrl) return Promise.reject(new Error('no_key'));
@@ -862,6 +879,7 @@ function fetchPrice(ticker) {
     __regularMarketPrice = data.regularMarketPrice || data.price;
     __previousClose = data.previousClose || null;
     __currency = data.currency || null;
+    __shortName = data.shortName || null;
     return data.price;
   });
 }
@@ -936,7 +954,7 @@ function refreshPrice(id) {
   loadingSet[id] = true; render();
   return fetchPrice(pos.ticker).then(function(price) {
     positions = positions.map(function(p) {
-      if (p.id === id) { return { id: p.id, ticker: p.ticker, qty: p.qty, entry: p.entry, current: price, priceType: __priceType, marketState: __marketState, regularMarketPrice: __regularMarketPrice, previousClose: __previousClose, currency: __currency }; }
+      if (p.id === id) { return { id: p.id, ticker: p.ticker, qty: p.qty, entry: p.entry, current: price, priceType: __priceType, marketState: __marketState, regularMarketPrice: __regularMarketPrice, previousClose: __previousClose, currency: __currency, shortName: __shortName }; }
       return p;
     });
     saveLocal();
@@ -1204,7 +1222,9 @@ function render() {
   // Summary view
   if (viewMode === 'summary') {
     // Collect portfolio stats
-    var portfolioStats = Object.keys(portfolios).map(function(pid) {
+    var portfolioStats = Object.keys(portfolios).filter(function(pid) {
+      return !portfolios[pid].watchlist;
+    }).map(function(pid) {
       var p = portfolios[pid];
       var val = 0, cost = 0, hasAny = false;
       (p.positions || []).forEach(function(pos) {
@@ -1290,6 +1310,41 @@ function render() {
         renderSummaryWithRates();
       });
     }
+    return;
+  }
+
+  // Watchlist/Index view
+  if (isWatchlist()) {
+    var wlRows = '';
+    getSorted().forEach(function(p) {
+      var close = p.previousClose || p.regularMarketPrice || null;
+      var price = p.current || null;
+      var delta = (close && price) ? (price - close) / close * 100 : null;
+      var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
+      wlRows += '<tr>'
+        + '<td style="text-align:left;white-space:nowrap">' + p.ticker + '</td>'
+        + '<td style="white-space:nowrap">' + (close ? f2(close) : '&mdash;') + '</td>'
+        + '<td style="white-space:nowrap">' + (price ? f2(price) : '&mdash;') + '</td>'
+        + '<td class="' + deltaClass + '" style="white-space:nowrap">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
+        + '<td style="white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
+        + '<td style="white-space:nowrap">'
+          + '<button class="btn-icon" onclick="refreshPrice(' + p.id + ')">&#8635;</button>'
+          + '<button class="btn-icon" onclick="removePosition(' + p.id + ')">&#10005;</button>'
+        + '</td>'
+        + '</tr>';
+    });
+    area.innerHTML = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
+      + '<table style="border-collapse:collapse;font-size:13px">'
+      + '<thead><tr>'
+      + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">TICKER</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">CLOSE</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PRICE</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">Δ%</th>'
+      + '<th style="text-align:left;padding:5px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">NAME</th>'
+      + '<th style="border-bottom:1px solid var(--border)"></th>'
+      + '</tr></thead>'
+      + '<tbody>' + wlRows + '</tbody>'
+      + '</table></div>';
     return;
   }
 
