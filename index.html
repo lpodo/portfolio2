@@ -190,7 +190,7 @@
           inputmode="text" autocomplete="off" autocorrect="off"
           autocapitalize="characters" spellcheck="false"
           style="width:100%;max-width:280px"
-          oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9.\-]/g,'')"
+          oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9.\-^=]/g,'')"
           onkeydown="if(event.key==='Enter'){document.getElementById('fQty').focus()}">
       </div>
     </div>
@@ -917,8 +917,10 @@ function addPosition() {
   var curRaw = document.getElementById('fCurrent').value.trim();
   var current = curRaw ? parseFloat(curRaw) : null;
   if (!ticker) { document.getElementById('addErr').textContent = 'Введи тикер'; return; }
-  if (qty === null || isNaN(qty) || qty < 0) { document.getElementById('addErr').textContent = 'Введи количество'; return; }
-  if (!entry || entry <= 0) { document.getElementById('addErr').textContent = 'Введи цену входа'; return; }
+  if (!isWatchlist()) {
+    if (qty === null || isNaN(qty) || qty < 0) { document.getElementById('addErr').textContent = 'Введи количество'; return; }
+    if (!entry || entry <= 0) { document.getElementById('addErr').textContent = 'Введи цену входа'; return; }
+  }
   positions.push({ id: Date.now(), ticker: ticker, qty: qty, entry: entry, current: current });
   save();
   ['fTicker','fQty','fEntry','fCurrent'].forEach(function(id) { document.getElementById(id).value = ''; });
