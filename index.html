@@ -921,6 +921,7 @@ function addPosition() {
     if (qty === null || isNaN(qty) || qty < 0) { document.getElementById('addErr').textContent = 'Введи количество'; return; }
     if (!entry || entry <= 0) { document.getElementById('addErr').textContent = 'Введи цену входа'; return; }
   }
+  if (isWatchlist()) { qty = 0; entry = 0; current = null; }
   positions.push({ id: Date.now(), ticker: ticker, qty: qty, entry: entry, current: current });
   save();
   ['fTicker','fQty','fEntry','fCurrent'].forEach(function(id) { document.getElementById(id).value = ''; });
