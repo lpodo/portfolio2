@@ -87,6 +87,9 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
 }
 ```
 
+- `currency` — position currency code from Yahoo Finance (e.g. `GBP`, `EUR`). Saved after first price fetch. Used to show correct currency symbol in ENTRY/CURRENT columns and currency code after market state icon.
+- `previousClose`, `regularMarketPrice` — saved from worker response for Market view calculations.
+
 Note: `qty: 0` is allowed — used for watchlist candidates. Shows `—` in QTY and P&L $ columns, only P&L % is calculated.
 
 ## Portfolio Structure
@@ -94,10 +97,16 @@ Note: `qty: 0` is allowed — used for watchlist candidates. Shows `—` in QTY 
 ```json
 {
   "name": "OIL & GAS",
-  "currency": "$",
+  "currencyCode": "USD",
   "positions": []
 }
 ```
+
+`currencyCode` — ISO 4217 base currency code. Serves as the **base currency** for the portfolio:
+- All position values are converted to this currency for **total VALUE** and **WEIGHTS** calculations
+- FX rates fetched live from Yahoo Finance (`EURUSD=X`, `GBPUSD=X`, etc.) when positions have mixed currencies
+- Defaults to `USD` for legacy portfolios
+- Validated against Yahoo Finance on creation/rename
 
 ## Features
 
@@ -110,6 +119,10 @@ Note: `qty: 0` is allowed — used for watchlist candidates. Shows `—` in QTY 
 - Sort by any column — persists across sessions
 - P&L $ for full position: `(current - entry) × qty`
 - P&L % per share: `(current - entry) / entry × 100`
+- **Multi-currency portfolios**: each position carries its own currency (from Yahoo Finance). ENTRY/CURRENT show position currency symbol. Totals and weights are converted to portfolio base currency via live FX rates (`EURUSD=X` etc.)
+- **Summary view**: selected from the portfolio switcher (Σ SUMMARY at the bottom). Shows all non-index portfolios: NAME / VALUE (in native currency) / P&L / RETURN / SHARE%. Total row always in USD with live FX conversion. Clicking a row switches to that portfolio. Refresh on Summary updates all portfolios.
+- **Index/Watchlist portfolio** (INDEX checkbox at creation): designed for tracking indices, commodities, currencies (e.g. `^KS11`, `BZ=F`, `EURUSD=X`). No qty/entry fields. Shows CLOSE (chartPreviousClose) / PRICE (regularMarketPrice) / Δ% / NAME. Sortable by TICKER and Δ%. ⋮ button disabled. Excluded from Summary.
+- **Summary view** converts all portfolio values to USD using live FX rates. Total always shown in `$`
 - Market state indicator after P&L %:
   - No icon — regular session (REGULAR)
   - 🌙 blue — pre or post market (PRE / POST)
