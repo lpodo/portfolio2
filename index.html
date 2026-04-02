@@ -374,6 +374,7 @@ var positions = [];
 var viewMode = 'main'; // main | weight
 var weightSort = { key: 'weight', dir: -1 }; // default: weight descending
 var marketSort = { key: null, dir: -1 }; // null = portfolio order
+var watchlistSort = { key: null, dir: -1 };
 var loadingSet = {};
 var editId = null;
 var sortKey = null;
@@ -443,6 +444,7 @@ function switchPortfolio(id) {
   var btn = document.getElementById('viewMenuBtn');
   if (portfolios[id].watchlist) {
     viewMode = 'main';
+    watchlistSort = { key: null, dir: -1 };
     btn.disabled = true; btn.style.opacity = '0.3';
   } else {
     btn.disabled = false; btn.style.opacity = '';
@@ -1099,6 +1101,31 @@ function getMarketSorted(items) {
   });
 }
 
+function sortWatchlist(key) {
+  if (watchlistSort.key === key) {
+    if (watchlistSort.dir === -1) watchlistSort.dir = 1;
+    else watchlistSort.key = null;
+  } else {
+    watchlistSort.key = key;
+    watchlistSort.dir = -1;
+  }
+  render();
+}
+function getWatchlistSorted(items) {
+  if (!watchlistSort.key) return items.slice();
+  return items.slice().sort(function(a, b) {
+    if (watchlistSort.key === 'ticker') return watchlistSort.dir * a.ticker.localeCompare(b.ticker);
+    // delta
+    var aBase = a.previousClose || a.regularMarketPrice;
+    var bBase = b.previousClose || b.regularMarketPrice;
+    var va = (a.current != null && aBase) ? (a.current - aBase) / aBase * 100 : null;
+    var vb = (b.current != null && bBase) ? (b.current - bBase) / bBase * 100 : null;
+    if (va === null) va = -Infinity;
+    if (vb === null) vb = -Infinity;
+    return watchlistSort.dir * (va > vb ? 1 : va < vb ? -1 : 0);
+  });
+}
+
 function toggleViewMenu() {
   var menu = document.getElementById('viewMenu');
   menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
@@ -1323,7 +1350,9 @@ function render() {
   // Watchlist/Index view
   if (isWatchlist()) {
     var wlRows = '';
-    getSorted().forEach(function(p) {
+    var wlTickerArrow = watchlistSort.key === 'ticker' ? (watchlistSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
+    var wlDeltaArrow = watchlistSort.key === 'delta' ? (watchlistSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
+    getWatchlistSorted(positions).forEach(function(p) {
       var close = p.previousClose || p.regularMarketPrice || null;
       var price = p.current || null;
       var delta = (close && price) ? (price - close) / close * 100 : null;
@@ -1333,7 +1362,7 @@ function render() {
         + '<td style="white-space:nowrap">' + (close ? f2(close) : '&mdash;') + '</td>'
         + '<td style="white-space:nowrap">' + (price ? f2(price) : '&mdash;') + '</td>'
         + '<td class="' + deltaClass + '" style="white-space:nowrap">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
-        + '<td style="white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
+        + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
         + '<td style="white-space:nowrap">'
           + '<button class="btn-icon" onclick="refreshPrice(' + p.id + ')">&#8635;</button>'
           + '<button class="btn-icon" onclick="removePosition(' + p.id + ')">&#10005;</button>'
@@ -1343,10 +1372,10 @@ function render() {
     area.innerHTML = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
       + '<table style="border-collapse:collapse;font-size:13px">'
       + '<thead><tr>'
-      + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">TICKER</th>'
+      + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortWatchlist(&apos;ticker&apos;)">TICKER' + wlTickerArrow + '</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">CLOSE</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PRICE</th>'
-      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">Δ%</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortWatchlist(&apos;delta&apos;)">&#916;%' + wlDeltaArrow + '</th>'
       + '<th style="text-align:left;padding:5px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">NAME</th>'
       + '<th style="border-bottom:1px solid var(--border)"></th>'
       + '</tr></thead>'
