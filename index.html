@@ -456,12 +456,7 @@ function addPortfolio() {
   if (!name) return;
   var curCode = (document.getElementById('newPortfolioCurrencyCode').value.trim() || 'USD').toUpperCase();
   var isWatchlist = document.getElementById('newPortfolioWatchlist').checked;
-  var errEl = document.getElementById('addErr');
-  if (!isWatchlist) {
-    if (errEl) errEl.textContent = 'Проверка валюты...';
-  }
   function doCreate() {
-    if (errEl) errEl.textContent = '';
     var id = 'p_' + Date.now();
     portfolios[id] = { name: name, positions: [], currencyCode: curCode, watchlist: isWatchlist };
     savePortfolios();
@@ -482,7 +477,7 @@ function addPortfolio() {
     doCreate();
   } else {
     validateCurrencyCode(curCode, function(valid) {
-      if (!valid) { if (errEl) errEl.textContent = 'Неверный код валюты: ' + curCode; return; }
+      if (!valid) { alert('Invalid currency code: ' + curCode); return; }
       doCreate();
     });
   }
