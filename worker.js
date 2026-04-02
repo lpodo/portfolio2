@@ -169,7 +169,8 @@ async function getQuote(ticker) {
     }
 
     if (lastPrice != null) {
-      const priceType = (Math.abs(lastPrice - regularMarketPrice) < 0.001) ? 'regular' : 'extended';
+      if (rawCurrency === 'GBp') lastPrice = lastPrice / 100;
+      const priceType = (Math.abs(lastPrice - regularMarketPrice) < 0.005) ? 'regular' : 'extended';
       return {
         ticker: meta.symbol || ticker,
         price: lastPrice,
