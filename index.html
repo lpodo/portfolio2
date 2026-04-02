@@ -468,17 +468,24 @@ function addPortfolio() {
     save();
     document.getElementById('newPortfolioName').value = '';
     document.getElementById('newPortfolioCurrencyCode').value = '';
-    // Switch without triggering cloudLoad
+    document.getElementById('newPortfolioWatchlist').checked = false;
     currentPortfolioId = id;
     localStorage.setItem('pt_current', id);
     loadLocal();
     editId = null; loadingSet = {};
     document.getElementById('portfolioTitle').textContent = name;
-    document.getElementById('newPortfolioWatchlist').checked = false;
+    updateAddForm();
     renderSwitcher();
     render();
   }
-  } // end _dummy
+  if (isWatchlist) {
+    doCreate();
+  } else {
+    validateCurrencyCode(curCode, function(valid) {
+      if (!valid) { if (errEl) errEl.textContent = 'Неверный код валюты: ' + curCode; return; }
+      doCreate();
+    });
+  }
 }
 
 function renamePortfolio(id) {
