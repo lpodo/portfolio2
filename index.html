@@ -45,6 +45,28 @@
   .btn { background: transparent; border: 1px solid var(--dim); color: var(--dim); font-family: var(--font); font-size: 10px; letter-spacing: 2px; padding: 7px 12px; cursor: pointer; text-transform: uppercase; }
   .btn-green { border-color: var(--green); color: var(--green); }
   .btn-primary { background: var(--green); color: var(--bg); border: none; font-weight: bold; padding: 9px 18px; font-size: 12px; cursor: pointer; font-family: var(--font); }
+  .radio-styled {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 13px; height: 13px;
+    border: 1px solid var(--dim);
+    border-radius: 50%;
+    background: var(--bg);
+    cursor: pointer;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .radio-styled:checked {
+    border-color: var(--green);
+  }
+  .radio-styled:checked::after {
+    content: '';
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+  }
   .btn-icon { border: none; font-size: 14px; padding: 0px 5px; cursor: pointer; background: transparent; color: var(--dim); font-family: var(--font); line-height: 1; }
   .btn-icon:hover { color: var(--bright); }
 
@@ -236,12 +258,12 @@
         onkeydown="if(event.key==='Enter')addPortfolio()">
       <button class="btn btn-green" onclick="addPortfolio()" style="white-space:nowrap">+ ADD</button>
     </div>
-    <div style="padding:4px 0 6px;display:flex;gap:16px">
+    <div style="padding:8px 0 6px;display:flex;gap:16px">
       <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
-        <input type="radio" name="portfolioType" value="regular" checked style="width:13px;height:13px"> REGULAR
+        <input type="radio" name="portfolioType" value="regular" checked class="radio-styled"> REGULAR
       </label>
       <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
-        <input type="radio" name="portfolioType" value="index" style="width:13px;height:13px"> INDEX
+        <input type="radio" name="portfolioType" value="index" class="radio-styled"> INDEX
       </label>
     </div>
   </div>
