@@ -234,10 +234,15 @@
         style="-webkit-appearance:none;width:52px;flex:none;text-align:center"
         oninput="this.value=this.value.toUpperCase()"
         onkeydown="if(event.key==='Enter')addPortfolio()">
-      <label style="display:flex;align-items:center;gap:4px;font-size:9px;color:var(--dim);letter-spacing:1px;white-space:nowrap;cursor:pointer">
-        <input type="checkbox" id="newPortfolioWatchlist" style="width:13px;height:13px"> IDX
-      </label>
       <button class="btn btn-green" onclick="addPortfolio()" style="white-space:nowrap">+ ADD</button>
+    </div>
+    <div style="padding:4px 0 6px;display:flex;gap:16px">
+      <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
+        <input type="radio" name="portfolioType" value="regular" checked style="width:13px;height:13px"> REGULAR
+      </label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
+        <input type="radio" name="portfolioType" value="index" style="width:13px;height:13px"> INDEX
+      </label>
     </div>
   </div>
 </div>
@@ -380,6 +385,7 @@ var editId = null;
 var sortKey = null;
 var sortDir = 1;
 try { var _s = JSON.parse(localStorage.getItem('pt_sort')); if (_s && _s.key) { sortKey = _s.key; sortDir = _s.dir || 1; } } catch(e) {}
+try { var _ws = JSON.parse(localStorage.getItem('pt_wl_sort')); if (_ws) { watchlistSort = _ws; } } catch(e) {}
 
 // --- Local storage ---
 function loadLocal() {
@@ -406,9 +412,20 @@ function renderSwitcher() {
   var list = document.getElementById('portfolioList');
   var summaryActive = viewMode === 'summary';
   var html = '';
-  Object.keys(portfolios).forEach(function(id) {
+  // Sort: index portfolios first (alpha), then regular (alpha)
+  var ids = Object.keys(portfolios);
+  var indexIds = ids.filter(function(id) { return portfolios[id].watchlist; }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+  var regularIds = ids.filter(function(id) { return !portfolios[id].watchlist; }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+  var sortedIds = indexIds.concat(regularIds);
+  var hasIndex = indexIds.length > 0;
+  var hasRegular = regularIds.length > 0;
+  sortedIds.forEach(function(id, i) {
     var p = portfolios[id];
     var active = id === currentPortfolioId;
+    // Add divider between index and regular sections
+    if (hasIndex && hasRegular && i === indexIds.length) {
+      html += '<div style="border-top:1px solid var(--border);margin:4px 0"></div>';
+    }
     html += '<div class="portfolio-item' + (active ? ' active' : '') + '" style="display:flex;align-items:center">'
       + '<div onclick="switchPortfolio(\'' + id + '\')" style="flex:1;cursor:pointer;min-width:0">'
       + '<span class="portfolio-item-name">' + p.name + '</span>' + (p.watchlist ? '' : ' <span style="color:var(--dim);font-size:10px">' + (p.currencyCode || 'USD') + '</span>') + ' '
@@ -444,7 +461,6 @@ function switchPortfolio(id) {
   var btn = document.getElementById('viewMenuBtn');
   if (portfolios[id].watchlist) {
     viewMode = 'main';
-    watchlistSort = { key: null, dir: -1 };
     btn.disabled = true; btn.style.opacity = '0.3';
   } else {
     btn.disabled = false; btn.style.opacity = '';
@@ -459,7 +475,7 @@ function addPortfolio() {
   var name = document.getElementById('newPortfolioName').value.trim();
   if (!name) return;
   var curCode = (document.getElementById('newPortfolioCurrencyCode').value.trim() || 'USD').toUpperCase();
-  var isWatchlist = document.getElementById('newPortfolioWatchlist').checked;
+  var isWatchlist = document.querySelector('input[name="portfolioType"]:checked').value === 'index';
   function doCreate() {
     var id = 'p_' + Date.now();
     portfolios[id] = { name: name, positions: [], currencyCode: curCode, watchlist: isWatchlist };
@@ -467,7 +483,7 @@ function addPortfolio() {
     save();
     document.getElementById('newPortfolioName').value = '';
     document.getElementById('newPortfolioCurrencyCode').value = '';
-    document.getElementById('newPortfolioWatchlist').checked = false;
+    document.querySelector('input[name="portfolioType"][value="regular"]').checked = true;
     currentPortfolioId = id;
     localStorage.setItem('pt_current', id);
     loadLocal();
@@ -1109,6 +1125,7 @@ function sortWatchlist(key) {
     watchlistSort.key = key;
     watchlistSort.dir = -1;
   }
+  try { localStorage.setItem('pt_wl_sort', JSON.stringify(watchlistSort)); } catch(e) {}
   render();
 }
 function getWatchlistSorted(items) {
@@ -1258,6 +1275,8 @@ function render() {
     // Collect portfolio stats
     var portfolioStats = Object.keys(portfolios).filter(function(pid) {
       return !portfolios[pid].watchlist;
+    }).sort(function(a, b) {
+      return portfolios[a].name.localeCompare(portfolios[b].name);
     }).map(function(pid) {
       var p = portfolios[pid];
       var val = 0, cost = 0, hasAny = false;
