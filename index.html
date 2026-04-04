@@ -241,7 +241,13 @@
 <!-- Portfolio Switcher -->
 <div class="portfolio-switcher" id="portfolioSwitcher" onclick="closeSwitcherOutside(event)">
   <div class="portfolio-dropdown">
-    <div class="portfolio-dropdown-title">Portfolios</div>
+    <div class="portfolio-dropdown-title" style="display:flex;align-items:center;justify-content:space-between;padding-right:8px">
+      <span>Portfolios</span>
+      <div style="display:flex;gap:0">
+        <button onclick="setSwitcherTab('active')" id="tabActive" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);background:var(--bg2);color:var(--green);cursor:pointer;font-family:var(--font)">ACTIVE</button>
+        <button onclick="setSwitcherTab('archive')" id="tabArchive" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);border-left:none;background:var(--bg);color:var(--dim);cursor:pointer;font-family:var(--font)">ARCHIVE</button>
+      </div>
+    </div>
     <div id="portfolioList"></div>
     <div class="portfolio-add-row">
       <input type="search" id="newPortfolioName" placeholder="NAME"
@@ -406,7 +412,8 @@ function currentPortfolio() {
 
 var positions = [];
 var viewMode = 'main'; // main | weight
-var weightSort = { key: 'weight', dir: -1 }; // default: weight descending
+var weightSort = { key: 'weight', dir: -1 };
+var switcherTab = 'active'; // 'active' or 'archive' // default: weight descending
 var marketSort = { key: null, dir: -1 }; // null = portfolio order
 var watchlistSort = { key: null, dir: -1 };
 var loadingSet = {};
@@ -437,14 +444,68 @@ function closeSwitcher() {
 function closeSwitcherOutside(e) {
   if (e.target === document.getElementById('portfolioSwitcher')) closeSwitcher();
 }
+function setSwitcherTab(tab) {
+  switcherTab = tab;
+  document.getElementById('tabActive').style.background = tab === 'active' ? 'var(--bg2)' : 'var(--bg)';
+  document.getElementById('tabActive').style.color = tab === 'active' ? 'var(--green)' : 'var(--dim)';
+  document.getElementById('tabArchive').style.background = tab === 'archive' ? 'var(--bg2)' : 'var(--bg)';
+  document.getElementById('tabArchive').style.color = tab === 'archive' ? 'var(--green)' : 'var(--dim)';
+  renderSwitcher();
+}
+
+function isArchivePortfolio(p) {
+  return !!(p && p.archive);
+}
+
+function archivePortfolio(id) {
+  var p = portfolios[id];
+  if (!p) return;
+  var allSold = p.positions && p.positions.length > 0 && p.positions.every(function(pos) { return pos.sold; });
+  if (!allSold) { alert('Можно архивировать только если все позиции проданы.'); return; }
+  if (!confirm('Перевести портфель "' + p.name + '" в архив?')) return;
+  portfolios[id].archive = true;
+  savePortfolios();
+  save();
+  // Switch to first active portfolio
+  var activeIds = Object.keys(portfolios).filter(function(pid) { return !portfolios[pid].archive && !portfolios[pid].watchlist; });
+  if (activeIds.length > 0) { switchPortfolio(activeIds[0]); }
+  setSwitcherTab('archive');
+  renderSwitcher();
+}
+
 function renderSwitcher() {
   var list = document.getElementById('portfolioList');
   var summaryActive = viewMode === 'summary';
   var html = '';
-  // Sort: index portfolios first (alpha), then regular (alpha)
   var ids = Object.keys(portfolios);
-  var indexIds = ids.filter(function(id) { return portfolios[id].watchlist; }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
-  var regularIds = ids.filter(function(id) { return !portfolios[id].watchlist; }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+
+  if (switcherTab === 'archive') {
+    // Archive tab
+    var archiveIds = ids.filter(function(id) { return portfolios[id].archive; }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+    archiveIds.forEach(function(id) {
+      var p = portfolios[id];
+      var active = id === currentPortfolioId;
+      html += '<div class="portfolio-item' + (active ? ' active' : '') + '" style="display:flex;align-items:center">'
+        + '<div onclick="switchPortfolio('' + id + '')" style="flex:1;cursor:pointer;min-width:0">'
+        + '<span class="portfolio-item-name">' + p.name + '</span> <span style="color:var(--dim);font-size:10px">' + (p.currencyCode || 'USD') + '</span> '
+        + '<span class="portfolio-item-count">' + p.positions.length + ' pos' + (active ? ' &#10003;' : '') + '</span>'
+        + '</div>'
+        + '<button class="btn-icon" onclick="renamePortfolio('' + id + '')" title="Rename" style="font-size:13px;padding:4px 7px">&#9998;</button>'
+        + '<button class="btn-icon" onclick="deletePortfolio('' + id + '')" title="Delete" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
+        + '</div>';
+    });
+    if (archiveIds.length === 0) html += '<div style="padding:10px 14px;font-size:11px;color:var(--dim)">Нет архивных портфелей</div>';
+    // Archive summary
+    html += '<div class="portfolio-item' + (viewMode === 'archive-summary' ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);margin-top:4px;padding-top:4px" onclick="switchToArchiveSummary()">'
+      + '<div style="flex:1"><span class="portfolio-item-name">&#931; SUMMARY</span></div>'
+      + '</div>';
+    list.innerHTML = html;
+    return;
+  }
+
+  // Active tab
+  var indexIds = ids.filter(function(id) { return portfolios[id].watchlist && !portfolios[id].archive; }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+  var regularIds = ids.filter(function(id) { return !portfolios[id].watchlist && !portfolios[id].archive; }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
   var sortedIds = indexIds.concat(regularIds);
   var hasIndex = indexIds.length > 0;
   var hasRegular = regularIds.length > 0;
@@ -461,6 +522,7 @@ function renderSwitcher() {
       + '<span class="portfolio-item-count">' + (p.watchlist ? 'idx ' : '') + p.positions.length + ' pos' + (active ? ' &#10003;' : '') + '</span>'
       + '</div>'
       + '<button class="btn-icon" onclick="renamePortfolio(\'' + id + '\')" title="Rename" style="font-size:13px;padding:4px 7px">&#9998;</button>'
+      + (!p.watchlist ? '<button class="btn-icon" onclick="archivePortfolio(\'' + id + '\')" title="Archive" style="font-size:11px;padding:4px 5px;color:var(--dim)">&#8709;</button>' : '')
       + '<button class="btn-icon" onclick="deletePortfolio(\'' + id + '\')" title="Delete" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
       + '</div>';
   });
@@ -469,11 +531,23 @@ function renderSwitcher() {
     + '</div>';
   list.innerHTML = html;
 }
+function switchToArchiveSummary() {
+  viewMode = 'archive-summary';
+  document.getElementById('portfolioTitle').textContent = 'ARCHIVE';
+  document.getElementById('viewMenuBtn').disabled = true;
+  document.getElementById('viewMenuBtn').style.opacity = '0.3';
+  var btn = document.getElementById('refreshAllBtn');
+  btn.style.display = 'none';
+  closeSwitcher();
+  render();
+}
+
 function switchToSummary() {
   viewMode = 'summary';
   document.getElementById('portfolioTitle').textContent = 'SUMMARY';
   document.getElementById('viewMenuBtn').disabled = true;
   document.getElementById('viewMenuBtn').style.opacity = '0.3';
+  document.getElementById('refreshAllBtn').style.display = '';
   closeSwitcher();
   if (getApiKey()) refreshAllPortfolios();
   render();
@@ -488,11 +562,18 @@ function switchPortfolio(id) {
   loadingSet = {};
   if (viewMode === 'summary') viewMode = 'main';
   var btn = document.getElementById('viewMenuBtn');
+  var refreshBtn = document.getElementById('refreshAllBtn');
   if (portfolios[id].watchlist) {
     viewMode = 'main';
     btn.disabled = true; btn.style.opacity = '0.3';
+    refreshBtn.style.display = '';
+  } else if (portfolios[id].archive) {
+    if (viewMode === 'market' || viewMode === 'summary' || viewMode === 'archive-summary') viewMode = 'main';
+    refreshBtn.style.display = 'none';
+    btn.disabled = false; btn.style.opacity = '';
   } else {
     btn.disabled = false; btn.style.opacity = '';
+    refreshBtn.style.display = '';
   }
   document.getElementById('portfolioTitle').textContent = portfolios[id].name;
   updateAddForm();
@@ -1091,7 +1172,8 @@ function addPosition() {
     if (!entry || entry <= 0) { document.getElementById('addErr').textContent = 'Введи цену входа'; return; }
   }
   if (isWatchlist()) { qty = 0; entry = 0; current = null; }
-  positions.push({ id: Date.now(), ticker: ticker, qty: qty, entry: entry, current: current });
+  var isSold = !!(currentPortfolio().archive);
+  positions.push({ id: Date.now(), ticker: ticker, qty: qty, entry: entry, current: current, sold: isSold || undefined });
   save();
   ['fTicker','fQty','fEntry','fCurrent'].forEach(function(id) { document.getElementById(id).value = ''; });
   render();
@@ -1168,6 +1250,7 @@ function refreshAllPortfolios() {
   Object.keys(portfolios).forEach(function(pid) {
     var portfolio = portfolios[pid];
     if (!portfolio.positions) return;
+    if (portfolio.archive) return;
     portfolio.positions.forEach(function(p) {
       if (p.sold) return;
       var promise = fetchPrice(p.ticker).then(function(price) {
@@ -1314,7 +1397,13 @@ function getWatchlistSorted(items) {
 
 function toggleViewMenu() {
   var menu = document.getElementById('viewMenu');
-  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+  if (menu.style.display === 'none') {
+    var isArchive = currentPortfolio() && currentPortfolio().archive;
+    document.getElementById('vmMarket').style.display = isArchive ? 'none' : '';
+    menu.style.display = 'block';
+  } else {
+    menu.style.display = 'none';
+  }
 }
 function setView(mode) {
   viewMode = mode;
@@ -1441,11 +1530,97 @@ function render() {
 
   var totalsHtml = '';
 
+  // Archive summary view
+  if (viewMode === 'archive-summary') {
+    var archPortfolioStats = Object.keys(portfolios).filter(function(pid) {
+      return portfolios[pid].archive;
+    }).sort(function(a, b) {
+      return portfolios[a].name.localeCompare(portfolios[b].name);
+    }).map(function(pid) {
+      var p = portfolios[pid];
+      var val = 0, cost = 0, hasAny = false;
+      (p.positions || []).forEach(function(pos) {
+        if (pos.current != null && pos.qty > 0) {
+          val += pos.qty * pos.current;
+          cost += pos.qty * pos.entry;
+          hasAny = true;
+        }
+      });
+      return {
+        id: pid, name: p.name,
+        currency: p.currency || '$',
+        currencyCode: (p.currencyCode || 'USD').toUpperCase(),
+        val: hasAny ? val : null, cost: hasAny ? cost : null
+      };
+    });
+
+    var archFxRates = {};
+    var archNonUSD = [];
+    archPortfolioStats.forEach(function(s) { if (s.currencyCode !== 'USD' && archNonUSD.indexOf(s.currencyCode) === -1) archNonUSD.push(s.currencyCode); });
+
+    function renderArchiveSummary() {
+      var totalValUSD = 0, totalCostUSD = 0;
+      archPortfolioStats.forEach(function(s) {
+        var rate = s.currencyCode === 'USD' ? 1 : (archFxRates[s.currencyCode] || 1);
+        if (s.val !== null) { totalValUSD += s.val * rate; totalCostUSD += s.cost * rate; }
+      });
+      var summaryRows = '';
+      archPortfolioStats.forEach(function(s) {
+        var pnl = s.val !== null ? s.val - s.cost : null;
+        var ret = (pnl !== null && s.cost) ? pnl / s.cost * 100 : null;
+        var rate = s.currencyCode === 'USD' ? 1 : (archFxRates[s.currencyCode] || 1);
+        var weight = (s.val !== null && totalValUSD > 0) ? (s.val * rate) / totalValUSD * 100 : null;
+        var c = pnl === null ? '' : (pnl >= 0 ? 'pos' : 'neg');
+        summaryRows += '<tr style="cursor:pointer" onclick="switchPortfolio(&apos;' + s.id + '&apos;)">'
+          + '<td style="text-align:left">' + s.name + '</td>'
+          + '<td>' + (s.val !== null ? (CURRENCY_SYMBOLS[s.currencyCode] || s.currencyCode) + f2(s.val) : '&mdash;') + '</td>'
+          + '<td class="' + c + '">' + (pnl !== null ? fSign(pnl) : '&mdash;') + '</td>'
+          + '<td class="' + c + '">' + (ret !== null ? fPct(ret) : '&mdash;') + '</td>'
+          + '<td>' + (weight !== null ? fPctNoSign(weight) : '&mdash;') + '</td>'
+          + '</tr>';
+      });
+      var totPnL = totalValUSD - totalCostUSD;
+      var totRet = totalCostUSD ? totPnL / totalCostUSD * 100 : null;
+      var c = totPnL >= 0 ? 'pos' : 'neg';
+      area.innerHTML = '<div class="table-wrap"><table>'
+        + '<thead><tr>'
+        + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO</th>'
+        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">VALUE</th>'
+        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">P&amp;L</th>'
+        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">RETURN</th>'
+        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">SHARE</th>'
+        + '</tr></thead>'
+        + '<tbody>' + summaryRows + '</tbody>'
+        + '</table></div>'
+        + '<div class="totals-bar">'
+        + '<div class="total-block"><div class="total-label">TOTAL VALUE</div><div class="total-value" style="color:var(--bright)">$' + f2(totalValUSD) + '</div></div>'
+        + '<div class="total-block"><div class="total-label">P&amp;L</div><div class="total-value ' + c + '">' + fSign(totPnL) + '</div></div>'
+        + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + c + '">' + (totRet !== null ? fPct(totRet) : '&mdash;') + '</div></div>'
+        + '</div>';
+    }
+
+    if (archNonUSD.length === 0) {
+      renderArchiveSummary();
+    } else {
+      var baseUrl4 = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
+      var token4 = getToken();
+      var archFxP = archNonUSD.map(function(code) {
+        var url = baseUrl4 + '/api/quote?ticker=' + encodeURIComponent(code + 'USD=X');
+        var opts4 = token4 ? { headers: { 'X-API-Token': token4 } } : {};
+        return fetch(url, opts4).then(function(r) { return r.json(); }).then(function(d) {
+          if (d.price) archFxRates[code] = d.price;
+        }).catch(function() {});
+      });
+      Promise.all(archFxP).then(renderArchiveSummary);
+    }
+    return;
+  }
+
   // Summary view
   if (viewMode === 'summary') {
     // Collect portfolio stats
     var portfolioStats = Object.keys(portfolios).filter(function(pid) {
-      return !portfolios[pid].watchlist;
+      return !portfolios[pid].watchlist && !portfolios[pid].archive;
     }).sort(function(a, b) {
       return portfolios[a].name.localeCompare(portfolios[b].name);
     }).map(function(pid) {
