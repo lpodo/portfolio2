@@ -1097,6 +1097,22 @@ function addPosition() {
   render();
 }
 
+function sellPosition(id) {
+  var pos = positions.find(function(p) { return p.id === id; });
+  if (!pos) return;
+  var defaultPrice = pos.current !== null && pos.current !== undefined ? pos.current : '';
+  var sellPrice = prompt('Цена продажи:', defaultPrice);
+  if (sellPrice === null) return;
+  sellPrice = parseFloat(sellPrice);
+  if (isNaN(sellPrice) || sellPrice <= 0) { alert('Неверная цена'); return; }
+  positions = positions.map(function(p) {
+    if (p.id === id) return Object.assign({}, p, { sold: true, current: sellPrice });
+    return p;
+  });
+  save();
+  render();
+}
+
 function removePosition(id) {
   positions = positions.filter(function(p) { return p.id !== id; });
   save(); render();
@@ -1112,7 +1128,7 @@ function saveEdit(id) {
   var current = curRaw ? parseFloat(curRaw) : (pos ? pos.current : null);
   if (qty === null || isNaN(qty) || qty < 0 || !entry) return;
   positions = positions.map(function(p) {
-    return p.id === id ? { id: p.id, ticker: p.ticker, qty: qty, entry: entry, current: current } : p;
+    return p.id === id ? Object.assign({}, p, { qty: qty, entry: entry, current: current }) : p;
   });
   save(); editId = null; render();
 }
@@ -1360,18 +1376,20 @@ function render() {
     var actions = isEdit
       ? '<button class="btn-icon" style="color:var(--green)" onclick="saveEdit(' + p.id + ')">&#10003;</button>'
         + '<button class="btn-icon" onclick="cancelEdit()">&#10005;</button>'
-      : '<button class="btn-icon" onclick="refreshPrice(' + p.id + ')">&#8635;</button>'
+      : (p.sold ? '' : '<button class="btn-icon" onclick="refreshPrice(' + p.id + ')">&#8635;</button>')
         + '<button class="btn-icon" onclick="startEdit(' + p.id + ')">&#9998;</button>'
+        + (p.sold ? '' : '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--dim)" onclick="sellPosition(' + p.id + ')">SELL</button>')
         + '<button class="btn-icon" onclick="removePosition(' + p.id + ')">&#10005;</button>';
 
-    rows += '<tr>'
+    var soldStyle = p.sold ? 'font-style:italic;opacity:0.75' : '';
+    rows += '<tr style="' + soldStyle + '">'
       + '<td>' + p.ticker + '</td>'
       + '<td>' + qtyCell + '</td>'
       + '<td>' + entryCell + '</td>'
       + '<td>' + curEditCell + '</td>'
       + '<td class="' + cls(pnl) + '">' + (p.qty === 0 ? '<span style="color:var(--dim)">&mdash;</span>' : fSign(pnl !== null ? pnl * p.qty : null)) + '</td>'
       + '<td class="' + cls(pnlPct) + '">' + fPct(pnlPct) + '</td>'
-      + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(p.marketState) + '</td>'
+      + '<td style="width:16px;padding:0 2px;text-align:center">' + (p.sold ? '' : marketIcon(p.marketState)) + '</td>'
       + '<td style="padding:0 2px;font-size:9px;color:var(--dim);white-space:nowrap">' + (getPositionCurrencyCode(p)) + '</td>'
       + '<td style="white-space:nowrap">' + actions + '</td>'
       + '</tr>';
