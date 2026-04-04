@@ -390,7 +390,7 @@ function updateAddForm() {
     if (el) el.parentElement.style.display = wl ? 'none' : '';
   });
   var curInput = document.getElementById('fCurrent');
-  if (curInput) curInput.placeholder = arch ? 'SELL PRICE' : '—';
+  if (curInput) curInput.placeholder = arch ? '165.00' : '—';
 }
 function isWatchlist() {
   return !!(currentPortfolio().watchlist);
@@ -1830,8 +1830,9 @@ function render() {
         }
       });
       getWeightSorted(getSorted(), wTotVal).forEach(function(p) {
+        var wSoldStyle = p.sold ? 'font-style:italic;opacity:0.5' : '';
         if (p.current === null || p.current === undefined || p.qty === 0) {
-          weightRows += '<tr>'
+          weightRows += '<tr style="' + wSoldStyle + '">'
             + '<td style="text-align:left">' + p.ticker + '</td>'
             + '<td><span class="muted">&mdash;</span></td>'
             + '<td><span class="muted">&mdash;</span></td>'
@@ -1842,7 +1843,7 @@ function render() {
         var rate = pc !== baseCode ? (wFxMap[pc + baseCode] || 1) : 1;
         var posValBase = p.qty * p.current * rate;
         var weight = wTotVal > 0 ? (posValBase / wTotVal) * 100 : null;
-        weightRows += '<tr>'
+        weightRows += '<tr style="' + wSoldStyle + '">'
           + '<td style="text-align:left">' + p.ticker + '</td>'
           + '<td style="padding:5px 4px">' + getPositionCurrencySymbol(p) + f2(p.qty * p.current) + '</td>'
           + '<td style="padding:5px 4px">' + fPctNoSign(weight) + '</td>'
