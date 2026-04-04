@@ -1137,6 +1137,7 @@ function refreshPrice(id) {
   var pos = null;
   for (var i = 0; i < positions.length; i++) { if (positions[i].id === id) { pos = positions[i]; break; } }
   if (!pos) return Promise.resolve();
+  if (pos.sold) return Promise.resolve();
   if (!getApiKey()) { document.getElementById('apiKeyInput').focus(); return Promise.resolve(); }
   // Clear fetchErr before retrying
   positions = positions.map(function(p) {
