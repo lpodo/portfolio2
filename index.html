@@ -1146,7 +1146,7 @@ function refreshPrice(id) {
   loadingSet[id] = true; render();
   return fetchPrice(pos.ticker).then(function(price) {
     positions = positions.map(function(p) {
-      if (p.id === id) { return { id: p.id, ticker: p.ticker, qty: p.qty, entry: p.entry, current: price, priceType: __priceType, marketState: __marketState, regularMarketPrice: __regularMarketPrice, previousClose: __previousClose, currency: __currency, shortName: __shortName }; }
+      if (p.id === id) { return Object.assign({}, p, { current: price, priceType: __priceType, marketState: __marketState, regularMarketPrice: __regularMarketPrice, previousClose: __previousClose, currency: __currency, shortName: __shortName }); }
       return p;
     });
     saveLocal();
@@ -1168,6 +1168,7 @@ function refreshAllPortfolios() {
     var portfolio = portfolios[pid];
     if (!portfolio.positions) return;
     portfolio.positions.forEach(function(p) {
+      if (p.sold) return;
       var promise = fetchPrice(p.ticker).then(function(price) {
         p.current = price;
         p.priceType = __priceType;
@@ -1377,8 +1378,8 @@ function render() {
       ? '<button class="btn-icon" style="color:var(--green)" onclick="saveEdit(' + p.id + ')">&#10003;</button>'
         + '<button class="btn-icon" onclick="cancelEdit()">&#10005;</button>'
       : (p.sold ? '' : '<button class="btn-icon" onclick="refreshPrice(' + p.id + ')">&#8635;</button>')
-        + '<button class="btn-icon" onclick="startEdit(' + p.id + ')">&#9998;</button>'
         + (p.sold ? '' : '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--dim)" onclick="sellPosition(' + p.id + ')">SELL</button>')
+        + '<button class="btn-icon" onclick="startEdit(' + p.id + ')">&#9998;</button>'
         + '<button class="btn-icon" onclick="removePosition(' + p.id + ')">&#10005;</button>';
 
     var soldStyle = p.sold ? 'font-style:italic;opacity:0.75' : '';
@@ -1389,7 +1390,7 @@ function render() {
       + '<td>' + curEditCell + '</td>'
       + '<td class="' + cls(pnl) + '">' + (p.qty === 0 ? '<span style="color:var(--dim)">&mdash;</span>' : fSign(pnl !== null ? pnl * p.qty : null)) + '</td>'
       + '<td class="' + cls(pnlPct) + '">' + fPct(pnlPct) + '</td>'
-      + '<td style="width:16px;padding:0 2px;text-align:center">' + (p.sold ? '' : marketIcon(p.marketState)) + '</td>'
+      + '<td style="width:16px;padding:0 2px;text-align:center">' + (p.sold ? '<span style="color:#7090b0;font-size:13px">&#8960;</span>' : marketIcon(p.marketState)) + '</td>'
       + '<td style="padding:0 2px;font-size:9px;color:var(--dim);white-space:nowrap">' + (getPositionCurrencyCode(p)) + '</td>'
       + '<td style="white-space:nowrap">' + actions + '</td>'
       + '</tr>';
