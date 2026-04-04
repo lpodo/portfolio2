@@ -158,6 +158,22 @@ Backup format:
 
 On portfolio switch, `refreshAll` runs automatically so prices are always fresh when you view a portfolio.
 
+## Cloud Encryption
+
+Cloud data can be encrypted client-side using AES-GCM 256-bit encryption via the browser's built-in Web Crypto API. Set an **ENC KEY** (encryption password) in Settings to enable.
+
+**How it works:**
+- The password is derived into a cryptographic key using PBKDF2 (100,000 iterations, SHA-256)
+- A random salt (16 bytes) and IV (12 bytes) are generated on every save
+- JSONBin stores `{ "encrypted": "base64..." }` instead of plaintext
+- Without the correct password, the data cannot be decrypted
+
+**Multi-device:** Enter the same ENC KEY on each device. The password never leaves the device — it is stored only in localStorage and never sent to the cloud.
+
+**Important:** If you lose the password, cloud data cannot be recovered. Local data and backups are not affected.
+
+If no ENC KEY is set, data is stored in plaintext (previous behavior).
+
 ## Sync & Conflict Prevention
 
 - `cloudSave` is called only on structural changes (add/edit/delete position, portfolio changes) — never on price updates
