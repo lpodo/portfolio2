@@ -533,7 +533,7 @@ function renderSwitcher() {
 }
 function switchToArchiveSummary() {
   viewMode = 'archive-summary';
-  document.getElementById('portfolioTitle').textContent = 'ARCHIVE';
+  document.getElementById('portfolioTitle').textContent = 'ARCHIVE SUMMARY';
   document.getElementById('viewMenuBtn').disabled = true;
   document.getElementById('viewMenuBtn').style.opacity = '0.3';
   var btn = document.getElementById('refreshAllBtn');
@@ -560,7 +560,7 @@ function switchPortfolio(id) {
   loadLocal();
   editId = null;
   loadingSet = {};
-  if (viewMode === 'summary') viewMode = 'main';
+  if (viewMode === 'summary' || viewMode === 'archive-summary') viewMode = 'main';
   var btn = document.getElementById('viewMenuBtn');
   var refreshBtn = document.getElementById('refreshAllBtn');
   if (portfolios[id].watchlist) {
