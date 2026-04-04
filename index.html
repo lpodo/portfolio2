@@ -300,6 +300,13 @@
     <button class="btn" onclick="clearJbBin()">✕</button>
   </div>
   <div class="api-status" id="jbStatus"></div>
+  <div class="key-row" style="margin-top:6px">
+    <label>ENC KEY</label>
+    <input type="password" id="encKeyInput" placeholder="пароль шифрования" autocomplete="new-password" style="font-size:11px">
+    <button class="btn btn-green" onclick="saveEncKey()">OK</button>
+    <button class="btn" onclick="clearEncKey()">✕</button>
+  </div>
+  <div class="api-status" id="encStatus" style="font-size:10px"></div>
   <div style="margin-top:10px;display:flex;gap:8px">
     <button class="btn btn-green" onclick="syncFromCloud()" style="flex:1;padding:9px;font-size:11px;letter-spacing:1px">
       &#8595; SYNC FROM CLOUD
@@ -569,6 +576,55 @@ function deletePortfolio(id) {
 }
 
 // --- JSONBin ---
+
+function getEncKey() { return localStorage.getItem('pt_enc_key') || ''; }
+function saveEncKey() {
+  var v = document.getElementById('encKeyInput').value;
+  localStorage.setItem('pt_enc_key', v);
+  var el = document.getElementById('encStatus');
+  if (el) el.textContent = v ? '✓ Шифрование включено' : '✓ Шифрование отключено';
+  if (el) el.style.color = v ? 'var(--green)' : 'var(--dim)';
+}
+function clearEncKey() {
+  localStorage.removeItem('pt_enc_key');
+  document.getElementById('encKeyInput').value = '';
+  var el = document.getElementById('encStatus');
+  if (el) { el.textContent = 'Шифрование отключено'; el.style.color = 'var(--dim)'; }
+}
+
+async function deriveKey(password, salt) {
+  var enc = new TextEncoder();
+  var keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: salt, iterations: 100000, hash: 'SHA-256' },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false, ['encrypt', 'decrypt']
+  );
+}
+
+async function encryptData(plaintext, password) {
+  var salt = crypto.getRandomValues(new Uint8Array(16));
+  var iv = crypto.getRandomValues(new Uint8Array(12));
+  var key = await deriveKey(password, salt);
+  var enc = new TextEncoder();
+  var ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, enc.encode(plaintext));
+  // Pack: salt(16) + iv(12) + ciphertext
+  var buf = new Uint8Array(16 + 12 + ciphertext.byteLength);
+  buf.set(salt, 0); buf.set(iv, 16); buf.set(new Uint8Array(ciphertext), 28);
+  return btoa(String.fromCharCode.apply(null, buf));
+}
+
+async function decryptData(b64, password) {
+  var buf = new Uint8Array(atob(b64).split('').map(function(c) { return c.charCodeAt(0); }));
+  var salt = buf.slice(0, 16);
+  var iv = buf.slice(16, 28);
+  var ciphertext = buf.slice(28);
+  var key = await deriveKey(password, salt);
+  var plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, key, ciphertext);
+  return new TextDecoder().decode(plain);
+}
+
 function getJbKey() { return localStorage.getItem('pt_jbkey') || ''; }
 function getJbBin() { return localStorage.getItem('pt_jbbin') || ''; }
 
@@ -760,33 +816,44 @@ function cloudSave() {
 }
 
 function _doCloudSave(key, binId) {
-  var data = { portfolios: portfolios };
-  if (!binId) {
-    // Create new bin
-    fetch('https://api.jsonbin.io/v3/b', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Master-Key': key, 'X-Bin-Name': 'portfolio' },
-      body: JSON.stringify(data)
-    }).then(function(r) { return r.json(); }).then(function(res) {
-      var id = res.metadata && res.metadata.id;
-      if (!id) throw new Error('no_id');
-      localStorage.setItem('pt_jbbin', id);
-      localStorage.setItem('pt_cloud_ts', res.metadata.updatedAt || new Date().toISOString());
-      document.getElementById('jbBinInput').value = id;
-      updateJbStatus('✓ Облако: bin создан и сохранён', 'var(--green)');
-    }).catch(function() { updateJbStatus('✗ Ошибка создания bin', 'var(--red)'); });
+  var plaintext = JSON.stringify({ portfolios: portfolios });
+  var encKey = getEncKey();
+
+  function doSend(body) {
+    if (!binId) {
+      fetch('https://api.jsonbin.io/v3/b', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Master-Key': key, 'X-Bin-Name': 'portfolio' },
+        body: body
+      }).then(function(r) { return r.json(); }).then(function(res) {
+        var id = res.metadata && res.metadata.id;
+        if (!id) throw new Error('no_id');
+        localStorage.setItem('pt_jbbin', id);
+        localStorage.setItem('pt_cloud_ts', res.metadata.updatedAt || new Date().toISOString());
+        document.getElementById('jbBinInput').value = id;
+        updateJbStatus('✓ Облако: bin создан и сохранён', 'var(--green)');
+      }).catch(function() { updateJbStatus('✗ Ошибка создания bin', 'var(--red)'); });
+    } else {
+      fetch('https://api.jsonbin.io/v3/b/' + binId, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-Master-Key': key },
+        body: body
+      }).then(function(r) {
+        if (!r.ok) throw new Error('http_' + r.status);
+        return r.json();
+      }).then(function(res) {
+        localStorage.setItem('pt_cloud_ts', res.metadata && res.metadata.updatedAt ? res.metadata.updatedAt : new Date().toISOString());
+        updateJbStatus('✓ Облако: сохранено ' + new Date().toLocaleTimeString(), 'var(--green)');
+      }).catch(function() { updateJbStatus('✗ Ошибка сохранения', 'var(--red)'); });
+    }
+  }
+
+  if (encKey) {
+    encryptData(plaintext, encKey).then(function(encrypted) {
+      doSend(JSON.stringify({ encrypted: encrypted }));
+    }).catch(function() { updateJbStatus('✗ Ошибка шифрования', 'var(--red)'); });
   } else {
-    fetch('https://api.jsonbin.io/v3/b/' + binId, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'X-Master-Key': key },
-      body: JSON.stringify(data)
-    }).then(function(r) {
-      if (!r.ok) throw new Error('http_' + r.status);
-      return r.json();
-    }).then(function(res) {
-      localStorage.setItem('pt_cloud_ts', res.metadata && res.metadata.updatedAt ? res.metadata.updatedAt : new Date().toISOString());
-      updateJbStatus('✓ Облако: сохранено ' + new Date().toLocaleTimeString(), 'var(--green)');
-    }).catch(function() { updateJbStatus('✗ Ошибка сохранения', 'var(--red)'); });
+    doSend(JSON.stringify({ portfolios: portfolios }));
   }
 }
 
@@ -802,28 +869,46 @@ function cloudLoad(callback) {
     return r.json();
   }).then(function(res) {
     var data = res.record;
-    if (data && data.portfolios && typeof data.portfolios === 'object') {
-      // New multi-portfolio format
-      portfolios = data.portfolios;
-      savePortfolios();
-      // Restore current portfolio
-      if (!portfolios[currentPortfolioId]) {
-        currentPortfolioId = Object.keys(portfolios)[0];
-        localStorage.setItem('pt_current', currentPortfolioId);
+
+    function processData(data) {
+      if (data && data.portfolios && typeof data.portfolios === 'object') {
+        portfolios = data.portfolios;
+        savePortfolios();
+        if (!portfolios[currentPortfolioId]) {
+          currentPortfolioId = Object.keys(portfolios)[0];
+          localStorage.setItem('pt_current', currentPortfolioId);
+        }
+        loadLocal();
+        document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
+        localStorage.setItem('pt_cloud_ts', res.metadata && res.metadata.updatedAt ? res.metadata.updatedAt : new Date().toISOString());
+        updateJbStatus('✓ Загружено из облака', 'var(--green)');
+        callback(true);
+      } else if (data && Array.isArray(data.positions)) {
+        portfolios[currentPortfolioId].positions = data.positions;
+        savePortfolios();
+        loadLocal();
+        updateJbStatus('✓ Загружено из облака (legacy): ' + data.positions.length + ' позиций', 'var(--green)');
+        callback(true);
+      } else { callback(false); }
+    }
+
+    if (data && data.encrypted) {
+      var encKey = getEncKey();
+      if (!encKey) {
+        updateJbStatus('✗ Данные зашифрованы — укажите ENC KEY', 'var(--red)');
+        callback(false);
+        return;
       }
-      loadLocal();
-      document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
-      localStorage.setItem('pt_cloud_ts', res.metadata && res.metadata.updatedAt ? res.metadata.updatedAt : new Date().toISOString());
-      updateJbStatus('✓ Загружено из облака', 'var(--green)');
-      callback(true);
-    } else if (data && Array.isArray(data.positions)) {
-      // Legacy format - migrate into current portfolio
-      portfolios[currentPortfolioId].positions = data.positions;
-      savePortfolios();
-      loadLocal();
-      updateJbStatus('✓ Загружено из облака (legacy): ' + data.positions.length + ' позиций', 'var(--green)');
-      callback(true);
-    } else { callback(false); }
+      decryptData(data.encrypted, encKey).then(function(plain) {
+        try { processData(JSON.parse(plain)); }
+        catch(e) { updateJbStatus('✗ Ошибка расшифровки', 'var(--red)'); callback(false); }
+      }).catch(function() {
+        updateJbStatus('✗ Неверный пароль шифрования', 'var(--red)');
+        callback(false);
+      });
+    } else {
+      processData(data);
+    }
   }).catch(function(e) {
     updateJbStatus('✗ Ошибка загрузки из облака', 'var(--red)');
     callback(false);
@@ -845,6 +930,46 @@ function validateCurrencyCode(code, callback) {
   fetch(url, opts).then(function(r) { return r.json(); }).then(function(d) {
     callback(!!(d.price && d.price > 0));
   }).catch(function() { callback(false); });
+}
+
+
+// --- AES-GCM Cloud Encryption ---
+function getEncKey() { return localStorage.getItem('pt_enc_key') || ''; }
+function saveEncKey(v) { localStorage.setItem('pt_enc_key', v); }
+
+async function deriveKey(password, salt) {
+  var enc = new TextEncoder();
+  var keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: salt, iterations: 100000, hash: 'SHA-256' },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false, ['encrypt', 'decrypt']
+  );
+}
+
+async function encryptData(plaintext, password) {
+  var enc = new TextEncoder();
+  var salt = crypto.getRandomValues(new Uint8Array(16));
+  var iv = crypto.getRandomValues(new Uint8Array(12));
+  var key = await deriveKey(password, salt);
+  var ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, enc.encode(plaintext));
+  // Pack: salt(16) + iv(12) + ciphertext → base64
+  var combined = new Uint8Array(16 + 12 + ciphertext.byteLength);
+  combined.set(salt, 0);
+  combined.set(iv, 16);
+  combined.set(new Uint8Array(ciphertext), 28);
+  return btoa(String.fromCharCode(...combined));
+}
+
+async function decryptData(b64, password) {
+  var bytes = Uint8Array.from(atob(b64), function(c) { return c.charCodeAt(0); });
+  var salt = bytes.slice(0, 16);
+  var iv = bytes.slice(16, 28);
+  var ciphertext = bytes.slice(28);
+  var key = await deriveKey(password, salt);
+  var plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, key, ciphertext);
+  return new TextDecoder().decode(plain);
 }
 
 function getResetDelta() { return localStorage.getItem('pt_reset_delta') === '1'; }
@@ -880,6 +1005,10 @@ function updateSettingsUI() {
   document.getElementById('apiKeyInput').value = k;
   if (document.getElementById('apiTokenInput')) document.getElementById('apiTokenInput').value = getToken();
   if (document.getElementById('resetDeltaChk')) document.getElementById('resetDeltaChk').checked = getResetDelta();
+  if (document.getElementById('encKeyInput')) document.getElementById('encKeyInput').value = getEncKey();
+  var encEl = document.getElementById('encStatus');
+  if (encEl) { encEl.textContent = getEncKey() ? 'Шифрование включено' : ''; encEl.style.color = 'var(--green)'; }
+  if (document.getElementById('jbEncKeyInput')) document.getElementById('jbEncKeyInput').value = getEncKey();
 
   var jbKey = getJbKey();
   var jbBin = getJbBin();
