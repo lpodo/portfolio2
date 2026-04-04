@@ -383,11 +383,14 @@ var CURRENCY_SYMBOLS = {
 };
 function updateAddForm() {
   var wl = isWatchlist();
+  var arch = currentPortfolio() && currentPortfolio().archive;
   var fields = ['fQty','fEntry','fCurrent'];
   fields.forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.parentElement.style.display = wl ? 'none' : '';
   });
+  var curInput = document.getElementById('fCurrent');
+  if (curInput) curInput.placeholder = arch ? 'SELL PRICE' : '—';
 }
 function isWatchlist() {
   return !!(currentPortfolio().watchlist);
@@ -1182,6 +1185,9 @@ function addPosition() {
   if (!isWatchlist()) {
     if (qty === null || isNaN(qty) || qty < 0) { document.getElementById('addErr').textContent = 'Введи количество'; return; }
     if (!entry || entry <= 0) { document.getElementById('addErr').textContent = 'Введи цену входа'; return; }
+    if (currentPortfolio().archive && (!current || isNaN(current) || current <= 0)) {
+      document.getElementById('addErr').textContent = 'Укажи цену продажи'; return;
+    }
   }
   if (isWatchlist()) { qty = 0; entry = 0; current = null; }
   var isSold = !!(currentPortfolio().archive);
