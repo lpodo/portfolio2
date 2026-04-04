@@ -1378,7 +1378,7 @@ function render() {
       ? '<button class="btn-icon" style="color:var(--green)" onclick="saveEdit(' + p.id + ')">&#10003;</button>'
         + '<button class="btn-icon" onclick="cancelEdit()">&#10005;</button>'
       : (p.sold ? '' : '<button class="btn-icon" onclick="refreshPrice(' + p.id + ')">&#8635;</button>')
-        + (p.sold ? '' : '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--green)" onclick="sellPosition(' + p.id + ')">SELL</button>')
+        + (p.sold ? '' : '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--bright)" onclick="sellPosition(' + p.id + ')">SELL</button>')
         + '<button class="btn-icon" onclick="startEdit(' + p.id + ')">&#9998;</button>'
         + '<button class="btn-icon" onclick="removePosition(' + p.id + ')">&#10005;</button>';
 
