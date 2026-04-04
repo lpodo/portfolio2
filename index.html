@@ -264,7 +264,7 @@
         onkeydown="if(event.key==='Enter')addPortfolio()">
       <button class="btn btn-green" onclick="addPortfolio()" style="white-space:nowrap">+ ADD</button>
     </div>
-    <div style="padding:6px 0 6px;display:flex;gap:16px">
+    <div id="portfolioTypeRow" style="padding:6px 0 6px;display:flex;gap:16px">
       <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
         <input type="radio" name="portfolioType" value="regular" checked class="radio-styled"> REGULAR
       </label>
@@ -444,12 +444,23 @@ function closeSwitcher() {
 function closeSwitcherOutside(e) {
   if (e.target === document.getElementById('portfolioSwitcher')) closeSwitcher();
 }
+function updateAddFormForTab() {
+  var isArchiveTab = switcherTab === 'archive';
+  // Hide radio buttons on archive tab
+  var radioRow = document.getElementById('portfolioTypeRow');
+  if (radioRow) radioRow.style.display = isArchiveTab ? 'none' : '';
+  // Update placeholder
+  var nameInput = document.getElementById('newPortfolioName');
+  if (nameInput) nameInput.placeholder = isArchiveTab ? 'ARCHIVE NAME' : 'NAME';
+}
+
 function setSwitcherTab(tab) {
   switcherTab = tab;
   document.getElementById('tabActive').style.background = tab === 'active' ? 'var(--bg2)' : 'var(--bg)';
   document.getElementById('tabActive').style.color = tab === 'active' ? 'var(--green)' : 'var(--dim)';
   document.getElementById('tabArchive').style.background = tab === 'archive' ? 'var(--bg2)' : 'var(--bg)';
   document.getElementById('tabArchive').style.color = tab === 'archive' ? 'var(--green)' : 'var(--dim)';
+  updateAddFormForTab();
   renderSwitcher();
 }
 
@@ -585,10 +596,11 @@ function addPortfolio() {
   var name = document.getElementById('newPortfolioName').value.trim();
   if (!name) return;
   var curCode = (document.getElementById('newPortfolioCurrencyCode').value.trim() || 'USD').toUpperCase();
-  var isWatchlist = document.querySelector('input[name="portfolioType"]:checked').value === 'index';
+  var isArchiveTab = switcherTab === 'archive';
+  var isWatchlist = !isArchiveTab && document.querySelector('input[name="portfolioType"]:checked').value === 'index';
   function doCreate() {
     var id = 'p_' + Date.now();
-    portfolios[id] = { name: name, positions: [], currencyCode: curCode, watchlist: isWatchlist };
+    portfolios[id] = { name: name, positions: [], currencyCode: curCode, watchlist: isWatchlist, archive: isArchiveTab || undefined };
     savePortfolios();
     save();
     document.getElementById('newPortfolioName').value = '';
