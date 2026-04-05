@@ -1750,7 +1750,7 @@ function render() {
         var url = baseUrl + '/api/quote?ticker=' + encodeURIComponent(ticker);
         var opts = token ? { headers: { 'X-API-Token': token } } : {};
         return fetch(url, opts).then(function(r) { return r.json(); }).then(function(d) {
-          if (d.price) fxRates[code] = d.price;
+          if (d.price) summaryFxRates[code] = d.price;
         }).catch(function() {});
       });
       Promise.all(fxPromises).then(function() {
