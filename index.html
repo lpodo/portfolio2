@@ -1739,6 +1739,7 @@ function render() {
     } // end renderSummaryWithRates
 
     if (nonUSD.length === 0) {
+      portfolioStats = buildPortfolioStats();
       renderSummaryWithRates();
     } else {
       // Fetch FX rates from worker
@@ -1753,6 +1754,7 @@ function render() {
         }).catch(function() {});
       });
       Promise.all(fxPromises).then(function() {
+        portfolioStats = buildPortfolioStats();
         renderSummaryWithRates();
       });
     }
