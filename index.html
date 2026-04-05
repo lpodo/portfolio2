@@ -1220,6 +1220,7 @@ function removePosition(id) {
 function startEdit(id) { editId = id; render(); }
 function cancelEdit() { editId = null; render(); }
 function saveEdit(id) {
+  var newTicker = (document.getElementById('editTicker').value || '').trim().toUpperCase();
   var qty = document.getElementById('editQty').value.trim() === '' ? null : parseFloat(document.getElementById('editQty').value);
   var entry = parseFloat(document.getElementById('editEntry').value);
   var curRaw = document.getElementById('editCurrent').value.trim();
@@ -1228,7 +1229,7 @@ function saveEdit(id) {
   var current = curRaw ? parseFloat(curRaw) : (pos ? pos.current : null);
   if (qty === null || isNaN(qty) || qty < 0 || !entry) return;
   positions = positions.map(function(p) {
-    return p.id === id ? Object.assign({}, p, { qty: qty, entry: entry, current: current }) : p;
+    return p.id === id ? Object.assign({}, p, { ticker: newTicker || p.ticker, qty: qty, entry: entry, current: current }) : p;
   });
   save(); editId = null; render();
 }
@@ -1490,9 +1491,10 @@ function render() {
         + '<button class="btn-icon" onclick="startEdit(' + p.id + ')">&#9998;</button>'
         + '<button class="btn-icon" onclick="removePosition(' + p.id + ')">&#10005;</button>';
 
+    var tickerCell = isEdit ? '<input class="edit-input" id="editTicker" type="text" value="' + p.ticker + '" style="width:60px;text-transform:uppercase">' : p.ticker;
     var soldStyle = p.sold ? 'font-style:italic;opacity:0.5' : '';
     rows += '<tr style="' + soldStyle + '">'
-      + '<td>' + p.ticker + '</td>'
+      + '<td>' + tickerCell + '</td>'
       + '<td>' + qtyCell + '</td>'
       + '<td>' + entryCell + '</td>'
       + '<td>' + curEditCell + '</td>'
