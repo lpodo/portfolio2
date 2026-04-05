@@ -1554,41 +1554,42 @@ function render() {
   if (viewMode === 'archive-summary') {
     var archFxRates = {};
     var archNonUSD = [];
-    Object.keys(portfolios).filter(function(pid) { return portfolios[pid].archive; }).forEach(function(pid) {
+    var archPids = Object.keys(portfolios).filter(function(pid) { return portfolios[pid].archive; }).sort(function(a, b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+    archPids.forEach(function(pid) {
       (portfolios[pid].positions || []).forEach(function(pos) {
         var c = pos.currency || portfolios[pid].currencyCode || 'USD';
         if (c !== 'USD' && archNonUSD.indexOf(c) === -1) archNonUSD.push(c);
       });
     });
 
-    var archPortfolioStats = Object.keys(portfolios).filter(function(pid) {
-      return portfolios[pid].archive;
-    }).sort(function(a, b) {
-      return portfolios[a].name.localeCompare(portfolios[b].name);
-    }).map(function(pid) {
-      var p = portfolios[pid];
-      var baseCur = (p.currencyCode || 'USD').toUpperCase();
-      var valUSD = 0, costUSD = 0, valBase = 0, costBase = 0, hasAny = false;
-      (p.positions || []).forEach(function(pos) {
-        if (pos.current != null && pos.qty > 0) {
-          var posCur = pos.currency || baseCur;
-          var rateToUSD = posCur === 'USD' ? 1 : (archFxRates[posCur] || 1);
-          valUSD += pos.qty * pos.current * rateToUSD;
-          costUSD += pos.qty * pos.entry * rateToUSD;
-          var rateBaseToUSD = baseCur === 'USD' ? 1 : (archFxRates[baseCur] || 1);
-          valBase += pos.qty * pos.current * rateToUSD / rateBaseToUSD;
-          costBase += pos.qty * pos.entry * rateToUSD / rateBaseToUSD;
-          hasAny = true;
-        }
+    function buildArchPortfolioStats() {
+      return archPids.map(function(pid) {
+        var p = portfolios[pid];
+        var baseCur = (p.currencyCode || 'USD').toUpperCase();
+        var valUSD = 0, costUSD = 0, valBase = 0, costBase = 0, hasAny = false;
+        (p.positions || []).forEach(function(pos) {
+          if (pos.current != null && pos.qty > 0) {
+            var posCur = pos.currency || baseCur;
+            var rateToUSD = posCur === 'USD' ? 1 : (archFxRates[posCur] || 1);
+            valUSD += pos.qty * pos.current * rateToUSD;
+            costUSD += pos.qty * pos.entry * rateToUSD;
+            var rateBaseToUSD = baseCur === 'USD' ? 1 : (archFxRates[baseCur] || 1);
+            valBase += pos.qty * pos.current * rateToUSD / rateBaseToUSD;
+            costBase += pos.qty * pos.entry * rateToUSD / rateBaseToUSD;
+            hasAny = true;
+          }
+        });
+        return {
+          id: pid, name: p.name,
+          currency: CURRENCY_SYMBOLS[baseCur] || baseCur,
+          currencyCode: baseCur,
+          val: hasAny ? valBase : null, cost: hasAny ? costBase : null,
+          valUSD: hasAny ? valUSD : null, costUSD: hasAny ? costUSD : null
+        };
       });
-      return {
-        id: pid, name: p.name,
-        currency: CURRENCY_SYMBOLS[baseCur] || baseCur,
-        currencyCode: baseCur,
-        val: hasAny ? valBase : null, cost: hasAny ? costBase : null,
-        valUSD: hasAny ? valUSD : null, costUSD: hasAny ? costUSD : null
-      };
-    });
+    }
+
+    var archPortfolioStats = [];
 
     function renderArchiveSummary() {
       var totalValUSD = 0, totalCostUSD = 0;
@@ -1630,6 +1631,7 @@ function render() {
     }
 
     if (archNonUSD.length === 0) {
+      archPortfolioStats = buildArchPortfolioStats();
       renderArchiveSummary();
     } else {
       var baseUrl4 = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
@@ -1641,7 +1643,10 @@ function render() {
           if (d.price) archFxRates[code] = d.price;
         }).catch(function() {});
       });
-      Promise.all(archFxP).then(renderArchiveSummary);
+      Promise.all(archFxP).then(function() {
+        archPortfolioStats = buildArchPortfolioStats();
+        renderArchiveSummary();
+      });
     }
     return;
   }
@@ -1652,45 +1657,42 @@ function render() {
     // Collect all unique position currencies across all portfolios
     var summaryFxRates = {}; // currency → USD rate
     var summaryNonUSD = [];
-    Object.keys(portfolios).filter(function(pid) { return !portfolios[pid].watchlist && !portfolios[pid].archive; }).forEach(function(pid) {
+    var summaryPids = Object.keys(portfolios).filter(function(pid) { return !portfolios[pid].watchlist && !portfolios[pid].archive; }).sort(function(a, b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+    summaryPids.forEach(function(pid) {
       (portfolios[pid].positions || []).forEach(function(pos) {
         var c = pos.currency || portfolios[pid].currencyCode || 'USD';
         if (c !== 'USD' && summaryNonUSD.indexOf(c) === -1) summaryNonUSD.push(c);
       });
     });
 
-    var portfolioStats = Object.keys(portfolios).filter(function(pid) {
-      return !portfolios[pid].watchlist && !portfolios[pid].archive;
-    }).sort(function(a, b) {
-      return portfolios[a].name.localeCompare(portfolios[b].name);
-    }).map(function(pid) {
-      var p = portfolios[pid];
-      var baseCur = (p.currencyCode || 'USD').toUpperCase();
-      var valUSD = 0, costUSD = 0, valBase = 0, costBase = 0, hasAny = false;
-      (p.positions || []).forEach(function(pos) {
-        if (pos.current != null && pos.qty > 0) {
-          var posCur = pos.currency || baseCur;
-          var rateToUSD = posCur === 'USD' ? 1 : (summaryFxRates[posCur] || 1);
-          valUSD += pos.qty * pos.current * rateToUSD;
-          costUSD += pos.qty * pos.entry * rateToUSD;
-          // Value in base currency for display
-          var rateBaseToUSD = baseCur === 'USD' ? 1 : (summaryFxRates[baseCur] || 1);
-          valBase += pos.qty * pos.current * rateToUSD / rateBaseToUSD;
-          costBase += pos.qty * pos.entry * rateToUSD / rateBaseToUSD;
-          hasAny = true;
-        }
+    function buildPortfolioStats() {
+      return summaryPids.map(function(pid) {
+        var p = portfolios[pid];
+        var baseCur = (p.currencyCode || 'USD').toUpperCase();
+        var valUSD = 0, costUSD = 0, valBase = 0, costBase = 0, hasAny = false;
+        (p.positions || []).forEach(function(pos) {
+          if (pos.current != null && pos.qty > 0) {
+            var posCur = pos.currency || baseCur;
+            var rateToUSD = posCur === 'USD' ? 1 : (summaryFxRates[posCur] || 1);
+            valUSD += pos.qty * pos.current * rateToUSD;
+            costUSD += pos.qty * pos.entry * rateToUSD;
+            var rateBaseToUSD = baseCur === 'USD' ? 1 : (summaryFxRates[baseCur] || 1);
+            valBase += pos.qty * pos.current * rateToUSD / rateBaseToUSD;
+            costBase += pos.qty * pos.entry * rateToUSD / rateBaseToUSD;
+            hasAny = true;
+          }
+        });
+        return {
+          id: pid, name: p.name,
+          currency: CURRENCY_SYMBOLS[baseCur] || baseCur,
+          currencyCode: baseCur,
+          val: hasAny ? valBase : null, cost: hasAny ? costBase : null,
+          valUSD: hasAny ? valUSD : null, costUSD: hasAny ? costUSD : null
+        };
       });
-      return {
-        id: pid, name: p.name,
-        currency: CURRENCY_SYMBOLS[baseCur] || baseCur,
-        currencyCode: baseCur,
-        val: hasAny ? valBase : null, cost: hasAny ? costBase : null,
-        valUSD: hasAny ? valUSD : null, costUSD: hasAny ? costUSD : null
-      };
-    });
+    }
 
-    // Get unique non-USD currencies and fetch FX rates
-    var fxRates = summaryFxRates; // alias
+    var portfolioStats = [];
     var nonUSD = summaryNonUSD;
 
     function renderSummaryWithRates() {
