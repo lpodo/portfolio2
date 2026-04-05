@@ -158,6 +158,36 @@ Backup format:
 
 On portfolio switch, `refreshAll` runs automatically so prices are always fresh when you view a portfolio.
 
+## Selling Positions
+
+Any position in a regular portfolio can be marked as sold via the **SELL** button (appears before ✎ and ✕):
+- A prompt asks for the sell price (pre-filled with current price, editable)
+- The position is marked `sold: true` with the sell price locked as `current`
+- Sold positions are displayed in *italic* with reduced opacity and a ⊘ icon instead of market state
+- Sold positions are excluded from Refresh — their price is frozen at the sell price
+- Sold positions are included in portfolio totals and weights
+- The sell price can be corrected via the edit (✎) button
+- Sorting by ticker: sold positions appear first among same-ticker entries
+
+A portfolio can be archived (⊟ button) only when **all** its positions are sold.
+
+## Archive Portfolios
+
+Archive portfolios store closed positions for historical tracking. Accessed via the **ARCHIVE** tab in the portfolio switcher.
+
+**Key differences from regular portfolios:**
+- No Refresh button — all positions are static (sold)
+- ⋮ menu has P&L and WEIGHTS only (no MARKET view)
+- All positions are created in sold status; CURRENT (sell price) is required on add
+- Adding a position validates the ticker against Yahoo Finance — unknown tickers are rejected
+- Archive portfolios are excluded from the main Summary and from Refresh All
+
+**Creating an archive portfolio:** switch to the ARCHIVE tab and use the add form (no INDEX/REGULAR radio — always creates an archive portfolio).
+
+**Archiving a regular portfolio:** click ⊟ next to the portfolio name. Only available when all positions are sold.
+
+**Archive Summary:** Σ SUMMARY at the bottom of the ARCHIVE tab. Same calculation as main Summary — values in native currency, totals in USD with live FX conversion.
+
 ## Cloud Encryption
 
 Cloud data can be encrypted client-side using AES-GCM 256-bit encryption via the browser's built-in Web Crypto API. Set an **ENC KEY** (encryption password) in Settings to enable.
