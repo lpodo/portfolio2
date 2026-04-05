@@ -121,8 +121,13 @@
   .portfolio-switcher.open { display: flex; }
   .portfolio-dropdown {
     background: var(--bg2); border: 1px solid var(--border);
-    min-width: 260px; max-width: 90vw; max-height: 60vh;
+    min-width: 260px; max-width: 90vw; max-height: 80vh;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  #portfolioList {
     overflow-y: auto;
+    flex: 1;
   }
   .portfolio-dropdown-title {
     font-size: 9px; color: var(--dim); letter-spacing: 3px;
