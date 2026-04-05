@@ -1838,6 +1838,9 @@ function render() {
           + '<td style="padding:5px 4px"><span class="muted">&mdash;</span></td>'
           + '<td style="padding:5px 4px"><span class="muted">&mdash;</span></td>'
           + '<td style="padding:5px 4px"><span class="muted">&mdash;</span></td>'
+          + '<td style="width:16px;padding:0 2px;text-align:center"></td>'
+          + '<td style="padding:0 2px;font-size:9px;color:var(--dim);white-space:nowrap"></td>'
+          + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px"></td>'
           + '</tr>';
         return;
       }
@@ -1855,20 +1858,22 @@ function render() {
         + '<td style="text-align:right;padding:5px 4px">' + getPositionCurrencySymbol(p) + f2(p.current) + '</td>'
         + '<td style="text-align:right;padding:5px 4px" class="' + deltaClass + '">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
         + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(p.marketState) + '</td>'
-      + '<td style="padding:0 2px;font-size:9px;color:var(--dim);white-space:nowrap">' + (getPositionCurrencyCode(p)) + '</td>'
+        + '<td style="padding:0 2px;font-size:9px;color:var(--dim);white-space:nowrap">' + (getPositionCurrencyCode(p)) + '</td>'
+        + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
         + '</tr>';
     });
     var mkTickerArrow = marketSort.key === 'ticker' ? (marketSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
     var mkDeltaArrow = marketSort.key === 'delta' ? (marketSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
-    area.innerHTML = '<div class="table-wrap">'
-      + '<table style="width:100%;table-layout:fixed;min-width:0">'
-      + '<colgroup><col style="width:22%"><col style="width:25%"><col style="width:25%"><col style="width:22%"><col style="width:6%"></colgroup>'
+    area.innerHTML = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
+      + '<table style="border-collapse:collapse;font-size:13px">'
       + '<thead><tr>'
-      + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortMarket(&apos;ticker&apos;)">TICKER' + mkTickerArrow + '</th>'
-      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">CLOSE</th>'
-      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">CURRENT</th>'
-      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortMarket(&apos;delta&apos;)">&#916;%' + mkDeltaArrow + '</th>'
+      + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortMarket(&apos;ticker&apos;)">TICKER' + mkTickerArrow + '</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">CLOSE</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">CURRENT</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortMarket(&apos;delta&apos;)">&#916;%' + mkDeltaArrow + '</th>'
       + '<th style="width:16px;padding:0"></th>'
+      + '<th style="padding:0"></th>'
+      + '<th style="text-align:left;padding:5px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">NAME</th>'
       + '</tr></thead>'
       + '<tbody>' + marketRows + '</tbody>'
       + '</table>'
@@ -1894,9 +1899,10 @@ function render() {
         var wSoldStyle = p.sold ? 'font-style:italic;opacity:0.5' : '';
         if (p.current === null || p.current === undefined || p.qty === 0) {
           weightRows += '<tr style="' + wSoldStyle + '">'
-            + '<td style="text-align:left">' + p.ticker + '</td>'
+            + '<td style="text-align:left;white-space:nowrap">' + p.ticker + '</td>'
             + '<td><span class="muted">&mdash;</span></td>'
             + '<td><span class="muted">&mdash;</span></td>'
+            + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px"></td>'
             + '</tr>';
           return;
         }
@@ -1905,20 +1911,21 @@ function render() {
         var posValBase = p.qty * p.current * rate;
         var weight = wTotVal > 0 ? (posValBase / wTotVal) * 100 : null;
         weightRows += '<tr style="' + wSoldStyle + '">'
-          + '<td style="text-align:left">' + p.ticker + '</td>'
-          + '<td style="padding:5px 4px">' + getPositionCurrencySymbol(p) + f2(p.qty * p.current) + '</td>'
-          + '<td style="padding:5px 4px">' + fPctNoSign(weight) + '</td>'
+          + '<td style="text-align:left;white-space:nowrap">' + p.ticker + '</td>'
+          + '<td style="padding:5px 4px;white-space:nowrap">' + getPositionCurrencySymbol(p) + f2(p.qty * p.current) + '</td>'
+          + '<td style="padding:5px 4px;white-space:nowrap">' + fPctNoSign(weight) + '</td>'
+          + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
           + '</tr>';
       });
       return weightRows;
     }
-    var weightTableHtml = '<div class="table-wrap">'
-      + '<table style="width:100%;table-layout:fixed;min-width:0">'
-      + '<colgroup><col style="width:30%"><col style="width:40%"><col style="width:30%"></colgroup>'
+    var weightTableHtml = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
+      + '<table style="border-collapse:collapse;font-size:13px">'
       + '<thead><tr>'
-      + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortWeight(&apos;ticker&apos;)">' + (weightSort.key==='ticker' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'TICKER</th>'
-      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortWeight(&apos;value&apos;)">' + (weightSort.key==='value' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'VALUE</th>'
-      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortWeight(&apos;weight&apos;)">' + (weightSort.key==='weight' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'WEIGHT</th>'
+      + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortWeight(&apos;ticker&apos;)">' + (weightSort.key==='ticker' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'TICKER</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortWeight(&apos;value&apos;)">' + (weightSort.key==='value' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'VALUE</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortWeight(&apos;weight&apos;)">' + (weightSort.key==='weight' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'WEIGHT</th>'
+      + '<th style="text-align:left;padding:5px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">NAME</th>'
       + '</tr></thead>'
       + '<tbody id="weightTbody"></tbody>'
       + '</table>'
