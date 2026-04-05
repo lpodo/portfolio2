@@ -535,8 +535,8 @@ function renderSwitcher() {
       + '<span class="portfolio-item-name">' + p.name + '</span>' + (p.watchlist ? '' : ' <span style="color:var(--dim);font-size:10px">' + (p.currencyCode || 'USD') + '</span>') + ' '
       + '<span class="portfolio-item-count">' + (p.watchlist ? 'idx ' : '') + p.positions.length + ' pos' + (active ? ' &#10003;' : '') + '</span>'
       + '</div>'
+      + (!p.watchlist ? '<button class="btn-icon" onclick="archivePortfolio(\'' + id + '\')" title="Archive" style="font-size:14px;padding:4px 6px;color:var(--dim)">&#8863;</button>' : '')
       + '<button class="btn-icon" onclick="renamePortfolio(\'' + id + '\')" title="Rename" style="font-size:13px;padding:4px 7px">&#9998;</button>'
-      + (!p.watchlist ? '<button class="btn-icon" onclick="archivePortfolio(\'' + id + '\')" title="Archive" style="font-size:11px;padding:4px 5px;color:var(--dim)">&#8709;</button>' : '')
       + '<button class="btn-icon" onclick="deletePortfolio(\'' + id + '\')" title="Delete" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
       + '</div>';
   });
