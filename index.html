@@ -1191,10 +1191,35 @@ function addPosition() {
   }
   if (isWatchlist()) { qty = 0; entry = 0; current = null; }
   var isSold = !!(currentPortfolio().archive);
-  positions.push({ id: Date.now(), ticker: ticker, qty: qty, entry: entry, current: current, sold: isSold || undefined });
-  save();
-  ['fTicker','fQty','fEntry','fCurrent'].forEach(function(id) { document.getElementById(id).value = ''; });
-  render();
+
+  function doAddPosition(extraFields) {
+    var pos = Object.assign({ id: Date.now(), ticker: ticker, qty: qty, entry: entry, current: current }, extraFields);
+    if (isSold) pos.sold = true;
+    positions.push(pos);
+    save();
+    ['fTicker','fQty','fEntry','fCurrent'].forEach(function(id) { document.getElementById(id).value = ''; });
+    render();
+    if (!isSold && !isWatchlist()) refreshPrice(pos.id);
+  }
+
+  // Verify ticker via Yahoo for all portfolio types
+  var errEl = document.getElementById('addErr');
+  errEl.textContent = 'Проверяю тикер...';
+  var baseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
+  var token = getToken();
+  if (!baseUrl) { doAddPosition({}); return; }
+  var url = baseUrl + '/api/quote?ticker=' + encodeURIComponent(ticker) + '&simple=1';
+  var opts = token ? { headers: { 'X-API-Token': token } } : {};
+  fetch(url, opts).then(function(r) { return r.json(); }).then(function(d) {
+    if (!d.price || d.price <= 0) {
+      errEl.textContent = '✗ Неизвестный тикер: ' + ticker;
+      return;
+    }
+    errEl.textContent = '';
+    doAddPosition({ currency: d.currency || null, shortName: d.shortName || null });
+  }).catch(function() {
+    errEl.textContent = '✗ Ошибка проверки тикера';
+  });
 }
 
 function sellPosition(id) {
