@@ -213,6 +213,7 @@
     <div class="form-row" style="margin-bottom:8px">
       <div class="field" style="width:100%">
         <label>TICKER</label>
+        <button class="btn-icon" onclick="pastePosition()" id="pasteBtn" title="Paste" style="font-size:14px;padding:0 4px;color:var(--dim)">&#9016;</button>
         <input type="search" id="fTicker" placeholder="NVDA, CJPU.L, CEBZ.DE..."
           inputmode="text" autocomplete="off" autocorrect="off"
           autocapitalize="characters" spellcheck="false"
@@ -421,7 +422,8 @@ function currentPortfolio() {
 var positions = [];
 var viewMode = 'main'; // main | weight
 var weightSort = { key: 'weight', dir: -1 };
-var switcherTab = 'active'; // 'active' or 'archive' // default: weight descending
+var switcherTab = 'active'; // 'active' or 'archive'
+var positionClipboard = null; // { ticker, qty, entry, current } // default: weight descending
 var marketSort = { key: null, dir: -1 }; // null = portfolio order
 var watchlistSort = { key: null, dir: -1 };
 var loadingSet = {};
@@ -1227,6 +1229,16 @@ function addPosition() {
   });
 }
 
+function pastePosition() {
+  if (!positionClipboard) return;
+  var c = positionClipboard;
+  document.getElementById('fTicker').value = c.ticker || '';
+  document.getElementById('fQty').value = c.qty != null ? c.qty : '';
+  document.getElementById('fEntry').value = c.entry != null ? c.entry : '';
+  document.getElementById('fCurrent').value = c.current != null ? c.current : '';
+  document.getElementById('fTicker').focus();
+}
+
 function sellPosition(id) {
   var pos = positions.find(function(p) { return p.id === id; });
   if (!pos) return;
@@ -1244,6 +1256,10 @@ function sellPosition(id) {
 }
 
 function removePosition(id) {
+  var pos = positions.find(function(p) { return p.id === id; });
+  if (pos) {
+    positionClipboard = { ticker: pos.ticker, qty: pos.qty, entry: pos.entry, current: pos.current };
+  }
   positions = positions.filter(function(p) { return p.id !== id; });
   save(); render();
 }
