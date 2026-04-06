@@ -211,14 +211,17 @@
   <div class="add-form">
     <div class="form-label">+ Добавить позицию</div>
     <div class="form-row" style="margin-bottom:8px">
-      <div class="field" style="width:100%">
+      <div class="field" style="flex:1">
         <label>TICKER</label>
         <input type="search" id="fTicker" placeholder="NVDA, CJPU.L, CEBZ.DE..."
           inputmode="text" autocomplete="off" autocorrect="off"
           autocapitalize="characters" spellcheck="false"
-          style="width:100%;max-width:280px"
+          style="width:100%"
           oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9.\-^=]/g,'')"
           onkeydown="if(event.key==='Enter'){document.getElementById('fQty').focus()}">
+      </div>
+      <div class="field" style="flex:none;align-self:flex-end;padding-bottom:2px">
+        <button class="btn-icon" onclick="pastePosition()" id="pasteBtn" title="Paste" style="font-size:16px;padding:4px 6px;color:var(--dim)">&#10697;</button>
       </div>
     </div>
     <div class="form-row">
