@@ -158,6 +158,14 @@ Backup format:
 
 On portfolio switch, `refreshAll` runs automatically so prices are always fresh when you view a portfolio.
 
+## Position Clipboard (Cut & Paste)
+
+Deleting a position (✕) saves it to an in-memory clipboard (ticker, qty, entry, current). The ⧉ button next to the TICKER field in the Add form pastes the clipboard into the fields for editing before adding. This works as a **cut & paste** — useful for:
+- Undoing an accidental deletion (paste back immediately)
+- Moving a position to another portfolio (delete here, switch portfolio, paste there)
+
+Only one position is held in the clipboard at a time. The clipboard is cleared on page reload. Status (sold) is not preserved — the pasted position is always created as a new active position.
+
 ## Selling Positions
 
 Any position in a regular portfolio can be marked as sold via the **SELL** button (appears before ✎ and ✕):
