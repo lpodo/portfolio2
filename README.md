@@ -249,3 +249,46 @@ Caches app shell for offline use. API requests are **never cached**:
 - `vercel.json` — Vercel configuration
 - `server.js` — Express server for Railway
 - `package.json` — npm dependencies for Railway/Vercel
+
+## Bond Portfolios
+
+Bond portfolios are managed via the **BONDS** tab in the portfolio switcher. They are completely separate from equity portfolios and have their own data structures, storage keys, and cloud sync.
+
+**Limitations:** Only the hold-to-maturity strategy is supported. Selling bonds before maturity is not currently implemented.
+
+### Bond Database
+
+Before adding positions, bonds must be registered in the **Bond Database** (☰ BOND DATABASE button). Each bond has:
+- **Name** — arbitrary label (uppercase)
+- **Currency** — ISO 4217 code
+- **Par Value** — face value of one bond
+- **Nominal Yield** — annual coupon rate (%)
+- **Coupon Frequency** — number of coupon payments per year
+- **Maturity Date** — date of final repayment
+
+Bonds can be edited (✎) or deleted (✕) from the database. The database is shared across all bond portfolios.
+
+### Bond Portfolio
+
+Each bond portfolio has a name and base currency. Positions are sorted by maturity date ascending.
+
+**Position fields (entered manually):**
+- Bond name (selected from database)
+- Purchase date
+- Qty (number of bonds)
+- Clean Price (% of par value)
+- NKD / Accrued Interest
+
+**Calculated fields:**
+- **Position Value** = qty × (cleanPrice/100 × parValue + accruedInterest)
+- **Profit** = qty × (totalCouponIncome + parValue − dirtyPrice), where totalCouponIncome = remaining coupons × couponPrice
+- **Return %** = profit / positionValue × 100
+- **Annual Yield** = Return % / days held × 365
+
+Remaining coupons are calculated by stepping back from maturity date in coupon intervals and counting payments strictly after purchase date (accrued interest already accounts for the current period).
+
+**Matured bonds** (maturity date ≤ today) are shown in italic with reduced opacity, with a separate MATURED VALUE totals bar. Active bonds have their own ACTIVE VALUE totals bar. If only one group exists, only that total is shown.
+
+### Storage
+
+Bond data (`bondsDb`, `bondPortfolios`) is stored in `pt_bonds_db` and `pt_bond_portfolios` in localStorage, and is included in cloud sync alongside equity portfolios in the same JSONBin record.
