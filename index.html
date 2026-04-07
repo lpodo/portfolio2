@@ -1101,7 +1101,9 @@ function backupData() {
   var data = {
     version: 1,
     date: new Date().toISOString(),
-    portfolios: portfolios
+    portfolios: portfolios,
+    bondsDb: getBondsDb(),
+    bondPortfolios: getBondPortfolios()
   };
   var json = JSON.stringify(data, null, 2);
   var blob = new Blob([json], { type: 'application/json' });
@@ -1126,16 +1128,21 @@ function restoreData(event) {
       if (!confirm('Восстановить данные из backup? Текущие данные будут перезаписаны.')) return;
       portfolios = data.portfolios;
       savePortfolios();
-      // Switch to first portfolio
+      if (data.bondsDb && Array.isArray(data.bondsDb)) {
+        bondsDb = data.bondsDb;
+        localStorage.setItem('pt_bonds_db', JSON.stringify(bondsDb));
+      }
+      if (data.bondPortfolios && typeof data.bondPortfolios === 'object') {
+        bondPortfolios = data.bondPortfolios;
+        localStorage.setItem('pt_bond_portfolios', JSON.stringify(bondPortfolios));
+      }
       currentPortfolioId = Object.keys(portfolios)[0];
       localStorage.setItem('pt_current', currentPortfolioId);
-      // Set fresh timestamp so other devices know this is newer
       localStorage.setItem('pt_cloud_ts', '');
       loadLocal();
       render();
       document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
       renderSwitcher();
-      // Push to cloud immediately
       cloudSave();
       var el = document.getElementById('backupStatus');
       if (el) { el.textContent = '✓ Данные восстановлены и сохранены в облако'; el.style.color = 'var(--green)'; }
