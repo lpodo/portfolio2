@@ -668,7 +668,7 @@ function renderBondsSwitcher(html, list, summaryActive) {
     + '</div>';
   // Add form for bond portfolio
   html += '<div style="border-top:1px solid var(--border);padding:10px 14px;display:flex;gap:8px;align-items:center">'
-    + '<input type="search" id="newBondPortfolioName" placeholder="PORTFOLIO NAME" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" style="-webkit-appearance:none;flex:1;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" onkeydown="if(event.key==='Enter')addBondPortfolio2()">'
+    + '<input type="search" id="newBondPortfolioName" placeholder="PORTFOLIO NAME" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" style="-webkit-appearance:none;flex:1;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" onkeydown="if(event.key==String.fromCharCode(13))addBondPortfolio2()">'
     + '<button class="btn btn-green" onclick="addBondPortfolio2()" style="white-space:nowrap">+ ADD</button>'
     + '</div>';
   list.innerHTML = html;
