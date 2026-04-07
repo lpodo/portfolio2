@@ -404,15 +404,13 @@ function isWatchlist() {
   return !!(currentPortfolio().watchlist);
 }
 function getCurrency() {
-  // Returns symbol for portfolio base currency
   var p = currentPortfolio();
   var code = p.currencyCode || 'USD';
-  if (p.currency !== undefined && p.currency !== null && p.currency !== '') return p.currency;
   return CURRENCY_SYMBOLS[code] || code;
 }
 function getPositionCurrencySymbol(pos) {
-  if (!pos.currency) return getCurrency();
-  return CURRENCY_SYMBOLS[pos.currency] || '';
+  var code = pos.currency || currentPortfolio().currencyCode || 'USD';
+  return CURRENCY_SYMBOLS[code] || code;
 }
 function getPositionCurrencyCode(pos) {
   return pos.currency || currentPortfolio().currencyCode || 'USD';
@@ -1549,7 +1547,6 @@ function render() {
       + '<td class="' + cls(pnl) + '">' + (p.qty === 0 ? '<span style="color:var(--dim)">&mdash;</span>' : fSign(pnl !== null ? pnl * p.qty : null)) + '</td>'
       + '<td class="' + cls(pnlPct) + '">' + fPct(pnlPct) + '</td>'
       + '<td style="width:16px;padding:0 2px;text-align:center">' + (p.sold ? '<span style="color:#7090b0;font-size:13px">&#8960;</span>' : marketIcon(p.marketState)) + '</td>'
-      + '<td style="padding:0 2px;font-size:9px;color:var(--dim);white-space:nowrap">' + (getPositionCurrencyCode(p)) + '</td>'
       + '<td style="white-space:nowrap">' + actions + '</td>'
       + '</tr>';
   });
@@ -1757,7 +1754,7 @@ function render() {
         var c = pnl === null ? '' : (pnl >= 0 ? 'pos' : 'neg');
         summaryRows += '<tr style="cursor:pointer" onclick="switchPortfolio(&apos;' + s.id + '&apos;)">'
         + '<td style="text-align:left">' + s.name + '</td>'
-        + '<td>' + (s.val !== null ? s.currency + f2(s.val) : '&mdash;') + '</td>'
+        + '<td>' + (s.val !== null ? (CURRENCY_SYMBOLS[s.currencyCode] || s.currencyCode) + f2(s.val) : '&mdash;') + '</td>'
         + '<td class="' + c + '">' + (pnl !== null ? fSign(pnl) : '&mdash;') + '</td>'
         + '<td class="' + c + '">' + (ret !== null ? fPct(ret) : '&mdash;') + '</td>'
         + '<td>' + (weight !== null ? fPctNoSign(weight) : '&mdash;') + '</td>'
@@ -1857,7 +1854,6 @@ function render() {
           + '<td style="padding:5px 4px"><span class="muted">&mdash;</span></td>'
           + '<td style="padding:5px 4px"><span class="muted">&mdash;</span></td>'
           + '<td style="width:16px;padding:0 2px;text-align:center"></td>'
-          + '<td style="padding:0 2px;font-size:9px;color:var(--dim);white-space:nowrap"></td>'
           + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px"></td>'
           + '</tr>';
         return;
@@ -1876,7 +1872,6 @@ function render() {
         + '<td style="text-align:right;padding:5px 4px">' + getPositionCurrencySymbol(p) + f2(p.current) + '</td>'
         + '<td style="text-align:right;padding:5px 4px" class="' + deltaClass + '">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
         + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(p.marketState) + '</td>'
-        + '<td style="padding:0 2px;font-size:9px;color:var(--dim);white-space:nowrap">' + (getPositionCurrencyCode(p)) + '</td>'
         + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
         + '</tr>';
     });
@@ -1890,7 +1885,6 @@ function render() {
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">CURRENT</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortMarket(&apos;delta&apos;)">&#916;%' + mkDeltaArrow + '</th>'
       + '<th style="width:16px;padding:0"></th>'
-      + '<th style="padding:0"></th>'
       + '<th style="text-align:left;padding:5px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">NAME</th>'
       + '</tr></thead>'
       + '<tbody>' + marketRows + '</tbody>'
@@ -1982,7 +1976,6 @@ function render() {
     + thBtn('pnl', 'P&amp;L')
     + thBtn('pnlpct', 'P&amp;L %')
     + '<th style="width:16px;padding:0"></th>'
-    + '<th style="padding:0"></th>'
     + '<th></th>'
     + '</tr></thead>'
     + '<tbody>' + rows + '</tbody>'
