@@ -673,23 +673,29 @@ function renderBondsSwitcher(html, list, summaryActive) {
     + '<button class="btn btn-green" onclick="openBondDb()" style="flex:1;font-size:10px;padding:7px">&#9776; BOND DATABASE</button>'
     + '</div>';
   // Add form for bond portfolio
-  html += '<div style="border-top:1px solid var(--border);padding:10px 14px;display:flex;gap:8px;align-items:center">'
-    + '<input type="search" id="newBondPortfolioName" placeholder="PORTFOLIO NAME" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" style="-webkit-appearance:none;flex:1;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" onkeydown="if(event.key==String.fromCharCode(13))addBondPortfolio2()">'
+  html += '<div style="border-top:1px solid var(--border);padding:10px 14px">'
+    + '<div style="display:flex;gap:8px;align-items:center">'
+    + '<input type="search" id="newBondPortfolioName" placeholder="NAME" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" style="-webkit-appearance:none;flex:2;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">'
+    + '<input type="search" id="newBondPortfolioCurrency" placeholder="USD" autocomplete="off" autocapitalize="characters" spellcheck="false" style="-webkit-appearance:none;width:52px;flex:none;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;text-align:center;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">'
     + '<button class="btn btn-green" onclick="addBondPortfolio2()" style="white-space:nowrap">+ ADD</button>'
+    + '</div>'
     + '</div>';
   list.innerHTML = html;
 }
 
 function addBondPortfolio2() {
   var nameEl = document.getElementById('newBondPortfolioName');
+  var curEl = document.getElementById('newBondPortfolioCurrency');
   if (!nameEl) return;
   var name = nameEl.value.trim().toUpperCase();
   if (!name) return;
+  var cur = (curEl ? curEl.value.trim().toUpperCase() : '') || 'USD';
   var id = 'bp_' + Date.now();
-  bondPortfolios[id] = { name: name, positions: [] };
+  bondPortfolios[id] = { name: name, currencyCode: cur, positions: [] };
   saveBondPortfolios();
   currentBondPortfolioId = id;
   nameEl.value = '';
+  if (curEl) curEl.value = '';
   renderSwitcher();
   showBondPortfolio(id);
 }
@@ -699,7 +705,10 @@ function renameBondPortfolio(id) {
   if (!p) return;
   var newName = prompt('Portfolio name:', p.name);
   if (!newName || !newName.trim()) return;
+  var newCur = prompt('Base currency code (e.g. USD, EUR):', p.currencyCode || 'USD');
+  if (newCur === null) return;
   bondPortfolios[id].name = newName.trim().toUpperCase();
+  bondPortfolios[id].currencyCode = newCur.trim().toUpperCase() || 'USD';
   saveBondPortfolios();
   if (id === currentBondPortfolioId) document.getElementById('portfolioTitle').textContent = bondPortfolios[id].name;
   renderSwitcher();
