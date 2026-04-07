@@ -622,12 +622,14 @@ function getBondsDb() {
 }
 function saveBondsDb() {
   try { localStorage.setItem('pt_bonds_db', JSON.stringify(bondsDb)); } catch(e) {}
+  cloudSave();
 }
 function getBondPortfolios() {
   try { return JSON.parse(localStorage.getItem('pt_bond_portfolios') || '{}'); } catch(e) { return {}; }
 }
 function saveBondPortfolios() {
   try { localStorage.setItem('pt_bond_portfolios', JSON.stringify(bondPortfolios)); } catch(e) {}
+  cloudSave();
 }
 
 function addBondPortfolio() {
@@ -1249,7 +1251,7 @@ function cloudSave() {
 }
 
 function _doCloudSave(key, binId) {
-  var plaintext = JSON.stringify({ portfolios: portfolios });
+  var plaintext = JSON.stringify({ portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios() });
   var encKey = getEncKey();
 
   function doSend(body) {
@@ -1306,6 +1308,14 @@ function cloudLoad(callback) {
     function processData(data) {
       if (data && data.portfolios && typeof data.portfolios === 'object') {
         portfolios = data.portfolios;
+        if (data.bondsDb && Array.isArray(data.bondsDb)) {
+          bondsDb = data.bondsDb;
+          localStorage.setItem('pt_bonds_db', JSON.stringify(bondsDb));
+        }
+        if (data.bondPortfolios && typeof data.bondPortfolios === 'object') {
+          bondPortfolios = data.bondPortfolios;
+          localStorage.setItem('pt_bond_portfolios', JSON.stringify(bondPortfolios));
+        }
         savePortfolios();
         if (!portfolios[currentPortfolioId]) {
           currentPortfolioId = Object.keys(portfolios)[0];
