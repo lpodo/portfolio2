@@ -489,10 +489,10 @@ function closeSwitcherOutside(e) {
 function updateAddFormForTab() {
   var isArchiveTab = switcherTab === 'archive';
   var isBondsTab = switcherTab === 'bonds';
-  // Hide radio buttons on archive tab
+  var addRow = document.getElementById('portfolioAddRow');
+  if (addRow) addRow.style.display = isBondsTab ? 'none' : '';
   var radioRow = document.getElementById('portfolioTypeRow');
-  if (radioRow) radioRow.style.display = isArchiveTab ? 'none' : '';
-  // Update placeholder
+  if (radioRow) radioRow.style.display = (isArchiveTab || isBondsTab) ? 'none' : '';
   var nameInput = document.getElementById('newPortfolioName');
   if (nameInput) nameInput.placeholder = isArchiveTab ? 'ARCHIVE NAME' : 'NAME';
 }
@@ -660,7 +660,7 @@ function renderBondsSwitcher(html, list, summaryActive) {
     var active = id === currentBondPortfolioId && viewMode === 'bonds';
     html += '<div class="portfolio-item' + (active ? ' active' : '') + '" style="display:flex;align-items:center">'
       + '<div onclick="showBondPortfolio(&apos;' + id + '&apos;)" style="flex:1;cursor:pointer;min-width:0">'
-      + '<span class="portfolio-item-name">' + p.name + '</span> '
+      + '<span class="portfolio-item-name">' + p.name + '</span> <span style="color:var(--dim);font-size:10px">' + (p.currencyCode || 'USD') + '</span> '
       + '<span class="portfolio-item-count">' + p.positions.length + ' bonds' + (active ? ' &#10003;' : '') + '</span>'
       + '</div>'
       + '<button class="btn-icon" onclick="renameBondPortfolio(&apos;' + id + '&apos;)" style="font-size:13px;padding:4px 7px">&#9998;</button>'
