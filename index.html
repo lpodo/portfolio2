@@ -246,6 +246,35 @@
   <div style="height:60px"></div>
 </div>
 
+
+<!-- Bond Database Modal -->
+<div id="bondDbModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:300;align-items:center;justify-content:center">
+  <div style="background:var(--bg2);border:1px solid var(--border);width:90vw;max-width:500px;max-height:80vh;display:flex;flex-direction:column">
+    <div style="padding:12px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:9px;letter-spacing:2px;color:var(--dim)">BOND DATABASE</span>
+      <button class="btn-icon" onclick="closeBondDb()" style="font-size:16px">&#10005;</button>
+    </div>
+    <div id="bondDbList" style="overflow-y:auto;flex:1;padding:0 14px"></div>
+    <div style="border-top:1px solid var(--border);padding:12px 14px">
+      <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">ADD BOND</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+        <input type="text" id="bondDbName" placeholder="Bond name" autocomplete="off" style="flex:2;min-width:120px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none">
+        <input type="text" id="bondDbCurrency" placeholder="USD" maxlength="3" style="width:44px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+        <input type="number" id="bondDbPar" placeholder="Par Value" min="0" step="any" style="flex:1;min-width:80px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none">
+        <input type="number" id="bondDbYield" placeholder="Yield %" min="0" step="0.01" style="flex:1;min-width:80px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none">
+        <input type="number" id="bondDbFreq" placeholder="Freq" value="2" min="1" max="12" step="1" style="width:50px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none">
+        <input type="date" id="bondDbMaturity" style="flex:1;min-width:110px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none">
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-green" onclick="addBondToDb()">+ ADD</button>
+        <span id="bondDbErr" style="color:var(--red);font-size:11px"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Portfolio Switcher -->
 <div class="portfolio-switcher" id="portfolioSwitcher" onclick="closeSwitcherOutside(event)">
   <div class="portfolio-dropdown">
@@ -253,7 +282,7 @@
       <span>Portfolios</span>
       <div style="display:flex;gap:0">
         <button onclick="setSwitcherTab('active')" id="tabActive" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);background:var(--bg2);color:var(--green);cursor:pointer;font-family:var(--font)">ACTIVE</button>
-        <button onclick="setSwitcherTab('archive')" id="tabArchive" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);border-left:none;background:var(--bg);color:var(--dim);cursor:pointer;font-family:var(--font)">ARCHIVE</button>
+        <button onclick="setSwitcherTab('archive')" id="tabArchive" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);border-left:none;background:var(--bg);color:var(--dim);cursor:pointer;font-family:var(--font)">ARCHIVE</button><button onclick="setSwitcherTab('bonds')" id="tabBonds" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);border-left:none;background:var(--bg);color:var(--dim);cursor:pointer;font-family:var(--font)">BONDS</button>
       </div>
     </div>
     <div id="portfolioList"></div>
@@ -423,7 +452,10 @@ var positions = [];
 var viewMode = 'main'; // main | weight
 var weightSort = { key: 'weight', dir: -1 };
 var switcherTab = 'active'; // 'active' or 'archive'
-var positionClipboard = null; // { ticker, qty, entry, current } // default: weight descending
+var positionClipboard = null; // { ticker, qty, entry, current }
+var bondsDb = []; // bond database: { id, name, currency, parValue, nominalYield, couponFrequency, maturityDate }
+var bondPortfolios = {}; // bond portfolios: { id: { name, positions: [] } }
+var currentBondPortfolioId = null; // default: weight descending
 var marketSort = { key: null, dir: -1 }; // null = portfolio order
 var watchlistSort = { key: null, dir: -1 };
 var loadingSet = {};
@@ -456,6 +488,7 @@ function closeSwitcherOutside(e) {
 }
 function updateAddFormForTab() {
   var isArchiveTab = switcherTab === 'archive';
+  var isBondsTab = switcherTab === 'bonds';
   // Hide radio buttons on archive tab
   var radioRow = document.getElementById('portfolioTypeRow');
   if (radioRow) radioRow.style.display = isArchiveTab ? 'none' : '';
@@ -466,10 +499,10 @@ function updateAddFormForTab() {
 
 function setSwitcherTab(tab) {
   switcherTab = tab;
-  document.getElementById('tabActive').style.background = tab === 'active' ? 'var(--bg2)' : 'var(--bg)';
-  document.getElementById('tabActive').style.color = tab === 'active' ? 'var(--green)' : 'var(--dim)';
-  document.getElementById('tabArchive').style.background = tab === 'archive' ? 'var(--bg2)' : 'var(--bg)';
-  document.getElementById('tabArchive').style.color = tab === 'archive' ? 'var(--green)' : 'var(--dim)';
+  ['active','archive','bonds'].forEach(function(t) {
+    var el = document.getElementById('tab' + t.charAt(0).toUpperCase() + t.slice(1));
+    if (el) { el.style.background = tab === t ? 'var(--bg2)' : 'var(--bg)'; el.style.color = tab === t ? 'var(--green)' : 'var(--dim)'; }
+  });
   updateAddFormForTab();
   renderSwitcher();
 }
@@ -494,11 +527,261 @@ function archivePortfolio(id) {
   renderSwitcher();
 }
 
+
+
+function renderBondAddForm(bpId) {
+  bondsDb = getBondsDb();
+  var options = '<option value="">— select bond —</option>' + bondsDb.map(function(b) {
+    return '<option value="' + b.id + '">' + b.name + '</option>';
+  }).join('');
+  return '<div class="add-form" style="margin-top:12px">'
+    + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">+ ADD POSITION</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">'
+    + '<select id="bpBondId" style="flex:2;min-width:120px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none">' + options + '</select>'
+    + '<input type="date" id="bpDate" style="flex:1;min-width:110px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none">'
+    + '</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">'
+    + '<div class="field"><label>QTY</label><input type="number" id="bpQty" placeholder="10" min="1" step="1" style="width:70px"></div>'
+    + '<div class="field"><label>CLEAN PRICE %</label><input type="number" id="bpClean" placeholder="98.50" min="0" step="0.01" style="width:80px"></div>'
+    + '<div class="field"><label>NKD</label><input type="number" id="bpNkd" placeholder="0.00" min="0" step="0.01" style="width:80px"></div>'
+    + '</div>'
+    + '<div style="display:flex;gap:8px;align-items:center">'
+    + '<button class="btn btn-green" onclick="addBondPosition(&apos;' + bpId + '&apos;)">ADD</button>'
+    + '<span id="bpErr" style="color:var(--red);font-size:11px"></span>'
+    + '</div>'
+    + '</div>';
+}
+
+function addBondPosition(bpId) {
+  var bondId = document.getElementById('bpBondId').value;
+  var purchaseDate = document.getElementById('bpDate').value;
+  var qty = parseInt(document.getElementById('bpQty').value);
+  var cleanPrice = parseFloat(document.getElementById('bpClean').value);
+  var accruedInterest = parseFloat(document.getElementById('bpNkd').value) || 0;
+  var err = document.getElementById('bpErr');
+  if (!bondId) { err.textContent = 'Select bond'; return; }
+  if (!purchaseDate) { err.textContent = 'Enter purchase date'; return; }
+  if (!qty || qty <= 0) { err.textContent = 'Enter qty'; return; }
+  if (!cleanPrice || cleanPrice <= 0) { err.textContent = 'Enter clean price'; return; }
+  var bond = bondsDb.find(function(b) { return b.id === bondId; });
+  if (!bond) { err.textContent = 'Bond not found'; return; }
+  // Check maturity not in past
+  if (new Date(bond.maturityDate) <= new Date(purchaseDate)) { err.textContent = 'Maturity date must be after purchase date'; return; }
+  err.textContent = '';
+  bondPortfolios[bpId].positions.push({ id: 'bpos_' + Date.now(), bondId: bondId, bondName: bond.name, purchaseDate: purchaseDate, qty: qty, cleanPrice: cleanPrice, accruedInterest: accruedInterest });
+  saveBondPortfolios();
+  render();
+}
+
+function deleteBondPosition(posId) {
+  if (!currentBondPortfolioId || !bondPortfolios[currentBondPortfolioId]) return;
+  bondPortfolios[currentBondPortfolioId].positions = bondPortfolios[currentBondPortfolioId].positions.filter(function(p) { return p.id !== posId; });
+  saveBondPortfolios();
+  render();
+}
+
+function editBondPosition(posId) {
+  if (!currentBondPortfolioId || !bondPortfolios[currentBondPortfolioId]) return;
+  var pos = bondPortfolios[currentBondPortfolioId].positions.find(function(p) { return p.id === posId; });
+  if (!pos) return;
+  var newClean = prompt('Clean Price (%):', pos.cleanPrice);
+  if (newClean === null) return;
+  var newNkd = prompt('NKD (Accrued Interest):', pos.accruedInterest);
+  if (newNkd === null) return;
+  pos.cleanPrice = parseFloat(newClean) || pos.cleanPrice;
+  pos.accruedInterest = parseFloat(newNkd) || 0;
+  saveBondPortfolios();
+  render();
+}
+
+function openBondDetailById(bondId) {
+  bondsDb = getBondsDb();
+  var b = bondsDb.find(function(x) { return x.id === bondId; });
+  if (!b) return;
+  var currSym = CURRENCY_SYMBOLS[b.currency] || b.currency;
+  var couponAmt = b.parValue * b.nominalYield / b.couponFrequency;
+  alert(b.name
+    + '\nCurrency: ' + b.currency
+    + '\nPar Value: ' + currSym + b.parValue
+    + '\nNominal Yield: ' + (b.nominalYield*100).toFixed(2) + '%'
+    + '\nCoupon: ' + currSym + f2(couponAmt) + ' × ' + b.couponFrequency + 'x/year'
+    + '\nMaturity: ' + b.maturityDate);
+}
+
+function getBondsDb() {
+  try { return JSON.parse(localStorage.getItem('pt_bonds_db') || '[]'); } catch(e) { return []; }
+}
+function saveBondsDb() {
+  try { localStorage.setItem('pt_bonds_db', JSON.stringify(bondsDb)); } catch(e) {}
+}
+function getBondPortfolios() {
+  try { return JSON.parse(localStorage.getItem('pt_bond_portfolios') || '{}'); } catch(e) { return {}; }
+}
+function saveBondPortfolios() {
+  try { localStorage.setItem('pt_bond_portfolios', JSON.stringify(bondPortfolios)); } catch(e) {}
+}
+
+function addBondPortfolio() {
+  var name = document.getElementById('newPortfolioName').value.trim().toUpperCase();
+  if (!name) return;
+  var id = 'bp_' + Date.now();
+  bondPortfolios[id] = { name: name, positions: [] };
+  saveBondPortfolios();
+  currentBondPortfolioId = id;
+  document.getElementById('newPortfolioName').value = '';
+  renderSwitcher();
+  showBondPortfolio(id);
+}
+
+function showBondPortfolio(id) {
+  if (!bondPortfolios[id]) return;
+  currentBondPortfolioId = id;
+  viewMode = 'bonds';
+  document.getElementById('portfolioTitle').textContent = bondPortfolios[id].name;
+  document.getElementById('viewMenuBtn').disabled = true;
+  document.getElementById('viewMenuBtn').style.opacity = '0.3';
+  document.getElementById('refreshAllBtn').style.display = 'none';
+  closeSwitcher();
+  render();
+}
+
+function renderBondsSwitcher(html, list, summaryActive) {
+  bondsDb = getBondsDb();
+  bondPortfolios = getBondPortfolios();
+  var bpIds = Object.keys(bondPortfolios).sort(function(a,b) { return bondPortfolios[a].name.localeCompare(bondPortfolios[b].name); });
+  bpIds.forEach(function(id) {
+    var p = bondPortfolios[id];
+    var active = id === currentBondPortfolioId && viewMode === 'bonds';
+    html += '<div class="portfolio-item' + (active ? ' active' : '') + '" style="display:flex;align-items:center">'
+      + '<div onclick="showBondPortfolio(&apos;' + id + '&apos;)" style="flex:1;cursor:pointer;min-width:0">'
+      + '<span class="portfolio-item-name">' + p.name + '</span> '
+      + '<span class="portfolio-item-count">' + p.positions.length + ' bonds' + (active ? ' &#10003;' : '') + '</span>'
+      + '</div>'
+      + '<button class="btn-icon" onclick="renameBondPortfolio(&apos;' + id + '&apos;)" style="font-size:13px;padding:4px 7px">&#9998;</button>'
+      + '<button class="btn-icon" onclick="deleteBondPortfolio(&apos;' + id + '&apos;)" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
+      + '</div>';
+  });
+  if (bpIds.length === 0) html += '<div style="padding:10px 14px;font-size:11px;color:var(--dim)">Нет портфелей облигаций</div>';
+  // Bond DB button
+  html += '<div style="border-top:1px solid var(--border);margin-top:4px;padding:8px 14px;display:flex;gap:8px">'
+    + '<button class="btn btn-green" onclick="openBondDb()" style="flex:1;font-size:10px;padding:7px">&#9776; BOND DATABASE</button>'
+    + '</div>';
+  // Add form for bond portfolio
+  html += '<div style="border-top:1px solid var(--border);padding:10px 14px;display:flex;gap:8px;align-items:center">'
+    + '<input type="search" id="newBondPortfolioName" placeholder="PORTFOLIO NAME" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" style="-webkit-appearance:none;flex:1;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" onkeydown="if(event.key==='Enter')addBondPortfolio2()">'
+    + '<button class="btn btn-green" onclick="addBondPortfolio2()" style="white-space:nowrap">+ ADD</button>'
+    + '</div>';
+  list.innerHTML = html;
+}
+
+function addBondPortfolio2() {
+  var nameEl = document.getElementById('newBondPortfolioName');
+  if (!nameEl) return;
+  var name = nameEl.value.trim().toUpperCase();
+  if (!name) return;
+  var id = 'bp_' + Date.now();
+  bondPortfolios[id] = { name: name, positions: [] };
+  saveBondPortfolios();
+  currentBondPortfolioId = id;
+  nameEl.value = '';
+  renderSwitcher();
+  showBondPortfolio(id);
+}
+
+function renameBondPortfolio(id) {
+  var p = bondPortfolios[id];
+  if (!p) return;
+  var newName = prompt('Portfolio name:', p.name);
+  if (!newName || !newName.trim()) return;
+  bondPortfolios[id].name = newName.trim().toUpperCase();
+  saveBondPortfolios();
+  if (id === currentBondPortfolioId) document.getElementById('portfolioTitle').textContent = bondPortfolios[id].name;
+  renderSwitcher();
+}
+
+function deleteBondPortfolio(id) {
+  if (!confirm('Delete bond portfolio "' + bondPortfolios[id].name + '"?')) return;
+  delete bondPortfolios[id];
+  saveBondPortfolios();
+  if (currentBondPortfolioId === id) {
+    currentBondPortfolioId = null;
+    viewMode = 'main';
+    document.getElementById('refreshAllBtn').style.display = '';
+    document.getElementById('viewMenuBtn').disabled = false;
+    document.getElementById('viewMenuBtn').style.opacity = '';
+  }
+  renderSwitcher();
+  render();
+}
+
+// Bond Database modal
+function openBondDb() {
+  bondsDb = getBondsDb();
+  closeSwitcher();
+  var modal = document.getElementById('bondDbModal');
+  if (modal) { renderBondDbModal(); modal.style.display = 'flex'; }
+}
+function closeBondDb() {
+  var modal = document.getElementById('bondDbModal');
+  if (modal) modal.style.display = 'none';
+}
+function renderBondDbModal() {
+  var list = document.getElementById('bondDbList');
+  if (!list) return;
+  bondsDb = getBondsDb();
+  var html = '';
+  bondsDb.forEach(function(b, i) {
+    html += '<div style="display:flex;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);gap:8px">'
+      + '<div style="flex:1;cursor:pointer" onclick="openBondDetail(' + i + ')">'
+      + '<div style="font-size:13px;color:var(--bright)">' + b.name + '</div>'
+      + '<div style="font-size:10px;color:var(--dim)">' + b.currency + ' · Par ' + b.parValue + ' · Yield ' + (b.nominalYield*100).toFixed(2) + '% · ' + b.couponFrequency + 'x/yr · Maturity ' + b.maturityDate + '</div>'
+      + '</div>'
+      + '<button class="btn-icon" onclick="deleteBond(' + i + ')" style="color:var(--red)">&#10005;</button>'
+      + '</div>';
+  });
+  if (bondsDb.length === 0) html = '<div style="color:var(--dim);font-size:11px;padding:10px 0">No bonds in database</div>';
+  list.innerHTML = html;
+}
+function addBondToDb() {
+  var name = document.getElementById('bondDbName').value.trim();
+  var currency = document.getElementById('bondDbCurrency').value.trim().toUpperCase() || 'USD';
+  var parValue = parseFloat(document.getElementById('bondDbPar').value);
+  var nominalYield = parseFloat(document.getElementById('bondDbYield').value) / 100;
+  var couponFrequency = parseInt(document.getElementById('bondDbFreq').value) || 2;
+  var maturityDate = document.getElementById('bondDbMaturity').value;
+  var err = document.getElementById('bondDbErr');
+  if (!name) { err.textContent = 'Enter bond name'; return; }
+  if (!parValue || parValue <= 0) { err.textContent = 'Enter par value'; return; }
+  if (!nominalYield || nominalYield <= 0) { err.textContent = 'Enter nominal yield'; return; }
+  if (!maturityDate) { err.textContent = 'Enter maturity date'; return; }
+  err.textContent = '';
+  bondsDb.push({ id: 'b_' + Date.now(), name: name, currency: currency, parValue: parValue, nominalYield: nominalYield, couponFrequency: couponFrequency, maturityDate: maturityDate });
+  saveBondsDb();
+  ['bondDbName','bondDbPar','bondDbYield','bondDbMaturity'].forEach(function(id) { document.getElementById(id).value = ''; });
+  document.getElementById('bondDbFreq').value = '2';
+  renderBondDbModal();
+}
+function deleteBond(idx) {
+  if (!confirm('Delete "' + bondsDb[idx].name + '" from database?')) return;
+  bondsDb.splice(idx, 1);
+  saveBondsDb();
+  renderBondDbModal();
+}
+function openBondDetail(idx) {
+  var b = bondsDb[idx];
+  alert(b.name + '\nCurrency: ' + b.currency + '\nPar Value: ' + b.parValue + '\nNominal Yield: ' + (b.nominalYield*100).toFixed(2) + '%\nCoupon Frequency: ' + b.couponFrequency + 'x/year\nMaturity: ' + b.maturityDate);
+}
+
 function renderSwitcher() {
   var list = document.getElementById('portfolioList');
   var summaryActive = viewMode === 'summary';
   var html = '';
   var ids = Object.keys(portfolios);
+
+  if (switcherTab === 'bonds') {
+    renderBondsSwitcher(html, list, summaryActive);
+    return;
+  }
 
   if (switcherTab === 'archive') {
     // Archive tab
@@ -607,6 +890,8 @@ function addPortfolio() {
   if (!name) return;
   var curCode = (document.getElementById('newPortfolioCurrencyCode').value.trim() || 'USD').toUpperCase();
   var isArchiveTab = switcherTab === 'archive';
+  var isBondsTab = switcherTab === 'bonds';
+  if (isBondsTab) { addBondPortfolio(); return; }
   var isWatchlist = !isArchiveTab && document.querySelector('input[name="portfolioType"]:checked').value === 'index';
   function doCreate() {
     var id = 'p_' + Date.now();
@@ -760,7 +1045,9 @@ function manualCloudLoad() {
   localStorage.setItem('pt_jbbin', bin);
   document.getElementById('jbBinInput').value = bin;
   updateJbStatus('Загружаю...', 'var(--dim)');
-  cloudLoad(function(loaded) {
+  bondsDb = getBondsDb();
+bondPortfolios = getBondPortfolios();
+cloudLoad(function(loaded) {
     if (loaded) { render(); closeSettings(); if (getApiKey()) refreshAll(); }
   });
 }
@@ -1693,6 +1980,105 @@ function render() {
         renderArchiveSummary();
       });
     }
+    return;
+  }
+
+  // Bonds portfolio view
+  if (viewMode === 'bonds') {
+    bondPortfolios = getBondPortfolios();
+    bondsDb = getBondsDb();
+    var bp = bondPortfolios[currentBondPortfolioId];
+    if (!bp) { area.innerHTML = '<div style="color:var(--dim);padding:20px">Select a bond portfolio</div>'; return; }
+
+    // Calculations
+    function calcCouponsRemaining(purchaseDate, maturityDate, couponFrequency) {
+      var maturity = new Date(maturityDate);
+      var purchase = new Date(purchaseDate);
+      var count = 0;
+      // Step back from maturity by coupon interval
+      var intervalMonths = Math.round(12 / couponFrequency);
+      var d = new Date(maturity);
+      while (d > purchase) {
+        count++;
+        d.setMonth(d.getMonth() - intervalMonths);
+      }
+      return count;
+    }
+
+    function calcBondPosition(pos) {
+      var bond = bondsDb.find(function(b) { return b.id === pos.bondId; });
+      if (!bond) return null;
+      var dirtyPrice = pos.cleanPrice / 100 * bond.parValue + pos.accruedInterest;
+      var positionValue = pos.qty * dirtyPrice;
+      var couponPrice = bond.parValue * bond.nominalYield / bond.couponFrequency;
+      var couponsLeft = calcCouponsRemaining(pos.purchaseDate, bond.maturityDate, bond.couponFrequency);
+      var totalCouponIncome = couponPrice * couponsLeft;
+      var profitPerBond = totalCouponIncome + bond.parValue - dirtyPrice;
+      var totalProfit = profitPerBond * pos.qty;
+      var profitPct = positionValue > 0 ? profitPerBond / dirtyPrice * 100 : null;
+      // Annual yield: days from purchase to maturity
+      var purchaseD = new Date(pos.purchaseDate);
+      var maturityD = new Date(bond.maturityDate);
+      var daysHeld = (maturityD - purchaseD) / (1000 * 60 * 60 * 24);
+      var annualYield = (daysHeld > 0 && profitPct !== null) ? profitPct / daysHeld * 365 : null;
+      var currSym = CURRENCY_SYMBOLS[bond.currency] || bond.currency;
+      return { bond: bond, dirtyPrice: dirtyPrice, positionValue: positionValue, totalProfit: totalProfit, profitPct: profitPct, annualYield: annualYield, couponsLeft: couponsLeft, currSym: currSym };
+    }
+
+    var rows = '';
+    var totValue = 0, totProfit = 0;
+    (bp.positions || []).forEach(function(pos) {
+      var calc = calcBondPosition(pos);
+      if (!calc) {
+        rows += '<tr><td style="text-align:left">' + (pos.bondName || '?') + '</td><td colspan="7" style="color:var(--red);font-size:10px">Bond not in DB</td></tr>';
+        return;
+      }
+      totValue += calc.positionValue;
+      totProfit += calc.totalProfit;
+      var pClass = calc.totalProfit >= 0 ? 'pos' : 'neg';
+      rows += '<tr>'
+        + '<td style="text-align:left;cursor:pointer;white-space:nowrap" onclick="openBondDetailById(&apos;' + calc.bond.id + '&apos;)">' + calc.bond.name + '</td>'
+        + '<td style="white-space:nowrap">' + pos.purchaseDate + '</td>'
+        + '<td>' + pos.qty + '</td>'
+        + '<td>' + f2(pos.cleanPrice) + '%</td>'
+        + '<td>' + calc.currSym + f2(pos.accruedInterest) + '</td>'
+        + '<td>' + calc.currSym + f2(calc.positionValue) + '</td>'
+        + '<td class="' + pClass + '">' + calc.currSym + fSign(calc.totalProfit) + '</td>'
+        + '<td class="' + pClass + '">' + (calc.profitPct !== null ? fSign(calc.profitPct) + '%' : '—') + '</td>'
+        + '<td class="' + pClass + '">' + (calc.annualYield !== null ? fSign(calc.annualYield) + '%' : '—') + '</td>'
+        + '<td style="white-space:nowrap">'
+          + '<button class="btn-icon" onclick="editBondPosition(&apos;' + pos.id + '&apos;)">&#9998;</button>'
+          + '<button class="btn-icon" onclick="deleteBondPosition(&apos;' + pos.id + '&apos;)" style="color:var(--red)">&#10005;</button>'
+        + '</td>'
+        + '</tr>';
+    });
+
+    var totProfitPct = totValue > 0 ? totProfit / totValue * 100 : null;
+    var pClass = totProfit >= 0 ? 'pos' : 'neg';
+    var currSym = bp.positions.length > 0 && bp.positions[0].bondId ? (function() { var b = bondsDb.find(function(x) { return x.id === bp.positions[0].bondId; }); return b ? (CURRENCY_SYMBOLS[b.currency] || b.currency) : '$'; })() : '$';
+
+    area.innerHTML = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
+      + '<table style="border-collapse:collapse;font-size:13px">'
+      + '<thead><tr>'
+      + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">BOND</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">DATE</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">QTY</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">CLEAN %</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">NKD</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">VALUE</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PROFIT</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">RETURN</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">ANN.YIELD</th>'
+      + '<th style="border-bottom:1px solid var(--border)"></th>'
+      + '</tr></thead>'
+      + '<tbody>' + rows + '</tbody>'
+      + '</table></div>'
+      + '<div class="totals-bar">'
+      + '<div class="total-block"><div class="total-label">VALUE</div><div class="total-value" style="color:var(--bright)">' + currSym + f2(totValue) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + pClass + '">' + fSign(totProfit) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + pClass + '">' + (totProfitPct !== null ? fSign(totProfitPct) + '%' : '—') + '</div></div>'
+      + '</div>'
+      + renderBondAddForm(currentBondPortfolioId);
     return;
   }
 
