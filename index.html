@@ -258,13 +258,13 @@
     <div style="border-top:1px solid var(--border);padding:12px 14px">
       <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">ADD BOND</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
-        <input type="text" id="bondDbName" placeholder="Bond name" autocomplete="off" style="flex:2;min-width:120px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none">
+        <input type="text" id="bondDbName" placeholder="Bond name" autocomplete="off" oninput="this.value=this.value.toUpperCase()" style="text-transform:uppercase;flex:2;min-width:120px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none">
         <input type="text" id="bondDbCurrency" placeholder="USD" maxlength="3" style="width:44px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
         <input type="number" id="bondDbPar" placeholder="Par Value" min="0" step="any" style="flex:1;min-width:80px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none">
         <input type="number" id="bondDbYield" placeholder="Yield %" min="0" step="0.01" style="flex:1;min-width:80px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none">
-        <input type="number" id="bondDbFreq" placeholder="Freq" value="2" min="1" max="12" step="1" style="width:50px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none">
+        <input type="number" id="bondDbFreq" placeholder="2" min="1" max="12" step="1" style="width:50px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none">
         <input type="date" id="bondDbMaturity" style="flex:1;min-width:110px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none">
       </div>
       <div style="display:flex;gap:8px;align-items:center">
@@ -584,10 +584,16 @@ function editBondPosition(posId) {
   if (!currentBondPortfolioId || !bondPortfolios[currentBondPortfolioId]) return;
   var pos = bondPortfolios[currentBondPortfolioId].positions.find(function(p) { return p.id === posId; });
   if (!pos) return;
+  var newDate = prompt('Purchase date (YYYY-MM-DD):', pos.purchaseDate);
+  if (newDate === null) return;
+  var newQty = prompt('Qty:', pos.qty);
+  if (newQty === null) return;
   var newClean = prompt('Clean Price (%):', pos.cleanPrice);
   if (newClean === null) return;
   var newNkd = prompt('NKD (Accrued Interest):', pos.accruedInterest);
   if (newNkd === null) return;
+  if (newDate.trim()) pos.purchaseDate = newDate.trim();
+  if (parseInt(newQty) > 0) pos.qty = parseInt(newQty);
   pos.cleanPrice = parseFloat(newClean) || pos.cleanPrice;
   pos.accruedInterest = parseFloat(newNkd) || 0;
   saveBondPortfolios();
@@ -736,6 +742,7 @@ function renderBondDbModal() {
       + '<div style="font-size:13px;color:var(--bright)">' + b.name + '</div>'
       + '<div style="font-size:10px;color:var(--dim)">' + b.currency + ' · Par ' + b.parValue + ' · Yield ' + (b.nominalYield*100).toFixed(2) + '% · ' + b.couponFrequency + 'x/yr · Maturity ' + b.maturityDate + '</div>'
       + '</div>'
+      + '<button class="btn-icon" onclick="editBond(' + i + ')">&#9998;</button>'
       + '<button class="btn-icon" onclick="deleteBond(' + i + ')" style="color:var(--red)">&#10005;</button>'
       + '</div>';
   });
@@ -761,6 +768,30 @@ function addBondToDb() {
   document.getElementById('bondDbFreq').value = '2';
   renderBondDbModal();
 }
+function editBond(idx) {
+  var b = bondsDb[idx];
+  var newName = prompt('Bond name:', b.name);
+  if (newName === null) return;
+  var newCur = prompt('Currency:', b.currency);
+  if (newCur === null) return;
+  var newPar = prompt('Par Value:', b.parValue);
+  if (newPar === null) return;
+  var newYield = prompt('Nominal Yield (%):', (b.nominalYield*100).toFixed(2));
+  if (newYield === null) return;
+  var newFreq = prompt('Coupon frequency per year:', b.couponFrequency);
+  if (newFreq === null) return;
+  var newMaturity = prompt('Maturity date (YYYY-MM-DD):', b.maturityDate);
+  if (newMaturity === null) return;
+  if (newName.trim()) b.name = newName.trim().toUpperCase();
+  if (newCur.trim()) b.currency = newCur.trim().toUpperCase();
+  if (parseFloat(newPar) > 0) b.parValue = parseFloat(newPar);
+  if (parseFloat(newYield) > 0) b.nominalYield = parseFloat(newYield) / 100;
+  if (parseInt(newFreq) > 0) b.couponFrequency = parseInt(newFreq);
+  if (newMaturity.trim()) b.maturityDate = newMaturity.trim();
+  saveBondsDb();
+  renderBondDbModal();
+}
+
 function deleteBond(idx) {
   if (!confirm('Delete "' + bondsDb[idx].name + '" from database?')) return;
   bondsDb.splice(idx, 1);
