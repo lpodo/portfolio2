@@ -575,6 +575,9 @@ function addBondPosition(bpId) {
 
 function deleteBondPosition(posId) {
   if (!currentBondPortfolioId || !bondPortfolios[currentBondPortfolioId]) return;
+  var pos = bondPortfolios[currentBondPortfolioId].positions.find(function(p) { return p.id === posId; });
+  var name = pos ? pos.bondName : 'this position';
+  if (!confirm('Delete "' + name + '"?')) return;
   bondPortfolios[currentBondPortfolioId].positions = bondPortfolios[currentBondPortfolioId].positions.filter(function(p) { return p.id !== posId; });
   saveBondPortfolios();
   render();
@@ -2065,9 +2068,18 @@ function render() {
       return { bond: bond, dirtyPrice: dirtyPrice, positionValue: positionValue, totalProfit: totalProfit, profitPct: profitPct, annualYield: annualYield, couponsLeft: couponsLeft, currSym: currSym };
     }
 
+    var today = new Date(); today.setHours(0,0,0,0);
+    var sortedPositions = (bp.positions || []).slice().sort(function(a, b) {
+      var bondA = bondsDb.find(function(x) { return x.id === a.bondId; });
+      var bondB = bondsDb.find(function(x) { return x.id === b.bondId; });
+      var dateA = bondA ? new Date(bondA.maturityDate) : new Date(0);
+      var dateB = bondB ? new Date(bondB.maturityDate) : new Date(0);
+      return dateA - dateB;
+    });
     var rows = '';
-    var totValue = 0, totProfit = 0;
-    (bp.positions || []).forEach(function(pos) {
+    var totValueActive = 0, totProfitActive = 0;
+    var totValueMatured = 0, totProfitMatured = 0;
+    sortedPositions.forEach(function(pos) {
       var calc = calcBondPosition(pos);
       if (!calc) {
         rows += '<tr><td style="text-align:left">' + (pos.bondName || '?') + '</td><td colspan="7" style="color:var(--red);font-size:10px">Bond not in DB</td></tr>';
@@ -2075,8 +2087,12 @@ function render() {
       }
       totValue += calc.positionValue;
       totProfit += calc.totalProfit;
+      var isMatured = new Date(calc.bond.maturityDate) <= today;
+      var rowStyle = isMatured ? 'font-style:italic;opacity:0.5' : '';
+      if (isMatured) { totValueMatured += calc.positionValue; totProfitMatured += calc.totalProfit; }
+      else { totValueActive += calc.positionValue; totProfitActive += calc.totalProfit; }
       var pClass = calc.totalProfit >= 0 ? 'pos' : 'neg';
-      rows += '<tr>'
+      rows += '<tr style="' + rowStyle + '">'
         + '<td style="text-align:left;cursor:pointer;white-space:nowrap" onclick="openBondDetailById(&apos;' + calc.bond.id + '&apos;)">' + calc.bond.name + '</td>'
         + '<td style="white-space:nowrap">' + pos.purchaseDate + '</td>'
         + '<td>' + pos.qty + '</td>'
@@ -2093,9 +2109,20 @@ function render() {
         + '</tr>';
     });
 
-    var totProfitPct = totValue > 0 ? totProfit / totValue * 100 : null;
+    var totValue = totValueActive + totValueMatured;
+    var totProfit = totProfitActive + totProfitMatured;
+    var getBondCurrSym = function() {
+      for (var i = 0; i < sortedPositions.length; i++) {
+        var b = bondsDb.find(function(x) { return x.id === sortedPositions[i].bondId; });
+        if (b) return CURRENCY_SYMBOLS[b.currency] || b.currency;
+      }
+      return '$';
+    };
+    var currSym = getBondCurrSym();
+    var pClassA = totProfitActive >= 0 ? 'pos' : 'neg';
+    var pClassM = totProfitMatured >= 0 ? 'pos' : 'neg';
     var pClass = totProfit >= 0 ? 'pos' : 'neg';
-    var currSym = bp.positions.length > 0 && bp.positions[0].bondId ? (function() { var b = bondsDb.find(function(x) { return x.id === bp.positions[0].bondId; }); return b ? (CURRENCY_SYMBOLS[b.currency] || b.currency) : '$'; })() : '$';
+    var totProfitPct = totValue > 0 ? totProfit / totValue * 100 : null;
 
     area.innerHTML = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
       + '<table style="border-collapse:collapse;font-size:13px">'
@@ -2113,11 +2140,16 @@ function render() {
       + '</tr></thead>'
       + '<tbody>' + rows + '</tbody>'
       + '</table></div>'
-      + '<div class="totals-bar">'
-      + '<div class="total-block"><div class="total-label">VALUE</div><div class="total-value" style="color:var(--bright)">' + currSym + f2(totValue) + '</div></div>'
-      + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + pClass + '">' + fSign(totProfit) + '</div></div>'
-      + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + pClass + '">' + (totProfitPct !== null ? fSign(totProfitPct) + '%' : '—') + '</div></div>'
-      + '</div>'
+      + (totValueActive > 0 ? '<div class="totals-bar">'
+      + '<div class="total-block"><div class="total-label">ACTIVE VALUE</div><div class="total-value" style="color:var(--bright)">' + currSym + f2(totValueActive) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + pClassA + '">' + fSign(totProfitActive) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + pClassA + '">' + (totValueActive > 0 ? fSign(totProfitActive/totValueActive*100) + '%' : '—') + '</div></div>'
+      + '</div>' : '')
+      + (totValueMatured > 0 ? '<div class="totals-bar" style="opacity:0.6">'
+      + '<div class="total-block"><div class="total-label">MATURED VALUE</div><div class="total-value" style="color:var(--bright)">' + currSym + f2(totValueMatured) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + pClassM + '">' + fSign(totProfitMatured) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + pClassM + '">' + (totValueMatured > 0 ? fSign(totProfitMatured/totValueMatured*100) + '%' : '—') + '</div></div>'
+      + '</div>' : '')
       + renderBondAddForm(currentBondPortfolioId);
     return;
   }
