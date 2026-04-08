@@ -2376,6 +2376,12 @@ function render() {
         + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
         + '</tr>';
     });
+    // Fetch FX for market totals if needed
+    var mktFxNeeded = [];
+    getSorted().forEach(function(p) {
+      var pc = getPositionCurrencyCode(p);
+      if (pc !== baseCode && mktFxNeeded.indexOf(pc) === -1) mktFxNeeded.push(pc);
+    });
     var mktTotalsHtml = buildMarketTotals({}, baseCode, baseSym);
 
     var mkTickerArrow = marketSort.key === 'ticker' ? (marketSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
@@ -2394,6 +2400,22 @@ function render() {
       + '</table>'
       + '</div>'
       + '<div id="mktTotalsSlot">' + mktTotalsHtml + '</div>';
+    if (mktFxNeeded.length > 0) {
+      var mktFxMap = {};
+      var mktBaseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
+      var mktToken = getToken();
+      var mktFxP = mktFxNeeded.map(function(code) {
+        var url = mktBaseUrl + '/api/quote?ticker=' + encodeURIComponent(code + baseCode + '=X');
+        var opts = mktToken ? { headers: { 'X-API-Token': mktToken } } : {};
+        return fetch(url, opts).then(function(r) { return r.json(); }).then(function(d) {
+          if (d.price) mktFxMap[code + baseCode] = d.price;
+        }).catch(function() {});
+      });
+      Promise.all(mktFxP).then(function() {
+        var slot = document.getElementById('mktTotalsSlot');
+        if (slot) slot.innerHTML = buildMarketTotals(mktFxMap, baseCode, baseSym);
+      });
+    }
     return;
   }
 
