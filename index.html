@@ -1948,7 +1948,7 @@ function marketIcon(state) {
 function buildMarketTotals(fxMap, baseCode, baseSym) {
   var mktTotClose = 0, mktTotCurrent = 0, mktHasAny = false;
   getSorted().forEach(function(p) {
-    if (p.current != null && p.qty > 0) {
+    if (p.current != null && p.qty > 0 && !p.sold) {
       var regPrice2 = p.marketState === 'REGULAR'
         ? (p.previousClose || p.regularMarketPrice || p.current)
         : ((getResetDelta() ? p.previousClose : p.regularMarketPrice) || p.current);
@@ -2555,14 +2555,17 @@ function render() {
         return;
       }
       var regPrice;
-      if (p.marketState === 'REGULAR') {
+      if (p.sold) {
+        regPrice = p.current; // sold: show sell price as close, delta = 0
+      } else if (p.marketState === 'REGULAR') {
         regPrice = p.previousClose || p.regularMarketPrice || p.current;
       } else {
         regPrice = (getResetDelta() ? p.previousClose : p.regularMarketPrice) || p.current;
       }
-      var delta = regPrice ? (p.current - regPrice) / regPrice * 100 : null;
+      var delta = (p.sold) ? 0 : (regPrice ? (p.current - regPrice) / regPrice * 100 : null);
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
-      marketRows += '<tr>'
+      var mktSoldStyle = p.sold ? 'font-style:italic;opacity:0.5' : '';
+      marketRows += '<tr style="' + mktSoldStyle + '">'
         + '<td style="text-align:left">' + p.ticker + '</td>'
         + '<td style="text-align:right;padding:5px 4px">' + getPositionCurrencySymbol(p) + f2(regPrice) + '</td>'
         + '<td style="text-align:right;padding:5px 4px">' + getPositionCurrencySymbol(p) + f2(p.current) + '</td>'
