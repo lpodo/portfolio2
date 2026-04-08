@@ -1844,6 +1844,32 @@ function marketIcon(state) {
   // CLOSED — TBD
   return '<span style="font-size:11px;color:#4a5568" title="market closed">✦</span>';
 }
+function buildMarketTotals(fxMap, baseCode, baseSym) {
+  var mktTotClose = 0, mktTotCurrent = 0, mktHasAny = false;
+  getSorted().forEach(function(p) {
+    if (p.current != null && p.qty > 0) {
+      var regPrice2 = p.marketState === 'REGULAR'
+        ? (p.previousClose || p.regularMarketPrice || p.current)
+        : ((getResetDelta() ? p.previousClose : p.regularMarketPrice) || p.current);
+      var pc = getPositionCurrencyCode(p);
+      var rate = pc !== baseCode ? (fxMap[pc + baseCode] || fxMap[pc] || 1) : 1;
+      mktTotClose += p.qty * regPrice2 * rate;
+      mktTotCurrent += p.qty * p.current * rate;
+      mktHasAny = true;
+    }
+  });
+  if (!mktHasAny) return '';
+  var mktDelta = mktTotCurrent - mktTotClose;
+  var mktDeltaPct = mktTotClose > 0 ? mktDelta / mktTotClose * 100 : null;
+  var mktClass = mktDelta >= 0 ? 'pos' : 'neg';
+  return '<div class="totals-bar">'
+    + '<div class="total-block"><div class="total-label">AT CLOSE</div><div class="total-value" style="color:var(--bright)">' + baseSym + f2(mktTotClose) + '</div></div>'
+    + '<div class="total-block"><div class="total-label">CURRENT</div><div class="total-value" style="color:var(--bright)">' + baseSym + f2(mktTotCurrent) + '</div></div>'
+    + '<div class="total-block"><div class="total-label">&#916;</div><div class="total-value ' + mktClass + '">' + fSign(mktDelta) + '</div></div>'
+    + '<div class="total-block"><div class="total-label">&#916;%</div><div class="total-value ' + mktClass + '">' + (mktDeltaPct !== null ? fSign(mktDeltaPct) + '%' : '—') + '</div></div>'
+    + '</div>';
+}
+
 function render() {
   var area = document.getElementById('tableArea');
 
@@ -2350,32 +2376,7 @@ function render() {
         + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
         + '</tr>';
     });
-    function buildMarketTotals(fxMap) {
-      var mktTotClose = 0, mktTotCurrent = 0, mktHasAny = false;
-      getMarketSorted(getSorted()).forEach(function(p) {
-        if (p.current != null && p.qty > 0) {
-          var regPrice2 = p.marketState === 'REGULAR'
-            ? (p.previousClose || p.regularMarketPrice || p.current)
-            : ((getResetDelta() ? p.previousClose : p.regularMarketPrice) || p.current);
-          var pc = getPositionCurrencyCode(p);
-          var rate = pc !== baseCode ? (fxMap[pc + baseCode] || fxMap[pc] || 1) : 1;
-          mktTotClose += p.qty * regPrice2 * rate;
-          mktTotCurrent += p.qty * p.current * rate;
-          mktHasAny = true;
-        }
-      });
-      if (!mktHasAny) return '';
-      var mktDelta = mktTotCurrent - mktTotClose;
-      var mktDeltaPct = mktTotClose > 0 ? mktDelta / mktTotClose * 100 : null;
-      var mktClass = mktDelta >= 0 ? 'pos' : 'neg';
-      return '<div class="totals-bar">'
-        + '<div class="total-block"><div class="total-label">AT CLOSE</div><div class="total-value" style="color:var(--bright)">' + baseSym + f2(mktTotClose) + '</div></div>'
-        + '<div class="total-block"><div class="total-label">CURRENT</div><div class="total-value" style="color:var(--bright)">' + baseSym + f2(mktTotCurrent) + '</div></div>'
-        + '<div class="total-block"><div class="total-label">&#916;</div><div class="total-value ' + mktClass + '">' + fSign(mktDelta) + '</div></div>'
-        + '<div class="total-block"><div class="total-label">&#916;%</div><div class="total-value ' + mktClass + '">' + (mktDeltaPct !== null ? fSign(mktDeltaPct) + '%' : '—') + '</div></div>'
-        + '</div>';
-    }
-    var mktTotalsHtml = buildMarketTotals({});
+    var mktTotalsHtml = buildMarketTotals({}, baseCode, baseSym);
 
     var mkTickerArrow = marketSort.key === 'ticker' ? (marketSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
     var mkDeltaArrow = marketSort.key === 'delta' ? (marketSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
@@ -2503,7 +2504,7 @@ function render() {
       var slot = document.getElementById('totalsSlot');
       if (slot) slot.innerHTML = renderTotals(fxMap);
       var mktSlot = document.getElementById('mktTotalsSlot');
-      if (mktSlot) mktSlot.innerHTML = buildMarketTotals(fxMap);
+      if (mktSlot) mktSlot.innerHTML = buildMarketTotals(fxMap, baseCode, baseSym);
     });
   }
 
