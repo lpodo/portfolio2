@@ -1948,10 +1948,10 @@ function marketIcon(state) {
 function buildMarketTotals(fxMap, baseCode, baseSym) {
   var mktTotClose = 0, mktTotCurrent = 0, mktHasAny = false;
   getSorted().forEach(function(p) {
-    if (p.current != null && p.qty > 0 && !p.sold) {
-      var regPrice2 = p.marketState === 'REGULAR'
+    if (p.current != null && p.qty > 0) {
+      var regPrice2 = p.sold ? p.current : (p.marketState === 'REGULAR'
         ? (p.previousClose || p.regularMarketPrice || p.current)
-        : ((getResetDelta() ? p.previousClose : p.regularMarketPrice) || p.current);
+        : ((getResetDelta() ? p.previousClose : p.regularMarketPrice) || p.current));
       var pc = getPositionCurrencyCode(p);
       var rate = pc !== baseCode ? (fxMap[pc + baseCode] || fxMap[pc] || 1) : 1;
       mktTotClose += p.qty * regPrice2 * rate;
