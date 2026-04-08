@@ -1711,13 +1711,13 @@ function refreshAll() {
         var baseSym2 = CURRENCY_SYMBOLS[base] || base;
         var closeVal = 0, currentVal = 0, closeUSD = 0, currentUSD = 0, hasPos = false;
         (p.positions || []).forEach(function(pos) {
-          if (pos.current != null && pos.qty > 0 && !pos.sold) {
+          if (pos.current != null && pos.qty > 0) {
             var pc = pos.currency || base;
             var rateToUSD = pc === 'USD' ? 1 : (fxRates[pc] || fxRates[pc + 'USD'] || 1);
             var rateBaseToUSD = base === 'USD' ? 1 : (fxRates[base] || fxRates[base + 'USD'] || 1);
-            var closePrice = pos.marketState === 'REGULAR'
+            var closePrice = pos.sold ? pos.current : (pos.marketState === 'REGULAR'
               ? (pos.previousClose || pos.regularMarketPrice || pos.current)
-              : ((getResetDelta() ? pos.previousClose : pos.regularMarketPrice) || pos.current);
+              : ((getResetDelta() ? pos.previousClose : pos.regularMarketPrice) || pos.current));
             var posClose = pos.qty * closePrice * rateToUSD / rateBaseToUSD;
             var posCurrent = pos.qty * pos.current * rateToUSD / rateBaseToUSD;
             closeVal += posClose;
@@ -2323,13 +2323,13 @@ function render() {
         var baseSym2 = CURRENCY_SYMBOLS[base] || base;
         var closeVal = 0, currentVal = 0, closeUSD = 0, currentUSD = 0, hasPos = false;
         (p.positions || []).forEach(function(pos) {
-          if (pos.current != null && pos.qty > 0 && !pos.sold) {
+          if (pos.current != null && pos.qty > 0) {
             var pc = pos.currency || base;
             var rateToUSD = pc === 'USD' ? 1 : (fxRates[pc] || fxRates[pc + 'USD'] || 1);
             var rateBaseToUSD = base === 'USD' ? 1 : (fxRates[base] || fxRates[base + 'USD'] || 1);
-            var closePrice = pos.marketState === 'REGULAR'
+            var closePrice = pos.sold ? pos.current : (pos.marketState === 'REGULAR'
               ? (pos.previousClose || pos.regularMarketPrice || pos.current)
-              : ((getResetDelta() ? pos.previousClose : pos.regularMarketPrice) || pos.current);
+              : ((getResetDelta() ? pos.previousClose : pos.regularMarketPrice) || pos.current));
             var posClose = pos.qty * closePrice * rateToUSD / rateBaseToUSD;
             var posCurrent = pos.qty * pos.current * rateToUSD / rateBaseToUSD;
             closeVal += posClose;
