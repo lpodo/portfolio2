@@ -2350,6 +2350,31 @@ function render() {
         + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
         + '</tr>';
     });
+    // Market totals
+    var mktTotClose = 0, mktTotCurrent = 0, mktHasAny = false;
+    getMarketSorted(getSorted()).forEach(function(p) {
+      if (p.current != null && p.qty > 0) {
+        var regPrice2 = p.marketState === 'REGULAR'
+          ? (p.previousClose || p.regularMarketPrice || p.current)
+          : ((getResetDelta() ? p.previousClose : p.regularMarketPrice) || p.current);
+        var rate = 1;
+        var pc = getPositionCurrencyCode(p);
+        if (pc !== baseCode) rate = posFxNeeded.length > 0 ? 1 : 1; // best effort, same rate as totals
+        mktTotClose += p.qty * regPrice2;
+        mktTotCurrent += p.qty * p.current;
+        mktHasAny = true;
+      }
+    });
+    var mktDelta = mktTotCurrent - mktTotClose;
+    var mktDeltaPct = mktTotClose > 0 ? mktDelta / mktTotClose * 100 : null;
+    var mktClass = mktDelta >= 0 ? 'pos' : 'neg';
+    var mktTotalsHtml = mktHasAny ? '<div class="totals-bar">'
+      + '<div class="total-block"><div class="total-label">AT CLOSE</div><div class="total-value" style="color:var(--bright)">' + baseSym + f2(mktTotClose) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">CURRENT</div><div class="total-value" style="color:var(--bright)">' + baseSym + f2(mktTotCurrent) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">&#916;</div><div class="total-value ' + mktClass + '">' + fSign(mktDelta) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">&#916;%</div><div class="total-value ' + mktClass + '">' + (mktDeltaPct !== null ? fSign(mktDeltaPct) + '%' : '—') + '</div></div>'
+      + '</div>' : '';
+
     var mkTickerArrow = marketSort.key === 'ticker' ? (marketSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
     var mkDeltaArrow = marketSort.key === 'delta' ? (marketSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
     area.innerHTML = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
@@ -2365,7 +2390,7 @@ function render() {
       + '<tbody>' + marketRows + '</tbody>'
       + '</table>'
       + '</div>'
-      + totalsHtml;
+      + mktTotalsHtml;
     return;
   }
 
