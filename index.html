@@ -894,8 +894,8 @@ function switchToArchiveSummary() {
 function switchToSummary() {
   viewMode = 'summary';
   document.getElementById('portfolioTitle').textContent = 'SUMMARY';
-  document.getElementById('viewMenuBtn').disabled = true;
-  document.getElementById('viewMenuBtn').style.opacity = '0.3';
+  document.getElementById('viewMenuBtn').disabled = false;
+  document.getElementById('viewMenuBtn').style.opacity = '';
   document.getElementById('refreshAllBtn').style.display = '';
   closeSwitcher();
   if (getApiKey()) refreshAllPortfolios();
@@ -909,7 +909,7 @@ function switchPortfolio(id) {
   loadLocal();
   editId = null;
   loadingSet = {};
-  if (viewMode === 'summary' || viewMode === 'archive-summary') viewMode = 'main';
+  if (viewMode === 'summary' || viewMode === 'archive-summary' || viewMode === 'summary-market') viewMode = 'main';
   var btn = document.getElementById('viewMenuBtn');
   var refreshBtn = document.getElementById('refreshAllBtn');
   if (portfolios[id].watchlist) {
@@ -1687,6 +1687,100 @@ function refreshAll() {
   var btn = document.getElementById('refreshAllBtn');
   btn.innerHTML = 'UPDATING...';
   btn.disabled = true;
+  if (viewMode === 'summary-market') {
+    // Collect all unique position currencies for FX
+    var smFxRates = {};
+    var smNonUSD = [];
+    var smPids = Object.keys(portfolios).filter(function(pid) { return !portfolios[pid].watchlist && !portfolios[pid].archive; }).sort(function(a, b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+    smPids.forEach(function(pid) {
+      var p = portfolios[pid];
+      var base = (p.currencyCode || 'USD').toUpperCase();
+      if (base !== 'USD' && smNonUSD.indexOf(base) === -1) smNonUSD.push(base);
+      (p.positions || []).forEach(function(pos) {
+        var c = pos.currency || base;
+        if (c !== 'USD' && smNonUSD.indexOf(c) === -1) smNonUSD.push(c);
+      });
+    });
+
+    function buildSummaryMarketStats(fxRates) {
+      var rows = '';
+      var totCloseUSD = 0, totCurrentUSD = 0, hasAny = false;
+      smPids.forEach(function(pid) {
+        var p = portfolios[pid];
+        var base = (p.currencyCode || 'USD').toUpperCase();
+        var baseSym2 = CURRENCY_SYMBOLS[base] || base;
+        var closeVal = 0, currentVal = 0, closeUSD = 0, currentUSD = 0, hasPos = false;
+        (p.positions || []).forEach(function(pos) {
+          if (pos.current != null && pos.qty > 0 && !pos.sold) {
+            var pc = pos.currency || base;
+            var rateToUSD = pc === 'USD' ? 1 : (fxRates[pc] || fxRates[pc + 'USD'] || 1);
+            var rateBaseToUSD = base === 'USD' ? 1 : (fxRates[base] || fxRates[base + 'USD'] || 1);
+            var closePrice = pos.marketState === 'REGULAR'
+              ? (pos.previousClose || pos.regularMarketPrice || pos.current)
+              : ((getResetDelta() ? pos.previousClose : pos.regularMarketPrice) || pos.current);
+            var posClose = pos.qty * closePrice * rateToUSD / rateBaseToUSD;
+            var posCurrent = pos.qty * pos.current * rateToUSD / rateBaseToUSD;
+            closeVal += posClose;
+            currentVal += posCurrent;
+            closeUSD += pos.qty * closePrice * rateToUSD;
+            currentUSD += pos.qty * pos.current * rateToUSD;
+            hasPos = true;
+          }
+        });
+        if (!hasPos) {
+          rows += '<tr><td style="text-align:left">' + p.name + '</td><td colspan="4" style="color:var(--dim)">—</td></tr>';
+          return;
+        }
+        var delta = currentVal - closeVal;
+        var deltaPct = closeVal > 0 ? delta / closeVal * 100 : null;
+        var dClass = delta >= 0 ? 'pos' : 'neg';
+        totCloseUSD += closeUSD; totCurrentUSD += currentUSD; hasAny = true;
+        rows += '<tr style="cursor:pointer" onclick="switchPortfolio(&apos;' + pid + '&apos;)">'
+          + '<td style="text-align:left">' + p.name + '</td>'
+          + '<td>' + baseSym2 + f2(closeVal) + '</td>'
+          + '<td>' + baseSym2 + f2(currentVal) + '</td>'
+          + '<td class="' + dClass + '">' + fSign(delta) + '</td>'
+          + '<td class="' + dClass + '">' + (deltaPct !== null ? fSign(deltaPct) + '%' : '—') + '</td>'
+          + '</tr>';
+      });
+      var totDelta = totCurrentUSD - totCloseUSD;
+      var totDeltaPct = totCloseUSD > 0 ? totDelta / totCloseUSD * 100 : null;
+      var tClass = totDelta >= 0 ? 'pos' : 'neg';
+      area.innerHTML = '<div class="table-wrap"><table>'
+        + '<thead><tr>'
+        + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO</th>'
+        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">AT CLOSE</th>'
+        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">CURRENT</th>'
+        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">&#916;</th>'
+        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">&#916;%</th>'
+        + '</tr></thead>'
+        + '<tbody>' + rows + '</tbody>'
+        + '</table></div>'
+        + (hasAny ? '<div class="totals-bar">'
+          + '<div class="total-block"><div class="total-label">AT CLOSE</div><div class="total-value" style="color:var(--bright)">$' + f2(totCloseUSD) + '</div></div>'
+          + '<div class="total-block"><div class="total-label">CURRENT</div><div class="total-value" style="color:var(--bright)">$' + f2(totCurrentUSD) + '</div></div>'
+          + '<div class="total-block"><div class="total-label">&#916;</div><div class="total-value ' + tClass + '">' + fSign(totDelta) + '</div></div>'
+          + '<div class="total-block"><div class="total-label">&#916;%</div><div class="total-value ' + tClass + '">' + (totDeltaPct !== null ? fSign(totDeltaPct) + '%' : '—') + '</div></div>'
+          + '</div>' : '');
+    }
+
+    if (smNonUSD.length === 0) {
+      buildSummaryMarketStats({});
+    } else {
+      var smBaseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
+      var smToken = getToken();
+      var smFxP = smNonUSD.map(function(code) {
+        var url = smBaseUrl + '/api/quote?ticker=' + encodeURIComponent(code + 'USD=X');
+        var opts = smToken ? { headers: { 'X-API-Token': smToken } } : {};
+        return fetch(url, opts).then(function(r) { return r.json(); }).then(function(d) {
+          if (d.price) smFxRates[code] = d.price;
+        }).catch(function() {});
+      });
+      Promise.all(smFxP).then(function() { buildSummaryMarketStats(smFxRates); });
+    }
+    return;
+  }
+
   if (viewMode === 'summary') {
     refreshAllPortfolios().finally(function() {
       btn.innerHTML = '&#8635; Refresh';
@@ -1810,24 +1904,31 @@ function getWatchlistSorted(items) {
 function toggleViewMenu() {
   var menu = document.getElementById('viewMenu');
   if (menu.style.display === 'none') {
-    var isArchive = currentPortfolio() && currentPortfolio().archive;
+    var isSummaryMode = viewMode === 'summary' || viewMode === 'summary-market';
+    var isArchive = !isSummaryMode && currentPortfolio() && currentPortfolio().archive;
     document.getElementById('vmMarket').style.display = isArchive ? 'none' : '';
+    document.getElementById('vmWeight').style.display = isSummaryMode ? 'none' : '';
     menu.style.display = 'block';
   } else {
     menu.style.display = 'none';
   }
 }
 function setView(mode) {
-  viewMode = mode;
-  // Highlight active item
+  // In summary context, market → summary-market, main → summary
+  var isSummaryContext = viewMode === 'summary' || viewMode === 'summary-market';
+  if (isSummaryContext) {
+    viewMode = mode === 'market' ? 'summary-market' : 'summary';
+  } else {
+    viewMode = mode;
+    if (mode === 'weight') weightSort = { key: 'weight', dir: -1 };
+    if (mode === 'market') marketSort = { key: null, dir: -1 };
+  }
   ['vmMain','vmWeight','vmMarket'].forEach(function(id) {
     document.getElementById(id).style.color = '';
   });
-  var activeId = mode === 'main' ? 'vmMain' : mode === 'weight' ? 'vmWeight' : 'vmMarket';
+  var activeId = (viewMode === 'summary-market') ? 'vmMarket' : (viewMode === 'summary' ? 'vmMain' : (viewMode === 'weight' ? 'vmWeight' : 'vmMarket'));
   document.getElementById(activeId).style.color = 'var(--green)';
   document.getElementById('viewMenu').style.display = 'none';
-  if (mode === 'weight') weightSort = { key: 'weight', dir: -1 };
-  if (mode === 'market') marketSort = { key: null, dir: -1 };
   render();
 }
 // Close menu on outside click
@@ -2037,7 +2138,7 @@ function render() {
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">VALUE</th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">P&amp;L</th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">RETURN</th>'
-        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">SHARE</th>'
+        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">WEIGHT</th>'
         + '</tr></thead>'
         + '<tbody>' + summaryRows + '</tbody>'
         + '</table></div>'
@@ -2198,6 +2299,100 @@ function render() {
   }
 
   // Summary view
+  if (viewMode === 'summary-market') {
+    // Collect all unique position currencies for FX
+    var smFxRates = {};
+    var smNonUSD = [];
+    var smPids = Object.keys(portfolios).filter(function(pid) { return !portfolios[pid].watchlist && !portfolios[pid].archive; }).sort(function(a, b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+    smPids.forEach(function(pid) {
+      var p = portfolios[pid];
+      var base = (p.currencyCode || 'USD').toUpperCase();
+      if (base !== 'USD' && smNonUSD.indexOf(base) === -1) smNonUSD.push(base);
+      (p.positions || []).forEach(function(pos) {
+        var c = pos.currency || base;
+        if (c !== 'USD' && smNonUSD.indexOf(c) === -1) smNonUSD.push(c);
+      });
+    });
+
+    function buildSummaryMarketStats(fxRates) {
+      var rows = '';
+      var totCloseUSD = 0, totCurrentUSD = 0, hasAny = false;
+      smPids.forEach(function(pid) {
+        var p = portfolios[pid];
+        var base = (p.currencyCode || 'USD').toUpperCase();
+        var baseSym2 = CURRENCY_SYMBOLS[base] || base;
+        var closeVal = 0, currentVal = 0, closeUSD = 0, currentUSD = 0, hasPos = false;
+        (p.positions || []).forEach(function(pos) {
+          if (pos.current != null && pos.qty > 0 && !pos.sold) {
+            var pc = pos.currency || base;
+            var rateToUSD = pc === 'USD' ? 1 : (fxRates[pc] || fxRates[pc + 'USD'] || 1);
+            var rateBaseToUSD = base === 'USD' ? 1 : (fxRates[base] || fxRates[base + 'USD'] || 1);
+            var closePrice = pos.marketState === 'REGULAR'
+              ? (pos.previousClose || pos.regularMarketPrice || pos.current)
+              : ((getResetDelta() ? pos.previousClose : pos.regularMarketPrice) || pos.current);
+            var posClose = pos.qty * closePrice * rateToUSD / rateBaseToUSD;
+            var posCurrent = pos.qty * pos.current * rateToUSD / rateBaseToUSD;
+            closeVal += posClose;
+            currentVal += posCurrent;
+            closeUSD += pos.qty * closePrice * rateToUSD;
+            currentUSD += pos.qty * pos.current * rateToUSD;
+            hasPos = true;
+          }
+        });
+        if (!hasPos) {
+          rows += '<tr><td style="text-align:left">' + p.name + '</td><td colspan="4" style="color:var(--dim)">—</td></tr>';
+          return;
+        }
+        var delta = currentVal - closeVal;
+        var deltaPct = closeVal > 0 ? delta / closeVal * 100 : null;
+        var dClass = delta >= 0 ? 'pos' : 'neg';
+        totCloseUSD += closeUSD; totCurrentUSD += currentUSD; hasAny = true;
+        rows += '<tr style="cursor:pointer" onclick="switchPortfolio(&apos;' + pid + '&apos;)">'
+          + '<td style="text-align:left">' + p.name + '</td>'
+          + '<td>' + baseSym2 + f2(closeVal) + '</td>'
+          + '<td>' + baseSym2 + f2(currentVal) + '</td>'
+          + '<td class="' + dClass + '">' + fSign(delta) + '</td>'
+          + '<td class="' + dClass + '">' + (deltaPct !== null ? fSign(deltaPct) + '%' : '—') + '</td>'
+          + '</tr>';
+      });
+      var totDelta = totCurrentUSD - totCloseUSD;
+      var totDeltaPct = totCloseUSD > 0 ? totDelta / totCloseUSD * 100 : null;
+      var tClass = totDelta >= 0 ? 'pos' : 'neg';
+      area.innerHTML = '<div class="table-wrap"><table>'
+        + '<thead><tr>'
+        + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO</th>'
+        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">AT CLOSE</th>'
+        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">CURRENT</th>'
+        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">&#916;</th>'
+        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">&#916;%</th>'
+        + '</tr></thead>'
+        + '<tbody>' + rows + '</tbody>'
+        + '</table></div>'
+        + (hasAny ? '<div class="totals-bar">'
+          + '<div class="total-block"><div class="total-label">AT CLOSE</div><div class="total-value" style="color:var(--bright)">$' + f2(totCloseUSD) + '</div></div>'
+          + '<div class="total-block"><div class="total-label">CURRENT</div><div class="total-value" style="color:var(--bright)">$' + f2(totCurrentUSD) + '</div></div>'
+          + '<div class="total-block"><div class="total-label">&#916;</div><div class="total-value ' + tClass + '">' + fSign(totDelta) + '</div></div>'
+          + '<div class="total-block"><div class="total-label">&#916;%</div><div class="total-value ' + tClass + '">' + (totDeltaPct !== null ? fSign(totDeltaPct) + '%' : '—') + '</div></div>'
+          + '</div>' : '');
+    }
+
+    if (smNonUSD.length === 0) {
+      buildSummaryMarketStats({});
+    } else {
+      var smBaseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
+      var smToken = getToken();
+      var smFxP = smNonUSD.map(function(code) {
+        var url = smBaseUrl + '/api/quote?ticker=' + encodeURIComponent(code + 'USD=X');
+        var opts = smToken ? { headers: { 'X-API-Token': smToken } } : {};
+        return fetch(url, opts).then(function(r) { return r.json(); }).then(function(d) {
+          if (d.price) smFxRates[code] = d.price;
+        }).catch(function() {});
+      });
+      Promise.all(smFxP).then(function() { buildSummaryMarketStats(smFxRates); });
+    }
+    return;
+  }
+
   if (viewMode === 'summary') {
     // Collect portfolio stats
     // Collect all unique position currencies across all portfolios
@@ -2273,7 +2468,7 @@ function render() {
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">VALUE</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">P&amp;L</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">RETURN</th>'
-      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">SHARE</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">WEIGHT</th>'
       + '</tr></thead>'
       + '<tbody>' + summaryRows + '</tbody>'
       + '</table></div>'
