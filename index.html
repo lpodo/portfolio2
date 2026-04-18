@@ -2006,8 +2006,7 @@ function render() {
     var actions = isEdit
       ? '<button class="btn-icon" style="color:var(--green)" onclick="saveEdit(' + p.id + ')">&#10003;</button>'
         + '<button class="btn-icon" onclick="cancelEdit()">&#10005;</button>'
-      : (p.sold ? '' : '<button class="btn-icon" onclick="refreshPrice(' + p.id + ')">&#8635;</button>')
-        + (p.sold ? '' : '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--bright)" onclick="sellPosition(' + p.id + ')">SELL</button>')
+      : (p.sold ? '' : '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--bright)" onclick="sellPosition(' + p.id + ')">SELL</button>')
         + '<button class="btn-icon" onclick="startEdit(' + p.id + ')">&#9998;</button>'
         + '<button class="btn-icon" onclick="removePosition(' + p.id + ')">&#10005;</button>';
 
@@ -2519,7 +2518,6 @@ function render() {
         + '<td class="' + deltaClass + '" style="white-space:nowrap">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
         + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
         + '<td style="white-space:nowrap">'
-          + '<button class="btn-icon" onclick="refreshPrice(' + p.id + ')">&#8635;</button>'
           + '<button class="btn-icon" onclick="removePosition(' + p.id + ')">&#10005;</button>'
         + '</td>'
         + '</tr>';
