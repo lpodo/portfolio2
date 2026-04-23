@@ -276,6 +276,11 @@
 </div>
 
 
+
+<!-- Move position menu -->
+<div id="movePosMenu" style="display:none;position:fixed;z-index:400;background:var(--bg2);border:1px solid var(--border);min-width:160px;box-shadow:0 4px 12px rgba(0,0,0,0.4)">
+  <div id="movePosMenuList"></div>
+</div>
 <!-- Archive position menu -->
 <div id="archivePosMenu" style="display:none;position:fixed;z-index:400;background:var(--bg2);border:1px solid var(--border);min-width:160px;box-shadow:0 4px 12px rgba(0,0,0,0.4)">
   <div id="archivePosMenuList"></div>
@@ -622,6 +627,70 @@ function openBondDetailById(bondId) {
     + '\nMaturity: ' + b.maturityDate);
 }
 
+
+
+var movePosId = null;
+
+function showMoveMenu(posId, btn) {
+  movePosId = posId;
+  var menu = document.getElementById('movePosMenu');
+  var list = document.getElementById('movePosMenuList');
+  var isArchive = currentPortfolio().archive;
+  // Show only active (non-archive, non-watchlist) portfolios, excluding current
+  var targetPids = Object.keys(portfolios).filter(function(pid) {
+    return !portfolios[pid].archive && !portfolios[pid].watchlist && pid !== currentPortfolioId;
+  }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+  // From archive: also include same
+  if (targetPids.length === 0) {
+    list.innerHTML = '<div style="padding:10px 12px;font-size:11px;color:var(--dim)">No portfolios to move to</div>';
+  } else {
+    list.innerHTML = targetPids.map(function(pid) {
+      return '<div onclick="moveToPortfolio(&apos;' + pid + '&apos;)" style="padding:9px 14px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--border);color:var(--bright)">' + portfolios[pid].name + '</div>';
+    }).join('');
+  }
+  var rect = btn.getBoundingClientRect();
+  menu.style.top = (rect.bottom + 4) + 'px';
+  menu.style.right = (window.innerWidth - rect.right) + 'px';
+  menu.style.left = 'auto';
+  menu.style.display = 'block';
+  setTimeout(function() {
+    document.addEventListener('click', closeMoveMenuOutside);
+  }, 0);
+}
+
+function closeMoveMenuOutside(e) {
+  var menu = document.getElementById('movePosMenu');
+  if (!menu.contains(e.target)) {
+    menu.style.display = 'none';
+    document.removeEventListener('click', closeMoveMenuOutside);
+  }
+}
+
+function moveToPortfolio(targetPid) {
+  document.getElementById('movePosMenu').style.display = 'none';
+  document.removeEventListener('click', closeMoveMenuOutside);
+  var pos = positions.find(function(p) { return p.id === movePosId; });
+  if (!pos) return;
+  // Add to target portfolio, preserving all fields including sold status
+  portfolios[targetPid].positions.push({
+    id: Date.now(),
+    ticker: pos.ticker,
+    qty: pos.qty,
+    entry: pos.entry,
+    current: pos.current,
+    sold: pos.sold || undefined,
+    currency: pos.currency,
+    shortName: pos.shortName,
+    previousClose: pos.previousClose,
+    regularMarketPrice: pos.regularMarketPrice,
+    marketState: pos.marketState,
+    priceType: pos.priceType
+  });
+  // Remove from current
+  positions = positions.filter(function(p) { return p.id !== movePosId; });
+  save();
+  render();
+}
 
 var archiveMenuPosId = null;
 
@@ -2070,6 +2139,7 @@ function render() {
       ? '<button class="btn-icon" style="color:var(--green)" onclick="saveEdit(' + p.id + ')">&#10003;</button>'
         + '<button class="btn-icon" onclick="cancelEdit()">&#10005;</button>'
       : (p.sold ? '<button class="btn-icon" onclick="showArchiveMenu(' + p.id + ', this)" title="Move to archive" style="font-size:14px;padding:0 4px">&#8863;</button>' : '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--bright)" onclick="sellPosition(' + p.id + ')">SELL</button>')
+      + '<button class="btn-icon" onclick="showMoveMenu(' + p.id + ', this)" title="Move to portfolio" style="font-size:14px;padding:0 4px">&#8680;</button>'
         + '<button class="btn-icon" onclick="startEdit(' + p.id + ')">&#9998;</button>'
         + '<button class="btn-icon" onclick="removePosition(' + p.id + ')">&#10005;</button>';
 
