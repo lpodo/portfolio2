@@ -2037,7 +2037,7 @@ function getWatchlistSorted(items) {
 function toggleViewMenu() {
   var menu = document.getElementById('viewMenu');
   if (menu.style.display === 'none') {
-    var isSummaryMode = viewMode === 'summary' || viewMode === 'summary-market';
+    var isSummaryMode = viewMode === 'summary' || viewMode === 'summary-market' || viewMode === 'summary-chart';
     var isArchive = !isSummaryMode && currentPortfolio() && currentPortfolio().archive;
     document.getElementById('vmMarket').style.display = isArchive ? 'none' : '';
     document.getElementById('vmWeight').style.display = isSummaryMode ? 'none' : '';
@@ -2049,7 +2049,7 @@ function toggleViewMenu() {
 }
 function setView(mode) {
   // In summary context, market → summary-market, main → summary
-  var isSummaryContext = viewMode === 'summary' || viewMode === 'summary-market';
+  var isSummaryContext = viewMode === 'summary' || viewMode === 'summary-market' || viewMode === 'summary-chart';
   if (isSummaryContext) {
     viewMode = mode === 'market' ? 'summary-market' : (mode === 'chart' ? 'summary-chart' : 'summary');
   } else {
