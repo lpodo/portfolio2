@@ -2105,6 +2105,166 @@ function buildMarketTotals(fxMap, baseCode, baseSym) {
     + '</div>';
 }
 
+
+window.chartRange = '1mo';
+
+function setChartRange(range) {
+  window.chartRange = range;
+  render();
+}
+
+function fetchWithTimeout(url, opts, ms) {
+  ms = ms || 10000;
+  var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  var timer = null;
+  var fetchOpts = controller ? Object.assign({}, opts, { signal: controller.signal }) : opts;
+  var p = fetch(url, fetchOpts).then(function(r) { clearTimeout(timer); return r.json(); });
+  if (controller) {
+    timer = setTimeout(function() { controller.abort(); }, ms);
+  }
+  return p;
+}
+
+function dateKey(ts) {
+  var d = new Date(ts * 1000);
+  return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth()+1) + '-' + pad2(d.getUTCDate());
+}
+function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+
+function fmtK(v) {
+  if (Math.abs(v) >= 1000000) return (v / 1000000).toFixed(2) + 'M';
+  if (Math.abs(v) >= 1000) return (v / 1000).toFixed(1) + 'K';
+  return v.toFixed(0);
+}
+
+function loadChartData(range) {
+  var baseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
+  var token = getToken();
+  if (!baseUrl) {
+    document.getElementById('chartArea').innerHTML = '<span style="color:var(--red)">API URL not set</span>';
+    return;
+  }
+  var activePosns = (positions || []).filter(function(p) { return !p.sold && p.qty > 0; });
+  if (activePosns.length === 0) {
+    document.getElementById('chartArea').innerHTML = '<span>No active positions</span>';
+    return;
+  }
+  var baseCode = (currentPortfolio().currencyCode || 'USD').toUpperCase();
+  var baseSym = CURRENCY_SYMBOLS[baseCode] || baseCode;
+  var posCurrencies = {};
+  activePosns.forEach(function(p) {
+    var pc = getPositionCurrencyCode(p);
+    if (pc !== baseCode) posCurrencies[pc] = true;
+  });
+  var fxCodes = Object.keys(posCurrencies);
+  var opts = token ? { headers: { 'X-API-Token': token } } : {};
+
+  var tickerPromises = activePosns.map(function(p) {
+    return fetchWithTimeout(baseUrl + '/api/history?ticker=' + encodeURIComponent(p.ticker) + '&range=' + range, opts, 12000)
+      .then(function(d) { return { pos: p, data: d }; })
+      .catch(function(e) { console.error('history fail', p.ticker, e); return { pos: p, data: null }; });
+  });
+  var fxPromises = fxCodes.map(function(code) {
+    return fetchWithTimeout(baseUrl + '/api/history?ticker=' + encodeURIComponent(code + baseCode + '=X') + '&range=' + range, opts, 12000)
+      .then(function(d) { return { code: code, data: d }; })
+      .catch(function(e) { console.error('fx history fail', code, e); return { code: code, data: null }; });
+  });
+
+  Promise.all(tickerPromises.concat(fxPromises)).then(function(results) {
+    var tickerResults = results.slice(0, activePosns.length);
+    var fxResults = results.slice(activePosns.length);
+    var failed = tickerResults.filter(function(r) { return !r.data || !r.data.points; });
+    if (failed.length === tickerResults.length) {
+      var el2 = document.getElementById('chartArea');
+      if (el2) el2.innerHTML = '<span style="color:var(--red)">Failed to load data</span>';
+      return;
+    }
+    var fxByDate = {};
+    fxResults.forEach(function(fx) {
+      if (!fx.data || !fx.data.points) return;
+      fxByDate[fx.code] = {};
+      fx.data.points.forEach(function(pt) { fxByDate[fx.code][dateKey(pt.t)] = pt.c; });
+    });
+    var dailyMap = {};
+    tickerResults.forEach(function(tr) {
+      if (!tr.data || !tr.data.points) return;
+      var pc = getPositionCurrencyCode(tr.pos);
+      tr.data.points.forEach(function(pt) {
+        var dk = dateKey(pt.t);
+        var rate = 1;
+        if (pc !== baseCode) {
+          if (fxByDate[pc] && fxByDate[pc][dk]) {
+            rate = fxByDate[pc][dk];
+          } else if (fxByDate[pc]) {
+            var fxDates = Object.keys(fxByDate[pc]).sort();
+            if (fxDates.length) rate = fxByDate[pc][fxDates[fxDates.length - 1]];
+          }
+        }
+        if (!dailyMap[dk]) dailyMap[dk] = { t: pt.t, v: 0 };
+        dailyMap[dk].v += tr.pos.qty * pt.c * rate;
+      });
+    });
+    var days = Object.keys(dailyMap).sort();
+    if (days.length < 2) {
+      document.getElementById('chartArea').innerHTML = '<span>Not enough data</span>';
+      return;
+    }
+    var values = days.map(function(d) { return dailyMap[d].v; });
+    var timestamps = days.map(function(d) { return dailyMap[d].t; });
+    renderChart(timestamps, values, baseSym, baseCode);
+  });
+}
+
+function renderChart(timestamps, values, baseSym) {
+  var el = document.getElementById('chartArea');
+  if (!el) return;
+  var W = el.offsetWidth || 340;
+  var H = 220;
+  var padL = 62, padR = 12, padT = 16, padB = 32;
+  var w = W - padL - padR;
+  var h = H - padT - padB;
+  var minV = Math.min.apply(null, values);
+  var maxV = Math.max.apply(null, values);
+  var range = maxV - minV || 1;
+  minV -= range * 0.05; maxV += range * 0.05; range = maxV - minV;
+  var n = timestamps.length;
+  function xp(i) { return padL + i / (n - 1) * w; }
+  function yp(v) { return padT + (1 - (v - minV) / range) * h; }
+  var pts = values.map(function(v, i) { return xp(i) + ',' + yp(v); }).join(' ');
+  var up = values[values.length - 1] >= values[0];
+  var lineColor = up ? '#00c48c' : '#e05c5c';
+  var yTicks = [];
+  for (var i = 0; i <= 4; i++) { yTicks.push({ v: minV + range * i / 4, y: yp(minV + range * i / 4) }); }
+  var xTickIdxs = [0];
+  var step = Math.floor((n - 1) / 3);
+  if (step > 0) { for (var j = step; j < n - step / 2; j += step) xTickIdxs.push(j); }
+  xTickIdxs.push(n - 1);
+  xTickIdxs = xTickIdxs.filter(function(v, i, a) { return a.indexOf(v) === i; });
+  var svgYTicks = yTicks.map(function(t) {
+    return '<line x1="' + padL + '" x2="' + (padL + w) + '" y1="' + t.y + '" y2="' + t.y + '" stroke="#2a3a4a" stroke-width="1"/>'
+      + '<text x="' + (padL - 5) + '" y="' + (t.y + 4) + '" text-anchor="end" font-size="9" fill="#6a7a8a" font-family="monospace">' + baseSym + fmtK(t.v) + '</text>';
+  }).join('');
+  var svgXTicks = xTickIdxs.map(function(i) {
+    var d = new Date(timestamps[i] * 1000);
+    var label = pad2(d.getUTCDate()) + '/' + pad2(d.getUTCMonth() + 1);
+    return '<text x="' + xp(i) + '" y="' + (H - padB + 14) + '" text-anchor="middle" font-size="9" fill="#6a7a8a" font-family="monospace">' + label + '</text>';
+  }).join('');
+  var delta = values[values.length - 1] - values[0];
+  var deltaPct = values[0] > 0 ? delta / values[0] * 100 : 0;
+  var deltaLabel = (up ? '+' : '') + fmtK(delta) + ' (' + (up ? '+' : '') + deltaPct.toFixed(2) + '%)';
+  el.innerHTML = '<div style="text-align:right;font-size:11px;color:' + lineColor + ';letter-spacing:1px;margin-bottom:2px">' + deltaLabel + '</div>'
+    + '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">'
+    + '<defs><linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">'
+    + '<stop offset="0%" stop-color="' + lineColor + '" stop-opacity="0.18"/>'
+    + '<stop offset="100%" stop-color="' + lineColor + '" stop-opacity="0.01"/>'
+    + '</linearGradient></defs>'
+    + svgYTicks
+    + '<polygon points="' + padL + ',' + (padT + h) + ' ' + pts + ' ' + (padL + w) + ',' + (padT + h) + '" fill="url(#chartGrad)"/>'
+    + '<polyline points="' + pts + '" fill="none" stroke="' + lineColor + '" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>'
+    + svgXTicks
+    + '</svg>';
+}
+
 function render() {
   var area = document.getElementById('tableArea');
 
