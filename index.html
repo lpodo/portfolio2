@@ -3063,11 +3063,9 @@ function render() {
       var baseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
       var token = getToken();
       var fxPromises = nonUSD.map(function(code) {
-        var ticker = code + 'USD=X';
-        var url = baseUrl + '/api/quote?ticker=' + encodeURIComponent(ticker);
-        return fetchFxRate(baseUrl, token, ticker).then(function(rate) {
-          if (rate) summaryFxRates[code] = d.price;
-        }).catch(function() {});
+        return fetchFxRate(baseUrl, token, code + 'USD=X').then(function(rate) {
+          if (rate) summaryFxRates[code] = rate;
+        });
       });
       Promise.all(fxPromises).then(function() {
         portfolioStats = buildPortfolioStats();
@@ -3264,8 +3262,8 @@ function render() {
         var url = baseUrl3 + '/api/quote?ticker=' + encodeURIComponent(ticker);
         var opts3 = token3 ? { headers: { 'X-API-Token': token3 } } : {};
         return fetch(url, opts3).then(function(r) { return r.json(); }).then(function(d) {
-          if (d.price) wFxMap2[code + baseCode] = d.price;
-        }).catch(function() {});
+          if (rate) { wFxMap2[code + baseCode] = rate; wFxMap2[code] = rate; }
+        });
       });
       Promise.all(wFxP).then(function() {
         var tb = document.getElementById('weightTbody');
