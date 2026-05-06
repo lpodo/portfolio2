@@ -2362,6 +2362,167 @@ function renderChart(timestamps, values, baseSym) {
     + '</svg>';
 }
 
+
+function setSummaryChartRange(r) { window.chartRange = r; render(); }
+function setSummaryChartMode(m) { window.summaryChartMode = m; render(); }
+
+var CHART_COLORS = ['#00c48c','#5b9cf6','#f6c15b','#e05c5c','#b47ef6','#5bf6e4','#f65b9c','#c4a000','#5bf65b','#f6825b'];
+
+function loadSummaryChartData(range, mode) {
+  var baseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
+  var token = getToken();
+  if (!baseUrl) { document.getElementById('chartArea').innerHTML = '<span style="color:var(--red)">API URL not set</span>'; return; }
+  var opts = token ? { headers: { 'X-API-Token': token } } : {};
+  var activePids = Object.keys(portfolios).filter(function(pid) {
+    return !portfolios[pid].watchlist && !portfolios[pid].archive;
+  }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+  var allTickers = {};
+  var allFxNeeded = {};
+  activePids.forEach(function(pid) {
+    (portfolios[pid].positions || []).filter(function(p) { return !p.sold && p.qty > 0; }).forEach(function(pos) {
+      if (!allTickers[pos.ticker]) allTickers[pos.ticker] = [];
+      allTickers[pos.ticker].push({ pid: pid, pos: pos });
+      var pc = pos.currency || (portfolios[pid].currencyCode || 'USD').toUpperCase();
+      if (pc !== 'USD') allFxNeeded[pc] = true;
+    });
+  });
+  var uniqueTickers = Object.keys(allTickers);
+  var fxCodes = Object.keys(allFxNeeded);
+  if (uniqueTickers.length === 0) { document.getElementById('chartArea').innerHTML = '<span>No active positions</span>'; return; }
+
+  var tickerPromises = uniqueTickers.map(function(t) {
+    var cached = chartCacheGet(t, range);
+    if (cached) return Promise.resolve({ ticker: t, data: { points: cached } });
+    return fetchWithTimeout(baseUrl + '/api/history?ticker=' + encodeURIComponent(t) + '&range=' + range, opts, 12000)
+      .then(function(d) { if (d && d.points) chartCacheSet(t, range, d.points); return { ticker: t, data: d }; })
+      .catch(function() { return { ticker: t, data: null }; });
+  });
+  var fxPromises = fxCodes.map(function(code) {
+    var fxT = code + 'USD=X';
+    var cached = chartCacheGet(fxT, range);
+    if (cached) return Promise.resolve({ code: code, data: { points: cached } });
+    return fetchWithTimeout(baseUrl + '/api/history?ticker=' + encodeURIComponent(fxT) + '&range=' + range, opts, 12000)
+      .then(function(d) { if (d && d.points) chartCacheSet(fxT, range, d.points); return { code: code, data: d }; })
+      .catch(function() { return { code: code, data: null }; });
+  });
+
+  Promise.all(tickerPromises.concat(fxPromises)).then(function(results) {
+    var tickerResults = results.slice(0, uniqueTickers.length);
+    var fxResults = results.slice(uniqueTickers.length);
+    var priceMap = {};
+    tickerResults.forEach(function(tr) {
+      if (!tr.data || !tr.data.points) return;
+      priceMap[tr.ticker] = {};
+      tr.data.points.forEach(function(pt) { priceMap[tr.ticker][dateKey(pt.t)] = pt.c; });
+    });
+    var fxByDate = {};
+    fxResults.forEach(function(fx) {
+      if (!fx.data || !fx.data.points) return;
+      fxByDate[fx.code] = {};
+      fx.data.points.forEach(function(pt) { fxByDate[fx.code][dateKey(pt.t)] = pt.c; });
+    });
+    var allDatesSet = {};
+    tickerResults.forEach(function(tr) {
+      if (!tr.data || !tr.data.points) return;
+      tr.data.points.forEach(function(pt) { allDatesSet[dateKey(pt.t)] = pt.t; });
+    });
+    var allDates = Object.keys(allDatesSet).sort();
+    Object.keys(priceMap).forEach(function(t) {
+      var last = null;
+      allDates.forEach(function(dk) { if (priceMap[t][dk] != null) last = priceMap[t][dk]; else if (last != null) priceMap[t][dk] = last; });
+    });
+    Object.keys(fxByDate).forEach(function(code) {
+      var last = null;
+      allDates.forEach(function(dk) { if (fxByDate[code][dk] != null) last = fxByDate[code][dk]; else if (last != null) fxByDate[code][dk] = last; });
+    });
+
+    if (mode === 'total') {
+      var dailyTotal = {};
+      allDates.forEach(function(dk) {
+        var total = 0, complete = true;
+        activePids.forEach(function(pid) {
+          (portfolios[pid].positions || []).filter(function(p) { return !p.sold && p.qty > 0; }).forEach(function(pos) {
+            if (!priceMap[pos.ticker] || priceMap[pos.ticker][dk] == null) { complete = false; return; }
+            var pc = pos.currency || (portfolios[pid].currencyCode || 'USD').toUpperCase();
+            var rate = pc === 'USD' ? 1 : (fxByDate[pc] && fxByDate[pc][dk] ? fxByDate[pc][dk] : 1);
+            total += pos.qty * priceMap[pos.ticker][dk] * rate;
+          });
+        });
+        if (complete) dailyTotal[dk] = { t: allDatesSet[dk], v: total };
+      });
+      var days = Object.keys(dailyTotal).sort();
+      if (days.length < 2) { document.getElementById('chartArea').innerHTML = '<span>Not enough data</span>'; return; }
+      renderChart(days.map(function(d) { return dailyTotal[d].t; }), days.map(function(d) { return dailyTotal[d].v; }), '$', 'USD');
+    } else {
+      var portLines = [];
+      activePids.forEach(function(pid, pidIdx) {
+        var p = portfolios[pid];
+        var posns = (p.positions || []).filter(function(pos) { return !pos.sold && pos.qty > 0; });
+        if (!posns.length) return;
+        var daily = {};
+        allDates.forEach(function(dk) {
+          var total = 0, complete = true;
+          posns.forEach(function(pos) {
+            if (!priceMap[pos.ticker] || priceMap[pos.ticker][dk] == null) { complete = false; return; }
+            var pc = pos.currency || (p.currencyCode || 'USD').toUpperCase();
+            var rate = pc === 'USD' ? 1 : (fxByDate[pc] && fxByDate[pc][dk] ? fxByDate[pc][dk] : 1);
+            total += pos.qty * priceMap[pos.ticker][dk] * rate;
+          });
+          if (complete) daily[dk] = total;
+        });
+        var days2 = Object.keys(daily).sort();
+        if (days2.length < 2) return;
+        var base = daily[days2[0]];
+        portLines.push({ name: p.name, color: CHART_COLORS[pidIdx % CHART_COLORS.length],
+          values: days2.map(function(d) { return (daily[d] / base - 1) * 100; }),
+          timestamps: days2.map(function(d) { return allDatesSet[d]; }) });
+      });
+      if (!portLines.length) { document.getElementById('chartArea').innerHTML = '<span>Not enough data</span>'; return; }
+      renderMultiChart(portLines);
+    }
+  });
+}
+
+function renderMultiChart(lines) {
+  var el = document.getElementById('chartArea');
+  if (!el) return;
+  var W = el.offsetWidth || 340;
+  var H = 220;
+  var padL = 48, padR = 12, padT = 16, padB = 32;
+  var w = W - padL - padR;
+  var h = H - padT - padB;
+  var allVals = [];
+  lines.forEach(function(l) { allVals = allVals.concat(l.values); });
+  var minV = Math.min.apply(null, allVals);
+  var maxV = Math.max.apply(null, allVals);
+  var range = maxV - minV || 1;
+  minV -= range * 0.05; maxV += range * 0.05; range = maxV - minV;
+  var timestamps = lines[0].timestamps;
+  var n = timestamps.length;
+  function xp(i, len) { return padL + i / ((len||1) - 1) * w; }
+  function yp(v) { return padT + (1 - (v - minV) / range) * h; }
+  var yTicks = [];
+  for (var i = 0; i <= 4; i++) yTicks.push(minV + range * i / 4);
+  var svgYTicks = yTicks.map(function(v) {
+    return '<line x1="' + padL + '" x2="' + (padL+w) + '" y1="' + yp(v) + '" y2="' + yp(v) + '" stroke="#2a3a4a" stroke-width="1"/>'
+      + '<text x="' + (padL-4) + '" y="' + (yp(v)+4) + '" text-anchor="end" font-size="9" fill="#6a7a8a" font-family="monospace">' + (v >= 0 ? '+' : '') + v.toFixed(1) + '%</text>';
+  }).join('');
+  var zeroLine = minV < 0 && maxV > 0 ? '<line x1="' + padL + '" x2="' + (padL+w) + '" y1="' + yp(0) + '" y2="' + yp(0) + '" stroke="#4a5a6a" stroke-width="1" stroke-dasharray="4,3"/>' : '';
+  var xTickIdxs = [0, Math.floor(n/3), Math.floor(2*n/3), n-1].filter(function(v,i,a){ return a.indexOf(v)===i; });
+  var svgXTicks = xTickIdxs.map(function(i) {
+    var d = new Date(timestamps[i] * 1000);
+    return '<text x="' + xp(i,n) + '" y="' + (H-padB+14) + '" text-anchor="middle" font-size="9" fill="#6a7a8a" font-family="monospace">' + pad2(d.getUTCDate()) + '/' + pad2(d.getUTCMonth()+1) + '</text>';
+  }).join('');
+  var svgLines = lines.map(function(l) {
+    var pts = l.values.map(function(v,i) { return xp(i,l.values.length) + ',' + yp(v); }).join(' ');
+    return '<polyline points="' + pts + '" fill="none" stroke="' + l.color + '" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>';
+  }).join('');
+  var legend = '<div style="display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:6px">'
+    + lines.map(function(l) { var last = l.values[l.values.length-1]; return '<span style="font-size:10px;color:' + l.color + '">' + l.name + ' ' + (last>=0?'+':'') + last.toFixed(2) + '%</span>'; }).join('')
+    + '</div>';
+  el.innerHTML = '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">' + svgYTicks + zeroLine + svgLines + svgXTicks + '</svg>' + legend;
+}
+
 function render() {
   var area = document.getElementById('tableArea');
 
@@ -2691,22 +2852,6 @@ function render() {
 
   // Summary view
   // Summary chart view
-  if (viewMode === 'summary-chart') {
-    var scRange = window.chartRange || '1mo';
-    var scMode = window.summaryChartMode || 'total'; // 'total' or 'byportfolio'
-    area.innerHTML = '<div style="padding:8px 0 4px;display:flex;gap:6px;flex-wrap:wrap">'
-      + ['1mo','3mo','6mo'].map(function(r) {
-          var active = scRange === r;
-          return '<button onclick="setSummaryChartRange(&apos;' + r + '&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 10px;border:1px solid ' + (active ? 'var(--green)' : 'var(--border)') + ';background:' + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">' + r.toUpperCase() + '</button>';
-        }).join('')
-      + '<div style="flex:1"></div>'
-      + '<button onclick="setSummaryChartMode(&apos;total&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 10px;border:1px solid ' + (scMode==='total' ? 'var(--green)' : 'var(--border)') + ';background:' + (scMode==='total' ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (scMode==='total' ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">TOTAL</button>'
-      + '<button onclick="setSummaryChartMode(&apos;byportfolio&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 10px;border:1px solid ' + (scMode==='byportfolio' ? 'var(--green)' : 'var(--border)') + ';background:' + (scMode==='byportfolio' ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (scMode==='byportfolio' ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">BY PORTFOLIO</button>'
-      + '</div>'
-      + '<div id="chartArea" style="min-height:200px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px">Loading...</div>';
-    loadSummaryChartData(scRange, scMode);
-    return;
-  }
 
   if (viewMode === 'summary-market') {
     // Collect all unique position currencies for FX
