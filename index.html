@@ -200,6 +200,7 @@
       <div onclick="setView('main')" id="vmMain" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">P&amp;L</div>
       <div onclick="setView('weight')" id="vmWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">WEIGHTS</div>
       <div onclick="setView('market')" id="vmMarket" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">MARKET</div>
+      <div onclick="setView('chart')" id="vmChart" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">CHART</div>
     </div>
   </div>
 </div>
@@ -2040,6 +2041,7 @@ function toggleViewMenu() {
     var isArchive = !isSummaryMode && currentPortfolio() && currentPortfolio().archive;
     document.getElementById('vmMarket').style.display = isArchive ? 'none' : '';
     document.getElementById('vmWeight').style.display = isSummaryMode ? 'none' : '';
+    document.getElementById('vmChart').style.display = (isSummaryMode || isArchive) ? 'none' : '';
     menu.style.display = 'block';
   } else {
     menu.style.display = 'none';
@@ -2055,10 +2057,10 @@ function setView(mode) {
     if (mode === 'weight') weightSort = { key: 'weight', dir: -1 };
     if (mode === 'market') marketSort = { key: null, dir: -1 };
   }
-  ['vmMain','vmWeight','vmMarket'].forEach(function(id) {
+  ['vmMain','vmWeight','vmMarket','vmChart'].forEach(function(id) {
     document.getElementById(id).style.color = '';
   });
-  var activeId = (viewMode === 'summary-market') ? 'vmMarket' : (viewMode === 'summary' ? 'vmMain' : (viewMode === 'weight' ? 'vmWeight' : 'vmMarket'));
+  var activeId = (viewMode === 'summary-market') ? 'vmMarket' : (viewMode === 'summary' ? 'vmMain' : (viewMode === 'weight' ? 'vmWeight' : (viewMode === 'chart' ? 'vmChart' : 'vmMarket')));
   document.getElementById(activeId).style.color = 'var(--green)';
   document.getElementById('viewMenu').style.display = 'none';
   render();
@@ -2745,6 +2747,20 @@ function render() {
         if (slot) slot.innerHTML = buildMarketTotals(mktFxMap, baseCode, baseSym);
       });
     }
+    return;
+  }
+
+  // Chart view
+  if (viewMode === 'chart') {
+    var chartRange = window.chartRange || '1mo';
+    area.innerHTML = '<div style="padding:8px 0 4px;display:flex;gap:6px">'
+      + ['1mo','3mo','6mo'].map(function(r) {
+          var active = chartRange === r;
+          return '<button onclick="setChartRange(&apos;' + r + '&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 10px;border:1px solid ' + (active ? 'var(--green)' : 'var(--border)') + ';background:' + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">' + r.toUpperCase() + '</button>';
+        }).join('')
+      + '</div>'
+      + '<div id="chartArea" style="min-height:200px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px">Loading...</div>';
+    loadChartData(chartRange);
     return;
   }
 
