@@ -463,7 +463,32 @@ var positions = [];
 var viewMode = 'main'; // main | weight
 var weightSort = { key: 'weight', dir: -1 };
 var switcherTab = 'active'; // 'active' or 'archive'
-var positionClipboard = null; // { ticker, qty, entry, current }
+var positionClipboard = null;
+// In-memory FX rate cache (TTL: 5 minutes) with in-flight deduplication
+var fxRateCache = {}; // { 'EURUSD=X': { rate: 1.17, ts: 1234567890 } }
+var fxRateInflight = {}; // { 'EURUSD=X': Promise }
+var FX_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function fetchFxRate(baseUrl, token, ticker) {
+  var now = Date.now();
+  var cached = fxRateCache[ticker];
+  if (cached && (now - cached.ts) < FX_CACHE_TTL) {
+    return Promise.resolve(cached.rate);
+  }
+  // Return existing in-flight promise if one exists
+  if (fxRateInflight[ticker]) return fxRateInflight[ticker];
+  var url = baseUrl + '/api/quote?ticker=' + encodeURIComponent(ticker);
+  var opts = token ? { headers: { 'X-API-Token': token } } : {};
+  var p = fetch(url, opts).then(function(r) { return r.json(); }).then(function(d) {
+    delete fxRateInflight[ticker];
+    if (d.price) fxRateCache[ticker] = { rate: d.price, ts: Date.now() };
+    return d.price || null;
+  }).catch(function() { delete fxRateInflight[ticker]; return null; });
+  fxRateInflight[ticker] = p;
+  return p;
+}
+
+ // { ticker, qty, entry, current }
 var bondsDb = []; // bond database: { id, name, currency, parValue, nominalYield, couponFrequency, maturityDate }
 var bondPortfolios = {}; // bond portfolios: { id: { name, positions: [] } }
 var currentBondPortfolioId = null; // default: weight descending
@@ -1903,11 +1928,9 @@ function refreshAll() {
       var smBaseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
       var smToken = getToken();
       var smFxP = smNonUSD.map(function(code) {
-        var url = smBaseUrl + '/api/quote?ticker=' + encodeURIComponent(code + 'USD=X');
-        var opts = smToken ? { headers: { 'X-API-Token': smToken } } : {};
-        return fetch(url, opts).then(function(r) { return r.json(); }).then(function(d) {
-          if (d.price) smFxRates[code] = d.price;
-        }).catch(function() {});
+        return fetchFxRate(smBaseUrl, smToken, code + 'USD=X').then(function(rate) {
+          if (rate) smFxRates[code] = rate;
+        });
       });
       Promise.all(smFxP).then(function() { buildSummaryMarketStats(smFxRates); });
     }
@@ -2711,11 +2734,9 @@ function render() {
       var baseUrl4 = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
       var token4 = getToken();
       var archFxP = archNonUSD.map(function(code) {
-        var url = baseUrl4 + '/api/quote?ticker=' + encodeURIComponent(code + 'USD=X');
-        var opts4 = token4 ? { headers: { 'X-API-Token': token4 } } : {};
-        return fetch(url, opts4).then(function(r) { return r.json(); }).then(function(d) {
-          if (d.price) archFxRates[code] = d.price;
-        }).catch(function() {});
+        return fetchFxRate(baseUrl4, token4, code + 'USD=X').then(function(rate) {
+          if (rate) archFxRates[code] = rate;
+        });
       });
       Promise.all(archFxP).then(function() {
         archPortfolioStats = buildArchPortfolioStats();
@@ -2939,11 +2960,9 @@ function render() {
       var smBaseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
       var smToken = getToken();
       var smFxP = smNonUSD.map(function(code) {
-        var url = smBaseUrl + '/api/quote?ticker=' + encodeURIComponent(code + 'USD=X');
-        var opts = smToken ? { headers: { 'X-API-Token': smToken } } : {};
-        return fetch(url, opts).then(function(r) { return r.json(); }).then(function(d) {
-          if (d.price) smFxRates[code] = d.price;
-        }).catch(function() {});
+        return fetchFxRate(smBaseUrl, smToken, code + 'USD=X').then(function(rate) {
+          if (rate) smFxRates[code] = rate;
+        });
       });
       Promise.all(smFxP).then(function() { buildSummaryMarketStats(smFxRates); });
     }
@@ -3159,11 +3178,9 @@ function render() {
       var mktBaseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
       var mktToken = getToken();
       var mktFxP = mktFxNeeded.map(function(code) {
-        var url = mktBaseUrl + '/api/quote?ticker=' + encodeURIComponent(code + baseCode + '=X');
-        var opts = mktToken ? { headers: { 'X-API-Token': mktToken } } : {};
-        return fetch(url, opts).then(function(r) { return r.json(); }).then(function(d) {
-          if (d.price) mktFxMap[code + baseCode] = d.price;
-        }).catch(function() {});
+        return fetchFxRate(mktBaseUrl, mktToken, code + baseCode + '=X').then(function(rate) {
+          if (rate) mktFxMap[code + baseCode] = rate;
+        });
       });
       Promise.all(mktFxP).then(function() {
         var slot = document.getElementById('mktTotalsSlot');
