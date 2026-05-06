@@ -3065,9 +3065,8 @@ function render() {
       var fxPromises = nonUSD.map(function(code) {
         var ticker = code + 'USD=X';
         var url = baseUrl + '/api/quote?ticker=' + encodeURIComponent(ticker);
-        var opts = token ? { headers: { 'X-API-Token': token } } : {};
-        return fetch(url, opts).then(function(r) { return r.json(); }).then(function(d) {
-          if (d.price) summaryFxRates[code] = d.price;
+        return fetchFxRate(baseUrl, token, ticker).then(function(rate) {
+          if (rate) summaryFxRates[code] = d.price;
         }).catch(function() {});
       });
       Promise.all(fxPromises).then(function() {
@@ -3301,11 +3300,9 @@ function render() {
     var token2 = getToken();
     var fxP = posFxNeeded.map(function(code) {
       var ticker = code + baseCode + '=X';
-      var url = baseUrl2 + '/api/quote?ticker=' + encodeURIComponent(ticker);
-      var opts2 = token2 ? { headers: { 'X-API-Token': token2 } } : {};
-      return fetch(url, opts2).then(function(r) { return r.json(); }).then(function(d) {
-        if (d.price) fxMap[code + baseCode] = d.price;
-      }).catch(function() {});
+      return fetchFxRate(baseUrl2, token2, ticker).then(function(rate) {
+        if (rate) { fxMap[code + baseCode] = rate; fxMap[code] = rate; }
+      });
     });
     Promise.all(fxP).then(function() {
       var slot = document.getElementById('totalsSlot');
