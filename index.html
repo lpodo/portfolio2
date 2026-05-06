@@ -2502,7 +2502,10 @@ function renderMultiChart(lines) {
   var legend = '<div style="display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:6px">'
     + lines.map(function(l) { var last = l.values[l.values.length-1]; return '<span style="font-size:10px;color:' + l.color + '">' + l.name + ' ' + (last>=0?'+':'') + last.toFixed(2) + '%</span>'; }).join('')
     + '</div>';
-  el.innerHTML = '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">' + svgYTicks + zeroLine + svgLines + svgXTicks + '</svg>' + legend;
+  el.innerHTML = '<div style="display:flex;flex-direction:column">'
+    + '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">' + svgYTicks + zeroLine + svgLines + svgXTicks + '</svg>'
+    + legend
+    + '</div>';
 }
 
 function render() {
