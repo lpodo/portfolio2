@@ -2137,6 +2137,45 @@ function fmtK(v) {
   return v.toFixed(0);
 }
 
+
+// --- Chart history cache ---
+// Key: chart_hist_{ticker}_{range}, Value: { date, points }
+// Expires daily - stale entries purged on each write
+
+function chartCacheKey(ticker, range) {
+  return 'chart_hist_' + ticker + '_' + range;
+}
+
+function chartCacheGet(ticker, range) {
+  var today = new Date().toISOString().slice(0, 10);
+  try {
+    var raw = localStorage.getItem(chartCacheKey(ticker, range));
+    if (!raw) return null;
+    var entry = JSON.parse(raw);
+    if (entry.date !== today) return null;
+    return entry.points;
+  } catch(e) { return null; }
+}
+
+function chartCacheSet(ticker, range, points) {
+  var today = new Date().toISOString().slice(0, 10);
+  try {
+    // Purge all stale chart cache entries
+    var toDelete = [];
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf('chart_hist_') === 0) {
+        try {
+          var e = JSON.parse(localStorage.getItem(k));
+          if (e.date !== today) toDelete.push(k);
+        } catch(e2) { toDelete.push(k); }
+      }
+    }
+    toDelete.forEach(function(k) { localStorage.removeItem(k); });
+    localStorage.setItem(chartCacheKey(ticker, range), JSON.stringify({ date: today, points: points }));
+  } catch(e) {}
+}
+
 function loadChartData(range) {
   var baseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
   var token = getToken();
@@ -2160,13 +2199,24 @@ function loadChartData(range) {
   var opts = token ? { headers: { 'X-API-Token': token } } : {};
 
   var tickerPromises = activePosns.map(function(p) {
+    var cached = chartCacheGet(p.ticker, range);
+    if (cached) return Promise.resolve({ pos: p, data: { points: cached } });
     return fetchWithTimeout(baseUrl + '/api/history?ticker=' + encodeURIComponent(p.ticker) + '&range=' + range, opts, 12000)
-      .then(function(d) { return { pos: p, data: d }; })
+      .then(function(d) {
+        if (d && d.points) chartCacheSet(p.ticker, range, d.points);
+        return { pos: p, data: d };
+      })
       .catch(function(e) { console.error('history fail', p.ticker, e); return { pos: p, data: null }; });
   });
   var fxPromises = fxCodes.map(function(code) {
-    return fetchWithTimeout(baseUrl + '/api/history?ticker=' + encodeURIComponent(code + baseCode + '=X') + '&range=' + range, opts, 12000)
-      .then(function(d) { return { code: code, data: d }; })
+    var fxTicker = code + baseCode + '=X';
+    var cached = chartCacheGet(fxTicker, range);
+    if (cached) return Promise.resolve({ code: code, data: { points: cached } });
+    return fetchWithTimeout(baseUrl + '/api/history?ticker=' + encodeURIComponent(fxTicker) + '&range=' + range, opts, 12000)
+      .then(function(d) {
+        if (d && d.points) chartCacheSet(fxTicker, range, d.points);
+        return { code: code, data: d };
+      })
       .catch(function(e) { console.error('fx history fail', code, e); return { code: code, data: null }; });
   });
 
