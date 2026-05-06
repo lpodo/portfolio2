@@ -2185,25 +2185,54 @@ function loadChartData(range) {
       fxByDate[fx.code] = {};
       fx.data.points.forEach(function(pt) { fxByDate[fx.code][dateKey(pt.t)] = pt.c; });
     });
-    var dailyMap = {};
+    // Collect all unique dates across all tickers
+    var allDatesSet = {};
     tickerResults.forEach(function(tr) {
       if (!tr.data || !tr.data.points) return;
-      var pc = getPositionCurrencyCode(tr.pos);
-      tr.data.points.forEach(function(pt) {
-        var dk = dateKey(pt.t);
-        var rate = 1;
-        if (pc !== baseCode) {
-          if (fxByDate[pc] && fxByDate[pc][dk]) {
-            rate = fxByDate[pc][dk];
-          } else if (fxByDate[pc]) {
-            var fxDates = Object.keys(fxByDate[pc]).sort();
-            if (fxDates.length) rate = fxByDate[pc][fxDates[fxDates.length - 1]];
-          }
-        }
-        if (!dailyMap[dk]) dailyMap[dk] = { t: pt.t, v: 0 };
-        dailyMap[dk].v += tr.pos.qty * pt.c * rate;
+      tr.data.points.forEach(function(pt) { allDatesSet[dateKey(pt.t)] = pt.t; });
+    });
+    var allDates = Object.keys(allDatesSet).sort();
+
+    // Build per-ticker price map with forward-fill
+    var tickerPriceMaps = tickerResults.map(function(tr) {
+      var map = {};
+      if (tr.data && tr.data.points) {
+        tr.data.points.forEach(function(pt) { map[dateKey(pt.t)] = pt.c; });
+      }
+      // Forward-fill missing dates
+      var lastPrice = null;
+      var filled = {};
+      allDates.forEach(function(dk) {
+        if (map[dk] != null) lastPrice = map[dk];
+        if (lastPrice != null) filled[dk] = lastPrice;
+      });
+      return { pos: tr.pos, prices: filled };
+    });
+
+    // Build FX map with forward-fill too
+    Object.keys(fxByDate).forEach(function(code) {
+      var lastRate = null;
+      allDates.forEach(function(dk) {
+        if (fxByDate[code][dk] != null) lastRate = fxByDate[code][dk];
+        else if (lastRate != null) fxByDate[code][dk] = lastRate;
       });
     });
+
+    // Build daily portfolio value - only dates where ALL tickers have data
+    var dailyMap = {};
+    allDates.forEach(function(dk) {
+      var total = 0;
+      var complete = true;
+      tickerPriceMaps.forEach(function(tm) {
+        if (tm.prices[dk] == null) { complete = false; return; }
+        var pc = getPositionCurrencyCode(tm.pos);
+        var rate = 1;
+        if (pc !== baseCode && fxByDate[pc]) rate = fxByDate[pc][dk] || 1;
+        total += tm.pos.qty * tm.prices[dk] * rate;
+      });
+      if (complete) dailyMap[dk] = { t: allDatesSet[dk], v: total };
+    });
+
     var days = Object.keys(dailyMap).sort();
     if (days.length < 2) {
       document.getElementById('chartArea').innerHTML = '<span>Not enough data</span>';
