@@ -80,6 +80,45 @@ export default {
       });
     }
 
+    // History endpoint: /api/history?ticker=NVDA&range=1mo
+    if (url.pathname === '/api/history') {
+      const t = url.searchParams.get('ticker');
+      const range = url.searchParams.get('range') || '1mo';
+      if (!t) return json({ error: 'ticker is required' }, 400);
+      if (!['1mo', '3mo', '6mo'].includes(range)) return json({ error: 'invalid range' }, 400);
+      try {
+        const r = await fetch(
+          `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?interval=1d&range=${range}`,
+          { headers: yahooHeaders() }
+        );
+        if (!r.ok) return json({ error: `Yahoo HTTP ${r.status}` }, 502);
+        const d = await r.json();
+        const result = d?.chart?.result?.[0];
+        if (!result) return json({ error: `No data for ${t}` }, 404);
+        const meta = result.meta || {};
+        const timestamps = result.timestamp || [];
+        const closes = result.indicators?.quote?.[0]?.close || [];
+        const rawCurrency = meta.currency || null;
+        const isGBp = rawCurrency === 'GBp';
+        const points = [];
+        for (let i = 0; i < timestamps.length; i++) {
+          if (closes[i] != null) {
+            points.push({
+              t: timestamps[i],
+              c: isGBp ? closes[i] / 100 : closes[i]
+            });
+          }
+        }
+        return json({
+          ticker: meta.symbol || t,
+          currency: isGBp ? 'GBP' : rawCurrency,
+          points
+        });
+      } catch (err) {
+        return json({ error: err.message || 'Failed' }, 500);
+      }
+    }
+
     if (url.pathname !== '/api/quote') {
       return json({ error: 'Not found' }, 404);
     }
