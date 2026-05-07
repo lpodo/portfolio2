@@ -2384,10 +2384,12 @@ function loadSummaryChartData(range, mode) {
   var allTickers = {};
   var allFxNeeded = {};
   activePids.forEach(function(pid) {
+    var baseCur = (portfolios[pid].currencyCode || 'USD').toUpperCase();
+    if (baseCur !== 'USD') allFxNeeded[baseCur] = true;
     (portfolios[pid].positions || []).filter(function(p) { return !p.sold && p.qty > 0; }).forEach(function(pos) {
       if (!allTickers[pos.ticker]) allTickers[pos.ticker] = [];
       allTickers[pos.ticker].push({ pid: pid, pos: pos });
-      var pc = pos.currency || (portfolios[pid].currencyCode || 'USD').toUpperCase();
+      var pc = (pos.currency || baseCur).toUpperCase();
       if (pc !== 'USD') allFxNeeded[pc] = true;
     });
   });
@@ -2464,14 +2466,16 @@ function loadSummaryChartData(range, mode) {
         var p = portfolios[pid];
         var posns = (p.positions || []).filter(function(pos) { return !pos.sold && pos.qty > 0; });
         if (!posns.length) return;
+        var baseCur2 = (p.currencyCode || 'USD').toUpperCase();
         var daily = {};
         allDates.forEach(function(dk) {
           var total = 0, complete = true;
           posns.forEach(function(pos) {
             if (!priceMap[pos.ticker] || priceMap[pos.ticker][dk] == null) { complete = false; return; }
-            var pc = pos.currency || (p.currencyCode || 'USD').toUpperCase();
-            var rate = pc === 'USD' ? 1 : (fxByDate[pc] && fxByDate[pc][dk] ? fxByDate[pc][dk] : 1);
-            total += pos.qty * priceMap[pos.ticker][dk] * rate;
+            var pc = (pos.currency || baseCur2).toUpperCase();
+            var rateToUSD = pc === 'USD' ? 1 : (fxByDate[pc] && fxByDate[pc][dk] ? fxByDate[pc][dk] : 1);
+            var rateBaseToUSD = baseCur2 === 'USD' ? 1 : (fxByDate[baseCur2] && fxByDate[baseCur2][dk] ? fxByDate[baseCur2][dk] : 1);
+            total += pos.qty * priceMap[pos.ticker][dk] * rateToUSD / rateBaseToUSD;
           });
           if (complete) daily[dk] = total;
         });
