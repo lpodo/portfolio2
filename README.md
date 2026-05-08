@@ -293,3 +293,62 @@ Remaining coupons are calculated by stepping back from maturity date in coupon i
 ### Storage
 
 Bond data (`bondsDb`, `bondPortfolios`) is stored in `pt_bonds_db` and `pt_bond_portfolios` in localStorage, and is included in cloud sync alongside equity portfolios in the same JSONBin record.
+
+## Chart View
+
+Available via ⋮ menu → CHART for individual portfolios and Summary.
+
+**Controls:** 1MO / 3MO / 6MO range buttons. Individual portfolio charts also have **PORTFOLIO / POSITIONS** toggle.
+
+**Data:** Historical daily closes fetched via `/api/history` endpoint. For multi-currency portfolios, FX history is fetched for each non-base currency and applied per day.
+
+**Spike prevention:** Missing trading days (holidays, exchange closures) are forward-filled per ticker. Only dates where all tickers have data are plotted.
+
+**Caching:** Historical data is cached in localStorage per ticker+range with a daily TTL. Stale entries are purged automatically on each new cache write. Repeated chart opens within the same day make zero network requests. The positions chart shares the same cache as the portfolio chart.
+
+### Portfolio Chart — PORTFOLIO mode
+
+Single line showing total portfolio value over time in base currency. Active positions only (sold and qty=0 excluded).
+
+### Portfolio Chart — POSITIONS mode
+
+Normalized % lines for individually selected tickers (deduplicated — if the same ticker appears multiple times, one line is shown). Each line starts at 0% on the first available date. Color-coded with a legend showing final % change.
+
+**Selection:** Click ✎ Edit selection (N/M) to open a checkbox list with ALL / NONE shortcuts. Selection is saved to localStorage per portfolio and persists across sessions. Default on first open: none selected.
+
+### Summary Chart
+
+In Summary, the ⋮ menu → CHART shows two modes toggled by TOTAL / BY PORTFOLIO buttons:
+
+- **TOTAL** — single line showing combined value of all active portfolios in USD with FX conversion
+- **BY PORTFOLIO** — one normalized line per portfolio starting at 0%, each calculated in its own base currency (no USD conversion, so FX effects don't distort relative stock performance). Color-coded with a legend showing final % change.
+
+## Analytics View
+
+Available via ⋮ menu → ANALYTICS for individual portfolios and Summary.
+
+Shows portfolio breakdown by **CATEGORY**, **REGION**, or **SECTOR** — three buttons to switch between them. Each row shows group name, value (with FX conversion to base currency), weight %, and a horizontal bar chart scaled to the largest group. Positions with qty=0 are excluded. Positions without a value in the selected field appear in the **Other** group.
+
+### Position Classification Fields
+
+Each position has three optional fields: **category**, **region**, **sector**. Set via the ✎ edit row (expands below the position). Grouping normalizes whitespace (trims and collapses multiple spaces) but preserves original casing.
+
+### CSV Import / Export
+
+In Analytics view (portfolio level), two links appear: **↓ Export CSV** and **↑ Import CSV**.
+
+**Export** downloads `tickers.csv` — all unique tickers across all portfolios with their current category/region/sector values.
+
+**Import** reads a CSV and updates matching positions across all portfolios. Supports comma (`,`) or semicolon (`;`) delimiter, auto-detected from the header row. Empty fields in the CSV do not overwrite existing values.
+
+CSV format:
+```
+ticker,category,region,sector
+NVDA,AI & Semi,US,Technology
+ASML.AS,AI & Semi,Europe,Technology
+CVX,Energy,US,Energy
+GLD,Commodities,Global,Commodities
+SPY,Broad Market,US,Diversified
+```
+
+Tickers may appear multiple times across portfolios — all matching positions are updated.

@@ -2135,6 +2135,75 @@ function buildMarketTotals(fxMap, baseCode, baseSym) {
 }
 
 
+
+window.chartViewType = 'portfolio'; // 'portfolio' or 'positions'
+window.chartSelectionOpen = false;
+
+function getChartSelKey() {
+  return 'pt_chart_sel_' + currentPortfolioId;
+}
+
+function getChartSelection() {
+  var saved = localStorage.getItem(getChartSelKey());
+  if (saved) {
+    try {
+      var arr = JSON.parse(saved);
+      var allTickers = getChartUniqueTickers();
+      return arr.filter(function(t) { return allTickers.indexOf(t) !== -1; });
+    } catch(e) {}
+  }
+  return []; // default: none
+}
+
+function getChartUniqueTickers() {
+  var seen = {};
+  var result = [];
+  (positions || []).filter(function(p) { return !p.sold && p.qty > 0; }).forEach(function(p) {
+    if (!seen[p.ticker]) { seen[p.ticker] = true; result.push(p.ticker); }
+  });
+  return result;
+}
+
+function saveChartSelection(tickers) {
+  try { localStorage.setItem(getChartSelKey(), JSON.stringify(tickers)); } catch(e) {}
+}
+
+function setChartViewType(t) {
+  window.chartViewType = t;
+  window.chartSelectionOpen = false;
+  render();
+}
+
+function toggleChartSelection() {
+  window.chartSelectionOpen = !window.chartSelectionOpen;
+  render();
+}
+
+function applyChartSelection() {
+  var allTickers = getChartUniqueTickers();
+  var selected = allTickers.filter(function(t) {
+    var cb = document.getElementById('chartcb_' + t);
+    return cb && cb.checked;
+  });
+  if (!selected.length) selected = allTickers;
+  saveChartSelection(selected);
+  window.chartSelectionOpen = false;
+  render();
+}
+
+function chartSelectAll() {
+  getChartUniqueTickers().forEach(function(t) {
+    var cb = document.getElementById('chartcb_' + t);
+    if (cb) cb.checked = true;
+  });
+}
+function chartSelectNone() {
+  getChartUniqueTickers().forEach(function(t) {
+    var cb = document.getElementById('chartcb_' + t);
+    if (cb) cb.checked = false;
+  });
+}
+
 window.chartRange = '1mo';
 
 
@@ -2520,6 +2589,66 @@ function setSummaryChartRange(r) { window.chartRange = r; render(); }
 function setSummaryChartMode(m) { window.summaryChartMode = m; render(); }
 
 var CHART_COLORS = ['#00c48c','#5b9cf6','#f6c15b','#e05c5c','#b47ef6','#5bf6e4','#f65b9c','#c4a000','#5bf65b','#f6825b'];
+
+
+function loadPositionsChartData(range, selectedTickers) {
+  var baseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
+  var token = getToken();
+  if (!baseUrl || !selectedTickers.length) {
+    document.getElementById('chartArea').innerHTML = '<span style="color:var(--dim)">No positions selected — click &#9998; Edit selection to choose</span>';
+    return;
+  }
+  var opts = token ? { headers: { 'X-API-Token': token } } : {};
+  var promises = selectedTickers.map(function(ticker) {
+    var cached = chartCacheGet(ticker, range);
+    if (cached) return Promise.resolve({ ticker: ticker, data: { points: cached } });
+    return fetchWithTimeout(baseUrl + '/api/history?ticker=' + encodeURIComponent(ticker) + '&range=' + range, opts, 12000)
+      .then(function(d) { if (d && d.points) chartCacheSet(ticker, range, d.points); return { ticker: ticker, data: d }; })
+      .catch(function() { return { ticker: ticker, data: null }; });
+  });
+
+  Promise.all(promises).then(function(results) {
+    var allDatesSet = {};
+    results.forEach(function(r) {
+      if (!r.data || !r.data.points) return;
+      r.data.points.forEach(function(pt) { allDatesSet[dateKey(pt.t)] = pt.t; });
+    });
+    var allDates = Object.keys(allDatesSet).sort();
+
+    // Build price maps with forward-fill
+    var priceMaps = results.map(function(r) {
+      var map = {};
+      if (r.data && r.data.points) r.data.points.forEach(function(pt) { map[dateKey(pt.t)] = pt.c; });
+      var last = null;
+      var filled = {};
+      allDates.forEach(function(dk) {
+        if (map[dk] != null) last = map[dk];
+        if (last != null) filled[dk] = last;
+      });
+      return { ticker: r.ticker, prices: filled };
+    });
+
+    var lines = [];
+    priceMaps.forEach(function(pm, idx) {
+      var days = allDates.filter(function(dk) { return pm.prices[dk] != null; });
+      if (days.length < 2) return;
+      var base = pm.prices[days[0]];
+      if (!base) return;
+      lines.push({
+        name: pm.ticker,
+        color: CHART_COLORS[idx % CHART_COLORS.length],
+        values: days.map(function(dk) { return (pm.prices[dk] / base - 1) * 100; }),
+        timestamps: days.map(function(dk) { return allDatesSet[dk]; })
+      });
+    });
+
+    if (!lines.length) {
+      document.getElementById('chartArea').innerHTML = '<span>Not enough data</span>';
+      return;
+    }
+    renderMultiChart(lines);
+  });
+}
 
 function loadSummaryChartData(range, mode) {
   var baseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
@@ -3406,14 +3535,55 @@ function render() {
   // Chart view
   if (viewMode === 'chart') {
     var chartRange = window.chartRange || '1mo';
-    area.innerHTML = '<div style="padding:8px 0 4px;display:flex;gap:6px">'
+    var cvt = window.chartViewType || 'portfolio';
+    var selOpen = window.chartSelectionOpen || false;
+    var allTickers = getChartUniqueTickers();
+    var selectedTickers = getChartSelection();
+
+    // Build selection panel HTML
+    var selPanel = '';
+    if (selOpen) {
+      selPanel = '<div style="background:var(--bg2);border:1px solid var(--border);padding:10px;margin-bottom:8px">'
+        + '<div style="display:flex;gap:8px;margin-bottom:8px">'
+        + '<button onclick="chartSelectAll()" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);background:var(--bg);color:var(--dim);cursor:pointer;font-family:var(--font)">ALL</button>'
+        + '<button onclick="chartSelectNone()" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);background:var(--bg);color:var(--dim);cursor:pointer;font-family:var(--font)">NONE</button>'
+        + '</div>'
+        + '<div style="display:flex;flex-wrap:wrap;gap:6px 16px;margin-bottom:10px">'
+        + allTickers.map(function(t) {
+            var pos = positions.find(function(p) { return p.ticker === t && !p.sold && p.qty > 0; });
+            var name = pos && pos.shortName ? pos.shortName : '';
+            var checked = selectedTickers.indexOf(t) !== -1 ? 'checked' : '';
+            return '<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">'
+              + '<input type="checkbox" id="chartcb_' + t + '" ' + checked + ' style="cursor:pointer">'
+              + '<span>' + t + '</span>'
+              + (name ? '<span style="color:var(--dim);font-size:10px">' + name + '</span>' : '')
+              + '</label>';
+          }).join('')
+        + '</div>'
+        + '<button onclick="applyChartSelection()" class="btn btn-green" style="font-size:10px;padding:5px 14px">APPLY</button>'
+        + '</div>';
+    }
+
+    area.innerHTML = '<div style="padding:8px 0 4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
       + ['1mo','3mo','6mo'].map(function(r) {
           var active = chartRange === r;
           return '<button onclick="setChartRange(&apos;' + r + '&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 10px;border:1px solid ' + (active ? 'var(--green)' : 'var(--border)') + ';background:' + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">' + r.toUpperCase() + '</button>';
         }).join('')
+      + '<div style="flex:1"></div>'
+      + ['portfolio','positions'].map(function(t) {
+          var active = cvt === t;
+          return '<button onclick="setChartViewType(&apos;' + t + '&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 10px;border:1px solid ' + (active ? 'var(--green)' : 'var(--border)') + ';background:' + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font);text-transform:uppercase">' + t + '</button>';
+        }).join('')
       + '</div>'
+      + (cvt === 'positions' ? '<div style="text-align:right;font-size:10px;margin-bottom:4px"><a href="#" onclick="toggleChartSelection();return false" style="color:var(--dim)">&#9998; Edit selection (' + selectedTickers.length + '/' + allTickers.length + ')</a></div>' : '')
+      + selPanel
       + '<div id="chartArea" style="min-height:200px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px">Loading...</div>';
-    loadChartData(chartRange);
+
+    if (cvt === 'portfolio') {
+      loadChartData(chartRange);
+    } else {
+      loadPositionsChartData(chartRange, selectedTickers);
+    }
     return;
   }
 
