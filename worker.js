@@ -86,20 +86,19 @@ export default {
       if (!t) return json({ error: 'ticker is required' }, 400);
       try {
         const r = await fetch(
-          `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(t)}?modules=assetProfile`,
+          `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?interval=1d&range=1d&modules=assetProfile`,
           { headers: yahooHeaders() }
         );
-        if (!r.ok) return json({ error: `Yahoo HTTP ${r.status}` }, 502);
+        if (!r.ok) return json({ sector: null, industry: null, country: null });
         const d = await r.json();
-        const profile = d?.quoteSummary?.result?.[0]?.assetProfile;
-        if (!profile) return json({ sector: null, industry: null, country: null });
+        const profile = d?.chart?.result?.[0]?.assetProfile || {};
         return json({
           sector: profile.sector || null,
           industry: profile.industry || null,
           country: profile.country || null
         });
       } catch (err) {
-        return json({ error: err.message || 'Failed' }, 500);
+        return json({ sector: null, industry: null, country: null });
       }
     }
 
