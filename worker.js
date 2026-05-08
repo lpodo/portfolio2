@@ -80,6 +80,29 @@ export default {
       });
     }
 
+    // Profile endpoint: /api/profile?ticker=NVDA → { sector, industry, country }
+    if (url.pathname === '/api/profile') {
+      const t = url.searchParams.get('ticker');
+      if (!t) return json({ error: 'ticker is required' }, 400);
+      try {
+        const r = await fetch(
+          `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(t)}?modules=assetProfile`,
+          { headers: yahooHeaders() }
+        );
+        if (!r.ok) return json({ error: `Yahoo HTTP ${r.status}` }, 502);
+        const d = await r.json();
+        const profile = d?.quoteSummary?.result?.[0]?.assetProfile;
+        if (!profile) return json({ sector: null, industry: null, country: null });
+        return json({
+          sector: profile.sector || null,
+          industry: profile.industry || null,
+          country: profile.country || null
+        });
+      } catch (err) {
+        return json({ error: err.message || 'Failed' }, 500);
+      }
+    }
+
     // History endpoint: /api/history?ticker=NVDA&range=1mo
     if (url.pathname === '/api/history') {
       const t = url.searchParams.get('ticker');
