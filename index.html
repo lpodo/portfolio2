@@ -2217,7 +2217,7 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
   var groups = {};
   posns.forEach(function(p) {
     if (!p.qty || p.qty <= 0) return;
-    var key = (p[breakdown] || '').trim().replace(/\s+/g, ' ') || 'Other';
+    var key = breakdown === 'currency' ? (getPositionCurrencyCode(p) || 'Other') : ((p[breakdown] || '').trim().replace(/\s+/g, ' ') || 'Other');
     if (!groups[key]) groups[key] = [];
     groups[key].push(p);
   });
@@ -2259,7 +2259,7 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
       + '</tr>';
   }).join('');
 
-  var btns = ['category','region','sector'].map(function(b) {
+  var btns = ['category','region','sector','currency'].map(function(b) {
     var active = breakdown === b;
     return '<button onclick="setAnalyticsBreakdown(&apos;' + b + '&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 10px;border:1px solid ' + (active ? 'var(--green)' : 'var(--border)') + ';background:' + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font);text-transform:uppercase">' + b + '</button>';
   }).join('');

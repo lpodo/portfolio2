@@ -327,7 +327,7 @@ In Summary, the ⋮ menu → CHART shows two modes toggled by TOTAL / BY PORTFOL
 
 Available via ⋮ menu → ANALYTICS for individual portfolios and Summary.
 
-Shows portfolio breakdown by **CATEGORY**, **REGION**, or **SECTOR** — three buttons to switch between them. Each row shows group name, value (with FX conversion to base currency), weight %, and a horizontal bar chart scaled to the largest group. Positions with qty=0 are excluded. Positions without a value in the selected field appear in the **Other** group.
+Shows portfolio breakdown by **CATEGORY**, **REGION**, **SECTOR**, or **CURRENCY** — four buttons to switch between them. Currency uses the actual position currency from Yahoo Finance (no manual input needed). Each row shows group name, value (with FX conversion to base currency), weight %, and a horizontal bar chart scaled to the largest group. Positions with qty=0 are excluded. Positions without a value in the selected field appear in the **Other** group.
 
 ### Position Classification Fields
 
