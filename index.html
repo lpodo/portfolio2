@@ -2147,7 +2147,9 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
   // Group positions
   var groups = {};
   posns.forEach(function(p) {
-    var key = (p[breakdown] || '').trim() || 'Other';
+    if (!p.qty || p.qty <= 0) return;
+    var key = (p[breakdown] || '').trim().toLowerCase().replace(/\s+/g, ' ') || 'Other';
+    key = key.charAt(0).toUpperCase() + key.slice(1);
     if (!groups[key]) groups[key] = [];
     groups[key].push(p);
   });
