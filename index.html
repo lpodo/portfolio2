@@ -2148,8 +2148,7 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
   var groups = {};
   posns.forEach(function(p) {
     if (!p.qty || p.qty <= 0) return;
-    var key = (p[breakdown] || '').trim().toLowerCase().replace(/\s+/g, ' ') || 'Other';
-    key = key.charAt(0).toUpperCase() + key.slice(1);
+    var key = (p[breakdown] || '').trim().replace(/\s+/g, ' ') || 'Other';
     if (!groups[key]) groups[key] = [];
     groups[key].push(p);
   });
