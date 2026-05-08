@@ -201,6 +201,7 @@
       <div onclick="setView('weight')" id="vmWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">WEIGHTS</div>
       <div onclick="setView('market')" id="vmMarket" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">MARKET</div>
       <div onclick="setView('chart')" id="vmChart" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">CHART</div>
+      <div onclick="setView('analytics')" id="vmAnalytics" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">ANALYTICS</div>
     </div>
   </div>
 </div>
@@ -1067,7 +1068,7 @@ function switchPortfolio(id) {
   loadLocal();
   editId = null;
   loadingSet = {};
-  if (viewMode === 'summary' || viewMode === 'archive-summary' || viewMode === 'summary-market' || viewMode === 'summary-chart') viewMode = 'main';
+  if (['summary','archive-summary','summary-market','summary-chart','summary-analytics'].indexOf(viewMode) !== -1) viewMode = 'main';
   var btn = document.getElementById('viewMenuBtn');
   var refreshBtn = document.getElementById('refreshAllBtn');
   if (portfolios[id].watchlist) {
@@ -2060,11 +2061,12 @@ function getWatchlistSorted(items) {
 function toggleViewMenu() {
   var menu = document.getElementById('viewMenu');
   if (menu.style.display === 'none') {
-    var isSummaryMode = viewMode === 'summary' || viewMode === 'summary-market' || viewMode === 'summary-chart';
+    var isSummaryMode = ['summary','summary-market','summary-chart','summary-analytics'].indexOf(viewMode) !== -1;
     var isArchive = !isSummaryMode && currentPortfolio() && currentPortfolio().archive;
     document.getElementById('vmMarket').style.display = isArchive ? 'none' : '';
     document.getElementById('vmWeight').style.display = isSummaryMode ? 'none' : '';
     document.getElementById('vmChart').style.display = isArchive ? 'none' : '';
+    document.getElementById('vmAnalytics').style.display = isArchive ? 'none' : '';
     menu.style.display = 'block';
   } else {
     menu.style.display = 'none';
@@ -2072,18 +2074,18 @@ function toggleViewMenu() {
 }
 function setView(mode) {
   // In summary context, market → summary-market, main → summary
-  var isSummaryContext = viewMode === 'summary' || viewMode === 'summary-market' || viewMode === 'summary-chart';
+  var isSummaryContext = ['summary','summary-market','summary-chart','summary-analytics'].indexOf(viewMode) !== -1;
   if (isSummaryContext) {
-    viewMode = mode === 'market' ? 'summary-market' : (mode === 'chart' ? 'summary-chart' : 'summary');
+    viewMode = mode === 'market' ? 'summary-market' : mode === 'chart' ? 'summary-chart' : mode === 'analytics' ? 'summary-analytics' : 'summary';
   } else {
     viewMode = mode;
     if (mode === 'weight') weightSort = { key: 'weight', dir: -1 };
     if (mode === 'market') marketSort = { key: null, dir: -1 };
   }
-  ['vmMain','vmWeight','vmMarket','vmChart'].forEach(function(id) {
+  ['vmMain','vmWeight','vmMarket','vmChart','vmAnalytics'].forEach(function(id) {
     document.getElementById(id).style.color = '';
   });
-  var activeId = (viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary' ? 'vmMain' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : 'vmMarket');
+  var activeId = viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'summary' ? 'vmMain' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'analytics' ? 'vmAnalytics' : 'vmMarket';
   document.getElementById(activeId).style.color = 'var(--green)';
   document.getElementById('viewMenu').style.display = 'none';
   render();
@@ -2130,6 +2132,128 @@ function buildMarketTotals(fxMap, baseCode, baseSym) {
 
 
 window.chartRange = '1mo';
+
+
+window.analyticsBreakdown = 'category';
+
+function setAnalyticsBreakdown(b) { window.analyticsBreakdown = b; render(); }
+
+function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
+  var breakdown = window.analyticsBreakdown || 'category';
+  // Group positions
+  var groups = {};
+  posns.forEach(function(p) {
+    var key = (p[breakdown] || '').trim() || 'Other';
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(p);
+  });
+  // Calculate values per group with FX conversion
+  var groupTotals = {};
+  var grandTotal = 0;
+  Object.keys(groups).forEach(function(key) {
+    var val = 0;
+    groups[key].forEach(function(p) {
+      if (p.current == null || p.qty <= 0) return;
+      var pc = getPositionCurrencyCode(p);
+      var rate = pc === baseCode ? 1 : (fxMap[pc + baseCode] || fxMap[pc] || 1);
+      val += p.qty * p.current * rate;
+    });
+    groupTotals[key] = val;
+    grandTotal += val;
+  });
+  // Sort by value desc, Other last
+  var keys = Object.keys(groupTotals).sort(function(a, b) {
+    if (a === 'Other') return 1;
+    if (b === 'Other') return -1;
+    return groupTotals[b] - groupTotals[a];
+  });
+  var maxVal = keys.length ? Math.max.apply(null, keys.map(function(k) { return groupTotals[k]; })) : 1;
+  // Build rows
+  var rows = keys.map(function(key) {
+    var val = groupTotals[key];
+    var pct = grandTotal > 0 ? val / grandTotal * 100 : 0;
+    var barW = maxVal > 0 ? Math.round(val / maxVal * 100) : 0;
+    return '<tr>'
+      + '<td style="text-align:left;padding:7px 4px;white-space:nowrap">' + key + '</td>'
+      + '<td style="text-align:right;padding:7px 4px;white-space:nowrap">' + baseSym + f2(val) + '</td>'
+      + '<td style="text-align:right;padding:7px 4px;white-space:nowrap;color:var(--dim)">' + pct.toFixed(1) + '%</td>'
+      + '<td style="padding:7px 8px;width:40%;min-width:80px">'
+        + '<div style="background:var(--border);border-radius:2px;height:8px;width:100%">'
+          + '<div style="background:var(--green);border-radius:2px;height:8px;width:' + barW + '%"></div>'
+        + '</div>'
+      + '</td>'
+      + '</tr>';
+  }).join('');
+
+  var btns = ['category','region','sector'].map(function(b) {
+    var active = breakdown === b;
+    return '<button onclick="setAnalyticsBreakdown(&apos;' + b + '&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 10px;border:1px solid ' + (active ? 'var(--green)' : 'var(--border)') + ';background:' + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font);text-transform:uppercase">' + b + '</button>';
+  }).join('');
+
+  return '<div style="padding:8px 0 12px;display:flex;gap:6px">' + btns + '</div>'
+    + (isSummary ? '' : '<div style="text-align:right;font-size:10px;color:var(--dim);margin-bottom:4px"><a href="#" onclick="openCsvImport();return false" style="color:var(--dim)">↑ Import CSV</a></div>')
+    + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
+    + '<thead><tr>'
+    + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);text-transform:uppercase">' + breakdown + '</th>'
+    + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">VALUE</th>'
+    + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">WEIGHT</th>'
+    + '<th style="padding:5px 8px;border-bottom:1px solid var(--border)"></th>'
+    + '</tr></thead>'
+    + '<tbody>' + rows + '</tbody>'
+    + '</table></div>'
+    + '<div class="totals-bar"><div class="total-block"><div class="total-label">TOTAL</div><div class="total-value" style="color:var(--bright)">' + baseSym + f2(grandTotal) + '</div></div></div>';
+}
+
+// CSV Import
+function openCsvImport() {
+  var inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.csv,text/csv';
+  inp.onchange = function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev) { processCsvImport(ev.target.result); };
+    reader.readAsText(file);
+  };
+  inp.click();
+}
+
+function processCsvImport(text) {
+  var lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) { alert('CSV must have header + data rows'); return; }
+  var header = lines[0].split(',').map(function(h) { return h.trim().toLowerCase(); });
+  var tickerIdx = header.indexOf('ticker');
+  var catIdx = header.indexOf('category');
+  var regIdx = header.indexOf('region');
+  var secIdx = header.indexOf('sector');
+  if (tickerIdx === -1) { alert('CSV must have a "ticker" column'); return; }
+  var map = {}; // ticker → { category, region, sector }
+  for (var i = 1; i < lines.length; i++) {
+    var cols = lines[i].split(',').map(function(c) { return c.trim(); });
+    var ticker = (cols[tickerIdx] || '').toUpperCase();
+    if (!ticker) continue;
+    map[ticker] = {
+      category: catIdx !== -1 ? cols[catIdx] || null : undefined,
+      region:   regIdx !== -1 ? cols[regIdx] || null : undefined,
+      sector:   secIdx !== -1 ? cols[secIdx] || null : undefined
+    };
+  }
+  // Apply to all portfolios
+  var updated = 0;
+  Object.keys(portfolios).forEach(function(pid) {
+    (portfolios[pid].positions || []).forEach(function(pos) {
+      var m = map[pos.ticker.toUpperCase()];
+      if (!m) return;
+      if (m.category !== undefined) pos.category = m.category;
+      if (m.region !== undefined)   pos.region   = m.region;
+      if (m.sector !== undefined)   pos.sector   = m.sector;
+      updated++;
+    });
+  });
+  savePortfolios(); cloudSave();
+  alert('Updated ' + updated + ' position(s)');
+  render();
+}
 
 function setChartRange(range) {
   window.chartRange = range;
@@ -2537,6 +2661,63 @@ function renderMultiChart(lines) {
 
 function render() {
   var area = document.getElementById('tableArea');
+
+  // Analytics view (single portfolio)
+  if (viewMode === 'analytics') {
+    var aBase = (currentPortfolio().currencyCode || 'USD').toUpperCase();
+    var aBaseSym = CURRENCY_SYMBOLS[aBase] || aBase;
+    var aNonUSD = [];
+    positions.forEach(function(p) {
+      var pc = getPositionCurrencyCode(p);
+      if (pc !== aBase && aNonUSD.indexOf(pc) === -1) aNonUSD.push(pc);
+    });
+    var aFxMap = {};
+    function renderAnalytics(fxMap) {
+      area.innerHTML = buildAnalyticsView(positions, aBaseSym, aBase, fxMap, false);
+    }
+    if (aNonUSD.length === 0) {
+      renderAnalytics({});
+    } else {
+      var aBaseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
+      var aToken = getToken();
+      Promise.all(aNonUSD.map(function(code) {
+        return fetchFxRate(aBaseUrl, aToken, code + aBase + '=X').then(function(rate) {
+          if (rate) { aFxMap[code + aBase] = rate; aFxMap[code] = rate; }
+        });
+      })).then(function() { renderAnalytics(aFxMap); });
+    }
+    return;
+  }
+
+  // Summary analytics view
+  if (viewMode === 'summary-analytics') {
+    var saNonUSD = [];
+    var saPids = Object.keys(portfolios).filter(function(pid) { return !portfolios[pid].watchlist && !portfolios[pid].archive; });
+    var allSaPos = [];
+    saPids.forEach(function(pid) {
+      (portfolios[pid].positions || []).forEach(function(pos) {
+        allSaPos.push(pos);
+        var pc = getPositionCurrencyCode(pos);
+        if (pc !== 'USD' && saNonUSD.indexOf(pc) === -1) saNonUSD.push(pc);
+      });
+    });
+    var saFxMap = {};
+    function renderSummaryAnalytics(fxMap) {
+      area.innerHTML = buildAnalyticsView(allSaPos, '$', 'USD', fxMap, true);
+    }
+    if (saNonUSD.length === 0) {
+      renderSummaryAnalytics({});
+    } else {
+      var saBaseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
+      var saToken = getToken();
+      Promise.all(saNonUSD.map(function(code) {
+        return fetchFxRate(saBaseUrl, saToken, code + 'USD=X').then(function(rate) {
+          if (rate) { saFxMap[code + 'USD'] = rate; saFxMap[code] = rate; }
+        });
+      })).then(function() { renderSummaryAnalytics(saFxMap); });
+    }
+    return;
+  }
 
   // Summary chart view
   if (viewMode === 'summary-chart') {
