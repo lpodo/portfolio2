@@ -3475,10 +3475,8 @@ function render() {
       var baseUrl3 = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
       var token3 = getToken();
       var wFxP = posFxNeeded.map(function(code) {
-        var ticker = code + baseCode + '=X';
-        var url = baseUrl3 + '/api/quote?ticker=' + encodeURIComponent(ticker);
-        var opts3 = token3 ? { headers: { 'X-API-Token': token3 } } : {};
-        return fetch(url, opts3).then(function(r) { return r.json(); }).then(function(d) {
+        var ticker2 = code + baseCode + '=X';
+        return fetchFxRate(baseUrl3, token3, ticker2).then(function(rate) {
           if (rate) { wFxMap2[code + baseCode] = rate; wFxMap2[code] = rate; }
         });
       });
