@@ -2243,7 +2243,8 @@ function openCsvImport() {
 function processCsvImport(text) {
   var lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) { alert('CSV must have header + data rows'); return; }
-  var header = lines[0].split(',').map(function(h) { return h.trim().toLowerCase(); });
+  var delim = lines[0].indexOf(';') !== -1 ? ';' : ',';
+  var header = lines[0].split(delim).map(function(h) { return h.trim().toLowerCase(); });
   var tickerIdx = header.indexOf('ticker');
   var catIdx = header.indexOf('category');
   var regIdx = header.indexOf('region');
