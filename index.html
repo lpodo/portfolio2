@@ -2251,7 +2251,7 @@ function processCsvImport(text) {
   if (tickerIdx === -1) { alert('CSV must have a "ticker" column'); return; }
   var map = {}; // ticker → { category, region, sector }
   for (var i = 1; i < lines.length; i++) {
-    var cols = lines[i].split(',').map(function(c) { return c.trim(); });
+    var cols = lines[i].split(delim).map(function(c) { return c.trim(); });
     var ticker = (cols[tickerIdx] || '').toUpperCase();
     if (!ticker) continue;
     map[ticker] = {
