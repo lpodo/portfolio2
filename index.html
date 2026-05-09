@@ -1697,7 +1697,8 @@ function addPosition() {
   if (!ticker) { document.getElementById('addErr').textContent = 'Введи тикер'; return; }
   if (!isWatchlist()) {
     if (qty === null || isNaN(qty) || qty < 0) { document.getElementById('addErr').textContent = 'Введи количество'; return; }
-    if (!entry || entry <= 0) { document.getElementById('addErr').textContent = 'Введи цену входа'; return; }
+    if (qty > 0 && (!entry || entry <= 0)) { document.getElementById('addErr').textContent = 'Введи цену входа'; return; }
+    if (entry < 0) { document.getElementById('addErr').textContent = 'Введи цену входа'; return; }
     if (currentPortfolio().archive && (!current || isNaN(current) || current <= 0)) {
       document.getElementById('addErr').textContent = 'Укажи цену продажи'; return;
     }
@@ -1779,7 +1780,7 @@ function saveEdit(id) {
   var pos = null;
   for (var i = 0; i < positions.length; i++) { if (positions[i].id === id) { pos = positions[i]; break; } }
   var current = curRaw ? parseFloat(curRaw) : (pos ? pos.current : null);
-  if (qty === null || isNaN(qty) || qty < 0 || !entry) return;
+  if (qty === null || isNaN(qty) || qty < 0 || (qty > 0 && entry <= 0)) return;
   var catEl = document.getElementById('editCategory'); var regEl = document.getElementById('editRegion'); var secEl = document.getElementById('editSector');
   var category = catEl ? (catEl.value.trim() || null) : (pos ? pos.category : null);
   var region   = regEl ? (regEl.value.trim() || null) : (pos ? pos.region   : null);
@@ -2158,7 +2159,7 @@ function getChartSelection() {
 function getChartUniqueTickers() {
   var seen = {};
   var result = [];
-  (positions || []).filter(function(p) { return !p.sold && p.qty > 0; }).forEach(function(p) {
+  (positions || []).forEach(function(p) {
     if (!seen[p.ticker]) { seen[p.ticker] = true; result.push(p.ticker); }
   });
   return result;
@@ -2898,7 +2899,8 @@ function render() {
   var rows = '';
   getSorted().forEach(function(p) {
     var pnl = (p.current !== null && p.current !== undefined) ? p.current - p.entry : null;
-    var pnlPct = (pnl !== null && p.entry) ? (pnl / p.entry) * 100 : null;
+    var pnlPct = (pnl !== null && p.entry && p.qty > 0) ? (pnl / p.entry) * 100 : null;
+    if (p.qty === 0 || !p.entry) pnl = null;
     var isLoading = !!loadingSet[p.id];
     var isEdit = editId === p.id;
 
@@ -3548,7 +3550,7 @@ function render() {
         + '<button onclick="chartSelectAll()" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);background:var(--bg);color:var(--dim);cursor:pointer;font-family:var(--font)">ALL</button>'
         + '<button onclick="chartSelectNone()" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);background:var(--bg);color:var(--dim);cursor:pointer;font-family:var(--font)">NONE</button>'
         + '</div>'
-        + '<div style="display:flex;flex-wrap:wrap;gap:6px 16px;margin-bottom:10px">'
+        + '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">'
         + allTickers.map(function(t) {
             var pos = positions.find(function(p) { return p.ticker === t && !p.sold && p.qty > 0; });
             var name = pos && pos.shortName ? pos.shortName : '';
