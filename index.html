@@ -3607,6 +3607,7 @@ function render() {
         var wSoldStyle = p.sold ? 'font-style:italic;opacity:0.5' : '';
         if (p.current === null || p.current === undefined || p.qty === 0) {
           return; // skip qty=0 from weight view entirely
+        }
         var pc = getPositionCurrencyCode(p);
         var rate = pc !== baseCode ? (wFxMap[pc + baseCode] || 1) : 1;
         var posValBase = p.qty * p.current * rate;
