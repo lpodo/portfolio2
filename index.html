@@ -2899,8 +2899,9 @@ function render() {
   var rows = '';
   getSorted().forEach(function(p) {
     var pnl = (p.current !== null && p.current !== undefined) ? p.current - p.entry : null;
-    var pnlPct = (pnl !== null && p.entry && p.qty > 0) ? (pnl / p.entry) * 100 : null;
+    var pnlPct = (pnl !== null && p.entry && p.entry > 0) ? (pnl / p.entry) * 100 : null;
     if (p.qty === 0 || !p.entry) pnl = null;
+    if (p.qty === 0 && !p.entry) pnlPct = null;
     var isLoading = !!loadingSet[p.id];
     var isEdit = editId === p.id;
 
@@ -2916,7 +2917,7 @@ function render() {
     }
 
     var qtyCell = isEdit ? '<input class="edit-input" id="editQty" type="number" value="' + p.qty + '">' : (p.qty === 0 ? '<span style="color:var(--dim)">&mdash;</span>' : (Number.isInteger(p.qty) ? p.qty : p.qty.toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:4})));
-    var entryCell = isEdit ? '<input class="edit-input" id="editEntry" type="number" value="' + p.entry + '">' : getPositionCurrencySymbol(p) + f2(p.entry);
+    var entryCell = isEdit ? '<input class="edit-input" id="editEntry" type="number" value="' + p.entry + '">' : (p.entry === 0 && p.qty === 0 ? '<span class="muted">&mdash;</span>' : getPositionCurrencySymbol(p) + f2(p.entry));
     var curEditCell = isEdit
       ? '<input class="edit-input" id="editCurrent" type="number" value="' + (p.current !== null && p.current !== undefined ? p.current : '') + '" placeholder="&mdash;">'
       : curCell;
@@ -2924,13 +2925,13 @@ function render() {
     var actions = isEdit
       ? '<button class="btn-icon" style="color:var(--green)" onclick="saveEdit(' + p.id + ')">&#10003;</button>'
         + '<button class="btn-icon" onclick="cancelEdit()">&#10005;</button>'
-      : (p.sold ? '<button class="btn-icon" onclick="showArchiveMenu(' + p.id + ', this)" title="Move to archive" style="font-size:14px;padding:0 4px">&#8863;</button>' : '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--bright)" onclick="sellPosition(' + p.id + ')">SELL</button>')
+      : (p.sold ? '<button class="btn-icon" onclick="showArchiveMenu(' + p.id + ', this)" title="Move to archive" style="font-size:14px;padding:0 4px">&#8863;</button>' : (p.qty > 0 ? '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--bright)" onclick="sellPosition(' + p.id + ')">SELL</button>' : ''))
       + '<button class="btn-icon" onclick="showMoveMenu(' + p.id + ', this)" title="Move to portfolio" style="font-size:17px;padding:0 4px;line-height:1">&#8680;</button>'
         + '<button class="btn-icon" onclick="startEdit(' + p.id + ')">&#9998;</button>'
         + '<button class="btn-icon" onclick="removePosition(' + p.id + ')">&#10005;</button>';
 
     var tickerCell = isEdit ? '<input class="edit-input" id="editTicker" type="text" value="' + p.ticker + '" style="width:60px;text-transform:uppercase">' : p.ticker;
-    var soldStyle = p.sold ? 'font-style:italic;opacity:0.5' : '';
+    var soldStyle = (p.sold || p.qty === 0) ? 'font-style:italic;opacity:0.5' : '';
     rows += '<tr style="' + soldStyle + '">'
       + '<td>' + tickerCell + '</td>'
       + '<td>' + qtyCell + '</td>'
@@ -3483,7 +3484,7 @@ function render() {
       }
       var delta = (p.sold) ? 0 : (regPrice ? (p.current - regPrice) / regPrice * 100 : null);
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
-      var mktSoldStyle = p.sold ? 'font-style:italic;opacity:0.5' : '';
+      var mktSoldStyle = (p.sold || p.qty === 0) ? 'font-style:italic;opacity:0.5' : '';
       marketRows += '<tr style="' + mktSoldStyle + '">'
         + '<td style="text-align:left">' + p.ticker + '</td>'
         + '<td style="text-align:right;padding:5px 4px">' + getPositionCurrencySymbol(p) + f2(regPrice) + '</td>'
@@ -3605,14 +3606,7 @@ function render() {
       getWeightSorted(getSorted(), wTotVal).forEach(function(p) {
         var wSoldStyle = p.sold ? 'font-style:italic;opacity:0.5' : '';
         if (p.current === null || p.current === undefined || p.qty === 0) {
-          weightRows += '<tr style="' + wSoldStyle + '">'
-            + '<td style="text-align:left;white-space:nowrap">' + p.ticker + '</td>'
-            + '<td><span class="muted">&mdash;</span></td>'
-            + '<td><span class="muted">&mdash;</span></td>'
-            + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px"></td>'
-            + '</tr>';
-          return;
-        }
+          return; // skip qty=0 from weight view entirely
         var pc = getPositionCurrencyCode(p);
         var rate = pc !== baseCode ? (wFxMap[pc + baseCode] || 1) : 1;
         var posValBase = p.qty * p.current * rate;
