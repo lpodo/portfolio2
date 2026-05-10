@@ -10,7 +10,7 @@ A PWA stock portfolio tracker with a Cloudflare Worker backend. Supports all maj
 - **Cloudflare Workers**: `portfolio2.lpodolskiy.workers.dev` — price backend
 - **Repository**: `lpodo/portfolio2`
 - **PWA**: installable on Android/iOS as home screen app
-- **Header buttons**: Refresh (updates current portfolio prices), ⋮ (view mode dropdown: P&L / WEIGHTS / MARKET)
+- **Header buttons**: Refresh (updates current portfolio prices), view mode dropdown: P&L / WEIGHTS / MARKET / etc
 
 ## Stack
 
@@ -122,12 +122,12 @@ Note: `qty: 0` is allowed — used for watchlist candidates. Shows `—` in QTY 
 - Total: VALUE, P&L, RETURN
 - **Multi-currency portfolios**: each position carries its own currency (from Yahoo Finance). ENTRY/CURRENT show position currency symbol. Totals and weights are converted to portfolio base currency via live FX rates (`EURUSD=X` etc.)
 - **Summary view**: selected from the portfolio switcher (Σ SUMMARY at the bottom). Shows all non-index portfolios: NAME / VALUE (in native currency) / P&L / RETURN / SHARE%. Total row always in USD with live FX conversion. Clicking a row switches to that portfolio. Refresh on Summary updates all portfolios.
-- **Index/Watchlist portfolio** (INDEX checkbox at creation): designed for tracking indices, commodities, currencies (e.g. `^KS11`, `BZ=F`, `EURUSD=X`). No qty/entry fields. Shows CLOSE (chartPreviousClose) / PRICE (regularMarketPrice) / Δ% / NAME. Sortable by TICKER and Δ%. ⋮ button disabled. Excluded from Summary.
+- **Index/Watchlist portfolio** (INDEX checkbox at creation): designed for tracking indices, commodities, currencies (e.g. `^KS11`, `BZ=F`, `EURUSD=X`). No qty/entry fields. Shows CLOSE (chartPreviousClose) / PRICE (regularMarketPrice) / Δ% / NAME. Sortable by TICKER and Δ%. No dropdown menu. Excluded from Summary.
 - Market state indicator after P&L %:
   - No icon — regular session (REGULAR)
   - 🌙 — pre or post market (PRE / POST)
   - ✦ — market closed (CLOSED)
-- Three view modes via ⋮ dropdown menu (next to Refresh button):
+- View modes via dropdown menu (next to Refresh button):
   - **P&L** — default view with full position details
   - **WEIGHTS** — TICKER / VALUE / WEIGHT %; sortable by any column
   - **MARKET** — TICKER / CLOSE / CURRENT / Δ%; sortable by TICKER or Δ% (3rd click resets to portfolio order); market state icon included
@@ -185,7 +185,7 @@ Archive portfolios store closed positions for historical tracking. Accessed via 
 
 **Key differences from regular portfolios:**
 - No Refresh button — all positions are static (sold)
-- ⋮ menu has P&L and WEIGHTS only (no MARKET view)
+- Dropdown menu has P&L and WEIGHTS only (no MARKET view)
 - All positions are created in sold status; CURRENT (sell price) is required on add
 - Adding a position validates the ticker against Yahoo Finance — unknown tickers are rejected
 - Archive portfolios are excluded from the main Summary and from Refresh All
@@ -281,7 +281,7 @@ Bond data (`bondsDb`, `bondPortfolios`) is stored in `pt_bonds_db` and `pt_bond_
 
 ## Chart View
 
-Available via ⋮ menu → CHART for individual portfolios and Summary.
+Available via dropdown menu → CHART for individual portfolios and Summary.
 
 **Controls:** 1MO / 3MO / 6MO range buttons. Individual portfolio charts also have **PORTFOLIO / POSITIONS** toggle.
 
@@ -303,14 +303,14 @@ Normalized % lines for individually selected tickers (deduplicated — if the sa
 
 ### Summary Chart
 
-In Summary, the ⋮ menu → CHART shows two modes toggled by TOTAL / BY PORTFOLIO buttons:
+In Summary, the dropdown menu → CHART shows two modes toggled by TOTAL / BY PORTFOLIO buttons:
 
 - **TOTAL** — single line showing combined value of all active portfolios in USD with FX conversion
 - **BY PORTFOLIO** — one normalized line per portfolio starting at 0%, each calculated in its own base currency (no USD conversion, so FX effects don't distort relative stock performance). Color-coded with a legend showing final % change.
 
 ## Analytics View
 
-Available via ⋮ menu → ANALYTICS for individual portfolios and Summary.
+Available via dropdown menu → ANALYTICS for individual portfolios and Summary.
 
 Shows portfolio breakdown by **CATEGORY**, **REGION**, **SECTOR**, or **CURRENCY** — four buttons to switch between them. Currency uses the actual position currency from Yahoo Finance (no manual input needed). Each row shows group name, value (with FX conversion to base currency), weight %, and a horizontal bar chart scaled to the largest group. Positions with qty=0 are excluded. Positions without a value in the selected field appear in the **Other** group.
 
