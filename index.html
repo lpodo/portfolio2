@@ -1046,7 +1046,7 @@ function renderSwitcher() {
     html += '<div class="portfolio-item' + (active ? ' active' : '') + '" style="display:flex;align-items:center">'
       + '<div onclick="switchPortfolio(\'' + id + '\')" style="flex:1;cursor:pointer;min-width:0">'
       + '<span class="portfolio-item-name">' + p.name + '</span>' + (p.watchlist ? '' : ' <span style="color:var(--dim);font-size:10px">' + (p.currencyCode || 'USD') + '</span>') + ' '
-      + '<span class="portfolio-item-count">' + (p.watchlist ? 'idx ' : '') + p.positions.length + ' pos' + (active ? ' &#10003;' : '') + '</span>'
+      + '<span class="portfolio-item-count">' + (p.watchlist ? 'idx ' : '') + activeTickerCount(p) + ' pos' + (active ? ' &#10003;' : '') + '</span>'
       + '</div>'
       + (!p.watchlist ? '<button class="btn-icon" onclick="archivePortfolio(\'' + id + '\')" title="Archive" style="font-size:14px;padding:4px 6px;color:var(--dim)">&#8863;</button>' : '')
       + '<button class="btn-icon" onclick="renamePortfolio(\'' + id + '\')" title="Rename" style="font-size:13px;padding:4px 7px">&#9998;</button>'
@@ -2193,7 +2193,11 @@ window.chartSelectionOpen = false;
 function activeTickerCount(p) {
   var seen = {};
   (p.positions || []).forEach(function(pos) {
-    if (!pos.sold && pos.qty > 0) seen[pos.ticker] = true;
+    // For watchlist/index: count all (they have qty=0 by design)
+    // For archive: count all (they're all sold but that's the point)
+    // For regular: only active (not sold, qty>0)
+    var count = p.watchlist || p.archive ? true : (!pos.sold && pos.qty > 0);
+    if (count) seen[pos.ticker] = true;
   });
   return Object.keys(seen).length;
 }
