@@ -579,19 +579,19 @@ function renderBondAddForm(bpId) {
   }).join('');
   return '<div class="add-form" style="margin-top:12px">'
     + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">+ ADD POSITION</div>'
-    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">'
-    + '<div class="field" style="flex:2;min-width:120px"><label>BOND</label><select id="bpBondId" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none">' + options + '</select>'
-    + '<div class="field"><label>PURCHASE DATE</label><input type="date" id="bpDate" style="width:140px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none"></div>'
+    + '<div style="margin-bottom:8px">'
+    + '<div class="field"><label>BOND</label><select id="bpBondId" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none">' + options + '</select></div>'
     + '</div>'
-    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">'
+    + '<div style="display:flex;gap:8px;margin-bottom:8px">'
     + '<div class="field"><label>QTY</label><input type="number" id="bpQty" placeholder="10" min="1" step="1" style="width:70px"></div>'
     + '<div class="field"><label>CLEAN PRICE %</label><input type="number" id="bpClean" placeholder="98.50" min="0" step="0.01" style="width:90px"></div>'
-    + '<div class="field"><label>ACCRUED INTEREST</label><input type="number" id="bpNkd" placeholder="0.00" min="0" step="0.01" style="width:120px"></div>'
+    + '<div class="field"><label>ACCRUED INT.</label><input type="number" id="bpNkd" placeholder="0.00" min="0" step="0.01" style="width:90px"></div>'
     + '</div>'
-    + '<div style="display:flex;gap:8px;align-items:center">'
-    + '<button class="btn btn-green" onclick="addBondPosition(&apos;' + bpId + '&apos;)">ADD</button>'
-    + '<span id="bpErr" style="color:var(--red);font-size:11px"></span>'
+    + '<div style="display:flex;gap:8px;align-items:flex-end">'
+    + '<div class="field"><label>PURCHASE DATE</label><input type="date" id="bpDate" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none"></div>'
+    + '<button class="btn btn-green" onclick="addBondPosition(&apos;' + bpId + '&apos;)" style="white-space:nowrap">ADD</button>'
     + '</div>'
+    + '<span id="bpErr" style="color:var(--red);font-size:11px;display:block;margin-top:6px"></span>'
     + '</div>';
 }
 
