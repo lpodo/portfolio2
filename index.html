@@ -195,7 +195,7 @@
   </div>
   <button class="btn btn-green" id="refreshAllBtn" onclick="refreshAll()">&#8635; Refresh</button>
   <div style="position:relative;margin-left:8px">
-    <button class="btn" id="viewMenuBtn" onclick="toggleViewMenu()" style="padding:7px 10px">&#8942;</button>
+    <button class="btn" id="viewMenuBtn" onclick="toggleViewMenu()" style="padding:7px 10px;font-size:9px;letter-spacing:1px;min-width:52px">P&amp;L</button>
     <div id="viewMenu" style="display:none;position:absolute;right:0;top:110%;background:var(--bg2);border:1px solid var(--border);z-index:200;min-width:110px">
       <div onclick="setView('main')" id="vmMain" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">P&amp;L</div>
       <div onclick="setView('weight')" id="vmWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">WEIGHTS</div>
@@ -809,8 +809,7 @@ function showBondPortfolio(id) {
   currentBondPortfolioId = id;
   viewMode = 'bonds';
   document.getElementById('portfolioTitle').textContent = bondPortfolios[id].name;
-  document.getElementById('viewMenuBtn').disabled = true;
-  document.getElementById('viewMenuBtn').style.opacity = '0.3';
+  document.getElementById('viewMenuBtn').style.display = 'none';
   document.getElementById('refreshAllBtn').style.display = 'none';
   closeSwitcher();
   render();
@@ -895,6 +894,7 @@ function deleteBondPortfolio(id) {
     currentBondPortfolioId = null;
     viewMode = 'main';
     document.getElementById('refreshAllBtn').style.display = '';
+    document.getElementById('viewMenuBtn').style.display = '';
     document.getElementById('viewMenuBtn').disabled = false;
     document.getElementById('viewMenuBtn').style.opacity = '';
   }
@@ -1073,6 +1073,7 @@ function switchToArchiveSummary() {
 function switchToSummary() {
   viewMode = 'summary';
   document.getElementById('portfolioTitle').textContent = 'SUMMARY';
+  document.getElementById('viewMenuBtn').style.display = '';
   document.getElementById('viewMenuBtn').disabled = false;
   document.getElementById('viewMenuBtn').style.opacity = '';
   document.getElementById('refreshAllBtn').style.display = '';
@@ -1094,14 +1095,14 @@ function switchPortfolio(id) {
   var refreshBtn = document.getElementById('refreshAllBtn');
   if (portfolios[id].watchlist) {
     viewMode = 'main';
-    btn.disabled = true; btn.style.opacity = '0.3';
+    btn.style.display = 'none';
     refreshBtn.style.display = '';
   } else if (portfolios[id].archive) {
-    if (viewMode === 'market' || viewMode === 'summary' || viewMode === 'archive-summary') viewMode = 'main';
+    if (['market','summary','archive-summary'].indexOf(viewMode) !== -1) viewMode = 'main';
     refreshBtn.style.display = 'none';
-    btn.disabled = false; btn.style.opacity = '';
+    btn.style.display = ''; btn.disabled = false; btn.style.opacity = '';
   } else {
-    btn.disabled = false; btn.style.opacity = '';
+    btn.style.display = ''; btn.disabled = false; btn.style.opacity = '';
     refreshBtn.style.display = '';
   }
   document.getElementById('portfolioTitle').textContent = portfolios[id].name;
@@ -2864,6 +2865,15 @@ function renderMultiChart(lines) {
     + '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">' + svgYTicks + zeroLine + svgLines + svgXTicks + '</svg>'
     + legend
     + '</div>';
+}
+
+
+function updateViewMenuBtn() {
+  var btn = document.getElementById('viewMenuBtn');
+  if (!btn) return;
+  var labels = { 'main': 'P&L', 'weight': 'WEIGHT', 'market': 'MARKET', 'chart': 'CHART', 'analytics': 'ANALYTICS',
+    'summary': 'P&L', 'summary-market': 'MARKET', 'summary-chart': 'CHART', 'summary-analytics': 'ANALYTICS' };
+  btn.textContent = labels[viewMode] || 'P&L';
 }
 
 function render() {
