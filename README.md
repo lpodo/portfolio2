@@ -119,22 +119,20 @@ Note: `qty: 0` is allowed — used for watchlist candidates. Shows `—` in QTY 
 - Sort by any column — persists across sessions
 - P&L $ for full position: `(current - entry) × qty`
 - P&L % per share: `(current - entry) / entry × 100`
+- Total: VALUE, P&L, RETURN
 - **Multi-currency portfolios**: each position carries its own currency (from Yahoo Finance). ENTRY/CURRENT show position currency symbol. Totals and weights are converted to portfolio base currency via live FX rates (`EURUSD=X` etc.)
 - **Summary view**: selected from the portfolio switcher (Σ SUMMARY at the bottom). Shows all non-index portfolios: NAME / VALUE (in native currency) / P&L / RETURN / SHARE%. Total row always in USD with live FX conversion. Clicking a row switches to that portfolio. Refresh on Summary updates all portfolios.
 - **Index/Watchlist portfolio** (INDEX checkbox at creation): designed for tracking indices, commodities, currencies (e.g. `^KS11`, `BZ=F`, `EURUSD=X`). No qty/entry fields. Shows CLOSE (chartPreviousClose) / PRICE (regularMarketPrice) / Δ% / NAME. Sortable by TICKER and Δ%. ⋮ button disabled. Excluded from Summary.
-- **Summary view** converts all portfolio values to USD using live FX rates. Total always shown in `$`
 - Market state indicator after P&L %:
   - No icon — regular session (REGULAR)
-  - 🌙 blue — pre or post market (PRE / POST)
-  - ✦ gray — market closed (CLOSED)
+  - 🌙 — pre or post market (PRE / POST)
+  - ✦ — market closed (CLOSED)
 - Three view modes via ⋮ dropdown menu (next to Refresh button):
   - **P&L** — default view with full position details
   - **WEIGHTS** — TICKER / VALUE / WEIGHT %; sortable by any column
   - **MARKET** — TICKER / CLOSE / CURRENT / Δ%; sortable by TICKER or Δ% (3rd click resets to portfolio order); market state icon included
     - CLOSE = `chartPreviousClose` (previous session close) — always used as Δ% base during REGULAR session
     - During CLOSED/PRE/POST: CLOSE = `regularMarketPrice` by default; if **CONTINUOUS Δ% ACROSS SESSIONS** is enabled in settings, uses `chartPreviousClose` instead
-- Totals row unchanged across all views
-- Summary: VALUE, P&L, RETURN
 - **Position counts** in the portfolio switcher show unique active tickers only (excluding sold and qty=0). The Σ SUMMARY count shows globally unique tickers across all non-index portfolios — a ticker held in multiple portfolios is counted once.
 - **Move position** (⇨ button): moves any position to another active portfolio, preserving all fields including sold status. Available in both active and archive portfolios. Archive portfolios show an additional **⊟ button** for sold positions that moves them directly to a chosen archive portfolio.
 
