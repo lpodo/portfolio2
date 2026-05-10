@@ -236,20 +236,6 @@ Caches app shell for offline use. API requests are **never cached**:
 
 **IMPORTANT: increment cache version string in `sw.js` on every deploy** (e.g. `portfolio-v35` → `portfolio-v36`).
 
-## How to Start a New Dev Session
-
-1. Paste this README
-2. Paste current `index.html` from repository
-3. Paste current `worker.js` from repository
-4. Describe what needs to be changed
-
-## Unused Files (legacy, safe to delete)
-
-- `api/quote.js` — Vercel serverless function (replaced by Cloudflare Worker)
-- `vercel.json` — Vercel configuration
-- `server.js` — Express server for Railway
-- `package.json` — npm dependencies for Railway/Vercel
-
 ## Bond Portfolios
 
 Bond portfolios are managed via the **BONDS** tab in the portfolio switcher. They are completely separate from equity portfolios and have their own data structures, storage keys, and cloud sync.
