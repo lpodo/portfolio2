@@ -135,6 +135,7 @@ Note: `qty: 0` is allowed — used for watchlist candidates. Shows `—` in QTY 
     - During CLOSED/PRE/POST: CLOSE = `regularMarketPrice` by default; if **CONTINUOUS Δ% ACROSS SESSIONS** is enabled in settings, uses `chartPreviousClose` instead
 - Totals row unchanged across all views
 - Summary: VALUE, P&L, RETURN
+- **Position counts** in the portfolio switcher show unique active tickers only (excluding sold and qty=0). The Σ SUMMARY count shows globally unique tickers across all non-index portfolios — a ticker held in multiple portfolios is counted once.
 - **Move position** (⇨ button): moves any position to another active portfolio, preserving all fields including sold status. Available in both active and archive portfolios. Archive portfolios show an additional **⊟ button** for sold positions that moves them directly to a chosen archive portfolio.
 
 ## Backup / Restore (Settings panel)

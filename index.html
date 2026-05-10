@@ -211,7 +211,7 @@
   <div id="tableArea"></div>
 
   <div class="add-form">
-    <div class="form-label">+ Добавить позицию</div>
+    <div class="form-label">+ Add position</div>
     <div class="form-row" style="margin-bottom:8px">
       <div class="field" style="flex:1">
         <label>TICKER</label>
@@ -236,7 +236,7 @@
         <input type="number" id="fEntry" placeholder="150.00" min="0" step="any" style="width:98px" onkeydown="if(event.key==='Enter')addPosition()">
       </div>
       <div class="field">
-        <label>CURRENT (опц.)</label>
+        <label>CURRENT (opt.)</label>
         <input type="number" id="fCurrent" placeholder="&#8212;" min="0" step="any" style="width:98px" onkeydown="if(event.key==='Enter')addPosition()">
       </div>
       <button class="btn-primary" onclick="addPosition()">ADD</button>
@@ -329,9 +329,9 @@
 
 <!-- Settings panel -->
 <div class="settings-panel" id="settingsPanel">
-  <div class="settings-title">&#9881; Настройки</div>
+  <div class="settings-title">&#9881; Settings</div>
 
-  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">ИСТОЧНИК ЦЕН — BACKEND URL</div>
+  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">PRICE SOURCE — BACKEND URL</div>
   <div class="key-row">
     <label>API URL</label>
     <input type="text" id="apiKeyInput" placeholder="https://your-worker.workers.dev" autocomplete="off">
@@ -339,10 +339,10 @@
   </div>
   <div class="key-row" style="margin-top:6px">
     <label>API TOKEN</label>
-    <input type="password" id="apiTokenInput" placeholder="секретный токен" style="font-size:11px" autocomplete="new-password">
+    <input type="password" id="apiTokenInput" placeholder="secret token" style="font-size:11px" autocomplete="new-password">
     <button class="btn btn-green" onclick="saveToken()">OK</button>
   </div>
-  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">ОБЛАЧНОЕ ХРАНИЛИЩЕ — JSONBIN</div>
+  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">CLOUD STORAGE — JSONBIN</div>
   <div class="key-row">
     <label>MASTER KEY</label>
     <input type="password" id="jbKeyInput" placeholder="jsonbin.io → API Keys" autocomplete="new-password">
@@ -350,14 +350,14 @@
   </div>
   <div class="key-row" style="margin-top:6px">
     <label>BIN ID</label>
-    <input type="text" id="jbBinInput" placeholder="вставь с другого устройства" style="font-size:11px">
+    <input type="text" id="jbBinInput" placeholder="paste from another device" style="font-size:11px">
     <button class="btn btn-green" onclick="manualCloudLoad()">OK</button>
     <button class="btn" onclick="clearJbBin()">✕</button>
   </div>
   <div class="api-status" id="jbStatus"></div>
   <div class="key-row" style="margin-top:6px">
     <label>ENC KEY</label>
-    <input type="password" id="encKeyInput" placeholder="пароль шифрования" autocomplete="new-password" style="font-size:11px">
+    <input type="password" id="encKeyInput" placeholder="encryption password" autocomplete="new-password" style="font-size:11px">
     <button class="btn btn-green" onclick="saveEncKey()">OK</button>
     <button class="btn" onclick="clearEncKey()">✕</button>
   </div>
@@ -394,7 +394,7 @@
 <!-- Settings toggle button -->
 <div style="position:fixed;bottom:0;left:0;right:0;background:var(--bg2);border-top:1px solid var(--border);padding:10px 18px;display:flex;justify-content:space-between;align-items:center;z-index:98">
   <span style="font-size:10px;color:var(--dim)" id="providerLabel"></span>
-  <button class="btn btn-green" onclick="toggleSettings()" style="font-size:11px;padding:6px 14px">&#9881; НАСТРОЙКИ</button>
+  <button class="btn btn-green" onclick="toggleSettings()" style="font-size:11px;padding:6px 14px">&#9881; SETTINGS</button>
 </div>
 
 <script>
@@ -552,8 +552,8 @@ function archivePortfolio(id) {
   var p = portfolios[id];
   if (!p) return;
   var allSold = p.positions && p.positions.length > 0 && p.positions.every(function(pos) { return pos.sold; });
-  if (!allSold) { alert('Можно архивировать только если все позиции проданы.'); return; }
-  if (!confirm('Перевести портфель "' + p.name + '" в архив?')) return;
+  if (!allSold) { alert('Can only archive when all positions are sold.'); return; }
+  if (!confirm('Archive portfolio "' + p.name + '"?')) return;
   portfolios[id].archive = true;
   savePortfolios();
   save();
@@ -831,7 +831,7 @@ function renderBondsSwitcher(html, list, summaryActive) {
       + '<button class="btn-icon" onclick="deleteBondPortfolio(&apos;' + id + '&apos;)" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
       + '</div>';
   });
-  if (bpIds.length === 0) html += '<div style="padding:10px 14px;font-size:11px;color:var(--dim)">Нет портфелей облигаций</div>';
+  if (bpIds.length === 0) html += '<div style="padding:10px 14px;font-size:11px;color:var(--dim)">No bond portfolios</div>';
   // Bond DB button
   html += '<div style="border-top:1px solid var(--border);margin-top:4px;padding:8px 14px;display:flex;gap:8px">'
     + '<button class="btn btn-green" onclick="openBondDb()" style="flex:1;font-size:10px;padding:7px">&#9776; BOND DATABASE</button>'
@@ -865,16 +865,35 @@ function addBondPortfolio2() {
 }
 
 function renameBondPortfolio(id) {
+  var existing = document.getElementById('pfEdit_' + id);
+  if (existing) { existing.remove(); return; }
+  document.querySelectorAll('[id^="pfEdit_"]').forEach(function(el) { el.remove(); });
   var p = bondPortfolios[id];
   if (!p) return;
-  var newName = prompt('Portfolio name:', p.name);
-  if (!newName || !newName.trim()) return;
-  var newCur = prompt('Base currency code (e.g. USD, EUR):', p.currencyCode || 'USD');
-  if (newCur === null) return;
-  bondPortfolios[id].name = newName.trim().toUpperCase();
-  bondPortfolios[id].currencyCode = newCur.trim().toUpperCase() || 'USD';
+  var item = document.querySelector('[data-pfid="' + id + '"]');
+  if (!item) return;
+  var form = document.createElement('div');
+  form.id = 'pfEdit_' + id;
+  form.style.cssText = 'padding:8px 12px 10px;background:var(--bg2);border-top:1px solid var(--border)';
+  form.innerHTML = '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">'
+    + '<div class="field"><label>NAME</label><input type="search" id="pfName_' + id + '" value="' + p.name + '" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" oninput="this.value=this.value.toUpperCase()" style="width:140px;text-transform:uppercase"></div>'
+    + '<div class="field"><label>CURRENCY</label><input type="search" id="pfCur_' + id + '" value="' + (p.currencyCode || 'USD') + '" autocomplete="off" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()" maxlength="3" style="width:52px;text-align:center;text-transform:uppercase"></div>'
+    + '<div style="display:flex;gap:6px;align-self:flex-end">'
+    + '<button class="btn btn-green" style="padding:6px 12px" onclick="saveBondPortfolioEdit(&apos;' + id + '&apos;)">SAVE</button>'
+    + '<button class="btn" style="padding:6px 12px;color:var(--dim)" onclick="document.getElementById(&apos;pfEdit_' + id + '&apos;).remove()">CANCEL</button>'
+    + '</div></div>';
+  item.insertAdjacentElement('afterend', form);
+  document.getElementById('pfName_' + id).focus();
+}
+
+function saveBondPortfolioEdit(id) {
+  var newName = (document.getElementById('pfName_' + id).value || '').trim().toUpperCase();
+  var newCur = (document.getElementById('pfCur_' + id).value || '').trim().toUpperCase() || 'USD';
+  if (!newName) return;
+  bondPortfolios[id].name = newName;
+  bondPortfolios[id].currencyCode = newCur;
   saveBondPortfolios();
-  if (id === currentBondPortfolioId) document.getElementById('portfolioTitle').textContent = bondPortfolios[id].name;
+  if (id === currentBondPortfolioId) document.getElementById('portfolioTitle').textContent = newName;
   renderSwitcher();
 }
 
@@ -996,13 +1015,13 @@ function renderSwitcher() {
       html += '<div class="portfolio-item' + (active ? ' active' : '') + '" style="display:flex;align-items:center">'
         + '<div onclick="switchPortfolio(&apos;' + id + '&apos;)" style="flex:1;cursor:pointer;min-width:0">'
         + '<span class="portfolio-item-name">' + p.name + '</span> <span style="color:var(--dim);font-size:10px">' + (p.currencyCode || 'USD') + '</span> '
-        + '<span class="portfolio-item-count">' + p.positions.length + ' pos' + (active ? ' &#10003;' : '') + '</span>'
+        + '<span class="portfolio-item-count">' + activeTickerCount(p) + ' pos' + (active ? ' &#10003;' : '') + '</span>'
         + '</div>'
         + '<button class="btn-icon" onclick="renamePortfolio(&apos;' + id + '&apos;)" title="Rename" style="font-size:13px;padding:4px 7px">&#9998;</button>'
         + '<button class="btn-icon" onclick="deletePortfolio(&apos;' + id + '&apos;)" title="Delete" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
         + '</div>';
     });
-    if (archiveIds.length === 0) html += '<div style="padding:10px 14px;font-size:11px;color:var(--dim)">Нет архивных портфелей</div>';
+    if (archiveIds.length === 0) html += '<div style="padding:10px 14px;font-size:11px;color:var(--dim)">No archive portfolios</div>';
     // Archive summary
     html += '<div class="portfolio-item' + (viewMode === 'archive-summary' ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);margin-top:4px;padding-top:4px" onclick="switchToArchiveSummary()">'
       + '<div style="flex:1"><span class="portfolio-item-name">&#931; SUMMARY</span></div>'
@@ -1034,8 +1053,17 @@ function renderSwitcher() {
       + '<button class="btn-icon" onclick="deletePortfolio(\'' + id + '\')" title="Delete" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
       + '</div>';
   });
+  var totalSeen = {};
+  Object.keys(portfolios).forEach(function(pid) {
+    if (!portfolios[pid].watchlist && !portfolios[pid].archive) {
+      (portfolios[pid].positions || []).forEach(function(pos) {
+        if (!pos.sold && pos.qty > 0) totalSeen[pos.ticker] = true;
+      });
+    }
+  });
+  var totalActive = Object.keys(totalSeen).length;
   html += '<div class="portfolio-item' + (summaryActive ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);margin-top:4px;padding-top:4px" onclick="switchToSummary()">'
-    + '<div style="flex:1"><span class="portfolio-item-name">&#931; SUMMARY</span></div>'
+    + '<div style="flex:1"><span class="portfolio-item-name">&#931; SUMMARY</span> <span class="portfolio-item-count">' + totalActive + ' pos</span></div>'
     + '</div>';
   list.innerHTML = html;
 }
@@ -1125,22 +1153,43 @@ function addPortfolio() {
 }
 
 function renamePortfolio(id) {
+  // Toggle inline edit — close others first
+  var existing = document.getElementById('pfEdit_' + id);
+  if (existing) { existing.remove(); return; }
+  document.querySelectorAll('[id^="pfEdit_"]').forEach(function(el) { el.remove(); });
   var p = portfolios[id];
   if (!p) return;
-  var newName = prompt('Portfolio name:', p.name);
-  if (!newName || !newName.trim()) return;
-  var newCurCode = prompt('Base currency code (e.g. USD, EUR, GBP):', p.currencyCode || 'USD');
-  if (newCurCode === null) return;
-  newCurCode = newCurCode.trim().toUpperCase() || 'USD';
-  validateCurrencyCode(newCurCode, function(valid) {
-    if (!valid) { alert('Invalid currency code: ' + newCurCode + '. No FX rate found.'); return; }
-    portfolios[id].name = newName.trim().toUpperCase();
-    portfolios[id].currencyCode = newCurCode;
-    savePortfolios();
-    save();
-    if (id === currentPortfolioId) {
-      document.getElementById('portfolioTitle').textContent = portfolios[id].name;
-    }
+  var item = document.querySelector('[data-pfid="' + id + '"]');
+  if (!item) return;
+  var form = document.createElement('div');
+  form.id = 'pfEdit_' + id;
+  form.style.cssText = 'padding:8px 12px 10px;background:var(--bg2);border-top:1px solid var(--border)';
+  form.innerHTML = '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">'
+    + '<div class="field"><label>NAME</label><input type="search" id="pfName_' + id + '" value="' + p.name + '" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" oninput="this.value=this.value.toUpperCase()" style="width:140px;text-transform:uppercase"></div>'
+    + '<div class="field"><label>CURRENCY</label><input type="search" id="pfCur_' + id + '" value="' + (p.currencyCode || 'USD') + '" autocomplete="off" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()" maxlength="3" style="width:52px;text-align:center;text-transform:uppercase"></div>'
+    + '<div style="display:flex;gap:6px;align-self:flex-end">'
+    + '<button class="btn btn-green" style="padding:6px 12px" onclick="savePortfolioEdit(&apos;' + id + '&apos;)">SAVE</button>'
+    + '<button class="btn" style="padding:6px 12px;color:var(--dim)" onclick="document.getElementById(&apos;pfEdit_' + id + '&apos;).remove()">CANCEL</button>'
+    + '</div>'
+    + '<span id="pfEditErr_' + id + '" style="color:var(--red);font-size:11px;align-self:center"></span>'
+    + '</div>';
+  item.insertAdjacentElement('afterend', form);
+  document.getElementById('pfName_' + id).focus();
+}
+
+function savePortfolioEdit(id) {
+  var nameEl = document.getElementById('pfName_' + id);
+  var curEl = document.getElementById('pfCur_' + id);
+  var errEl = document.getElementById('pfEditErr_' + id);
+  var newName = (nameEl.value || '').trim().toUpperCase();
+  var newCur = (curEl.value || '').trim().toUpperCase() || 'USD';
+  if (!newName) { errEl.textContent = 'Enter name'; return; }
+  validateCurrencyCode(newCur, function(valid) {
+    if (!valid) { errEl.textContent = 'Invalid currency: ' + newCur; return; }
+    portfolios[id].name = newName;
+    portfolios[id].currencyCode = newCur;
+    savePortfolios(); save();
+    if (id === currentPortfolioId) document.getElementById('portfolioTitle').textContent = newName;
     renderSwitcher();
   });
 }
@@ -1174,14 +1223,14 @@ function saveEncKey() {
   var v = document.getElementById('encKeyInput').value;
   localStorage.setItem('pt_enc_key', v);
   var el = document.getElementById('encStatus');
-  if (el) el.textContent = v ? '✓ Шифрование включено' : '✓ Шифрование отключено';
+  if (el) el.textContent = v ? '✓ Encryption enabled' : '✓ Encryption disabled';
   if (el) el.style.color = v ? 'var(--green)' : 'var(--dim)';
 }
 function clearEncKey() {
   localStorage.removeItem('pt_enc_key');
   document.getElementById('encKeyInput').value = '';
   var el = document.getElementById('encStatus');
-  if (el) { el.textContent = 'Шифрование отключено'; el.style.color = 'var(--dim)'; }
+  if (el) { el.textContent = 'Encryption disabled'; el.style.color = 'var(--dim)'; }
 }
 
 async function deriveKey(password, salt) {
@@ -1238,17 +1287,17 @@ function saveBinId() {
 function clearJbBin() {
   localStorage.removeItem('pt_jbbin');
   document.getElementById('jbBinInput').value = '';
-  updateJbStatus('Bin ID сброшен — создастся заново при следующем сохранении', 'var(--dim)');
+  updateJbStatus('Bin ID cleared — will be recreated on next save', 'var(--dim)');
 }
 function manualCloudLoad() {
   var key = getJbKey();
   var bin = document.getElementById('jbBinInput').value.trim() || getJbBin();
-  if (!key) { updateJbStatus('✗ Сначала введи Master Key', 'var(--red)'); return; }
-  if (!bin) { updateJbStatus('✗ Введи Bin ID', 'var(--red)'); return; }
+  if (!key) { updateJbStatus('✗ Enter Master Key first', 'var(--red)'); return; }
+  if (!bin) { updateJbStatus('✗ Enter Bin ID', 'var(--red)'); return; }
   // Save bin id in case it was typed fresh
   localStorage.setItem('pt_jbbin', bin);
   document.getElementById('jbBinInput').value = bin;
-  updateJbStatus('Загружаю...', 'var(--dim)');
+  updateJbStatus('Loading...', 'var(--dim)');
   bondsDb = getBondsDb();
 bondPortfolios = getBondPortfolios();
 cloudLoad(function(loaded) {
@@ -1273,7 +1322,7 @@ function backupData() {
   a.click();
   URL.revokeObjectURL(url);
   var el = document.getElementById('backupStatus');
-  if (el) { el.textContent = '✓ Backup скачан'; el.style.color = 'var(--green)'; }
+  if (el) { el.textContent = '✓ Backup downloaded'; el.style.color = 'var(--green)'; }
 }
 
 function restoreData(event) {
@@ -1284,7 +1333,7 @@ function restoreData(event) {
     try {
       var data = JSON.parse(e.target.result);
       if (!data.portfolios) throw new Error('invalid format');
-      if (!confirm('Восстановить данные из backup? Текущие данные будут перезаписаны.')) return;
+      if (!confirm('Restore data from backup? Current data will be overwritten.')) return;
       portfolios = data.portfolios;
       savePortfolios();
       if (data.bondsDb && Array.isArray(data.bondsDb)) {
@@ -1304,10 +1353,10 @@ function restoreData(event) {
       renderSwitcher();
       cloudSave();
       var el = document.getElementById('backupStatus');
-      if (el) { el.textContent = '✓ Данные восстановлены и сохранены в облако'; el.style.color = 'var(--green)'; }
+      if (el) { el.textContent = '✓ Data restored and saved to cloud'; el.style.color = 'var(--green)'; }
     } catch(err) {
       var el = document.getElementById('backupStatus');
-      if (el) { el.textContent = '✗ Ошибка: неверный формат файла'; el.style.color = 'var(--red)'; }
+      if (el) { el.textContent = '✗ Error: invalid file format'; el.style.color = 'var(--red)'; }
     }
     event.target.value = '';
   };
@@ -1315,16 +1364,16 @@ function restoreData(event) {
 }
 
 function syncFromCloud() {
-  if (!getJbKey()) { updateJbStatus('✗ Нужен Master Key', 'var(--red)'); return; }
-  if (!getJbBin()) { updateJbStatus('✗ Нужен Bin ID', 'var(--red)'); return; }
-  updateJbStatus('Синхронизация...', 'var(--dim)');
+  if (!getJbKey()) { updateJbStatus('✗ Master Key required', 'var(--red)'); return; }
+  if (!getJbBin()) { updateJbStatus('✗ Bin ID required', 'var(--red)'); return; }
+  updateJbStatus('Syncing...', 'var(--dim)');
   cloudLoad(function(loaded) {
     if (loaded) {
       render();
-      updateJbStatus('✓ Синхронизировано', 'var(--green)');
+      updateJbStatus('✓ Synced', 'var(--green)');
       if (getApiKey()) refreshAll();
     } else {
-      updateJbStatus('✗ Ошибка синхронизации', 'var(--red)');
+      updateJbStatus('✗ Sync error', 'var(--red)');
     }
   });
 }
@@ -1333,18 +1382,18 @@ function syncFromCloud() {
 function migrateToCloud() {
   var key = getJbKey();
   if (!key) {
-    updateJbStatus('✗ Сначала введи Master Key выше', 'var(--red)');
+    updateJbStatus('✗ Enter Master Key first', 'var(--red)');
     return;
   }
   // Load from localStorage fresh
   var local = [];
   try { local = JSON.parse(localStorage.getItem(STORAGE) || '[]'); } catch(e) {}
   if (!local.length) {
-    updateJbStatus('✗ Локальных данных нет — нечего мигрировать', 'var(--dim)');
+    updateJbStatus('✗ No local data to migrate', 'var(--dim)');
     return;
   }
   var binId = getJbBin();
-  updateJbStatus('Создаю bin и загружаю ' + local.length + ' позиций...', 'var(--dim)');
+  updateJbStatus('Creating bin and uploading ' + local.length + ' positions...', 'var(--dim)');
 
   function doCreate() {
     return fetch('https://api.jsonbin.io/v3/b', {
@@ -1358,7 +1407,7 @@ function migrateToCloud() {
       document.getElementById('jbBinInput').value = id;
       positions = local;
       saveLocal();
-      updateJbStatus('✓ Создан bin ' + id + ' — ' + local.length + ' позиций мигрировано', 'var(--green)');
+      updateJbStatus('✓ Bin ' + id + ' created — ' + local.length + ' positions migrated', 'var(--green)');
       updateSettingsUI();
       render();
     });
@@ -1373,14 +1422,14 @@ function migrateToCloud() {
       if (!r.ok) throw new Error('http_' + r.status);
       positions = local;
       saveLocal();
-      updateJbStatus('✓ Bin ' + id + ' обновлён — ' + local.length + ' позиций', 'var(--green)');
+      updateJbStatus('✓ Bin ' + id + ' updated — ' + local.length + ' positions', 'var(--green)');
       updateSettingsUI();
       render();
     });
   }
 
   (binId ? doUpdate(binId) : doCreate()).catch(function(e) {
-    updateJbStatus('✗ Ошибка: ' + e.message, 'var(--red)');
+    updateJbStatus('✗ Error: ' + e.message, 'var(--red)');
   });
 }
 
@@ -1406,7 +1455,7 @@ function cloudSave() {
     var localTs = localStorage.getItem('pt_cloud_ts');
     if (cloudTs && localTs && cloudTs !== localTs) {
       // Cloud is newer — block save
-      updateJbStatus('✗ Данные в облаке более новые. Сначала синхронизируйте данные (↓ SYNC FROM CLOUD)', 'var(--red)');
+      updateJbStatus('✗ Cloud data is newer. Sync first (↓ SYNC FROM CLOUD)', 'var(--red)');
       return;
     }
     _doCloudSave(key, binId);
@@ -1432,8 +1481,8 @@ function _doCloudSave(key, binId) {
         localStorage.setItem('pt_jbbin', id);
         localStorage.setItem('pt_cloud_ts', res.metadata.updatedAt || new Date().toISOString());
         document.getElementById('jbBinInput').value = id;
-        updateJbStatus('✓ Облако: bin создан и сохранён', 'var(--green)');
-      }).catch(function() { updateJbStatus('✗ Ошибка создания bin', 'var(--red)'); });
+        updateJbStatus('✓ Cloud: bin created and saved', 'var(--green)');
+      }).catch(function() { updateJbStatus('✗ Failed to create bin', 'var(--red)'); });
     } else {
       fetch('https://api.jsonbin.io/v3/b/' + binId, {
         method: 'PUT',
@@ -1444,15 +1493,15 @@ function _doCloudSave(key, binId) {
         return r.json();
       }).then(function(res) {
         localStorage.setItem('pt_cloud_ts', res.metadata && res.metadata.updatedAt ? res.metadata.updatedAt : new Date().toISOString());
-        updateJbStatus('✓ Облако: сохранено ' + new Date().toLocaleTimeString(), 'var(--green)');
-      }).catch(function() { updateJbStatus('✗ Ошибка сохранения', 'var(--red)'); });
+        updateJbStatus('✓ Cloud: saved ' + new Date().toLocaleTimeString(), 'var(--green)');
+      }).catch(function() { updateJbStatus('✗ Save error', 'var(--red)'); });
     }
   }
 
   if (encKey) {
     encryptData(plaintext, encKey).then(function(encrypted) {
       doSend(JSON.stringify({ encrypted: encrypted }));
-    }).catch(function() { updateJbStatus('✗ Ошибка шифрования', 'var(--red)'); });
+    }).catch(function() { updateJbStatus('✗ Encryption error', 'var(--red)'); });
   } else {
     doSend(JSON.stringify({ portfolios: portfolios }));
   }
@@ -1462,7 +1511,7 @@ function cloudLoad(callback) {
   var key = getJbKey();
   var binId = getJbBin();
   if (!key || !binId) { callback(false); return; }
-  updateJbStatus('Загрузка из облака...', 'var(--dim)');
+  updateJbStatus('Loading from cloud...', 'var(--dim)');
   fetch('https://api.jsonbin.io/v3/b/' + binId + '/latest', {
     headers: { 'X-Master-Key': key }
   }).then(function(r) {
@@ -1490,13 +1539,13 @@ function cloudLoad(callback) {
         loadLocal();
         document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
         localStorage.setItem('pt_cloud_ts', res.metadata && res.metadata.updatedAt ? res.metadata.updatedAt : new Date().toISOString());
-        updateJbStatus('✓ Загружено из облака', 'var(--green)');
+        updateJbStatus('✓ Loaded from cloud', 'var(--green)');
         callback(true);
       } else if (data && Array.isArray(data.positions)) {
         portfolios[currentPortfolioId].positions = data.positions;
         savePortfolios();
         loadLocal();
-        updateJbStatus('✓ Загружено из облака (legacy): ' + data.positions.length + ' позиций', 'var(--green)');
+        updateJbStatus('✓ Loaded from cloud (legacy): ' + data.positions.length + ' positions', 'var(--green)');
         callback(true);
       } else { callback(false); }
     }
@@ -1504,22 +1553,22 @@ function cloudLoad(callback) {
     if (data && data.encrypted) {
       var encKey = getEncKey();
       if (!encKey) {
-        updateJbStatus('✗ Данные зашифрованы — укажите ENC KEY', 'var(--red)');
+        updateJbStatus('✗ Data is encrypted — enter ENC KEY', 'var(--red)');
         callback(false);
         return;
       }
       decryptData(data.encrypted, encKey).then(function(plain) {
         try { processData(JSON.parse(plain)); }
-        catch(e) { updateJbStatus('✗ Ошибка расшифровки', 'var(--red)'); callback(false); }
+        catch(e) { updateJbStatus('✗ Decryption error', 'var(--red)'); callback(false); }
       }).catch(function() {
-        updateJbStatus('✗ Неверный пароль шифрования', 'var(--red)');
+        updateJbStatus('✗ Wrong encryption password', 'var(--red)');
         callback(false);
       });
     } else {
       processData(data);
     }
   }).catch(function(e) {
-    updateJbStatus('✗ Ошибка загрузки из облака', 'var(--red)');
+    updateJbStatus('✗ Cloud load error', 'var(--red)');
     callback(false);
   });
 }
@@ -1616,18 +1665,18 @@ function updateSettingsUI() {
   if (document.getElementById('resetDeltaChk')) document.getElementById('resetDeltaChk').checked = getResetDelta();
   if (document.getElementById('encKeyInput')) document.getElementById('encKeyInput').value = getEncKey();
   var encEl = document.getElementById('encStatus');
-  if (encEl) { encEl.textContent = getEncKey() ? 'Шифрование включено' : ''; encEl.style.color = 'var(--green)'; }
+  if (encEl) { encEl.textContent = getEncKey() ? 'Encryption enabled' : ''; encEl.style.color = 'var(--green)'; }
   if (document.getElementById('jbEncKeyInput')) document.getElementById('jbEncKeyInput').value = getEncKey();
 
   var jbKey = getJbKey();
   var jbBin = getJbBin();
   if (document.getElementById('jbKeyInput')) document.getElementById('jbKeyInput').value = jbKey;
   if (document.getElementById('jbBinInput')) document.getElementById('jbBinInput').value = jbBin;
-  document.getElementById('settingsNote').textContent = 'Цены: Yahoo Finance через Cloudflare Worker. Облако: jsonbin.io.';
-  var cloudStatus = jbKey ? (jbBin ? '&#9729; Облако' : '&#9729; Облако') : '&#128190; Локально';
-  var srcStatus = k ? '&#10003; Yahoo Finance' : '&#9888; Нужен Backend URL';
+  document.getElementById('settingsNote').textContent = 'Prices: Yahoo Finance via Cloudflare Worker. Cloud: jsonbin.io.';
+  var cloudStatus = jbKey ? (jbBin ? '&#9729; Cloud' : '&#9729; Cloud') : '&#128190; Local';
+  var srcStatus = k ? '&#10003; Yahoo Finance' : '&#9888; Backend URL required';
   document.getElementById('providerLabel').innerHTML = srcStatus + ' &nbsp;|&nbsp; ' + cloudStatus;
-  document.getElementById('mainNote').textContent = '* Цены через Yahoo Finance — все биржи, extended hours.';
+  document.getElementById('mainNote').textContent = '* Prices via Yahoo Finance — all exchanges, extended hours.';
 }
 function showKeyStatus() { updateSettingsUI(); }
 
@@ -1694,13 +1743,13 @@ function addPosition() {
   var entry = parseFloat(document.getElementById('fEntry').value);
   var curRaw = document.getElementById('fCurrent').value.trim();
   var current = curRaw ? parseFloat(curRaw) : null;
-  if (!ticker) { document.getElementById('addErr').textContent = 'Введи тикер'; return; }
+  if (!ticker) { document.getElementById('addErr').textContent = 'Enter ticker'; return; }
   if (!isWatchlist()) {
-    if (qty === null || isNaN(qty) || qty < 0) { document.getElementById('addErr').textContent = 'Введи количество'; return; }
-    if (qty > 0 && (!entry || entry <= 0)) { document.getElementById('addErr').textContent = 'Введи цену входа'; return; }
-    if (entry < 0) { document.getElementById('addErr').textContent = 'Введи цену входа'; return; }
+    if (qty === null || isNaN(qty) || qty < 0) { document.getElementById('addErr').textContent = 'Enter quantity'; return; }
+    if (qty > 0 && (!entry || entry <= 0)) { document.getElementById('addErr').textContent = 'Enter entry price'; return; }
+    if (entry < 0) { document.getElementById('addErr').textContent = 'Enter entry price'; return; }
     if (currentPortfolio().archive && (!current || isNaN(current) || current <= 0)) {
-      document.getElementById('addErr').textContent = 'Укажи цену продажи'; return;
+      document.getElementById('addErr').textContent = 'Enter sell price'; return;
     }
   }
   if (isWatchlist()) { qty = 0; entry = 0; current = null; }
@@ -1718,7 +1767,7 @@ function addPosition() {
 
   // Verify ticker via Yahoo for all portfolio types
   var errEl = document.getElementById('addErr');
-  errEl.textContent = 'Проверяю тикер...';
+  errEl.textContent = 'Checking ticker...';
   var baseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
   var token = getToken();
   if (!baseUrl) { doAddPosition({}); return; }
@@ -1726,13 +1775,13 @@ function addPosition() {
   var opts = token ? { headers: { 'X-API-Token': token } } : {};
   fetch(url, opts).then(function(r) { return r.json(); }).then(function(d) {
     if (!d.price || d.price <= 0) {
-      errEl.textContent = '✗ Неизвестный тикер: ' + ticker;
+      errEl.textContent = '✗ Unknown ticker: ' + ticker;
       return;
     }
     errEl.textContent = '';
     doAddPosition({ currency: d.currency || null, shortName: d.shortName || null });
   }).catch(function() {
-    errEl.textContent = '✗ Ошибка проверки тикера';
+    errEl.textContent = '✗ Ticker check failed';
   });
 }
 
@@ -1750,10 +1799,10 @@ function sellPosition(id) {
   var pos = positions.find(function(p) { return p.id === id; });
   if (!pos) return;
   var defaultPrice = pos.current !== null && pos.current !== undefined ? pos.current : '';
-  var sellPrice = prompt('Цена продажи:', defaultPrice);
+  var sellPrice = prompt('Sell price:', defaultPrice);
   if (sellPrice === null) return;
   sellPrice = parseFloat(sellPrice);
-  if (isNaN(sellPrice) || sellPrice <= 0) { alert('Неверная цена'); return; }
+  if (isNaN(sellPrice) || sellPrice <= 0) { alert('Invalid price'); return; }
   positions = positions.map(function(p) {
     if (p.id === id) return Object.assign({}, p, { sold: true, current: sellPrice });
     return p;
@@ -2139,6 +2188,15 @@ function buildMarketTotals(fxMap, baseCode, baseSym) {
 
 window.chartViewType = 'portfolio'; // 'portfolio' or 'positions'
 window.chartSelectionOpen = false;
+
+
+function activeTickerCount(p) {
+  var seen = {};
+  (p.positions || []).forEach(function(pos) {
+    if (!pos.sold && pos.qty > 0) seen[pos.ticker] = true;
+  });
+  return Object.keys(seen).length;
+}
 
 function getChartSelKey() {
   return 'pt_chart_sel_' + currentPortfolioId;
