@@ -465,6 +465,7 @@ var viewMode = 'main'; // main | weight
 var weightSort = { key: 'weight', dir: -1 };
 var switcherTab = 'active'; // 'active' or 'archive'
 var positionClipboard = null;
+var editingPortfolioId = null;
 // In-memory FX rate cache (TTL: 5 minutes) with in-flight deduplication
 var fxRateCache = {}; // { 'EURUSD=X': { rate: 1.17, ts: 1234567890 } }
 var fxRateInflight = {}; // { 'EURUSD=X': Promise }
@@ -829,7 +830,8 @@ function renderBondsSwitcher(html, list, summaryActive) {
       + '</div>'
       + '<button class="btn-icon" onclick="renameBondPortfolio(&apos;' + id + '&apos;)" style="font-size:13px;padding:4px 7px">&#9998;</button>'
       + '<button class="btn-icon" onclick="deleteBondPortfolio(&apos;' + id + '&apos;)" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
-      + '</div>';
+      + '</div>'
+      + (editingPortfolioId === id ? portfolioEditFormHtml(id, bondPortfolios[id]) : '');
   });
   if (bpIds.length === 0) html += '<div style="padding:10px 14px;font-size:11px;color:var(--dim)">No bond portfolios</div>';
   // Bond DB button
@@ -865,25 +867,12 @@ function addBondPortfolio2() {
 }
 
 function renameBondPortfolio(id) {
-  var existing = document.getElementById('pfEdit_' + id);
-  if (existing) { existing.remove(); return; }
-  document.querySelectorAll('[id^="pfEdit_"]').forEach(function(el) { el.remove(); });
-  var p = bondPortfolios[id];
-  if (!p) return;
-  var item = document.querySelector('[data-pfid="' + id + '"]');
-  if (!item) return;
-  var form = document.createElement('div');
-  form.id = 'pfEdit_' + id;
-  form.style.cssText = 'padding:8px 12px 10px;background:var(--bg2);border-top:1px solid var(--border)';
-  form.innerHTML = '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">'
-    + '<div class="field"><label>NAME</label><input type="search" id="pfName_' + id + '" value="' + p.name + '" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" oninput="this.value=this.value.toUpperCase()" style="width:140px;text-transform:uppercase"></div>'
-    + '<div class="field"><label>CURRENCY</label><input type="search" id="pfCur_' + id + '" value="' + (p.currencyCode || 'USD') + '" autocomplete="off" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()" maxlength="3" style="width:52px;text-align:center;text-transform:uppercase"></div>'
-    + '<div style="display:flex;gap:6px;align-self:flex-end">'
-    + '<button class="btn btn-green" style="padding:6px 12px" onclick="saveBondPortfolioEdit(&apos;' + id + '&apos;)">SAVE</button>'
-    + '<button class="btn" style="padding:6px 12px;color:var(--dim)" onclick="document.getElementById(&apos;pfEdit_' + id + '&apos;).remove()">CANCEL</button>'
-    + '</div></div>';
-  item.insertAdjacentElement('afterend', form);
-  document.getElementById('pfName_' + id).focus();
+  editingPortfolioId = editingPortfolioId === id ? null : id;
+  renderSwitcher();
+  if (editingPortfolioId) {
+    var el = document.getElementById('pfName_' + id);
+    if (el) { el.focus(); el.select(); }
+  }
 }
 
 function saveBondPortfolioEdit(id) {
@@ -894,6 +883,7 @@ function saveBondPortfolioEdit(id) {
   bondPortfolios[id].currencyCode = newCur;
   saveBondPortfolios();
   if (id === currentBondPortfolioId) document.getElementById('portfolioTitle').textContent = newName;
+  editingPortfolioId = null;
   renderSwitcher();
 }
 
@@ -1012,14 +1002,15 @@ function renderSwitcher() {
     archiveIds.forEach(function(id) {
       var p = portfolios[id];
       var active = id === currentPortfolioId;
-      html += '<div class="portfolio-item' + (active ? ' active' : '') + '" data-pfid="' + id + '" style="display:flex;align-items:center">'
+      html += '<div class="portfolio-item' + (active ? ' active' : '') + '" style="display:flex;align-items:center">'
         + '<div onclick="switchPortfolio(&apos;' + id + '&apos;)" style="flex:1;cursor:pointer;min-width:0">'
         + '<span class="portfolio-item-name">' + p.name + '</span> <span style="color:var(--dim);font-size:10px">' + (p.currencyCode || 'USD') + '</span> '
         + '<span class="portfolio-item-count">' + activeTickerCount(p) + ' pos' + (active ? ' &#10003;' : '') + '</span>'
         + '</div>'
         + '<button class="btn-icon" onclick="renamePortfolio(&apos;' + id + '&apos;)" title="Rename" style="font-size:13px;padding:4px 7px">&#9998;</button>'
         + '<button class="btn-icon" onclick="deletePortfolio(&apos;' + id + '&apos;)" title="Delete" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
-        + '</div>';
+        + '</div>'
+        + (editingPortfolioId === id ? portfolioEditFormHtml(id, p) : '');
     });
     if (archiveIds.length === 0) html += '<div style="padding:10px 14px;font-size:11px;color:var(--dim)">No archive portfolios</div>';
     // Archive summary
@@ -1051,7 +1042,8 @@ function renderSwitcher() {
       + (!p.watchlist ? '<button class="btn-icon" onclick="archivePortfolio(\'' + id + '\')" title="Archive" style="font-size:14px;padding:4px 6px;color:var(--dim)">&#8863;</button>' : '')
       + '<button class="btn-icon" onclick="renamePortfolio(\'' + id + '\')" title="Rename" style="font-size:13px;padding:4px 7px">&#9998;</button>'
       + '<button class="btn-icon" onclick="deletePortfolio(\'' + id + '\')" title="Delete" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
-      + '</div>';
+      + '</div>'
+      + (editingPortfolioId === id ? portfolioEditFormHtml(id, portfolios[id]) : '');
   });
   var totalSeen = {};
   Object.keys(portfolios).forEach(function(pid) {
@@ -1153,28 +1145,25 @@ function addPortfolio() {
 }
 
 function renamePortfolio(id) {
-  // Toggle inline edit — close others first
-  var existing = document.getElementById('pfEdit_' + id);
-  if (existing) { existing.remove(); return; }
-  document.querySelectorAll('[id^="pfEdit_"]').forEach(function(el) { el.remove(); });
-  var p = portfolios[id];
-  if (!p) return;
-  var item = document.querySelector('[data-pfid="' + id + '"]');
-  if (!item) return;
-  var form = document.createElement('div');
-  form.id = 'pfEdit_' + id;
-  form.style.cssText = 'padding:8px 12px 10px;background:var(--bg2);border-top:1px solid var(--border)';
-  form.innerHTML = '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">'
+  editingPortfolioId = editingPortfolioId === id ? null : id;
+  renderSwitcher();
+  if (editingPortfolioId) {
+    var el = document.getElementById('pfName_' + id);
+    if (el) { el.focus(); el.select(); }
+  }
+}
+
+function portfolioEditFormHtml(id, p) {
+  return '<div style="padding:8px 12px 10px;background:var(--bg2);border-top:1px solid var(--border)">'
+    + '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">'
     + '<div class="field"><label>NAME</label><input type="search" id="pfName_' + id + '" value="' + p.name + '" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" oninput="this.value=this.value.toUpperCase()" style="width:140px;text-transform:uppercase"></div>'
     + '<div class="field"><label>CURRENCY</label><input type="search" id="pfCur_' + id + '" value="' + (p.currencyCode || 'USD') + '" autocomplete="off" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()" maxlength="3" style="width:52px;text-align:center;text-transform:uppercase"></div>'
     + '<div style="display:flex;gap:6px;align-self:flex-end">'
     + '<button class="btn btn-green" style="padding:6px 12px" onclick="savePortfolioEdit(&apos;' + id + '&apos;)">SAVE</button>'
-    + '<button class="btn" style="padding:6px 12px;color:var(--dim)" onclick="document.getElementById(&apos;pfEdit_' + id + '&apos;).remove()">CANCEL</button>'
+    + '<button class="btn" style="padding:6px 12px;color:var(--dim)" onclick="editingPortfolioId=null;renderSwitcher()">CANCEL</button>'
     + '</div>'
     + '<span id="pfEditErr_' + id + '" style="color:var(--red);font-size:11px;align-self:center"></span>'
-    + '</div>';
-  item.insertAdjacentElement('afterend', form);
-  document.getElementById('pfName_' + id).focus();
+    + '</div></div>';
 }
 
 function savePortfolioEdit(id) {
@@ -1190,6 +1179,7 @@ function savePortfolioEdit(id) {
     portfolios[id].currencyCode = newCur;
     savePortfolios(); save();
     if (id === currentPortfolioId) document.getElementById('portfolioTitle').textContent = newName;
+    editingPortfolioId = null;
     renderSwitcher();
   });
 }
