@@ -224,6 +224,7 @@
       </div>
       <div class="field" style="flex:none;align-self:flex-end;padding-bottom:2px">
         <button class="btn-icon" onclick="pastePosition()" id="pasteBtn" title="Paste" style="font-size:16px;padding:4px 6px;color:var(--dim)">&#10697;</button>
+        <button class="btn-icon" onclick="clearAddForm()" title="Clear" style="font-size:14px;padding:4px 6px;color:var(--dim)">&#10005;</button>
       </div>
     </div>
     <div class="form-row">
@@ -576,12 +577,12 @@ function renderBondAddForm(bpId) {
     + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">+ ADD POSITION</div>'
     + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">'
     + '<select id="bpBondId" style="flex:2;min-width:120px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none">' + options + '</select>'
-    + '<input type="date" id="bpDate" style="flex:1;min-width:110px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none">'
+    + '<div class="field"><label>PURCHASE DATE</label><input type="date" id="bpDate" style="width:140px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none"></div>'
     + '</div>'
     + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">'
     + '<div class="field"><label>QTY</label><input type="number" id="bpQty" placeholder="10" min="1" step="1" style="width:70px"></div>'
     + '<div class="field"><label>CLEAN PRICE %</label><input type="number" id="bpClean" placeholder="98.50" min="0" step="0.01" style="width:80px"></div>'
-    + '<div class="field"><label>NKD</label><input type="number" id="bpNkd" placeholder="0.00" min="0" step="0.01" style="width:80px"></div>'
+    + '<div class="field"><label>ACCRUED INTEREST</label><input type="number" id="bpNkd" placeholder="0.00" min="0" step="0.01" style="width:80px"></div>'
     + '</div>'
     + '<div style="display:flex;gap:8px;align-items:center">'
     + '<button class="btn btn-green" onclick="addBondPosition(&apos;' + bpId + '&apos;)">ADD</button>'
@@ -631,7 +632,7 @@ function editBondPosition(posId) {
   if (newQty === null) return;
   var newClean = prompt('Clean Price (%):', pos.cleanPrice);
   if (newClean === null) return;
-  var newNkd = prompt('NKD (Accrued Interest):', pos.accruedInterest);
+  var newNkd = prompt('Accrued Interest:', pos.accruedInterest);
   if (newNkd === null) return;
   if (newDate.trim()) pos.purchaseDate = newDate.trim();
   if (parseInt(newQty) > 0) pos.qty = parseInt(newQty);
@@ -1777,6 +1778,15 @@ function addPosition() {
   });
 }
 
+function clearAddForm() {
+  ['fTicker','fQty','fEntry','fCurrent'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  var errEl = document.getElementById('addErr');
+  if (errEl) errEl.textContent = '';
+}
+
 function pastePosition() {
   if (!positionClipboard) return;
   var c = positionClipboard;
@@ -2350,6 +2360,91 @@ function exportCsv() {
   a.href = URL.createObjectURL(blob);
   a.download = 'tickers.csv';
   a.click();
+}
+
+
+function openPositionCsvImport() {
+  var inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.csv,text/csv';
+  inp.onchange = function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev) { processPositionCsv(ev.target.result); };
+    reader.readAsText(file);
+  };
+  inp.click();
+}
+
+function processPositionCsv(text) {
+  var lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) { alert('CSV must have a header row and at least one data row'); return; }
+  var delim = lines[0].indexOf(';') !== -1 ? ';' : ',';
+  var header = lines[0].split(delim).map(function(h) { return h.trim().toLowerCase(); });
+  var tickerIdx = header.indexOf('ticker');
+  var qtyIdx    = header.indexOf('qty');
+  var entryIdx  = header.indexOf('entry');
+  var curIdx    = header.indexOf('current');
+  var soldIdx   = header.indexOf('sold');
+  if (tickerIdx === -1 || qtyIdx === -1 || entryIdx === -1) {
+    alert('CSV must have columns: ticker, qty, entry (current and sold are optional)'); return;
+  }
+  var rows = [];
+  for (var i = 1; i < lines.length; i++) {
+    var line = lines[i].trim();
+    if (!line) continue;
+    var cols = line.split(delim).map(function(c) { return c.trim(); });
+    var ticker = (cols[tickerIdx] || '').toUpperCase();
+    var qty    = parseFloat(cols[qtyIdx]);
+    var entry  = parseFloat(cols[entryIdx]);
+    if (!ticker || isNaN(qty) || qty < 0 || isNaN(entry) || (qty > 0 && entry <= 0)) continue;
+    var current = (curIdx !== -1 && cols[curIdx]) ? parseFloat(cols[curIdx]) : null;
+    var sold    = (soldIdx !== -1 && cols[soldIdx]) ? (cols[soldIdx].toLowerCase() === 'true') : false;
+    rows.push({ ticker: ticker, qty: qty, entry: entry, current: current, sold: sold });
+  }
+  if (!rows.length) { alert('No valid rows found in CSV'); return; }
+
+  var baseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
+  var token = getToken();
+  if (!baseUrl) { alert('Backend URL not set in Settings'); return; }
+
+  var added = 0, errors = [];
+  var pending = rows.length;
+
+  rows.forEach(function(row) {
+    var opts = token ? { headers: { 'X-API-Token': token } } : {};
+    fetch(baseUrl + '/api/quote?ticker=' + encodeURIComponent(row.ticker) + '&simple=1', opts)
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (!d.price || d.price <= 0) {
+          errors.push(row.ticker + ' — unknown ticker');
+        } else {
+          var pos = {
+            id: Date.now() + Math.random(),
+            ticker: row.ticker,
+            qty: row.qty,
+            entry: row.entry,
+            current: row.current || d.price,
+            currency: d.currency || null,
+            shortName: d.shortName || null
+          };
+          if (row.sold) pos.sold = true;
+          positions.push(pos);
+          added++;
+        }
+      })
+      .catch(function() { errors.push(row.ticker + ' — network error'); })
+      .finally(function() {
+        pending--;
+        if (pending === 0) {
+          save();
+          render();
+          var msg = added + ' position(s) imported';
+          if (errors.length) msg += '\n\nFailed:\n' + errors.join('\n');
+          alert(msg);
+        }
+      });
+  });
 }
 
 function openCsvImport() {
@@ -3260,10 +3355,10 @@ function render() {
       + '<table style="border-collapse:collapse;font-size:13px">'
       + '<thead><tr>'
       + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">BOND</th>'
-      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">DATE</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">PURCHASE DATE</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">QTY</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">CLEAN %</th>'
-      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">NKD</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">ACCRUED INT.</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">VALUE</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PROFIT</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">RETURN</th>'

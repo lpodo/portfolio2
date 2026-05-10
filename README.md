@@ -133,6 +133,21 @@ Note: `qty: 0` is allowed — used for watchlist candidates. Shows `—` in QTY 
   - **MARKET** — TICKER / CLOSE / CURRENT / Δ%; sortable by TICKER or Δ% (3rd click resets to portfolio order); market state icon included
     - CLOSE = `chartPreviousClose` (previous session close) — always used as Δ% base during REGULAR session
     - During CLOSED/PRE/POST: CLOSE = `regularMarketPrice` by default; if **CONTINUOUS Δ% ACROSS SESSIONS** is enabled in settings, uses `chartPreviousClose` instead
+- **CSV position import** (↑ CSV button in the Add form): bulk-import positions from a CSV file. Each ticker is validated against Yahoo Finance and receives correct currency and shortName. Supports comma and semicolon delimiters; `current` and `sold` columns are optional.
+
+  Minimal format:
+  ```
+  ticker,qty,entry
+  NVDA,10,500.00
+  MU,5,80.00
+  ```
+  Full format:
+  ```
+  ticker,qty,entry,current,sold
+  NVDA,10,500.00,,
+  MU,5,80.00,95.00,true
+  ```
+
 - **Position counts** in the portfolio switcher show unique active tickers only (excluding sold and qty=0). The Σ SUMMARY count shows globally unique tickers across all non-index portfolios — a ticker held in multiple portfolios is counted once.
 - **Move position** (⇨ button): moves any position to another active portfolio, preserving all fields including sold status. Available in both active and archive portfolios. Archive portfolios show an additional **⊟ button** for sold positions that moves them directly to a chosen archive portfolio.
 
