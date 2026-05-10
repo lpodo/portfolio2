@@ -822,7 +822,7 @@ function renderBondsSwitcher(html, list, summaryActive) {
   bpIds.forEach(function(id) {
     var p = bondPortfolios[id];
     var active = id === currentBondPortfolioId && viewMode === 'bonds';
-    html += '<div class="portfolio-item' + (active ? ' active' : '') + '" style="display:flex;align-items:center">'
+    html += '<div class="portfolio-item' + (active ? ' active' : '') + '" data-pfid="' + id + '" style="display:flex;align-items:center">'
       + '<div onclick="showBondPortfolio(&apos;' + id + '&apos;)" style="flex:1;cursor:pointer;min-width:0">'
       + '<span class="portfolio-item-name">' + p.name + '</span> <span style="color:var(--dim);font-size:10px">' + (p.currencyCode || 'USD') + '</span> '
       + '<span class="portfolio-item-count">' + p.positions.length + ' bonds' + (active ? ' &#10003;' : '') + '</span>'
@@ -1012,7 +1012,7 @@ function renderSwitcher() {
     archiveIds.forEach(function(id) {
       var p = portfolios[id];
       var active = id === currentPortfolioId;
-      html += '<div class="portfolio-item' + (active ? ' active' : '') + '" style="display:flex;align-items:center">'
+      html += '<div class="portfolio-item' + (active ? ' active' : '') + '" data-pfid="' + id + '" style="display:flex;align-items:center">'
         + '<div onclick="switchPortfolio(&apos;' + id + '&apos;)" style="flex:1;cursor:pointer;min-width:0">'
         + '<span class="portfolio-item-name">' + p.name + '</span> <span style="color:var(--dim);font-size:10px">' + (p.currencyCode || 'USD') + '</span> '
         + '<span class="portfolio-item-count">' + activeTickerCount(p) + ' pos' + (active ? ' &#10003;' : '') + '</span>'
