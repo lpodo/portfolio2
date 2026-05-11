@@ -3708,7 +3708,7 @@ function render() {
   // Chart view
   if (viewMode === 'chart') {
     var chartRange = window.chartRange || '1mo';
-    var cvt = window.chartViewType || 'portfolio';
+    var cvt = isWatchlist() ? 'positions' : (window.chartViewType || 'portfolio');
     var selOpen = window.chartSelectionOpen || false;
     var allTickers = getChartUniqueTickers();
     var selectedTickers = getChartSelection();
