@@ -210,7 +210,7 @@
 
   <div id="tableArea"></div>
 
-  <div class="add-form">
+  <div class="add-form" id="stockAddForm">
     <div class="form-label">+ Add position</div>
     <div class="form-row" style="margin-bottom:8px">
       <div class="field" style="flex:1">
@@ -2982,6 +2982,8 @@ function updateViewMenuBtn() {
 
 function render() {
   updateViewMenuBtn();
+  var stockForm = document.getElementById('stockAddForm');
+  if (stockForm) stockForm.style.display = (viewMode === 'bonds') ? 'none' : '';
   var area = document.getElementById('tableArea');
 
   // Analytics view (single portfolio)
