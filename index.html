@@ -237,7 +237,7 @@
         <input type="number" id="fEntry" placeholder="150.00" min="0" step="any" style="width:98px" onkeydown="if(event.key==='Enter')addPosition()">
       </div>
       <div class="field">
-        <label>CURRENT (opt.)</label>
+        <label id="fCurrentLabel">CURRENT (opt.)</label>
         <input type="number" id="fCurrent" placeholder="&#8212;" min="0" step="any" style="width:98px" onkeydown="if(event.key==='Enter')addPosition()">
       </div>
     </div>
@@ -532,6 +532,8 @@ function closeSwitcherOutside(e) {
 function updateAddFormForTab() {
   var isArchiveTab = switcherTab === 'archive';
   var isBondsTab = switcherTab === 'bonds';
+  var curLabel = document.getElementById('fCurrentLabel');
+  if (curLabel) curLabel.textContent = isArchiveTab ? 'SELL PRICE' : 'CURRENT (opt.)';
   var addRow = document.getElementById('portfolioAddRow');
   if (addRow) addRow.style.display = isBondsTab ? 'none' : '';
   var radioRow = document.getElementById('portfolioTypeRow');
@@ -3832,7 +3834,7 @@ function render() {
     + thBtn('ticker', 'TICKER', 'left')
     + thBtn('qty', 'QTY')
     + thBtn('entry', 'ENTRY')
-    + thBtn('current', 'CURRENT')
+    + thBtn('current', currentPortfolio().archive ? 'SELL PRICE' : 'CURRENT')
     + thBtn('pnl', 'P&amp;L')
     + thBtn('pnlpct', 'P&amp;L %')
     + '<th style="width:16px;padding:0"></th>'
