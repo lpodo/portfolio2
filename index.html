@@ -3591,8 +3591,8 @@ function render() {
     return;
   }
 
-  // Watchlist/Index view
-  if (isWatchlist()) {
+  // Watchlist/Index view — but let chart mode pass through
+  if (isWatchlist() && viewMode !== 'chart') {
     var wlRows = '';
     var wlTickerArrow = watchlistSort.key === 'ticker' ? (watchlistSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
     var wlDeltaArrow = watchlistSort.key === 'delta' ? (watchlistSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
