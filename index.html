@@ -537,7 +537,7 @@ function updateAddFormForTab() {
   var addRow = document.getElementById('portfolioAddRow');
   if (addRow) addRow.style.display = isBondsTab ? 'none' : '';
   var radioRow = document.getElementById('portfolioTypeRow');
-  if (radioRow) radioRow.style.display = (isArchiveTab || isBondsTab) ? 'none' : '';
+  if (radioRow) radioRow.style.display = (isArchiveTab || isBondsTab) ? 'none' : 'flex';
   var nameInput = document.getElementById('newPortfolioName');
   if (nameInput) nameInput.placeholder = isArchiveTab ? 'ARCHIVE NAME' : 'NAME';
 }
