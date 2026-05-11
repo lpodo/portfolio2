@@ -140,7 +140,7 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
 - Total: VALUE, P&L, RETURN
 - **Multi-currency portfolios**: each position carries its own currency (from Yahoo Finance). ENTRY/CURRENT show position currency symbol. Totals and weights are converted to portfolio base currency via live FX rates (`EURUSD=X` etc.)
 - **Summary view**: selected from the portfolio switcher (Σ SUMMARY at the bottom). Shows all non-watchlist portfolios: NAME / VALUE (in native currency) / P&L / RETURN / SHARE%. Total row always in USD with live FX conversion. Clicking a row switches to that portfolio. Refresh on Summary updates all portfolios.
-- **Watchlist portfolio** (WATCHLIST radio button at creation): designed for tracking indices, commodities, currencies (e.g. `^KS11`, `BZ=F`, `EURUSD=X`). No qty/entry fields. Shows CLOSE (chartPreviousClose) / PRICE (regularMarketPrice) / Δ% / NAME. Sortable by TICKER and Δ%. No dropdown menu. Excluded from Summary and Analytics.
+- **Watchlist portfolio** (WATCHLIST radio button at creation): designed for tracking indices, commodities, currencies (e.g. `^KS11`, `BZ=F`, `EURUSD=X`). No qty/entry fields. Shows CLOSE (chartPreviousClose) / PRICE (regularMarketPrice) / Δ% / NAME. Sortable by TICKER and Δ%. Excluded from Summary and Analytics.
 - Market state indicator after P&L %:
   - No icon — regular session (REGULAR)
   - 🌙 — pre or post market (PRE / POST)
