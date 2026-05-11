@@ -64,14 +64,21 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
 ## Data Storage
 
 - **localStorage** — primary on-device storage
-  - `pt_portfolios` — all portfolios and positions
+  - `pt_portfolios` — all equity portfolios and positions
+  - `pt_bonds_db` — bond database (bond definitions)
+  - `pt_bond_portfolios` — bond portfolios and positions
   - `pt_current` — active portfolio ID
-  - `pt_finnhub` — Cloudflare Worker URL (legacy key name)
+  - `pt_finnhub` — Cloudflare Worker URL
   - `pt_token` — API token for Cloudflare Worker
-  - `pt_sort` — sort state
+  - `pt_sort`, `pt_wl_sort` — sort state (regular and watchlist)
   - `pt_jbkey` — JSONBin master key
   - `pt_jbbin` — JSONBin bin ID
-- **JSONBin.io** — cloud sync for cross-device access
+  - `pt_cloud_ts` — cloud sync timestamp (conflict prevention)
+  - `pt_enc_key` — AES-GCM encryption password
+  - `pt_reset_delta` — continuous Δ% across sessions setting
+  - `pt_chart_sel_{portfolioId}` — per-portfolio ticker selection for POSITIONS chart
+  - `chart_hist_{ticker}_{range}` — historical price cache (daily TTL)
+- **JSONBin.io** — cloud sync for cross-device access. Stores `{ portfolios, bondsDb, bondPortfolios }` — structural data only, no prices.
 
 ## Position Structure
 
@@ -82,15 +89,26 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
   "qty": 8,
   "entry": 134.00,
   "current": 140.75,
+  "sold": false,
+  "currency": "USD",
+  "shortName": "EOG Resources, Inc.",
   "priceType": "regular",
-  "marketState": "REGULAR"
+  "marketState": "REGULAR",
+  "regularMarketPrice": 140.75,
+  "previousClose": 138.82,
+  "category": "Energy",
+  "region": "US",
+  "sector": "Energy"
 }
 ```
 
-- `currency` — position currency code from Yahoo Finance (e.g. `GBP`, `EUR`). Saved after first price fetch. Used to show correct currency symbol in ENTRY/CURRENT columns and currency code after market state icon.
-- `previousClose`, `regularMarketPrice` — saved from worker response for Market view calculations.
+- `currency` — position currency code from Yahoo Finance (e.g. `GBP`, `EUR`). Set on add. Used for symbol display and FX conversion in totals/weights.
+- `shortName` — company/ETF name from Yahoo Finance. Displayed in MARKET and WEIGHT views.
+- `sold` — marks position as sold; price frozen at sell price, excluded from Refresh.
+- `previousClose`, `regularMarketPrice` — cached from worker response for Market view Δ% calculations.
+- `category`, `region`, `sector` — optional classification fields for Analytics view. Set manually via ✎ edit row or via CSV import.
 
-Note: `qty: 0` is allowed — used for watchlist candidates. Shows `—` in QTY and P&L $ columns, only P&L % is calculated.
+**qty=0** is allowed — used for watchlist candidates. P&L $ shows `—`, P&L% is calculated if entry > 0. Entry=0 is allowed only when qty=0 (pure price tracking). Excluded from WEIGHTS and Analytics totals.
 
 ## Portfolio Structure
 
@@ -98,15 +116,15 @@ Note: `qty: 0` is allowed — used for watchlist candidates. Shows `—` in QTY 
 {
   "name": "OIL & GAS",
   "currencyCode": "USD",
+  "watchlist": false,
+  "archive": false,
   "positions": []
 }
 ```
 
-`currencyCode` — ISO 4217 base currency code. Serves as the **base currency** for the portfolio:
-- All position values are converted to this currency for **total VALUE** and **WEIGHTS** calculations
-- FX rates fetched live from Yahoo Finance (`EURUSD=X`, `GBPUSD=X`, etc.) when positions have mixed currencies
-- Defaults to `USD` for legacy portfolios
-- Validated against Yahoo Finance on creation/rename
+- `currencyCode` — ISO 4217 base currency. All position values are converted to this currency for VALUE and WEIGHTS. Validated against Yahoo Finance on creation/rename.
+- `watchlist: true` — watchlist portfolio (no qty/entry fields, simple price display, excluded from Summary).
+- `archive: true` — archive portfolio (all positions sold, no Refresh, excluded from main Summary).
 
 ## Features
 
@@ -121,8 +139,8 @@ Note: `qty: 0` is allowed — used for watchlist candidates. Shows `—` in QTY 
 - P&L % per share: `(current - entry) / entry × 100`
 - Total: VALUE, P&L, RETURN
 - **Multi-currency portfolios**: each position carries its own currency (from Yahoo Finance). ENTRY/CURRENT show position currency symbol. Totals and weights are converted to portfolio base currency via live FX rates (`EURUSD=X` etc.)
-- **Summary view**: selected from the portfolio switcher (Σ SUMMARY at the bottom). Shows all non-index portfolios: NAME / VALUE (in native currency) / P&L / RETURN / SHARE%. Total row always in USD with live FX conversion. Clicking a row switches to that portfolio. Refresh on Summary updates all portfolios.
-- **Index/Watchlist portfolio** (INDEX checkbox at creation): designed for tracking indices, commodities, currencies (e.g. `^KS11`, `BZ=F`, `EURUSD=X`). No qty/entry fields. Shows CLOSE (chartPreviousClose) / PRICE (regularMarketPrice) / Δ% / NAME. Sortable by TICKER and Δ%. No dropdown menu. Excluded from Summary.
+- **Summary view**: selected from the portfolio switcher (Σ SUMMARY at the bottom). Shows all non-watchlist portfolios: NAME / VALUE (in native currency) / P&L / RETURN / SHARE%. Total row always in USD with live FX conversion. Clicking a row switches to that portfolio. Refresh on Summary updates all portfolios.
+- **Watchlist portfolio** (WATCHLIST radio button at creation): designed for tracking indices, commodities, currencies (e.g. `^KS11`, `BZ=F`, `EURUSD=X`). No qty/entry fields. Shows CLOSE (chartPreviousClose) / PRICE (regularMarketPrice) / Δ% / NAME. Sortable by TICKER and Δ%. No dropdown menu. Excluded from Summary and Analytics.
 - Market state indicator after P&L %:
   - No icon — regular session (REGULAR)
   - 🌙 — pre or post market (PRE / POST)
@@ -148,7 +166,7 @@ Note: `qty: 0` is allowed — used for watchlist candidates. Shows `—` in QTY 
   MU,5,80.00,95.00,true
   ```
 
-- **Position counts** in the portfolio switcher show unique active tickers only (excluding sold and qty=0). The Σ SUMMARY count shows globally unique tickers across all non-index portfolios — a ticker held in multiple portfolios is counted once.
+- **Position counts** in the portfolio switcher show unique active tickers only (excluding sold and qty=0). The Σ SUMMARY count shows globally unique tickers across all non-watchlist portfolios — a ticker held in multiple portfolios is counted once.
 - **Move position** (⇨ button): moves any position to another active portfolio, preserving all fields including sold status. Available in both active and archive portfolios. Archive portfolios show an additional **⊟ button** for sold positions that moves them directly to a chosen archive portfolio.
 
 ## Backup / Restore (Settings panel)
@@ -278,7 +296,7 @@ Each bond portfolio has a name and base currency. Positions are sorted by maturi
 - Purchase date
 - Qty (number of bonds)
 - Clean Price (% of par value)
-- NKD / Accrued Interest
+- Accrued Interest
 
 **Calculated fields:**
 - **Position Value** = qty × (cleanPrice/100 × parValue + accruedInterest)

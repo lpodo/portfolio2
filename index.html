@@ -323,7 +323,7 @@
         <input type="radio" name="portfolioType" value="regular" checked class="radio-styled"> REGULAR
       </label>
       <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
-        <input type="radio" name="portfolioType" value="index" class="radio-styled"> INDEX
+        <input type="radio" name="portfolioType" value="index" class="radio-styled"> WATCHLIST
       </label>
     </div>
   </div>
@@ -1099,8 +1099,9 @@ function switchPortfolio(id) {
   var btn = document.getElementById('viewMenuBtn');
   var refreshBtn = document.getElementById('refreshAllBtn');
   if (portfolios[id].watchlist) {
-    viewMode = 'main';
-    btn.style.display = 'none';
+    if (viewMode !== 'chart') viewMode = 'main';
+    btn.style.display = '';
+    btn.disabled = false; btn.style.opacity = '';
     refreshBtn.style.display = '';
   } else if (portfolios[id].archive) {
     if (['market','summary','archive-summary'].indexOf(viewMode) !== -1) viewMode = 'main';
@@ -2122,11 +2123,13 @@ function toggleViewMenu() {
   var menu = document.getElementById('viewMenu');
   if (menu.style.display === 'none') {
     var isSummaryMode = ['summary','summary-market','summary-chart','summary-analytics'].indexOf(viewMode) !== -1;
-    var isArchive = !isSummaryMode && currentPortfolio() && currentPortfolio().archive;
+    var isWL = !isSummaryMode && currentPortfolio() && currentPortfolio().watchlist;
+    var isArchive = !isSummaryMode && !isWL && currentPortfolio() && currentPortfolio().archive;
+    document.getElementById('vmMain').style.display = (isWL) ? 'none' : '';
     document.getElementById('vmMarket').style.display = isArchive ? 'none' : '';
-    document.getElementById('vmWeight').style.display = isSummaryMode ? 'none' : '';
+    document.getElementById('vmWeight').style.display = (isSummaryMode || isWL) ? 'none' : '';
     document.getElementById('vmChart').style.display = isArchive ? 'none' : '';
-    document.getElementById('vmAnalytics').style.display = isArchive ? 'none' : '';
+    document.getElementById('vmAnalytics').style.display = (isArchive || isWL) ? 'none' : '';
     menu.style.display = 'block';
   } else {
     menu.style.display = 'none';
@@ -2972,7 +2975,9 @@ function updateViewMenuBtn() {
   if (!btn) return;
   var labels = { 'main': 'P&L', 'weight': 'WEIGHT', 'market': 'MARKET', 'chart': 'CHART', 'analytics': 'ANALYTICS',
     'summary': 'P&L', 'summary-market': 'MARKET', 'summary-chart': 'CHART', 'summary-analytics': 'ANALYTICS' };
-  btn.textContent = labels[viewMode] || 'P&L';
+  var label = labels[viewMode] || 'P&L';
+  if (viewMode === 'main' && currentPortfolio() && currentPortfolio().watchlist) label = 'MARKET';
+  btn.textContent = label;
 }
 
 function render() {
@@ -3736,16 +3741,16 @@ function render() {
           return '<button onclick="setChartRange(&apos;' + r + '&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 10px;border:1px solid ' + (active ? 'var(--green)' : 'var(--border)') + ';background:' + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">' + r.toUpperCase() + '</button>';
         }).join('')
       + '<div style="flex:1"></div>'
-      + ['portfolio','positions'].map(function(t) {
+      + (isWatchlist() ? '' : ['portfolio','positions'].map(function(t) {
           var active = cvt === t;
           return '<button onclick="setChartViewType(&apos;' + t + '&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 10px;border:1px solid ' + (active ? 'var(--green)' : 'var(--border)') + ';background:' + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font);text-transform:uppercase">' + t + '</button>';
-        }).join('')
+        }).join(''))
       + '</div>'
       + (cvt === 'positions' ? '<div style="text-align:right;font-size:10px;margin-bottom:4px"><a href="#" onclick="toggleChartSelection();return false" style="color:var(--dim)">&#9998; Edit selection (' + selectedTickers.length + '/' + allTickers.length + ')</a></div>' : '')
       + selPanel
       + '<div id="chartArea" style="min-height:200px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px">Loading...</div>';
 
-    if (cvt === 'portfolio') {
+    if (cvt === 'portfolio' && !isWatchlist()) {
       loadChartData(chartRange);
     } else {
       loadPositionsChartData(chartRange, selectedTickers);
