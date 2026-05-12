@@ -1748,6 +1748,10 @@ function addPosition() {
   var curRaw = document.getElementById('fCurrent').value.trim();
   var current = curRaw ? parseFloat(curRaw) : null;
   if (!ticker) { document.getElementById('addErr').textContent = 'Enter ticker'; return; }
+  if (isWatchlist() && positions.some(function(p) { return p.ticker === ticker; })) {
+    document.getElementById('addErr').textContent = ticker + ' is already in this watchlist';
+    return;
+  }
   if (!isWatchlist()) {
     if (qty === null || isNaN(qty) || qty < 0) { document.getElementById('addErr').textContent = 'Enter quantity'; return; }
     if (qty > 0 && (!entry || entry <= 0)) { document.getElementById('addErr').textContent = 'Enter entry price'; return; }
