@@ -144,7 +144,7 @@
   .portfolio-item-name { font-size: 13px; font-weight: bold; letter-spacing: 1px; }
   .portfolio-item-count { font-size: 10px; color: var(--dim); }
   .portfolio-add-row {
-    padding: 10px 14px 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    padding: 10px 14px 10px; display: flex; flex-direction: column; gap: 0;
     border-top: 1px solid var(--border);
   }
   .portfolio-add-row input {
@@ -849,11 +849,12 @@ function renderBondsSwitcher(html, list, summaryActive) {
     + '</div>';
   // Add form for bond portfolio
   html += '<div style="border-top:1px solid var(--border);padding:10px 14px">'
-    + '<div style="display:flex;gap:8px;align-items:center">'
+    + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">+ ADD PORTFOLIO</div>'
+    + '<div style="display:flex;gap:8px;margin-bottom:8px">'
     + '<input type="search" id="newBondPortfolioName" placeholder="NAME" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" style="-webkit-appearance:none;flex:2;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">'
     + '<input type="search" id="newBondPortfolioCurrency" placeholder="USD" autocomplete="off" autocapitalize="characters" spellcheck="false" style="-webkit-appearance:none;width:52px;flex:none;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;text-align:center;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">'
-    + '<button class="btn btn-green" onclick="addBondPortfolio2()" style="white-space:nowrap">+ ADD</button>'
     + '</div>'
+    + '<button class="btn btn-green" onclick="addBondPortfolio2()" style="white-space:nowrap">+ ADD</button>'
     + '</div>';
   list.innerHTML = html;
 }
