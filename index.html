@@ -304,6 +304,7 @@
     </div>
     <div id="portfolioList"></div>
     <div class="portfolio-add-row" id="portfolioAddRow">
+      <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">+ ADD PORTFOLIO</div>
       <input type="search" id="newPortfolioName" placeholder="NAME"
         inputmode="text" autocomplete="off" autocorrect="off"
         autocapitalize="characters" spellcheck="false"
@@ -2985,7 +2986,7 @@ function updateViewMenuBtn() {
 function render() {
   updateViewMenuBtn();
   var stockForm = document.getElementById('stockAddForm');
-  if (stockForm) stockForm.style.display = (viewMode === 'bonds') ? 'none' : '';
+  if (stockForm) stockForm.style.display = (viewMode === 'bonds' || viewMode === 'summary' || viewMode === 'summary-market' || viewMode === 'summary-chart' || viewMode === 'summary-analytics') ? 'none' : '';
   var area = document.getElementById('tableArea');
 
   // Analytics view (single portfolio)
