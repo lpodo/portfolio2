@@ -2986,7 +2986,7 @@ function updateViewMenuBtn() {
 function render() {
   updateViewMenuBtn();
   var stockForm = document.getElementById('stockAddForm');
-  if (stockForm) stockForm.style.display = (viewMode === 'bonds' || viewMode === 'summary' || viewMode === 'summary-market' || viewMode === 'summary-chart' || viewMode === 'summary-analytics') ? 'none' : '';
+  if (stockForm) stockForm.style.display = (['bonds','summary','summary-market','summary-chart','summary-analytics','archive-summary'].indexOf(viewMode) !== -1) ? 'none' : '';
   var area = document.getElementById('tableArea');
 
   // Analytics view (single portfolio)
