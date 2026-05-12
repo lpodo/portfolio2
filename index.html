@@ -305,21 +305,23 @@
     <div id="portfolioList"></div>
     <div class="portfolio-add-row" id="portfolioAddRow">
       <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">+ ADD PORTFOLIO</div>
-      <input type="search" id="newPortfolioName" placeholder="NAME"
-        inputmode="text" autocomplete="off" autocorrect="off"
-        autocapitalize="characters" spellcheck="false"
-        style="-webkit-appearance:none;flex:2"
-        oninput="this.value=this.value.toUpperCase()"
-        onkeydown="if(event.key==='Enter')addPortfolio()">
-      <input type="search" id="newPortfolioCurrencyCode" placeholder="USD"
-        inputmode="text" autocomplete="off" autocorrect="off" autocapitalize="characters"
-        spellcheck="false"
-        style="-webkit-appearance:none;width:52px;flex:none;text-align:center"
-        oninput="this.value=this.value.toUpperCase()"
-        onkeydown="if(event.key==='Enter')addPortfolio()">
-      <button class="btn btn-green" onclick="addPortfolio()" style="white-space:nowrap">+ ADD</button>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <input type="search" id="newPortfolioName" placeholder="NAME"
+          inputmode="text" autocomplete="off" autocorrect="off"
+          autocapitalize="characters" spellcheck="false"
+          style="-webkit-appearance:none;flex:2"
+          oninput="this.value=this.value.toUpperCase()"
+          onkeydown="if(event.key==='Enter')addPortfolio()">
+        <input type="search" id="newPortfolioCurrencyCode" placeholder="USD"
+          inputmode="text" autocomplete="off" autocorrect="off" autocapitalize="characters"
+          spellcheck="false"
+          style="-webkit-appearance:none;width:52px;flex:none;text-align:center"
+          oninput="this.value=this.value.toUpperCase()"
+          onkeydown="if(event.key==='Enter')addPortfolio()">
+      </div>
+      <button class="btn btn-green" onclick="addPortfolio()" style="white-space:nowrap;margin-bottom:6px">+ ADD</button>
     </div>
-    <div id="portfolioTypeRow" style="padding:6px 0 6px;display:flex;gap:16px">
+    <div id="portfolioTypeRow" style="padding:4px 0 6px;display:flex;gap:16px">
       <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
         <input type="radio" name="portfolioType" value="regular" checked class="radio-styled"> REGULAR
       </label>
