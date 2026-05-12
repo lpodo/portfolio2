@@ -3639,8 +3639,24 @@ function render() {
 
   // Market view
   if (viewMode === 'market') {
+    // Deduplicate by ticker for market view
+    var marketPositions = (function() {
+      var seen = {};
+      var result = [];
+      getMarketSorted(getSorted()).forEach(function(p) {
+        if (!seen[p.ticker]) {
+          seen[p.ticker] = { pos: p, hasActive: !p.sold && p.qty > 0 };
+          result.push(p.ticker);
+        } else if (!p.sold && p.qty > 0) {
+          seen[p.ticker].hasActive = true;
+        }
+      });
+      return result.map(function(t) { return seen[t]; });
+    })();
     var marketRows = '';
-    getMarketSorted(getSorted()).forEach(function(p) {
+    marketPositions.forEach(function(entry) {
+      var p = entry.pos;
+      var allWatchlist = !entry.hasActive;
       if (p.current == null) {
         marketRows += '<tr>'
           + '<td style="text-align:left">' + p.ticker + '</td>'
@@ -3662,7 +3678,7 @@ function render() {
       }
       var delta = (p.sold) ? 0 : (regPrice ? (p.current - regPrice) / regPrice * 100 : null);
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
-      var mktSoldStyle = (p.sold || p.qty === 0) ? 'font-style:italic;opacity:0.5' : '';
+      var mktSoldStyle = (p.sold || p.qty === 0 || allWatchlist) ? 'font-style:italic;opacity:0.5' : '';
       marketRows += '<tr style="' + mktSoldStyle + '">'
         + '<td style="text-align:left">' + p.ticker + '</td>'
         + '<td style="text-align:right;padding:5px 4px">' + getPositionCurrencySymbol(p) + f2(regPrice) + '</td>'
