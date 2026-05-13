@@ -160,8 +160,6 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
     - **CURRENT column**: `Current` (current price including extended hours, default) or `Reg.Price` (regularMarketPrice)
     - Δ% is always computed from the selected CLOSE vs selected CURRENT values
     - Settings apply globally to all portfolios (regular, watchlist, summary) and persist across sessions
-    - CLOSE = `chartPreviousClose` (previous session close) — always used as Δ% base during REGULAR session
-    - During CLOSED/PRE/POST: CLOSE = `regularMarketPrice` by default; if **CONTINUOUS Δ% ACROSS SESSIONS** is enabled in settings, uses `chartPreviousClose` instead
 - **Aggregation mode** (≡ button in the P&L table header, above the action buttons): collapses duplicate tickers into single rows for a cleaner view. Active separately for regular and archive portfolios; state persists across sessions (`pt_agg_active`, `pt_agg_archive`). The ≡ icon turns green when enabled. Weight view inherits the same mode automatically.
 
   Aggregation rules:
