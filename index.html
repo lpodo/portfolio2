@@ -3009,48 +3009,66 @@ function toggleAggregated() {
 }
 
 function aggregatePositions(posns) {
-  // Returns array of aggregated position objects
-  // Group A: active (qty>0, not sold) - aggregate by ticker
-  // Group B: sold - aggregate by ticker
-  // Group C: qty=0, not sold - keep individual
-  var activeMap = {}, soldMap = {}, result = [];
+  var activeMap = {}, soldMap = {}, tickerOrder = [], result = [];
 
   posns.forEach(function(p) {
     if (!p.sold && p.qty > 0) {
-      if (!activeMap[p.ticker]) activeMap[p.ticker] = [];
+      if (!activeMap[p.ticker]) { activeMap[p.ticker] = []; tickerOrder.push('a:' + p.ticker); }
       activeMap[p.ticker].push(p);
     } else if (p.sold) {
-      if (!soldMap[p.ticker]) soldMap[p.ticker] = [];
+      if (!soldMap[p.ticker]) { soldMap[p.ticker] = []; tickerOrder.push('s:' + p.ticker); }
       soldMap[p.ticker].push(p);
     } else {
-      result.push({ agg: false, pos: p }); // qty=0, show as-is
+      result.push({ agg: false, pos: p, _order: posns.indexOf(p) });
     }
   });
 
-  // Aggregate active
+  var aggMap = {};
   Object.keys(activeMap).forEach(function(ticker) {
     var group = activeMap[ticker];
-    if (group.length === 1) { result.push({ agg: false, pos: group[0] }); return; }
-    var totalQty = 0, totalCost = 0;
-    group.forEach(function(p) { totalQty += p.qty; totalCost += p.qty * p.entry; });
-    var avgEntry = totalQty > 0 ? totalCost / totalQty : 0;
-    var rep = Object.assign({}, group[0], { qty: totalQty, entry: avgEntry });
-    result.push({ agg: true, count: group.length, pos: rep });
+    var rep;
+    if (group.length === 1) { rep = { agg: false, pos: group[0] }; }
+    else {
+      var totalQty = 0, totalCost = 0;
+      group.forEach(function(p) { totalQty += p.qty; totalCost += p.qty * p.entry; });
+      var avg = Object.assign({}, group[0], { qty: totalQty, entry: totalQty > 0 ? totalCost / totalQty : 0 });
+      rep = { agg: true, count: group.length, pos: avg };
+    }
+    aggMap['a:' + ticker] = rep;
   });
-
-  // Aggregate sold
   Object.keys(soldMap).forEach(function(ticker) {
     var group = soldMap[ticker];
-    if (group.length === 1) { result.push({ agg: false, pos: group[0] }); return; }
-    var totalQty = 0, totalCost = 0, totalSell = 0;
-    group.forEach(function(p) { totalQty += p.qty; totalCost += p.qty * p.entry; totalSell += p.qty * p.current; });
-    var avgEntry = totalQty > 0 ? totalCost / totalQty : 0;
-    var avgSell  = totalQty > 0 ? totalSell / totalQty : 0;
-    var rep = Object.assign({}, group[0], { qty: totalQty, entry: avgEntry, current: avgSell });
-    result.push({ agg: true, count: group.length, pos: rep });
+    var rep;
+    if (group.length === 1) { rep = { agg: false, pos: group[0] }; }
+    else {
+      var totalQty = 0, totalCost = 0, totalSell = 0;
+      group.forEach(function(p) { totalQty += p.qty; totalCost += p.qty * p.entry; totalSell += p.qty * p.current; });
+      var avg = Object.assign({}, group[0], { qty: totalQty, entry: totalQty > 0 ? totalCost / totalQty : 0, current: totalQty > 0 ? totalSell / totalQty : 0 });
+      rep = { agg: true, count: group.length, pos: avg };
+    }
+    aggMap['s:' + ticker] = rep;
   });
 
-  return result;
+  // Rebuild in original order
+  var seen = {};
+  var ordered = [];
+  posns.forEach(function(p) {
+    var key = p.sold ? 's:' + p.ticker : (!p.sold && p.qty > 0 ? 'a:' + p.ticker : null);
+    if (!key) return; // qty=0 handled separately
+    if (!seen[key]) { seen[key] = true; ordered.push(aggMap[key]); }
+  });
+
+  // Merge: qty=0 positions in original relative order
+  var allResult = [];
+  var qtyZeroIdx = 0, orderedIdx = 0;
+  var qtyZeroPositions = posns.filter(function(p) { return !p.sold && p.qty === 0; });
+  posns.forEach(function(p) {
+    if (!p.sold && p.qty === 0) {
+      allResult.push({ agg: false, pos: p });
+    }
+  });
+  // Append active/sold aggregated after qty=0
+  return allResult.concat(ordered);
 }
 
 function render() {
@@ -3170,10 +3188,12 @@ function render() {
     var actions = isEdit
       ? '<button class="btn-icon" style="color:var(--green)" onclick="saveEdit(' + p.id + ')">&#10003;</button>'
         + '<button class="btn-icon" onclick="cancelEdit()">&#10005;</button>'
-      : (isAgg ? '' : (p.sold ? '<button class="btn-icon" onclick="showArchiveMenu(' + p.id + ', this)" title="Move to archive" style="font-size:14px;padding:0 4px">&#8863;</button>' : (p.qty > 0 ? '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--bright)" onclick="sellPosition(' + p.id + ')">SELL</button>' : '')))
-      + (isAgg ? '' : '<button class="btn-icon" onclick="showMoveMenu(' + p.id + ', this)" title="Move to portfolio" style="font-size:17px;padding:0 4px;line-height:1">&#8680;</button>')
-        + '<button class="btn-icon" onclick="startEdit(' + p.id + ')">&#9998;</button>'
-        + '<button class="btn-icon" onclick="removePosition(' + p.id + ')">&#10005;</button>';
+      : isAgg
+        ? '<span style="font-size:10px;color:var(--dim);padding:0 4px">&times;' + aggCount + '</span>'
+        : (p.sold ? '<button class="btn-icon" onclick="showArchiveMenu(' + p.id + ', this)" title="Move to archive" style="font-size:14px;padding:0 4px">&#8863;</button>' : (p.qty > 0 ? '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--bright)" onclick="sellPosition(' + p.id + ')">SELL</button>' : ''))
+          + '<button class="btn-icon" onclick="showMoveMenu(' + p.id + ', this)" title="Move to portfolio" style="font-size:17px;padding:0 4px;line-height:1">&#8680;</button>'
+          + '<button class="btn-icon" onclick="startEdit(' + p.id + ')">&#9998;</button>'
+          + '<button class="btn-icon" onclick="removePosition(' + p.id + ')">&#10005;</button>';
 
     var tickerCell = isEdit ? '<input class="edit-input" id="editTicker" type="text" value="' + p.ticker + '" style="width:60px;text-transform:uppercase">' : p.ticker;
     var soldStyle = (p.sold || p.qty === 0) ? 'font-style:italic;opacity:0.5' : '';
@@ -3859,18 +3879,19 @@ function render() {
       var weightSource = isAggregated() ? aggregatePositions(getSorted()) : getSorted().map(function(p) { return { agg: false, pos: p }; });
       var weightRows = '';
       var wTotVal = 0;
-      getSorted().forEach(function(p) {
+      weightSource.forEach(function(wEntry) {
+        var p = wEntry.pos;
         if (p.current != null && p.qty > 0) {
-          var rate = 1;
-          var pc = getPositionCurrencyCode(p);
-          if (pc !== baseCode) rate = wFxMap[pc + baseCode] || 1;
-          wTotVal += p.qty * p.current * rate;
+          var rate2 = 1;
+          var pc2 = getPositionCurrencyCode(p);
+          if (pc2 !== baseCode) rate2 = wFxMap[pc2 + baseCode] || 1;
+          wTotVal += p.qty * p.current * rate2;
         }
       });
-      getWeightSorted(getSorted(), wTotVal).forEach(function(p) {
+      getWeightSorted(weightSource.map(function(e) { return e.pos; }), wTotVal).forEach(function(p) {
         var wSoldStyle = p.sold ? 'font-style:italic;opacity:0.5' : '';
         if (p.current === null || p.current === undefined || p.qty === 0) {
-          return; // skip qty=0 from weight view entirely
+          return;
         }
         var pc = getPositionCurrencyCode(p);
         var rate = pc !== baseCode ? (wFxMap[pc + baseCode] || 1) : 1;
@@ -3928,7 +3949,7 @@ function render() {
     + thBtn('pnl', 'P&amp;L')
     + thBtn('pnlpct', 'P&amp;L %')
     + '<th style="width:16px;padding:0"></th>'
-    + '<th style="text-align:center;padding:5px 4px;border-bottom:1px solid var(--border)"><span onclick="toggleAggregated()" title="Toggle aggregation" style="cursor:pointer;font-size:14px;color:' + (isAggregated() ? 'var(--green)' : 'var(--dim)') + '">&#8801;</span></th>'
+    + '<th style="text-align:left;padding:5px 4px;border-bottom:1px solid var(--border)"><span onclick="toggleAggregated()" title="Toggle aggregation" style="cursor:pointer;font-size:14px;color:' + (isAggregated() ? 'var(--green)' : 'var(--dim)') + '">&#8801;</span></th>'
     + '</tr></thead>'
     + '<tbody>' + rows + '</tbody>'
     + '</table>'
