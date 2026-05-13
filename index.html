@@ -3009,66 +3009,45 @@ function toggleAggregated() {
 }
 
 function aggregatePositions(posns) {
-  var activeMap = {}, soldMap = {}, tickerOrder = [], result = [];
-
+  // Build maps: active by ticker, sold by ticker; qty=0 kept as-is
+  var activeMap = {}, soldMap = {};
   posns.forEach(function(p) {
     if (!p.sold && p.qty > 0) {
-      if (!activeMap[p.ticker]) { activeMap[p.ticker] = []; tickerOrder.push('a:' + p.ticker); }
+      if (!activeMap[p.ticker]) activeMap[p.ticker] = [];
       activeMap[p.ticker].push(p);
     } else if (p.sold) {
-      if (!soldMap[p.ticker]) { soldMap[p.ticker] = []; tickerOrder.push('s:' + p.ticker); }
+      if (!soldMap[p.ticker]) soldMap[p.ticker] = [];
       soldMap[p.ticker].push(p);
-    } else {
-      result.push({ agg: false, pos: p, _order: posns.indexOf(p) });
     }
   });
 
-  var aggMap = {};
-  Object.keys(activeMap).forEach(function(ticker) {
-    var group = activeMap[ticker];
-    var rep;
-    if (group.length === 1) { rep = { agg: false, pos: group[0] }; }
-    else {
-      var totalQty = 0, totalCost = 0;
-      group.forEach(function(p) { totalQty += p.qty; totalCost += p.qty * p.entry; });
-      var avg = Object.assign({}, group[0], { qty: totalQty, entry: totalQty > 0 ? totalCost / totalQty : 0 });
-      rep = { agg: true, count: group.length, pos: avg };
-    }
-    aggMap['a:' + ticker] = rep;
-  });
-  Object.keys(soldMap).forEach(function(ticker) {
-    var group = soldMap[ticker];
-    var rep;
-    if (group.length === 1) { rep = { agg: false, pos: group[0] }; }
-    else {
-      var totalQty = 0, totalCost = 0, totalSell = 0;
-      group.forEach(function(p) { totalQty += p.qty; totalCost += p.qty * p.entry; totalSell += p.qty * p.current; });
-      var avg = Object.assign({}, group[0], { qty: totalQty, entry: totalQty > 0 ? totalCost / totalQty : 0, current: totalQty > 0 ? totalSell / totalQty : 0 });
-      rep = { agg: true, count: group.length, pos: avg };
-    }
-    aggMap['s:' + ticker] = rep;
-  });
+  // Build aggregated entries
+  function makeEntry(group, isSold) {
+    if (group.length === 1) return { agg: false, pos: group[0] };
+    var totalQty = 0, totalCost = 0, totalSell = 0;
+    group.forEach(function(p) { totalQty += p.qty; totalCost += p.qty * p.entry; if (isSold) totalSell += p.qty * p.current; });
+    var rep = Object.assign({}, group[0], {
+      qty: totalQty,
+      entry: totalQty > 0 ? totalCost / totalQty : 0,
+      current: isSold ? (totalQty > 0 ? totalSell / totalQty : 0) : group[0].current
+    });
+    return { agg: true, count: group.length, pos: rep };
+  }
 
-  // Rebuild in original order
-  var seen = {};
-  var ordered = [];
-  posns.forEach(function(p) {
-    var key = p.sold ? 's:' + p.ticker : (!p.sold && p.qty > 0 ? 'a:' + p.ticker : null);
-    if (!key) return; // qty=0 handled separately
-    if (!seen[key]) { seen[key] = true; ordered.push(aggMap[key]); }
-  });
-
-  // Merge: qty=0 positions in original relative order
-  var allResult = [];
-  var qtyZeroIdx = 0, orderedIdx = 0;
-  var qtyZeroPositions = posns.filter(function(p) { return !p.sold && p.qty === 0; });
+  // Emit in the order of first appearance in posns
+  var seen = {}, result = [];
   posns.forEach(function(p) {
     if (!p.sold && p.qty === 0) {
-      allResult.push({ agg: false, pos: p });
+      result.push({ agg: false, pos: p });
+    } else if (!p.sold && p.qty > 0) {
+      var key = 'a:' + p.ticker;
+      if (!seen[key]) { seen[key] = true; result.push(makeEntry(activeMap[p.ticker], false)); }
+    } else if (p.sold) {
+      var key2 = 's:' + p.ticker;
+      if (!seen[key2]) { seen[key2] = true; result.push(makeEntry(soldMap[p.ticker], true)); }
     }
   });
-  // Append active/sold aggregated after qty=0
-  return allResult.concat(ordered);
+  return result;
 }
 
 function render() {
@@ -3189,7 +3168,7 @@ function render() {
       ? '<button class="btn-icon" style="color:var(--green)" onclick="saveEdit(' + p.id + ')">&#10003;</button>'
         + '<button class="btn-icon" onclick="cancelEdit()">&#10005;</button>'
       : isAgg
-        ? '<span style="font-size:10px;color:var(--dim);padding:0 4px">&times;' + aggCount + '</span>'
+        ? '<span style="font-size:9px;letter-spacing:1px;color:var(--dim);padding:0 4px">&times;' + aggCount + '</span>'
         : (p.sold ? '<button class="btn-icon" onclick="showArchiveMenu(' + p.id + ', this)" title="Move to archive" style="font-size:14px;padding:0 4px">&#8863;</button>' : (p.qty > 0 ? '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--bright)" onclick="sellPosition(' + p.id + ')">SELL</button>' : ''))
           + '<button class="btn-icon" onclick="showMoveMenu(' + p.id + ', this)" title="Move to portfolio" style="font-size:17px;padding:0 4px;line-height:1">&#8680;</button>'
           + '<button class="btn-icon" onclick="startEdit(' + p.id + ')">&#9998;</button>'
