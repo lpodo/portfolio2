@@ -3184,7 +3184,7 @@ function render() {
       + '<td class="' + cls(pnl) + '">' + (p.qty === 0 ? '<span style="color:var(--dim)">&mdash;</span>' : fSign(pnl !== null ? pnl * p.qty : null)) + '</td>'
       + '<td class="' + cls(pnlPct) + '">' + fPct(pnlPct) + '</td>'
       + '<td style="width:16px;padding:0 2px;text-align:center">' + (p.sold ? '<span style="color:#7090b0;font-size:13px">&#8960;</span>' : marketIcon(p.marketState)) + '</td>'
-      + '<td style="white-space:nowrap">' + actions + '</td>'
+      + '<td style="white-space:nowrap;text-align:left">' + actions + '</td>'
       + '</tr>'
       + (isEdit ? '<tr><td colspan="8" style="padding:6px 4px 10px;background:var(--bg2)">'
         + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">'
