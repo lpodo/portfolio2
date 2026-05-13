@@ -1632,7 +1632,7 @@ async function decryptData(b64, password) {
   return new TextDecoder().decode(plain);
 }
 
-function getResetDelta() { return localStorage.getItem('pt_reset_delta') === '1'; }
+
 function saveResetDelta() {
   var v = '0';
   localStorage.setItem('pt_reset_delta', v);
@@ -1944,7 +1944,7 @@ function refreshAll() {
             var rateBaseToUSD = base === 'USD' ? 1 : (fxRates[base] || fxRates[base + 'USD'] || 1);
             var closePrice = pos.sold ? pos.current : (pos.marketState === 'REGULAR'
               ? (pos.previousClose || pos.regularMarketPrice || pos.current)
-              : ((getResetDelta() ? pos.previousClose : pos.regularMarketPrice) || pos.current));
+              : ((closeMode === 'prev' ? pos.previousClose : pos.regularMarketPrice) || pos.current));
             var posClose = pos.qty * closePrice * rateToUSD / rateBaseToUSD;
             var posCurrent = pos.qty * pos.current * rateToUSD / rateBaseToUSD;
             closeVal += posClose;
@@ -2108,8 +2108,8 @@ function getMarketSorted(items) {
       return marketSort.dir * a.ticker.localeCompare(b.ticker);
     }
     // delta% — use previousClose same as render
-    var aBase = (a.marketState === 'REGULAR') ? (a.previousClose || a.regularMarketPrice) : ((getResetDelta() ? a.previousClose : a.regularMarketPrice) || a.regularMarketPrice);
-    var bBase = (b.marketState === 'REGULAR') ? (b.previousClose || b.regularMarketPrice) : ((getResetDelta() ? b.previousClose : b.regularMarketPrice) || b.regularMarketPrice);
+    var aBase = (a.marketState === 'REGULAR') ? (a.previousClose || a.regularMarketPrice) : ((closeMode === 'prev' ? a.previousClose : a.regularMarketPrice) || a.regularMarketPrice);
+    var bBase = (b.marketState === 'REGULAR') ? (b.previousClose || b.regularMarketPrice) : ((closeMode === 'prev' ? b.previousClose : b.regularMarketPrice) || b.regularMarketPrice);
     va = (a.current != null && aBase) ? (a.current - aBase) / aBase * 100 : null;
     vb = (b.current != null && bBase) ? (b.current - bBase) / bBase * 100 : null;
     if (va === null) va = -Infinity;
@@ -2198,7 +2198,7 @@ function buildMarketTotals(fxMap, baseCode, baseSym) {
     if (p.current != null && p.qty > 0) {
       var regPrice2 = p.sold ? p.current : (p.marketState === 'REGULAR'
         ? (p.previousClose || p.regularMarketPrice || p.current)
-        : ((getResetDelta() ? p.previousClose : p.regularMarketPrice) || p.current));
+        : ((closeMode === 'prev' ? p.previousClose : p.regularMarketPrice) || p.current));
       var pc = getPositionCurrencyCode(p);
       var rate = pc !== baseCode ? (fxMap[pc + baseCode] || fxMap[pc] || 1) : 1;
       mktTotClose += p.qty * regPrice2 * rate;
@@ -3570,7 +3570,7 @@ function render() {
             var rateBaseToUSD = base === 'USD' ? 1 : (fxRates[base] || fxRates[base + 'USD'] || 1);
             var closePrice = pos.sold ? pos.current : (pos.marketState === 'REGULAR'
               ? (pos.previousClose || pos.regularMarketPrice || pos.current)
-              : ((getResetDelta() ? pos.previousClose : pos.regularMarketPrice) || pos.current));
+              : ((closeMode === 'prev' ? pos.previousClose : pos.regularMarketPrice) || pos.current));
             var posClose = pos.qty * closePrice * rateToUSD / rateBaseToUSD;
             var posCurrent = pos.qty * pos.current * rateToUSD / rateBaseToUSD;
             closeVal += posClose;
@@ -3744,8 +3744,8 @@ function render() {
     var wlTickerArrow = watchlistSort.key === 'ticker' ? (watchlistSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
     var wlDeltaArrow = watchlistSort.key === 'delta' ? (watchlistSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
     getWatchlistSorted(positions).forEach(function(p) {
-      var close = p.previousClose || p.regularMarketPrice || null;
-      var price = p.current || null;
+      var close = closeMode === 'prev' ? (p.previousClose || p.regularMarketPrice || null) : (p.regularMarketPrice || null);
+      var price = currentMode === 'reg' ? (p.regularMarketPrice || null) : (p.current || null);
       var delta = (close && price) ? (price - close) / close * 100 : null;
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
       wlRows += '<tr>'
@@ -3809,19 +3809,18 @@ function render() {
       }
       var regPrice;
       if (p.sold) {
-        regPrice = p.current; // sold: show sell price as close, delta = 0
-      } else if (p.marketState === 'REGULAR') {
-        regPrice = p.previousClose || p.regularMarketPrice || p.current;
+        regPrice = p.current;
       } else {
-        regPrice = (getResetDelta() ? p.previousClose : p.regularMarketPrice) || p.current;
+        regPrice = closeMode === 'prev' ? (p.previousClose || p.regularMarketPrice || p.current) : (p.regularMarketPrice || p.current);
       }
-      var delta = (p.sold) ? 0 : (regPrice ? (p.current - regPrice) / regPrice * 100 : null);
+      var mktCurrent = currentMode === 'reg' ? (p.regularMarketPrice || p.current) : p.current;
+      var delta = (p.sold) ? 0 : (regPrice ? (mktCurrent - regPrice) / regPrice * 100 : null);
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
       var mktSoldStyle = (p.sold || p.qty === 0 || allWatchlist) ? 'font-style:italic;opacity:0.5' : '';
       marketRows += '<tr style="' + mktSoldStyle + '">'
         + '<td style="text-align:left">' + p.ticker + '</td>'
         + '<td style="text-align:right;padding:5px 4px">' + getPositionCurrencySymbol(p) + f2(regPrice) + '</td>'
-        + '<td style="text-align:right;padding:5px 4px">' + getPositionCurrencySymbol(p) + f2(p.current) + '</td>'
+        + '<td style="text-align:right;padding:5px 4px">' + getPositionCurrencySymbol(p) + f2(mktCurrent) + '</td>'
         + '<td style="text-align:right;padding:5px 4px" class="' + deltaClass + '">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
         + '<td style="width:16px;padding:0 2px;text-align:center">' + (p.sold ? '<span style="color:#7090b0;font-size:13px">&#8960;</span>' : marketIcon(p.marketState)) + '</td>'
         + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
