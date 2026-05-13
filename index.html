@@ -389,13 +389,7 @@
     <input type="file" id="restoreInput" accept=".json" style="display:none" onchange="restoreData(event)">
   </div>
   <div class="api-status" id="backupStatus"></div>
-  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">MARKET VIEW</div>
-  <div style="display:flex;align-items:center;gap:10px">
-    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px;color:var(--dim);letter-spacing:1px">
-      <input type="checkbox" id="resetDeltaChk" onchange="saveResetDelta()" style="width:14px;height:14px;cursor:pointer">
-      CONTINUOUS Δ% ACROSS SESSIONS
-    </label>
-  </div>
+
   <div class="settings-note" id="settingsNote"></div>
 </div>
 
@@ -474,6 +468,8 @@ var weightSort = { key: 'weight', dir: -1 };
 var switcherTab = 'active'; // 'active' or 'archive'
 var positionClipboard = null;
 var aggregatedModeActive = localStorage.getItem('pt_agg_active') === '1';
+var closeMode = localStorage.getItem('pt_close_mode') || 'prev';
+var currentMode = localStorage.getItem('pt_current_mode') || 'cur';
 var aggregatedModeArchive = localStorage.getItem('pt_agg_archive') === '1';
 var editingPortfolioId = null;
 // In-memory FX rate cache (TTL: 5 minutes) with in-flight deduplication
@@ -1638,7 +1634,7 @@ async function decryptData(b64, password) {
 
 function getResetDelta() { return localStorage.getItem('pt_reset_delta') === '1'; }
 function saveResetDelta() {
-  var v = document.getElementById('resetDeltaChk').checked ? '1' : '0';
+  var v = '0';
   localStorage.setItem('pt_reset_delta', v);
 }
 function getApiKey() { return localStorage.getItem('pt_finnhub') || ''; }
@@ -1668,7 +1664,6 @@ function updateSettingsUI() {
   var k = getApiKey();
   document.getElementById('apiKeyInput').value = k;
   if (document.getElementById('apiTokenInput')) document.getElementById('apiTokenInput').value = getToken();
-  if (document.getElementById('resetDeltaChk')) document.getElementById('resetDeltaChk').checked = getResetDelta();
   if (document.getElementById('encKeyInput')) document.getElementById('encKeyInput').value = getEncKey();
   var encEl = document.getElementById('encStatus');
   if (encEl) { encEl.textContent = getEncKey() ? 'Encryption enabled' : ''; encEl.style.color = 'var(--green)'; }
@@ -3066,6 +3061,56 @@ function aggregatePositions(posns) {
     }
   });
   return result;
+}
+
+
+function setCloseMode(m) {
+  closeMode = m;
+  localStorage.setItem('pt_close_mode', m);
+  document.getElementById('closeModeMenu') && document.getElementById('closeModeMenu').remove();
+  render();
+}
+function setCurrentMode(m) {
+  currentMode = m;
+  localStorage.setItem('pt_current_mode', m);
+  document.getElementById('currentModeMenu') && document.getElementById('currentModeMenu').remove();
+  render();
+}
+function toggleCloseModeMenu(el) {
+  var existing = document.getElementById('closeModeMenu');
+  if (existing) { existing.remove(); return; }
+  document.getElementById('currentModeMenu') && document.getElementById('currentModeMenu').remove();
+  var menu = document.createElement('div');
+  menu.id = 'closeModeMenu';
+  menu.style.cssText = 'position:absolute;z-index:100;background:var(--bg2);border:1px solid var(--border);padding:4px 0;min-width:110px';
+  ['Prev.Close|prev','Reg.Price|reg'].forEach(function(item) {
+    var parts = item.split('|'); var label = parts[0]; var val = parts[1];
+    var d = document.createElement('div');
+    d.style.cssText = 'padding:6px 12px;cursor:pointer;font-size:11px;color:' + (closeMode === val ? 'var(--green)' : 'var(--bright)');
+    d.textContent = label;
+    d.onclick = function() { setCloseMode(val); };
+    menu.appendChild(d);
+  });
+  el.style.position = 'relative';
+  el.appendChild(menu);
+}
+function toggleCurrentModeMenu(el) {
+  var existing = document.getElementById('currentModeMenu');
+  if (existing) { existing.remove(); return; }
+  document.getElementById('closeModeMenu') && document.getElementById('closeModeMenu').remove();
+  var menu = document.createElement('div');
+  menu.id = 'currentModeMenu';
+  menu.style.cssText = 'position:absolute;z-index:100;background:var(--bg2);border:1px solid var(--border);padding:4px 0;min-width:110px';
+  ['Reg.Price|reg','Current|cur'].forEach(function(item) {
+    var parts = item.split('|'); var label = parts[0]; var val = parts[1];
+    var d = document.createElement('div');
+    d.style.cssText = 'padding:6px 12px;cursor:pointer;font-size:11px;color:' + (currentMode === val ? 'var(--green)' : 'var(--bright)');
+    d.textContent = label;
+    d.onclick = function() { setCurrentMode(val); };
+    menu.appendChild(d);
+  });
+  el.style.position = 'relative';
+  el.appendChild(menu);
 }
 
 function render() {
