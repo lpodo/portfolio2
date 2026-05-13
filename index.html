@@ -1942,15 +1942,14 @@ function refreshAll() {
             var pc = pos.currency || base;
             var rateToUSD = pc === 'USD' ? 1 : (fxRates[pc] || fxRates[pc + 'USD'] || 1);
             var rateBaseToUSD = base === 'USD' ? 1 : (fxRates[base] || fxRates[base + 'USD'] || 1);
-            var closePrice = pos.sold ? pos.current : (pos.marketState === 'REGULAR'
-              ? (pos.previousClose || pos.regularMarketPrice || pos.current)
-              : ((closeMode === 'prev' ? pos.previousClose : pos.regularMarketPrice) || pos.current));
+            var closePrice = pos.sold ? pos.current : (closeMode === 'prev' ? (pos.previousClose || pos.regularMarketPrice || pos.current) : (pos.regularMarketPrice || pos.current));
+            var curPrice = pos.sold ? pos.current : (currentMode === 'reg' ? (pos.regularMarketPrice || pos.current) : pos.current);
             var posClose = pos.qty * closePrice * rateToUSD / rateBaseToUSD;
-            var posCurrent = pos.qty * pos.current * rateToUSD / rateBaseToUSD;
+            var posCurrent = pos.qty * curPrice * rateToUSD / rateBaseToUSD;
             closeVal += posClose;
             currentVal += posCurrent;
             closeUSD += pos.qty * closePrice * rateToUSD;
-            currentUSD += pos.qty * pos.current * rateToUSD;
+            currentUSD += pos.qty * curPrice * rateToUSD;
             hasPos = true;
           }
         });
@@ -2196,13 +2195,12 @@ function buildMarketTotals(fxMap, baseCode, baseSym) {
   var mktTotClose = 0, mktTotCurrent = 0, mktHasAny = false;
   getSorted().forEach(function(p) {
     if (p.current != null && p.qty > 0) {
-      var regPrice2 = p.sold ? p.current : (p.marketState === 'REGULAR'
-        ? (p.previousClose || p.regularMarketPrice || p.current)
-        : ((closeMode === 'prev' ? p.previousClose : p.regularMarketPrice) || p.current));
+      var closeVal = p.sold ? p.current : (closeMode === 'prev' ? (p.previousClose || p.regularMarketPrice || p.current) : (p.regularMarketPrice || p.current));
+      var curVal   = p.sold ? p.current : (currentMode === 'reg' ? (p.regularMarketPrice || p.current) : p.current);
       var pc = getPositionCurrencyCode(p);
       var rate = pc !== baseCode ? (fxMap[pc + baseCode] || fxMap[pc] || 1) : 1;
-      mktTotClose += p.qty * regPrice2 * rate;
-      mktTotCurrent += p.qty * p.current * rate;
+      mktTotClose   += p.qty * closeVal * rate;
+      mktTotCurrent += p.qty * curVal   * rate;
       mktHasAny = true;
     }
   });
@@ -3568,15 +3566,14 @@ function render() {
             var pc = pos.currency || base;
             var rateToUSD = pc === 'USD' ? 1 : (fxRates[pc] || fxRates[pc + 'USD'] || 1);
             var rateBaseToUSD = base === 'USD' ? 1 : (fxRates[base] || fxRates[base + 'USD'] || 1);
-            var closePrice = pos.sold ? pos.current : (pos.marketState === 'REGULAR'
-              ? (pos.previousClose || pos.regularMarketPrice || pos.current)
-              : ((closeMode === 'prev' ? pos.previousClose : pos.regularMarketPrice) || pos.current));
+            var closePrice = pos.sold ? pos.current : (closeMode === 'prev' ? (pos.previousClose || pos.regularMarketPrice || pos.current) : (pos.regularMarketPrice || pos.current));
+            var curPrice = pos.sold ? pos.current : (currentMode === 'reg' ? (pos.regularMarketPrice || pos.current) : pos.current);
             var posClose = pos.qty * closePrice * rateToUSD / rateBaseToUSD;
-            var posCurrent = pos.qty * pos.current * rateToUSD / rateBaseToUSD;
+            var posCurrent = pos.qty * curPrice * rateToUSD / rateBaseToUSD;
             closeVal += posClose;
             currentVal += posCurrent;
             closeUSD += pos.qty * closePrice * rateToUSD;
-            currentUSD += pos.qty * pos.current * rateToUSD;
+            currentUSD += pos.qty * curPrice * rateToUSD;
             hasPos = true;
           }
         });
