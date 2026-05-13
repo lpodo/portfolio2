@@ -2052,6 +2052,24 @@ function getSorted() {
     return sortDir * (va > vb ? 1 : va < vb ? -1 : 0);
   });
 }
+
+function getSortedForRender() {
+  if (!isAggregated()) return getSorted().map(function(p) { return { agg: false, pos: p }; });
+  // Aggregate first on unsorted positions, then sort aggregated entries
+  var entries = aggregatePositions(positions.slice());
+  if (!sortKey) return entries;
+  return entries.slice().sort(function(a, b) {
+    var pa = a.pos, pb = b.pos;
+    var va, vb;
+    if (sortKey === 'ticker') { var cmp = sortDir * pa.ticker.localeCompare(pb.ticker); if (cmp !== 0) return cmp; return (pa.sold ? 0 : 1) - (pb.sold ? 0 : 1); }
+    if (sortKey === 'qty')    { va = pa.qty; vb = pb.qty; }
+    if (sortKey === 'entry')  { va = pa.entry; vb = pb.entry; }
+    if (sortKey === 'current'){ va = pa.current !== null ? pa.current : -Infinity; vb = pb.current !== null ? pb.current : -Infinity; }
+    if (sortKey === 'pnl')    { va = (pa.current !== null) ? (pa.current - pa.entry) * pa.qty : -Infinity; vb = (pb.current !== null) ? (pb.current - pb.entry) * pb.qty : -Infinity; }
+    if (sortKey === 'pnlpct') { va = (pa.current !== null && pa.entry) ? (pa.current - pa.entry) / pa.entry : -Infinity; vb = (pb.current !== null && pb.entry) ? (pb.current - pb.entry) / pb.entry : -Infinity; }
+    return sortDir * (va > vb ? 1 : va < vb ? -1 : 0);
+  });
+}
 function sortWeight(key) {
   if (weightSort.key === key) {
     weightSort.dir = -weightSort.dir;
@@ -3136,7 +3154,7 @@ function render() {
     return;
   }
 
-  var rowsSource = isAggregated() ? aggregatePositions(getSorted()) : getSorted().map(function(p) { return { agg: false, pos: p }; });
+  var rowsSource = getSortedForRender();
   var rows = '';
   rowsSource.forEach(function(entry) {
     var p = entry.pos; var isAgg = entry.agg; var aggCount = entry.count || 1;
@@ -3863,7 +3881,7 @@ function render() {
   // Weight view
   if (viewMode === 'weight') {
     function buildWeightRows(wFxMap) {
-      var weightSource = isAggregated() ? aggregatePositions(getSorted()) : getSorted().map(function(p) { return { agg: false, pos: p }; });
+      var weightSource = isAggregated() ? aggregatePositions(positions.slice()) : getSorted().map(function(p) { return { agg: false, pos: p }; });
       var weightRows = '';
       var wTotVal = 0;
       weightSource.forEach(function(wEntry) {
