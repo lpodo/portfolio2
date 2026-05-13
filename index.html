@@ -3164,15 +3164,22 @@ function render() {
       ? '<input class="edit-input" id="editCurrent" type="number" value="' + (p.current !== null && p.current !== undefined ? p.current : '') + '" placeholder="&mdash;">'
       : curCell;
 
-    var actions = isEdit
-      ? '<button class="btn-icon" style="color:var(--green)" onclick="saveEdit(' + p.id + ')">&#10003;</button>'
-        + '<button class="btn-icon" onclick="cancelEdit()">&#10005;</button>'
-      : isAgg
-        ? '<span style="font-size:11px;letter-spacing:1px;color:var(--dim);padding:0 4px">&times;' + aggCount + '</span>'
-        : (p.sold ? '<button class="btn-icon" onclick="showArchiveMenu(' + p.id + ', this)" title="Move to archive" style="font-size:14px;padding:0 4px">&#8863;</button>' : (p.qty > 0 ? '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--bright)" onclick="sellPosition(' + p.id + ')">SELL</button>' : '<span style="display:inline-block;width:36px"></span>'))
-          + '<button class="btn-icon" onclick="showMoveMenu(' + p.id + ', this)" title="Move to portfolio" style="font-size:17px;padding:0 4px;line-height:1">&#8680;</button>'
-          + '<button class="btn-icon" onclick="startEdit(' + p.id + ')">&#9998;</button>'
-          + '<button class="btn-icon" onclick="removePosition(' + p.id + ')">&#10005;</button>';
+    var sellAction, editActions;
+    if (isEdit) {
+      sellAction = '<button class="btn-icon" style="color:var(--green)" onclick="saveEdit(' + p.id + ')">&#10003;</button>'
+        + '<button class="btn-icon" onclick="cancelEdit()">&#10005;</button>';
+      editActions = '';
+    } else if (isAgg) {
+      sellAction = '<span style="font-size:11px;letter-spacing:1px;color:var(--dim);padding:0 4px">&times;' + aggCount + '</span>';
+      editActions = '';
+    } else {
+      sellAction = p.sold
+        ? '<button class="btn-icon" onclick="showArchiveMenu(' + p.id + ', this)" title="Move to archive" style="font-size:14px;padding:0 4px">&#8863;</button>'
+        : (p.qty > 0 ? '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--bright)" onclick="sellPosition(' + p.id + ')">SELL</button>' : '');
+      editActions = '<button class="btn-icon" onclick="showMoveMenu(' + p.id + ', this)" title="Move to portfolio" style="font-size:17px;padding:0 4px;line-height:1">&#8680;</button>'
+        + '<button class="btn-icon" onclick="startEdit(' + p.id + ')">&#9998;</button>'
+        + '<button class="btn-icon" onclick="removePosition(' + p.id + ')">&#10005;</button>';
+    }
 
     var tickerCell = isEdit ? '<input class="edit-input" id="editTicker" type="text" value="' + p.ticker + '" style="width:60px;text-transform:uppercase">' : p.ticker;
     var soldStyle = (p.sold || p.qty === 0) ? 'font-style:italic;opacity:0.5' : '';
@@ -3184,7 +3191,8 @@ function render() {
       + '<td class="' + cls(pnl) + '">' + (p.qty === 0 ? '<span style="color:var(--dim)">&mdash;</span>' : fSign(pnl !== null ? pnl * p.qty : null)) + '</td>'
       + '<td class="' + cls(pnlPct) + '">' + fPct(pnlPct) + '</td>'
       + '<td style="width:16px;padding:0 2px;text-align:center">' + (p.sold ? '<span style="color:#7090b0;font-size:13px">&#8960;</span>' : marketIcon(p.marketState)) + '</td>'
-      + '<td style="white-space:nowrap;text-align:left">' + actions + '</td>'
+      + '<td style="white-space:nowrap;text-align:left">' + sellAction + '</td>'
+      + '<td style="white-space:nowrap">' + editActions + '</td>'
       + '</tr>'
       + (isEdit ? '<tr><td colspan="8" style="padding:6px 4px 10px;background:var(--bg2)">'
         + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">'
@@ -3929,6 +3937,7 @@ function render() {
     + thBtn('pnlpct', 'P&amp;L %')
     + '<th style="width:16px;padding:0"></th>'
     + '<th style="text-align:left;padding:5px 4px;border-bottom:1px solid var(--border)"><span onclick="toggleAggregated()" title="Toggle aggregation" style="cursor:pointer;font-size:14px;color:' + (isAggregated() ? 'var(--green)' : 'var(--dim)') + '">&#8801;</span></th>'
+    + '<th style="border-bottom:1px solid var(--border)"></th>'
     + '</tr></thead>'
     + '<tbody>' + rows + '</tbody>'
     + '</table>'
