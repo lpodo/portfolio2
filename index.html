@@ -473,6 +473,8 @@ var viewMode = 'main'; // main | weight
 var weightSort = { key: 'weight', dir: -1 };
 var switcherTab = 'active'; // 'active' or 'archive'
 var positionClipboard = null;
+var aggregatedModeActive = localStorage.getItem('pt_agg_active') === '1';
+var aggregatedModeArchive = localStorage.getItem('pt_agg_archive') === '1';
 var editingPortfolioId = null;
 // In-memory FX rate cache (TTL: 5 minutes) with in-flight deduplication
 var fxRateCache = {}; // { 'EURUSD=X': { rate: 1.17, ts: 1234567890 } }
@@ -2990,6 +2992,67 @@ function updateViewMenuBtn() {
   btn.textContent = label;
 }
 
+
+function isAggregated() {
+  return currentPortfolio().archive ? aggregatedModeArchive : aggregatedModeActive;
+}
+
+function toggleAggregated() {
+  if (currentPortfolio().archive) {
+    aggregatedModeArchive = !aggregatedModeArchive;
+    localStorage.setItem('pt_agg_archive', aggregatedModeArchive ? '1' : '0');
+  } else {
+    aggregatedModeActive = !aggregatedModeActive;
+    localStorage.setItem('pt_agg_active', aggregatedModeActive ? '1' : '0');
+  }
+  render();
+}
+
+function aggregatePositions(posns) {
+  // Returns array of aggregated position objects
+  // Group A: active (qty>0, not sold) - aggregate by ticker
+  // Group B: sold - aggregate by ticker
+  // Group C: qty=0, not sold - keep individual
+  var activeMap = {}, soldMap = {}, result = [];
+
+  posns.forEach(function(p) {
+    if (!p.sold && p.qty > 0) {
+      if (!activeMap[p.ticker]) activeMap[p.ticker] = [];
+      activeMap[p.ticker].push(p);
+    } else if (p.sold) {
+      if (!soldMap[p.ticker]) soldMap[p.ticker] = [];
+      soldMap[p.ticker].push(p);
+    } else {
+      result.push({ agg: false, pos: p }); // qty=0, show as-is
+    }
+  });
+
+  // Aggregate active
+  Object.keys(activeMap).forEach(function(ticker) {
+    var group = activeMap[ticker];
+    if (group.length === 1) { result.push({ agg: false, pos: group[0] }); return; }
+    var totalQty = 0, totalCost = 0;
+    group.forEach(function(p) { totalQty += p.qty; totalCost += p.qty * p.entry; });
+    var avgEntry = totalQty > 0 ? totalCost / totalQty : 0;
+    var rep = Object.assign({}, group[0], { qty: totalQty, entry: avgEntry });
+    result.push({ agg: true, count: group.length, pos: rep });
+  });
+
+  // Aggregate sold
+  Object.keys(soldMap).forEach(function(ticker) {
+    var group = soldMap[ticker];
+    if (group.length === 1) { result.push({ agg: false, pos: group[0] }); return; }
+    var totalQty = 0, totalCost = 0, totalSell = 0;
+    group.forEach(function(p) { totalQty += p.qty; totalCost += p.qty * p.entry; totalSell += p.qty * p.current; });
+    var avgEntry = totalQty > 0 ? totalCost / totalQty : 0;
+    var avgSell  = totalQty > 0 ? totalSell / totalQty : 0;
+    var rep = Object.assign({}, group[0], { qty: totalQty, entry: avgEntry, current: avgSell });
+    result.push({ agg: true, count: group.length, pos: rep });
+  });
+
+  return result;
+}
+
 function render() {
   updateViewMenuBtn();
   var stockForm = document.getElementById('stockAddForm');
@@ -3076,8 +3139,10 @@ function render() {
     return;
   }
 
+  var rowsSource = isAggregated() ? aggregatePositions(getSorted()) : getSorted().map(function(p) { return { agg: false, pos: p }; });
   var rows = '';
-  getSorted().forEach(function(p) {
+  rowsSource.forEach(function(entry) {
+    var p = entry.pos; var isAgg = entry.agg; var aggCount = entry.count || 1;
     var pnl = (p.current !== null && p.current !== undefined) ? p.current - p.entry : null;
     var pnlPct = (pnl !== null && p.entry && p.entry > 0) ? (pnl / p.entry) * 100 : null;
     if (p.qty === 0 || !p.entry) pnl = null;
@@ -3105,8 +3170,8 @@ function render() {
     var actions = isEdit
       ? '<button class="btn-icon" style="color:var(--green)" onclick="saveEdit(' + p.id + ')">&#10003;</button>'
         + '<button class="btn-icon" onclick="cancelEdit()">&#10005;</button>'
-      : (p.sold ? '<button class="btn-icon" onclick="showArchiveMenu(' + p.id + ', this)" title="Move to archive" style="font-size:14px;padding:0 4px">&#8863;</button>' : (p.qty > 0 ? '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--bright)" onclick="sellPosition(' + p.id + ')">SELL</button>' : ''))
-      + '<button class="btn-icon" onclick="showMoveMenu(' + p.id + ', this)" title="Move to portfolio" style="font-size:17px;padding:0 4px;line-height:1">&#8680;</button>'
+      : (isAgg ? '' : (p.sold ? '<button class="btn-icon" onclick="showArchiveMenu(' + p.id + ', this)" title="Move to archive" style="font-size:14px;padding:0 4px">&#8863;</button>' : (p.qty > 0 ? '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--bright)" onclick="sellPosition(' + p.id + ')">SELL</button>' : '')))
+      + (isAgg ? '' : '<button class="btn-icon" onclick="showMoveMenu(' + p.id + ', this)" title="Move to portfolio" style="font-size:17px;padding:0 4px;line-height:1">&#8680;</button>')
         + '<button class="btn-icon" onclick="startEdit(' + p.id + ')">&#9998;</button>'
         + '<button class="btn-icon" onclick="removePosition(' + p.id + ')">&#10005;</button>';
 
@@ -3791,6 +3856,7 @@ function render() {
   // Weight view
   if (viewMode === 'weight') {
     function buildWeightRows(wFxMap) {
+      var weightSource = isAggregated() ? aggregatePositions(getSorted()) : getSorted().map(function(p) { return { agg: false, pos: p }; });
       var weightRows = '';
       var wTotVal = 0;
       getSorted().forEach(function(p) {
