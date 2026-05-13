@@ -75,7 +75,8 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
   - `pt_jbbin` — JSONBin bin ID
   - `pt_cloud_ts` — cloud sync timestamp (conflict prevention)
   - `pt_enc_key` — AES-GCM encryption password
-  - `pt_reset_delta` — continuous Δ% across sessions setting
+  - `pt_close_mode` — close column mode: `prev` (Prev.Close) or `reg` (Reg.Price), default `prev`
+  - `pt_current_mode` — current column mode: `cur` (Current) or `reg` (Reg.Price), default `cur`
   - `pt_chart_sel_{portfolioId}` — per-portfolio ticker selection for POSITIONS chart
   - `chart_hist_{ticker}_{range}` — historical price cache (daily TTL)
 - **JSONBin.io** — cloud sync for cross-device access. Stores `{ portfolios, bondsDb, bondPortfolios }` — structural data only, no prices.
@@ -154,7 +155,11 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
 - View modes via dropdown menu (next to Refresh button):
   - **P&L** — default view with full position details
   - **WEIGHTS** — TICKER / VALUE / WEIGHT %; sortable by any column
-  - **MARKET** — TICKER / CLOSE / CURRENT / Δ%; sortable by TICKER or Δ% (3rd click resets to portfolio order); market state icon included
+  - **MARKET** — TICKER / CLOSE / CURRENT / Δ%; sortable by TICKER or Δ% (3rd click resets to portfolio order); market state icon included. The CLOSE and CURRENT column headers are clickable menus (shown in green) to control what each column displays:
+    - **CLOSE column**: `Prev.Close` (chartPreviousClose, default) or `Reg.Price` (regularMarketPrice)
+    - **CURRENT column**: `Current` (current price including extended hours, default) or `Reg.Price` (regularMarketPrice)
+    - Δ% is always computed from the selected CLOSE vs selected CURRENT values
+    - Settings apply globally to all portfolios (regular, watchlist, summary) and persist across sessions
     - CLOSE = `chartPreviousClose` (previous session close) — always used as Δ% base during REGULAR session
     - During CLOSED/PRE/POST: CLOSE = `regularMarketPrice` by default; if **CONTINUOUS Δ% ACROSS SESSIONS** is enabled in settings, uses `chartPreviousClose` instead
 - **Aggregation mode** (≡ button in the P&L table header, above the action buttons): collapses duplicate tickers into single rows for a cleaner view. Active separately for regular and archive portfolios; state persists across sessions (`pt_agg_active`, `pt_agg_archive`). The ≡ icon turns green when enabled. Weight view inherits the same mode automatically.
