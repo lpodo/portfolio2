@@ -157,6 +157,15 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
   - **MARKET** — TICKER / CLOSE / CURRENT / Δ%; sortable by TICKER or Δ% (3rd click resets to portfolio order); market state icon included
     - CLOSE = `chartPreviousClose` (previous session close) — always used as Δ% base during REGULAR session
     - During CLOSED/PRE/POST: CLOSE = `regularMarketPrice` by default; if **CONTINUOUS Δ% ACROSS SESSIONS** is enabled in settings, uses `chartPreviousClose` instead
+- **Aggregation mode** (≡ button in the P&L table header, above the action buttons): collapses duplicate tickers into single rows for a cleaner view. Active separately for regular and archive portfolios; state persists across sessions (`pt_agg_active`, `pt_agg_archive`). The ≡ icon turns green when enabled. Weight view inherits the same mode automatically.
+
+  Aggregation rules:
+  - Active positions (qty>0, not sold): grouped by ticker, qty summed, entry price weighted-averaged
+  - Sold positions: grouped by ticker separately, both entry and sell price weighted-averaged
+  - qty=0 watchlist candidates: always shown individually, not aggregated
+
+  Aggregated rows show ×N instead of action buttons (SELL, MOVE, EDIT, DELETE are hidden). Source positions are unchanged — aggregation is display-only.
+
 - **CSV position import** (↑ CSV button in the Add form): bulk-import positions from a CSV file. Each ticker is validated against Yahoo Finance and receives correct currency and shortName. Supports comma and semicolon delimiters; `current` and `sold` columns are optional.
 
   Minimal format:
