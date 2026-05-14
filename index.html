@@ -2620,11 +2620,11 @@ function loadChartData(range) {
 
   var tickerPromises = activePosns.map(function(p) {
     var cached = chartCacheGet(p.ticker, range);
-    if (cached) return Promise.resolve({ pos: p, data: { points: cached } });
+    if (cached) return Promise.resolve({ pos: p, data: { points: addTodayPoint(cached, p.current, p.priceTimestamp) } });
     return fetchWithTimeout(baseUrl + '/api/history?ticker=' + encodeURIComponent(p.ticker) + '&range=' + range, opts, 12000)
       .then(function(d) {
         if (d && d.points) chartCacheSet(p.ticker, range, d.points);
-        return { pos: p, data: d };
+        return { pos: p, data: { points: addTodayPoint(d && d.points, p.current, p.priceTimestamp) } };
       })
       .catch(function(e) { console.error('history fail', p.ticker, e); return { pos: p, data: null }; });
   });
@@ -2771,6 +2771,15 @@ function setSummaryChartMode(m) { window.summaryChartMode = m; render(); }
 var CHART_COLORS = ['#00c48c','#5b9cf6','#f6c15b','#e05c5c','#b47ef6','#5bf6e4','#f65b9c','#c4a000','#5bf65b','#f6825b'];
 
 
+function addTodayPoint(points, currentPrice, priceTimestamp) {
+  if (!points || !points.length || !currentPrice) return points;
+  var priceTs = priceTimestamp || Math.floor(Date.now() / 1000);
+  var priceKey = dateKey(priceTs);
+  var lastKey = dateKey(points[points.length - 1].t);
+  if (lastKey === priceKey) return points; // last history point matches price timestamp
+  return points.concat([{ t: priceTs, c: currentPrice }]);
+}
+
 function loadPositionsChartData(range, selectedTickers) {
   var baseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
   var token = getToken();
@@ -2779,11 +2788,22 @@ function loadPositionsChartData(range, selectedTickers) {
     return;
   }
   var opts = token ? { headers: { 'X-API-Token': token } } : {};
+  // Build current price map for today's point
+  var currentPriceMap = {};
+  var priceTimestampMap = {};
+  (positions || []).forEach(function(p) {
+    if (p.current) currentPriceMap[p.ticker] = p.current;
+    if (p.priceTimestamp) priceTimestampMap[p.ticker] = p.priceTimestamp;
+  });
+
   var promises = selectedTickers.map(function(ticker) {
     var cached = chartCacheGet(ticker, range);
-    if (cached) return Promise.resolve({ ticker: ticker, data: { points: cached } });
+    if (cached) return Promise.resolve({ ticker: ticker, data: { points: addTodayPoint(cached, currentPriceMap[ticker], priceTimestampMap[ticker]) } });
     return fetchWithTimeout(baseUrl + '/api/history?ticker=' + encodeURIComponent(ticker) + '&range=' + range, opts, 12000)
-      .then(function(d) { if (d && d.points) chartCacheSet(ticker, range, d.points); return { ticker: ticker, data: d }; })
+      .then(function(d) {
+        if (d && d.points) chartCacheSet(ticker, range, d.points);
+        return { ticker: ticker, data: { points: addTodayPoint(d && d.points, currentPriceMap[ticker], priceTimestampMap[ticker]) } };
+      })
       .catch(function() { return { ticker: ticker, data: null }; });
   });
 
