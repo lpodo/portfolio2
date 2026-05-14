@@ -3936,9 +3936,9 @@ function render() {
     }
 
     area.innerHTML = '<div style="padding:8px 0 4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
-      + ['1mo','3mo','6mo'].map(function(r) {
+      + ['5d','1mo','3mo','6mo','1y'].map(function(r) {
           var active = chartRange === r;
-          return '<button onclick="setChartRange(&apos;' + r + '&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 10px;border:1px solid ' + (active ? 'var(--green)' : 'var(--border)') + ';background:' + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">' + r.toUpperCase() + '</button>';
+          return '<button onclick="setChartRange(&apos;' + r + '&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 6px;border:1px solid ' + (active ? 'var(--green)' : 'var(--border)') + ';background:' + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">' + r.toUpperCase() + '</button>';
         }).join('')
       + '<div style="flex:1"></div>'
       + (isWatchlist() ? '' : ['portfolio','positions'].map(function(t) {
