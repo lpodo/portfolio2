@@ -2175,6 +2175,8 @@ function setView(mode) {
   var activeId = viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'summary' ? 'vmMain' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'analytics' ? 'vmAnalytics' : 'vmMarket';
   document.getElementById(activeId).style.color = 'var(--green)';
   document.getElementById('viewMenu').style.display = 'none';
+  // Refresh prices when entering chart view (updates today's point)
+  if (viewMode === 'chart' || viewMode === 'summary-chart') refreshAll();
   render();
 }
 // Close menu on outside click
@@ -2620,11 +2622,11 @@ function loadChartData(range) {
 
   var tickerPromises = activePosns.map(function(p) {
     var cached = chartCacheGet(p.ticker, range);
-    if (cached) return Promise.resolve({ pos: p, data: { points: addTodayPoint(cached, p.current, p.priceTimestamp) } });
+    if (cached) return Promise.resolve({ pos: p, data: { points: addTodayPoint(cached, p) } });
     return fetchWithTimeout(baseUrl + '/api/history?ticker=' + encodeURIComponent(p.ticker) + '&range=' + range, opts, 12000)
       .then(function(d) {
         if (d && d.points) chartCacheSet(p.ticker, range, d.points);
-        return { pos: p, data: { points: addTodayPoint(d && d.points, p.current, p.priceTimestamp) } };
+        return { pos: p, data: { points: addTodayPoint(d && d.points, p) } };
       })
       .catch(function(e) { console.error('history fail', p.ticker, e); return { pos: p, data: null }; });
   });
@@ -2771,13 +2773,19 @@ function setSummaryChartMode(m) { window.summaryChartMode = m; render(); }
 var CHART_COLORS = ['#00c48c','#5b9cf6','#f6c15b','#e05c5c','#b47ef6','#5bf6e4','#f65b9c','#c4a000','#5bf65b','#f6825b'];
 
 
-function addTodayPoint(points, currentPrice, priceTimestamp) {
-  if (!points || !points.length || !currentPrice) return points;
-  var priceTs = priceTimestamp || Math.floor(Date.now() / 1000);
+function getChartCurrentPrice(p) {
+  return currentMode === 'reg' ? (p.regularMarketPrice || p.current) : p.current;
+}
+
+function addTodayPoint(points, p) {
+  if (!points || !points.length || !p) return points;
+  var price = getChartCurrentPrice(p);
+  if (!price) return points;
+  var priceTs = p.priceTimestamp || Math.floor(Date.now() / 1000);
   var priceKey = dateKey(priceTs);
   var lastKey = dateKey(points[points.length - 1].t);
-  if (lastKey === priceKey) return points; // last history point matches price timestamp
-  return points.concat([{ t: priceTs, c: currentPrice }]);
+  if (lastKey === priceKey) return points;
+  return points.concat([{ t: priceTs, c: price }]);
 }
 
 function loadPositionsChartData(range, selectedTickers) {
@@ -2788,21 +2796,17 @@ function loadPositionsChartData(range, selectedTickers) {
     return;
   }
   var opts = token ? { headers: { 'X-API-Token': token } } : {};
-  // Build current price map for today's point
-  var currentPriceMap = {};
-  var priceTimestampMap = {};
-  (positions || []).forEach(function(p) {
-    if (p.current) currentPriceMap[p.ticker] = p.current;
-    if (p.priceTimestamp) priceTimestampMap[p.ticker] = p.priceTimestamp;
-  });
+  // Build position map for today's point
+  var positionMap = {};
+  (positions || []).forEach(function(p) { positionMap[p.ticker] = p; });
 
   var promises = selectedTickers.map(function(ticker) {
     var cached = chartCacheGet(ticker, range);
-    if (cached) return Promise.resolve({ ticker: ticker, data: { points: addTodayPoint(cached, currentPriceMap[ticker], priceTimestampMap[ticker]) } });
+    if (cached) return Promise.resolve({ ticker: ticker, data: { points: addTodayPoint(cached, positionMap[ticker]) } });
     return fetchWithTimeout(baseUrl + '/api/history?ticker=' + encodeURIComponent(ticker) + '&range=' + range, opts, 12000)
       .then(function(d) {
         if (d && d.points) chartCacheSet(ticker, range, d.points);
-        return { ticker: ticker, data: { points: addTodayPoint(d && d.points, currentPriceMap[ticker], priceTimestampMap[ticker]) } };
+        return { ticker: ticker, data: { points: addTodayPoint(d && d.points, positionMap[ticker]) } };
       })
       .catch(function() { return { ticker: ticker, data: null }; });
   });
@@ -3274,7 +3278,7 @@ function render() {
         + '<button class="btn-icon" onclick="cancelEdit()">&#10005;</button>';
       editActions = '';
     } else if (isAgg) {
-      sellAction = '<span style="font-size:11px;letter-spacing:1px;color:var(--dim);padding:0 4px">&times;' + aggCount + '</span>';
+      sellAction = '<span style="font-size:12px;letter-spacing:1px;color:var(--dim);padding:0 4px">&times;' + aggCount + '</span>';
       editActions = '';
     } else {
       sellAction = p.sold
@@ -3947,7 +3951,7 @@ function render() {
       + '<div style="flex:1"></div>'
       + (isWatchlist() ? '' : ['portfolio','positions'].map(function(t) {
           var active = cvt === t;
-          return '<button onclick="setChartViewType(&apos;' + t + '&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 10px;border:1px solid ' + (active ? 'var(--green)' : 'var(--border)') + ';background:' + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font);text-transform:uppercase">' + t + '</button>';
+          return '<button onclick="setChartViewType(&apos;' + t + '&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 6px;border:1px solid ' + (active ? 'var(--green)' : 'var(--border)') + ';background:' + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font);text-transform:uppercase">' + t + '</button>';
         }).join(''))
       + '</div>'
       + (cvt === 'positions' ? '<div style="text-align:right;font-size:10px;margin-bottom:4px"><a href="#" onclick="toggleChartSelection();return false" style="color:var(--dim)">&#9998; Edit selection (' + selectedTickers.length + '/' + allTickers.length + ')</a></div>' : '')
