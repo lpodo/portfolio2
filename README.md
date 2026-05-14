@@ -334,13 +334,17 @@ Bond data (`bondsDb`, `bondPortfolios`) is stored in `pt_bonds_db` and `pt_bond_
 
 Available via dropdown menu → CHART for individual portfolios and Summary.
 
-**Controls:** 1MO / 3MO / 6MO range buttons. Individual portfolio charts also have **PORTFOLIO / POSITIONS** toggle.
+**Controls:** 5D / 1MO / 3MO / 6MO / 1Y range buttons. Individual portfolio charts also have **PORTFOLIO / POSITIONS** toggle.
 
 **Data:** Historical daily closes fetched via `/api/history` endpoint. For multi-currency portfolios, FX history is fetched for each non-base currency and applied per day.
 
 **Spike prevention:** Missing trading days (holidays, exchange closures) are forward-filled per ticker. Only dates where all tickers have data are plotted.
 
 **Caching:** Historical data is cached in localStorage per ticker+range with a daily TTL. Stale entries are purged automatically on each new cache write. Repeated chart opens within the same day make zero network requests. The positions chart shares the same cache as the portfolio chart.
+
+**Today's point:** After loading history, a current-price point is appended if the last history entry doesn't match the latest price timestamp. This keeps the chart up to date even when Yahoo delays adding the current session to the history feed (common for European instruments). The timestamp comes from `regularMarketTime` returned by the worker.
+
+**Force reload:** A ↻ button at the end of the chart legend clears the history cache for the current tickers and range, refreshes all position prices, then redraws the chart — one tap for a fully up-to-date view.
 
 ### Portfolio Chart — PORTFOLIO mode
 

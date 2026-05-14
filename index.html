@@ -2972,7 +2972,6 @@ function loadSummaryChartData(range, mode) {
 function clearChartCacheAndReload() {
   var range = window.chartRange || '1mo';
   var cvt = window.chartViewType || 'portfolio';
-  // Clear cache for relevant tickers
   var tickers = [];
   if (cvt === 'positions' || isWatchlist()) {
     tickers = getChartSelection();
@@ -2981,10 +2980,15 @@ function clearChartCacheAndReload() {
       if (tickers.indexOf(p.ticker) === -1) tickers.push(p.ticker);
     });
   }
-  tickers.forEach(function(t) {
-    try { localStorage.removeItem('chart_hist_' + t + '_' + range); } catch(e) {}
+  var promises = positions.filter(function(p) { return !p.sold; }).map(function(p) {
+    return refreshPrice(p.id);
   });
-  render();
+  Promise.all(promises).then(function() {
+    tickers.forEach(function(t) {
+      try { localStorage.removeItem('chart_hist_' + t + '_' + range); } catch(e) {}
+    });
+    render();
+  });
 }
 
 function renderMultiChart(lines) {
