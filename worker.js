@@ -107,7 +107,7 @@ export default {
       const t = url.searchParams.get('ticker');
       const range = url.searchParams.get('range') || '1mo';
       if (!t) return json({ error: 'ticker is required' }, 400);
-      if (!['1mo', '3mo', '6mo'].includes(range)) return json({ error: 'invalid range' }, 400);
+      if (!['5d', '1mo', '3mo', '6mo', '1y'].includes(range)) return json({ error: 'invalid range' }, 400);
       try {
         const r = await fetch(
           `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?interval=1d&range=${range}`,
