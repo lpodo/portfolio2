@@ -2969,6 +2969,24 @@ function loadSummaryChartData(range, mode) {
   });
 }
 
+function clearChartCacheAndReload() {
+  var range = window.chartRange || '1mo';
+  var cvt = window.chartViewType || 'portfolio';
+  // Clear cache for relevant tickers
+  var tickers = [];
+  if (cvt === 'positions' || isWatchlist()) {
+    tickers = getChartSelection();
+  } else {
+    (positions || []).filter(function(p) { return !p.sold && p.qty > 0; }).forEach(function(p) {
+      if (tickers.indexOf(p.ticker) === -1) tickers.push(p.ticker);
+    });
+  }
+  tickers.forEach(function(t) {
+    try { localStorage.removeItem('chart_hist_' + t + '_' + range); } catch(e) {}
+  });
+  render();
+}
+
 function renderMultiChart(lines) {
   var el = document.getElementById('chartArea');
   if (!el) return;
@@ -3003,8 +3021,9 @@ function renderMultiChart(lines) {
     var pts = l.values.map(function(v,i) { return xp(i,l.values.length) + ',' + yp(v); }).join(' ');
     return '<polyline points="' + pts + '" fill="none" stroke="' + l.color + '" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>';
   }).join('');
-  var legend = '<div style="display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:6px">'
+  var legend = '<div style="display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:6px;align-items:center">'
     + lines.map(function(l) { var last = l.values[l.values.length-1]; return '<span style="font-size:10px;color:' + l.color + '">' + l.name + ' ' + (last>=0?'+':'') + last.toFixed(2) + '%</span>'; }).join('')
+    + '<span onclick="clearChartCacheAndReload()" title="Reload chart data" style="cursor:pointer;font-size:14px;color:var(--dim);margin-left:4px;line-height:1">&#8635;</span>'
     + '</div>';
   el.innerHTML = '<div style="display:flex;flex-direction:column">'
     + '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">' + svgYTicks + zeroLine + svgLines + svgXTicks + '</svg>'
