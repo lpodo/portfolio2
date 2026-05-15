@@ -200,6 +200,7 @@
       <div onclick="setView('main')" id="vmMain" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">P&amp;L</div>
       <div onclick="setView('weight')" id="vmWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">WEIGHTS</div>
       <div onclick="setView('market')" id="vmMarket" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">MARKET</div>
+      <div onclick="setView('movers')" id="vmMovers" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">TOP MOVERS</div>
       <div onclick="setView('chart')" id="vmChart" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">CHART</div>
       <div onclick="setView('analytics')" id="vmAnalytics" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">ANALYTICS</div>
     </div>
@@ -2146,7 +2147,7 @@ function getWatchlistSorted(items) {
 function toggleViewMenu() {
   var menu = document.getElementById('viewMenu');
   if (menu.style.display === 'none') {
-    var isSummaryMode = ['summary','summary-market','summary-chart','summary-analytics'].indexOf(viewMode) !== -1;
+    var isSummaryMode = ['summary','summary-market','summary-chart','summary-analytics','summary-movers'].indexOf(viewMode) !== -1;
     var isWL = !isSummaryMode && currentPortfolio() && currentPortfolio().watchlist;
     var isArchive = !isSummaryMode && !isWL && currentPortfolio() && currentPortfolio().archive;
     document.getElementById('vmMain').style.display = (isWL) ? 'none' : '';
@@ -2161,9 +2162,9 @@ function toggleViewMenu() {
 }
 function setView(mode) {
   // In summary context, market → summary-market, main → summary
-  var isSummaryContext = ['summary','summary-market','summary-chart','summary-analytics'].indexOf(viewMode) !== -1;
+  var isSummaryContext = ['summary','summary-market','summary-chart','summary-analytics','summary-movers'].indexOf(viewMode) !== -1;
   if (isSummaryContext) {
-    viewMode = mode === 'market' ? 'summary-market' : mode === 'chart' ? 'summary-chart' : mode === 'analytics' ? 'summary-analytics' : 'summary';
+    viewMode = mode === 'market' ? 'summary-market' : mode === 'chart' ? 'summary-chart' : mode === 'analytics' ? 'summary-analytics' : mode === 'movers' ? 'summary-movers' : 'summary';
   } else {
     viewMode = mode;
     if (mode === 'weight') weightSort = { key: 'weight', dir: -1 };
@@ -2172,7 +2173,7 @@ function setView(mode) {
   ['vmMain','vmWeight','vmMarket','vmChart','vmAnalytics'].forEach(function(id) {
     document.getElementById(id).style.color = '';
   });
-  var activeId = viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'summary' ? 'vmMain' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : 'vmMarket';
+  var activeId = viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMovers' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'summary' ? 'vmMain' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : 'vmMarket';
   document.getElementById(activeId).style.color = 'var(--green)';
   document.getElementById('viewMenu').style.display = 'none';
   // Refresh prices when entering chart view (updates today's point)
@@ -2307,6 +2308,73 @@ window.chartRange = '1mo';
 window.analyticsBreakdown = 'category';
 
 function setAnalyticsBreakdown(b) { window.analyticsBreakdown = b; render(); }
+
+
+var moversLimit = parseInt(localStorage.getItem('pt_movers_limit') || '10');
+
+function setMoversLimit(n) {
+  moversLimit = Math.max(3, Math.min(50, parseInt(n) || 10));
+  localStorage.setItem('pt_movers_limit', moversLimit);
+  render();
+}
+
+function buildMoversView(area) {
+  // Collect all positions from regular + watchlist (not archive), not sold
+  var seen = {}, allPos = [];
+  Object.keys(portfolios).forEach(function(pid) {
+    var p = portfolios[pid];
+    if (p.archive) return;
+    (p.positions || []).forEach(function(pos) {
+      if (pos.sold) return;
+      if (!seen[pos.ticker]) { seen[pos.ticker] = true; allPos.push(pos); }
+    });
+  });
+
+  // Compute delta% for each using closeMode/currentMode
+  var withDelta = allPos.map(function(p) {
+    var close = closeMode === 'prev' ? (p.previousClose || p.regularMarketPrice || null) : (p.regularMarketPrice || null);
+    var cur = currentMode === 'reg' ? (p.regularMarketPrice || null) : (p.current || null);
+    var delta = (close && cur) ? (cur - close) / close * 100 : null;
+    return { pos: p, close: close, cur: cur, delta: delta };
+  }).filter(function(x) { return x.delta !== null; });
+
+  // Sort by |Δ%| descending
+  withDelta.sort(function(a, b) { return Math.abs(b.delta) - Math.abs(a.delta); });
+  var top = withDelta.slice(0, moversLimit);
+
+  var rows = top.map(function(x) {
+    var p = x.pos;
+    var sym = getPositionCurrencySymbol(p);
+    var cls = x.delta >= 0 ? 'pos' : 'neg';
+    var dimStyle = p.qty === 0 ? 'font-style:italic;opacity:0.5' : '';
+    return '<tr style="' + dimStyle + '">'
+      + '<td style="text-align:left;white-space:nowrap">' + p.ticker + '</td>'
+      + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.close ? ('' + x.close.toFixed(2)) : '—') + '</td>'
+      + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.cur ? ('' + x.cur.toFixed(2)) : '—') + '</td>'
+      + '<td style="text-align:right;padding:5px 4px;white-space:nowrap" class="' + cls + '">' + (x.delta >= 0 ? '+' : '') + x.delta.toFixed(2) + '%</td>'
+      + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(p.marketState) + '</td>'
+      + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
+      + '</tr>';
+  }).join('');
+
+  var limitInput = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+    + '<span style="font-size:9px;color:var(--dim);letter-spacing:1px">SHOW TOP</span>'
+    + '<input type="number" min="3" max="50" value="' + moversLimit + '" onchange="setMoversLimit(this.value)" style="width:48px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:3px 6px;text-align:center">'
+    + '</div>';
+
+  area.innerHTML = limitInput
+    + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
+    + '<thead><tr>'
+    + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">TICKER</th>'
+    + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + (closeMode === 'prev' ? 'PREV.CLOSE' : 'REG.PRICE') + '</th>'
+    + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
+    + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">&#916;%</th>'
+    + '<th style="width:16px;border-bottom:1px solid var(--border)"></th>'
+    + '<th style="text-align:left;padding:5px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">NAME</th>'
+    + '</tr></thead>'
+    + '<tbody>' + rows + '</tbody>'
+    + '</table></div>';
+}
 
 function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
   var breakdown = window.analyticsBreakdown || 'category';
@@ -3044,7 +3112,7 @@ function updateViewMenuBtn() {
   var btn = document.getElementById('viewMenuBtn');
   if (!btn) return;
   var labels = { 'main': 'P&L', 'weight': 'WEIGHT', 'market': 'MARKET', 'chart': 'CHART', 'analytics': 'ANALYTICS',
-    'summary': 'P&L', 'summary-market': 'MARKET', 'summary-chart': 'CHART', 'summary-analytics': 'ANALYTICS' };
+    'summary': 'P&L', 'summary-market': 'MARKET', 'summary-chart': 'CHART', 'summary-analytics': 'ANALYTICS', 'summary-movers': 'TOP MOVERS' };
   var label = labels[viewMode] || 'P&L';
   if (viewMode === 'main' && currentPortfolio() && currentPortfolio().watchlist) label = 'MARKET';
   btn.textContent = label;
@@ -3188,6 +3256,12 @@ function render() {
         });
       })).then(function() { renderAnalytics(aFxMap); });
     }
+    return;
+  }
+
+  // Summary movers view
+  if (viewMode === 'summary-movers') {
+    buildMoversView(area);
     return;
   }
 
