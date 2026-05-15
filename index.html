@@ -1100,7 +1100,9 @@ function switchPortfolio(id) {
   editId = null;
   loadingSet = {};
   // Reset view mode from any special modes
-  if (['summary','archive-summary','summary-market','summary-chart','summary-analytics','summary-movers','bonds'].indexOf(viewMode) !== -1) viewMode = 'main';
+  var prevMode = viewMode;
+  if (['summary','archive-summary','summary-market','summary-chart','summary-analytics','bonds'].indexOf(viewMode) !== -1) viewMode = 'main';
+  else if (viewMode === 'summary-movers') viewMode = 'movers';
   var btn = document.getElementById('viewMenuBtn');
   var refreshBtn = document.getElementById('refreshAllBtn');
   if (portfolios[id].watchlist) {
@@ -2171,7 +2173,7 @@ function setView(mode) {
     if (mode === 'weight') weightSort = { key: 'weight', dir: -1 };
     if (mode === 'market') marketSort = { key: null, dir: -1 };
   }
-  ['vmMain','vmWeight','vmMarket','vmChart','vmAnalytics'].forEach(function(id) {
+  ['vmMain','vmWeight','vmMarket','vmMovers','vmChart','vmAnalytics'].forEach(function(id) {
     document.getElementById(id).style.color = '';
   });
   var activeId = viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMovers' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'summary' ? 'vmMain' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMovers' : 'vmMarket';
