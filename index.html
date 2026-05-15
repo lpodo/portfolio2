@@ -2155,8 +2155,9 @@ function toggleViewMenu() {
     document.getElementById('vmMain').style.display = (isWL) ? 'none' : '';
     document.getElementById('vmMarket').style.display = isArchive ? 'none' : '';
     document.getElementById('vmWeight').style.display = (isSummaryMode || isWL) ? 'none' : '';
-    document.getElementById('vmChart').style.display = isArchive ? 'none' : '';
-    document.getElementById('vmAnalytics').style.display = (isArchive || isWL) ? 'none' : '';
+    document.getElementById('vmChart').style.display = (isArchive || isWL) ? 'none' : '';
+    document.getElementById('vmAnalytics').style.display = isWL ? 'none' : '';
+    document.getElementById('vmMovers').style.display = (isArchive || isSummaryMode) ? 'none' : '';
     menu.style.display = 'block';
   } else {
     menu.style.display = 'none';
