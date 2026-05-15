@@ -3265,7 +3265,15 @@ function render() {
   // Individual portfolio movers view
   if (viewMode === 'movers') {
     var moversArea = area;
-    var moversPos = positions.filter(function(p) { return !p.sold; });
+    var moversPos = (function() {
+      var seen = {};
+      return positions.filter(function(p) {
+        if (p.sold) return false;
+        if (seen[p.ticker]) return false;
+        seen[p.ticker] = true;
+        return true;
+      });
+    })();
     var withDeltaSingle = moversPos.map(function(p) {
       var close2 = closeMode === 'prev' ? (p.previousClose || p.regularMarketPrice || null) : (p.regularMarketPrice || null);
       var cur2 = currentMode === 'reg' ? (p.regularMarketPrice || null) : (p.current || null);
