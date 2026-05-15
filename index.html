@@ -1100,7 +1100,7 @@ function switchPortfolio(id) {
   editId = null;
   loadingSet = {};
   // Reset view mode from any special modes
-  if (['summary','archive-summary','summary-market','summary-chart','summary-analytics','bonds'].indexOf(viewMode) !== -1) viewMode = 'main';
+  if (['summary','archive-summary','summary-market','summary-chart','summary-analytics','summary-movers','bonds'].indexOf(viewMode) !== -1) viewMode = 'main';
   var btn = document.getElementById('viewMenuBtn');
   var refreshBtn = document.getElementById('refreshAllBtn');
   if (portfolios[id].watchlist) {
