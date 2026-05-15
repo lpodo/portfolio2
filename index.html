@@ -1081,7 +1081,7 @@ function switchToArchiveSummary() {
 }
 
 function switchToSummary() {
-  viewMode = 'summary';
+  viewMode = viewMode === 'movers' ? 'summary-movers' : 'summary';
   document.getElementById('portfolioTitle').textContent = 'SUMMARY';
   document.getElementById('viewMenuBtn').style.display = '';
   document.getElementById('viewMenuBtn').disabled = false;
