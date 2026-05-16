@@ -10,7 +10,6 @@ A PWA stock portfolio tracker with a Cloudflare Worker backend. Supports all maj
 - **Cloudflare Workers**: `portfolio2.lpodolskiy.workers.dev` — price backend
 - **Repository**: `lpodo/portfolio2`
 - **PWA**: installable on Android/iOS as home screen app
-- **Header buttons**: Refresh (updates current portfolio prices), view mode dropdown: P&L / WEIGHTS / MARKET / etc
 
 ## Stack
 
@@ -138,21 +137,15 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
 - Sort by any column — persists across sessions
 - P&L $ for full position: `(current - entry) × qty`
 - P&L % per share: `(current - entry) / entry × 100`
-- Total: VALUE, P&L, RETURN
-- **Multi-currency portfolios**: each position carries its own currency (from Yahoo Finance). ENTRY/CURRENT show position currency symbol. Totals and weights are converted to portfolio base currency via live FX rates (`EURUSD=X` etc.)
-- **Summary view**: selected from the portfolio switcher (Σ SUMMARY at the bottom). Shows all non-watchlist portfolios: NAME / VALUE (in native currency) / P&L / RETURN / SHARE%. Total row always in USD with live FX conversion. Clicking a row switches to that portfolio. Refresh on Summary updates all portfolios.
-- **Watchlist portfolio** (WATCHLIST radio button at creation): designed for tracking indices, commodities, currencies and any instruments without a held position (e.g. `^KS11`, `BZ=F`, `EURUSD=X`). Essentially a regular portfolio with qty/entry forced to 0 and some UI restrictions suited to its purpose:
-  - Add form hides qty/entry fields
-  - View shows CLOSE / PRICE / Δ% / market state icon / NAME — sortable by TICKER and Δ%
-  - ⋮ menu shows MARKET and CHART only (P&L, WEIGHT, ANALYTICS hidden)
-  - CHART mode: positions-only (no portfolio value line); ticker selection works the same as regular portfolios
-  - Appears at the top of the active portfolio list, separated by a divider
-  - Excluded from Summary, Summary Market, Summary Chart and Analytics
 - Market state indicator after P&L %:
   - No icon — regular session (REGULAR)
   - 🌙 — pre or post market (PRE / POST)
   - ✦ — market closed (CLOSED)
-- View modes via dropdown menu (next to Refresh button):
+- Total: VALUE, P&L, RETURN
+- **Multi-currency portfolios**: each position carries its own currency (from Yahoo Finance). ENTRY/CURRENT show position currency symbol. Totals and weights are converted to portfolio base currency via live FX rates (`EURUSD=X` etc.)
+- **Summary view**: selected from the portfolio switcher (Σ SUMMARY at the bottom). Shows all non-watchlist portfolios: NAME / VALUE (in native currency) / P&L / RETURN / SHARE%. Total row always in USD with live FX conversion. Clicking a row switches to that portfolio. Refresh on Summary updates all portfolios.
+
+- View modes via dropdown menu (sometimes referred to as ⋮ menu):
   - **P&L** — default view with full position details
   - **WEIGHTS** — TICKER / VALUE / WEIGHT %; sortable by any column
   - **MARKET** — TICKER / CLOSE / CURRENT / Δ%; sortable by TICKER or Δ% (3rd click resets to portfolio order); market state icon included. The CLOSE and CURRENT column headers are clickable menus (shown in green) to control what each column displays:
@@ -183,7 +176,13 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
   NVDA,10,500.00,,
   MU,5,80.00,95.00,true
   ```
-
+- **Watchlist portfolio** (WATCHLIST radio button at creation): designed for tracking indices, commodities, currencies and any instruments without a held position (e.g. `^KS11`, `BZ=F`, `EURUSD=X`). Essentially a regular portfolio with qty/entry forced to 0 and some UI restrictions suited to its purpose:
+  - Add form hides qty/entry fields
+  - View shows CLOSE / PRICE / Δ% / market state icon / NAME — sortable by TICKER and Δ%
+  - ⋮ menu shows MARKET and CHART only (P&L, WEIGHT, ANALYTICS hidden)
+  - CHART mode: positions-only (no portfolio value line); ticker selection works the same as regular portfolios
+  - Appears at the top of the active portfolio list, separated by a divider
+  - Excluded from Summary, Summary Market, Summary Chart and Analytics
 - **Position counts** in the portfolio switcher show unique active tickers only (excluding sold and qty=0). The Σ SUMMARY count shows globally unique tickers across all non-watchlist portfolios — a ticker held in multiple portfolios is counted once.
 - **Move position** (⇨ button): moves any position to another active portfolio, preserving all fields including sold status. Available in both active and archive portfolios. Archive portfolios show an additional **⊟ button** for sold positions that moves them directly to a chosen archive portfolio.
 
@@ -330,6 +329,18 @@ Remaining coupons are calculated by stepping back from maturity date in coupon i
 
 Bond data (`bondsDb`, `bondPortfolios`) is stored in `pt_bonds_db` and `pt_bond_portfolios` in localStorage, and is included in cloud sync alongside equity portfolios in the same JSONBin record.
 
+## TOP MOVERS view
+
+Available via ⋮ menu → TOP MOVERS in individual portfolios, watchlist portfolios, and Summary.
+
+Shows positions ranked by absolute Δ% (largest moves first), using the same CLOSE/CURRENT mode as the Market view. Useful for quickly spotting the biggest movers without scrolling through the full list.
+
+- **Individual portfolio**: deduplicates by ticker, excludes sold positions, includes qty=0
+- **Summary (cross-portfolio)**: collects all positions from regular and watchlist portfolios, deduplicates by ticker globally, excludes sold and archive portfolios
+- **SHOW TOP N**: configurable limit (3–50), saved in `pt_movers_limit`, persists across sessions
+- **CLOSE / CURRENT** column headers are clickable menus (same as Market view)
+- qty=0 positions shown in italic/dimmed style
+
 ## Chart View
 
 Available via dropdown menu → CHART for individual portfolios and Summary.
@@ -355,18 +366,6 @@ Single line showing total portfolio value over time in base currency. Active pos
 Normalized % lines for individually selected tickers (deduplicated — if the same ticker appears multiple times, one line is shown). Each line starts at 0% on the first available date. Color-coded with a legend showing final % change.
 
 **Selection:** Click ✎ Edit selection (N/M) to open a checkbox list with ALL / NONE shortcuts. Selection is saved to localStorage per portfolio and persists across sessions. Default on first open: none selected.
-
-### TOP MOVERS view
-
-Available via ⋮ menu → TOP MOVERS in individual portfolios, watchlist portfolios, and Summary.
-
-Shows positions ranked by absolute Δ% (largest moves first), using the same CLOSE/CURRENT mode as the Market view. Useful for quickly spotting the biggest movers without scrolling through the full list.
-
-- **Individual portfolio**: deduplicates by ticker, excludes sold positions, includes qty=0
-- **Summary (cross-portfolio)**: collects all positions from regular and watchlist portfolios, deduplicates by ticker globally, excludes sold and archive portfolios
-- **SHOW TOP N**: configurable limit (3–50), saved in `pt_movers_limit`, persists across sessions
-- **CLOSE / CURRENT** column headers are clickable menus (same as Market view)
-- qty=0 positions shown in italic/dimmed style
 
 ### Summary Chart
 
