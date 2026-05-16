@@ -43,8 +43,9 @@ All endpoints require `X-API-Token: TOKEN` header. To call from curl:
 curl -H "X-API-Token: YOUR_TOKEN" https://portfolio2.lpodolskiy.workers.dev/api/quote?ticker=AAPL
 ```
 
-**Security:**
-The worker is protected by a secret token passed in the `X-API-Token` request header. The token is stored as a Cloudflare **Secret** (not Variable) under `API_TOKEN` — secrets persist across deployments. To rotate: update `API_TOKEN` in Cloudflare → Settings → Variables and Secrets → Secret, then update in the app settings.
+**Security:**  
+
+The worker is protected by a secret token passed in the `X-API-Token` request header. The token is stored as a Cloudflare Secret (not Variable) under `API_TOKEN` — secrets persist across deployments. To rotate: update `API_TOKEN` in Cloudflare → Settings → Variables and Secrets → Secret, then update in the app settings.
 
 ## Exchange Support
 
