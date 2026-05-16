@@ -33,8 +33,10 @@ Yahoo Finance via Cloudflare Worker — free, all major exchanges, extended hour
 **Market state** (`REGULAR` / `PRE` / `POST` / `CLOSED`) is determined from `currentTradingPeriod` windows vs `now` and returned in every response.
 
 **Worker endpoints:**
-- `/api/quote?ticker=AAPL` — production quote
-- `/api/debug?ticker=AAPL` — processed result (same logic)
+- `/api/quote?ticker=AAPL` — price quote. Returns `price`, `priceType`, `marketState`, `regularMarketPrice`, `previousClose`, `priceTimestamp`, `currency`, `shortName`. Optional `&simple=1` skips extended-hours candle logic.
+- `/api/history?ticker=AAPL&range=1mo` — historical OHLCV for charts. Supported ranges: `5d`, `1mo`, `3mo`, `6mo`, `1y`. Returns `{ points: [{t, o, h, l, c, v}] }`.
+- `/api/profile?ticker=AAPL` — sector/industry/country from Yahoo assetProfile. Returns nulls for ETFs and when Yahoo blocks the request.
+- `/api/debug?ticker=AAPL` — processed result (same logic as `/api/quote`)
 - `/api/debug1?ticker=AAPL` — raw meta from Yahoo 1d request
 - `/api/debug2?ticker=AAPL` — last candles + pre/post windows from 5d request
 
