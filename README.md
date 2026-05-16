@@ -43,8 +43,7 @@ All endpoints require `X-API-Token: TOKEN` header. To call from curl:
 curl -H "X-API-Token: YOUR_TOKEN" https://portfolio2.lpodolskiy.workers.dev/api/quote?ticker=AAPL
 ```
 
-## Security
-
+**Security:**
 The worker is protected by a secret token passed in the `X-API-Token` request header. The token is stored as a Cloudflare **Secret** (not Variable) under `API_TOKEN` — secrets persist across deployments. To rotate: update `API_TOKEN` in Cloudflare → Settings → Variables and Secrets → Secret, then update in the app settings.
 
 ## Exchange Support
@@ -145,7 +144,7 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
 - **Multi-currency portfolios**: each position carries its own currency (from Yahoo Finance). ENTRY/CURRENT show position currency symbol. Totals and weights are converted to portfolio base currency via live FX rates (`EURUSD=X` etc.)
 - **Summary view**: selected from the portfolio switcher (Σ SUMMARY at the bottom). Shows all non-watchlist portfolios: NAME / VALUE (in native currency) / P&L / RETURN / SHARE%. Total row always in USD with live FX conversion. Clicking a row switches to that portfolio. Refresh on Summary updates all portfolios.
 
-- View modes via dropdown menu (sometimes referred to as ⋮ menu):
+- **View modes** via dropdown menu (sometimes referred to as ⋮ menu):
   - **P&L** — default view with full position details
   - **WEIGHTS** — TICKER / VALUE / WEIGHT %; sortable by any column
   - **MARKET** — TICKER / CLOSE / CURRENT / Δ%; sortable by TICKER or Δ% (3rd click resets to portfolio order); market state icon included. The CLOSE and CURRENT column headers are clickable menus (shown in green) to control what each column displays:
@@ -153,6 +152,7 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
     - **CURRENT column**: `Current` (current price including extended hours, default) or `Reg.Price` (regularMarketPrice)
     - Δ% is always computed from the selected CLOSE vs selected CURRENT values
     - Settings apply globally to all portfolios (regular, watchlist, summary) and persist across sessions
+  - other view modes are described below 
 - **Aggregation mode** (≡ button in the P&L table header, above the action buttons): collapses duplicate tickers into single rows for a cleaner view. Active separately for regular and archive portfolios; state persists across sessions (`pt_agg_active`, `pt_agg_archive`). The ≡ icon turns green when enabled. Weight view inherits the same mode automatically.
 
   Aggregation rules:
