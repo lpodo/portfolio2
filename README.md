@@ -356,6 +356,18 @@ Normalized % lines for individually selected tickers (deduplicated — if the sa
 
 **Selection:** Click ✎ Edit selection (N/M) to open a checkbox list with ALL / NONE shortcuts. Selection is saved to localStorage per portfolio and persists across sessions. Default on first open: none selected.
 
+### TOP MOVERS view
+
+Available via ⋮ menu → TOP MOVERS in individual portfolios, watchlist portfolios, and Summary.
+
+Shows positions ranked by absolute Δ% (largest moves first), using the same CLOSE/CURRENT mode as the Market view. Useful for quickly spotting the biggest movers without scrolling through the full list.
+
+- **Individual portfolio**: deduplicates by ticker, excludes sold positions, includes qty=0
+- **Summary (cross-portfolio)**: collects all positions from regular and watchlist portfolios, deduplicates by ticker globally, excludes sold and archive portfolios
+- **SHOW TOP N**: configurable limit (3–50), saved in `pt_movers_limit`, persists across sessions
+- **CLOSE / CURRENT** column headers are clickable menus (same as Market view)
+- qty=0 positions shown in italic/dimmed style
+
 ### Summary Chart
 
 In Summary, the dropdown menu → CHART shows two modes toggled by TOTAL / BY PORTFOLIO buttons:
