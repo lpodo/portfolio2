@@ -2865,7 +2865,6 @@ function renderChart(timestamps, values, baseSym) {
     + svgXTicks
     + '</svg>'
     + '<div style="text-align:center;font-size:11px;color:' + lineColor + ';letter-spacing:1px;margin-top:4px">' + deltaLabel + '</div>';
-  // Truncation notice — appended after chartArea, outside it
   var existingNotice = document.getElementById('chartTruncNotice');
   if (existingNotice) existingNotice.remove();
   var rangeDays = { '1d':1,'5d':5,'1mo':30,'3mo':90,'6mo':180,'1y':365,'5y':1825 };
@@ -2875,9 +2874,10 @@ function renderChart(timestamps, values, baseSym) {
     var ds = new Date(timestamps[0] * 1000);
     var notice = document.createElement('div');
     notice.id = 'chartTruncNotice';
-    notice.style.cssText = 'font-size:10px;color:var(--red);letter-spacing:1px;margin-top:6px;text-align:center';
+    notice.style.cssText = 'font-size:10px;color:var(--red);letter-spacing:1px;margin-top:2px;text-align:center';
     notice.textContent = 'Period starts ' + pad2(ds.getUTCDate()) + '/' + pad2(ds.getUTCMonth()+1) + '/' + ds.getUTCFullYear() + ' — limited by newest position';
-    el.parentNode.insertBefore(notice, el.nextSibling);
+    el.style.minHeight = '';
+    el.appendChild(notice);
   }
 }
 
