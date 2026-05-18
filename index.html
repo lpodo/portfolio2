@@ -2945,11 +2945,18 @@ function loadPositionsChartData(range, selectedTickers) {
       if (days.length < 2) return;
       var base = pm.prices[days[0]];
       if (!base) return;
+      // Align to common allDates axis; null before first data point
+      var started = false;
+      var values = allDates.map(function(dk) {
+        if (pm.prices[dk] != null) started = true;
+        if (!started) return null;
+        return pm.prices[dk] != null ? (pm.prices[dk] / base - 1) * 100 : null;
+      });
       lines.push({
         name: pm.ticker,
         color: CHART_COLORS[idx % CHART_COLORS.length],
-        values: days.map(function(dk) { return (pm.prices[dk] / base - 1) * 100; }),
-        timestamps: days.map(function(dk) { return allDatesSet[dk]; })
+        values: values,
+        timestamps: allDates.map(function(dk) { return allDatesSet[dk]; })
       });
     });
 
@@ -3142,11 +3149,26 @@ function renderMultiChart(lines) {
     return '<text x="' + xp(i,n) + '" y="' + (H-padB+14) + '" text-anchor="middle" font-size="9" fill="#6a7a8a" font-family="monospace">' + label + '</text>';
   }).join('');
   var svgLines = lines.map(function(l) {
-    var pts = l.values.map(function(v,i) { return xp(i,l.values.length) + ',' + yp(v); }).join(' ');
-    return '<polyline points="' + pts + '" fill="none" stroke="' + l.color + '" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>';
+    var segs = [], cur = [];
+    l.values.forEach(function(v, i) {
+      if (v === null || v === undefined) {
+        if (cur.length > 1) segs.push(cur.join(' '));
+        cur = [];
+      } else {
+        cur.push(xp(i, n) + ',' + yp(v));
+      }
+    });
+    if (cur.length > 1) segs.push(cur.join(' '));
+    return segs.map(function(s) {
+      return '<polyline points="' + s + '" fill="none" stroke="' + l.color + '" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>';
+    }).join('');
   }).join('');
   var legend = '<div style="display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:6px;align-items:center">'
-    + lines.map(function(l) { var last = l.values[l.values.length-1]; return '<span style="font-size:10px;color:' + l.color + '">' + l.name + ' ' + (last>=0?'+':'') + last.toFixed(2) + '%</span>'; }).join('')
+    + lines.map(function(l) {
+        var last = null;
+        for (var li = l.values.length - 1; li >= 0; li--) { if (l.values[li] !== null && l.values[li] !== undefined) { last = l.values[li]; break; } }
+        return '<span style="font-size:10px;color:' + l.color + '">' + l.name + ' ' + (last !== null ? (last>=0?'+':'') + last.toFixed(2) + '%' : '—') + '</span>';
+      }).join('')
     + '<span onclick="clearChartCacheAndReload()" title="Reload chart data" style="cursor:pointer;font-size:14px;color:var(--dim);margin-left:4px;line-height:1">&#8635;</span>'
     + '</div>';
   el.innerHTML = '<div style="display:flex;flex-direction:column">'
