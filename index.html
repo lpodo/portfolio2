@@ -2846,8 +2846,6 @@ function renderChart(timestamps, values, baseSym) {
       label = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
     } else if (rng === '5y') {
       label = d.getUTCFullYear();
-    } else if (rng === '1y' || rng === '6mo') {
-      label = pad2(d.getUTCMonth()+1) + '/' + String(d.getUTCFullYear()).slice(2);
     } else {
       label = pad2(d.getUTCDate()) + '/' + pad2(d.getUTCMonth() + 1);
     }
@@ -3138,8 +3136,6 @@ function renderMultiChart(lines) {
       label = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
     } else if (chartRng === '5y') {
       label = d.getUTCFullYear();
-    } else if (chartRng === '1y' || chartRng === '6mo') {
-      label = pad2(d.getUTCMonth()+1) + '/' + String(d.getUTCFullYear()).slice(2);
     } else {
       label = pad2(d.getUTCDate()) + '/' + pad2(d.getUTCMonth()+1);
     }
