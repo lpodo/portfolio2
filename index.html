@@ -2270,9 +2270,16 @@ function saveChartSelection(tickers) {
   try { localStorage.setItem(getChartSelKey(), JSON.stringify(tickers)); } catch(e) {}
 }
 
+function toggleChartViewMenu() {
+  var m = document.getElementById('chartViewMenu');
+  if (m) m.style.display = m.style.display === 'none' ? '' : 'none';
+}
+
 function setChartViewType(t) {
   window.chartViewType = t;
   window.chartSelectionOpen = false;
+  var m = document.getElementById('chartViewMenu');
+  if (m) m.style.display = 'none';
   render();
 }
 
