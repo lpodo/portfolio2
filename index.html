@@ -2275,6 +2275,11 @@ function toggleChartViewMenu() {
   if (m) m.style.display = m.style.display === 'none' ? '' : 'none';
 }
 
+function toggleChartViewMenu() {
+  var m = document.getElementById('chartViewMenu');
+  if (m) m.style.display = m.style.display === 'none' ? '' : 'none';
+}
+
 function setChartViewType(t) {
   window.chartViewType = t;
   window.chartSelectionOpen = false;
@@ -4084,10 +4089,15 @@ function render() {
           return '<button onclick="setChartRange(&apos;' + r + '&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 6px;border:1px solid ' + (active ? 'var(--green)' : 'var(--border)') + ';background:' + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">' + r.toUpperCase() + '</button>';
         }).join('')
       + '<div style="flex:1"></div>'
-      + (isWatchlist() ? '' : ['portfolio','positions'].map(function(t) {
-          var active = cvt === t;
-          return '<button onclick="setChartViewType(&apos;' + t + '&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 6px;border:1px solid ' + (active ? 'var(--green)' : 'var(--border)') + ';background:' + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font);text-transform:uppercase">' + t + '</button>';
-        }).join(''))
+      + (isWatchlist() ? '' :
+          '<div style="position:relative">'
+          + '<button onclick="toggleChartViewMenu()" style="font-size:9px;letter-spacing:1px;padding:4px 8px;border:1px solid var(--green);background:var(--bg2);color:var(--green);cursor:pointer;font-family:var(--font);text-transform:uppercase">' + cvt.toUpperCase() + '</button>'
+          + '<div id="chartViewMenu" style="display:none;position:absolute;right:0;top:100%;background:var(--bg2);border:1px solid var(--border);z-index:100;min-width:110px">'
+          + ['portfolio','positions'].map(function(t) {
+              return '<div onclick="setChartViewType(&apos;' + t + '&apos;)" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;color:' + (cvt === t ? 'var(--green)' : 'var(--bright)') + '">' + t.toUpperCase() + '</div>';
+            }).join('')
+          + '</div></div>'
+        )
       + '</div>'
       + (cvt === 'positions' ? '<div style="text-align:right;font-size:10px;margin-bottom:4px"><a href="#" onclick="toggleChartSelection();return false" style="color:var(--dim)">&#9998; Edit selection (' + selectedTickers.length + '/' + allTickers.length + ')</a></div>' : '')
       + selPanel
