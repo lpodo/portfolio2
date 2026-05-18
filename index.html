@@ -2840,7 +2840,17 @@ function renderChart(timestamps, values, baseSym) {
   }).join('');
   var svgXTicks = xTickIdxs.map(function(i) {
     var d = new Date(timestamps[i] * 1000);
-    var label = pad2(d.getUTCDate()) + '/' + pad2(d.getUTCMonth() + 1);
+    var rng = window.chartRange || window.summaryChartRange || '1mo';
+    var label;
+    if (rng === '1d') {
+      label = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    } else if (rng === '5y') {
+      label = d.getUTCFullYear();
+    } else if (rng === '1y' || rng === '6mo') {
+      label = pad2(d.getUTCMonth()+1) + '/' + String(d.getUTCFullYear()).slice(2);
+    } else {
+      label = pad2(d.getUTCDate()) + '/' + pad2(d.getUTCMonth() + 1);
+    }
     return '<text x="' + xp(i) + '" y="' + (H - padB + 14) + '" text-anchor="middle" font-size="9" fill="#6a7a8a" font-family="monospace">' + label + '</text>';
   }).join('');
   var delta = values[values.length - 1] - values[0];
@@ -3120,9 +3130,20 @@ function renderMultiChart(lines) {
   }).join('');
   var zeroLine = minV < 0 && maxV > 0 ? '<line x1="' + padL + '" x2="' + (padL+w) + '" y1="' + yp(0) + '" y2="' + yp(0) + '" stroke="#4a5a6a" stroke-width="1" stroke-dasharray="4,3"/>' : '';
   var xTickIdxs = [0, Math.floor(n/3), Math.floor(2*n/3), n-1].filter(function(v,i,a){ return a.indexOf(v)===i; });
+  var chartRng = window.chartRange || window.summaryChartRange || '1mo';
   var svgXTicks = xTickIdxs.map(function(i) {
     var d = new Date(timestamps[i] * 1000);
-    return '<text x="' + xp(i,n) + '" y="' + (H-padB+14) + '" text-anchor="middle" font-size="9" fill="#6a7a8a" font-family="monospace">' + pad2(d.getUTCDate()) + '/' + pad2(d.getUTCMonth()+1) + '</text>';
+    var label;
+    if (chartRng === '1d') {
+      label = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    } else if (chartRng === '5y') {
+      label = d.getUTCFullYear();
+    } else if (chartRng === '1y' || chartRng === '6mo') {
+      label = pad2(d.getUTCMonth()+1) + '/' + String(d.getUTCFullYear()).slice(2);
+    } else {
+      label = pad2(d.getUTCDate()) + '/' + pad2(d.getUTCMonth()+1);
+    }
+    return '<text x="' + xp(i,n) + '" y="' + (H-padB+14) + '" text-anchor="middle" font-size="9" fill="#6a7a8a" font-family="monospace">' + label + '</text>';
   }).join('');
   var svgLines = lines.map(function(l) {
     var pts = l.values.map(function(v,i) { return xp(i,l.values.length) + ',' + yp(v); }).join(' ');
