@@ -1,4 +1,4 @@
-var CACHE = 'portfolio-v269';
+var CACHE = 'portfolio-v270';
 
 self.addEventListener('install', function(e) {
   e.waitUntil(
