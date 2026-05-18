@@ -2854,6 +2854,8 @@ function renderChart(timestamps, values, baseSym) {
   var delta = values[values.length - 1] - values[0];
   var deltaPct = values[0] > 0 ? delta / values[0] * 100 : 0;
   var deltaLabel = (up ? '+' : '') + fmtK(delta) + ' (' + (up ? '+' : '') + deltaPct.toFixed(2) + '%)';
+  el.style.display = 'block';
+  el.style.minHeight = '';
   el.innerHTML = '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">'
     + '<defs><linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">'
     + '<stop offset="0%" stop-color="' + lineColor + '" stop-opacity="0.18"/>'
