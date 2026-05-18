@@ -2631,6 +2631,11 @@ function fetchWithTimeout(url, opts, ms) {
   return p;
 }
 
+function pointKey(ts, range) {
+  if (range === '1d') return Math.round(ts / 300) * 300 + ''; // 5-min bucket key
+  return dateKey(ts);
+}
+
 function dateKey(ts) {
   var d = new Date(ts * 1000);
   return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth()+1) + '-' + pad2(d.getUTCDate());
@@ -2704,13 +2709,17 @@ function loadChartData(range) {
   var fxCodes = Object.keys(posCurrencies);
   var opts = token ? { headers: { 'X-API-Token': token } } : {};
 
+  var is1dChart = range === '1d';
   var tickerPromises = activePosns.map(function(p) {
-    var cached = chartCacheGet(p.ticker, range);
-    if (cached) return Promise.resolve({ pos: p, data: { points: addTodayPoint(cached, p) } });
+    if (!is1dChart) {
+      var cached = chartCacheGet(p.ticker, range);
+      if (cached) return Promise.resolve({ pos: p, data: { points: addTodayPoint(cached, p) } });
+    }
     return fetchWithTimeout(baseUrl + '/api/history?ticker=' + encodeURIComponent(p.ticker) + '&range=' + range, opts, 12000)
       .then(function(d) {
-        if (d && d.points) chartCacheSet(p.ticker, range, d.points);
-        return { pos: p, data: { points: addTodayPoint(d && d.points, p) } };
+        var pts = d && d.points;
+        if (pts && !is1dChart) chartCacheSet(p.ticker, range, pts);
+        return { pos: p, data: { points: is1dChart ? pts : addTodayPoint(pts, p) } };
       })
       .catch(function(e) { console.error('history fail', p.ticker, e); return { pos: p, data: null }; });
   });
@@ -2884,13 +2893,17 @@ function loadPositionsChartData(range, selectedTickers) {
   var positionMap = {};
   (positions || []).forEach(function(p) { positionMap[p.ticker] = p; });
 
+  var is1d = range === '1d';
   var promises = selectedTickers.map(function(ticker) {
-    var cached = chartCacheGet(ticker, range);
-    if (cached) return Promise.resolve({ ticker: ticker, data: { points: addTodayPoint(cached, positionMap[ticker]) } });
+    if (!is1d) {
+      var cached = chartCacheGet(ticker, range);
+      if (cached) return Promise.resolve({ ticker: ticker, data: { points: addTodayPoint(cached, positionMap[ticker]) } });
+    }
     return fetchWithTimeout(baseUrl + '/api/history?ticker=' + encodeURIComponent(ticker) + '&range=' + range, opts, 12000)
       .then(function(d) {
-        if (d && d.points) chartCacheSet(ticker, range, d.points);
-        return { ticker: ticker, data: { points: addTodayPoint(d && d.points, positionMap[ticker]) } };
+        var pts = d && d.points;
+        if (pts && !is1d) chartCacheSet(ticker, range, pts);
+        return { ticker: ticker, data: { points: is1d ? pts : addTodayPoint(pts, positionMap[ticker]) } };
       })
       .catch(function() { return { ticker: ticker, data: null }; });
   });
@@ -2899,14 +2912,16 @@ function loadPositionsChartData(range, selectedTickers) {
     var allDatesSet = {};
     results.forEach(function(r) {
       if (!r.data || !r.data.points) return;
-      r.data.points.forEach(function(pt) { allDatesSet[dateKey(pt.t)] = pt.t; });
+      r.data.points.forEach(function(pt) { allDatesSet[pointKey(pt.t, range)] = pt.t; });
     });
     var allDates = Object.keys(allDatesSet).sort();
 
-    // Build price maps with forward-fill
+    // Build price maps (forward-fill for daily ranges, direct for 1d)
+    var is1dRange = range === '1d';
     var priceMaps = results.map(function(r) {
       var map = {};
-      if (r.data && r.data.points) r.data.points.forEach(function(pt) { map[dateKey(pt.t)] = pt.c; });
+      if (r.data && r.data.points) r.data.points.forEach(function(pt) { map[pointKey(pt.t, range)] = pt.c; });
+      if (is1dRange) return { ticker: r.ticker, prices: map };
       var last = null;
       var filled = {};
       allDates.forEach(function(dk) {
@@ -4084,7 +4099,7 @@ function render() {
     }
 
     area.innerHTML = '<div style="padding:8px 0 4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
-      + ['5d','1mo','3mo','6mo','1y'].map(function(r) {
+      + ['1d','5d','1mo','3mo','6mo','1y','5y'].map(function(r) {
           var active = chartRange === r;
           return '<button onclick="setChartRange(&apos;' + r + '&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 6px;border:1px solid ' + (active ? 'var(--green)' : 'var(--border)') + ';background:' + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">' + r.toUpperCase() + '</button>';
         }).join('')
