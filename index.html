@@ -2907,7 +2907,16 @@ function renderChart(timestamps, values, baseSym, baseCode2, label) {
 
 
 function setSummaryChartRange(r) { window.chartRange = r; render(); }
-function setSummaryChartMode(m) { window.summaryChartMode = m; render(); }
+function toggleSummaryChartModeMenu() {
+  var m = document.getElementById('summaryChartModeMenu');
+  if (m) m.style.display = m.style.display === 'none' ? '' : 'none';
+}
+function setSummaryChartMode(m) {
+  window.summaryChartMode = m;
+  var menu = document.getElementById('summaryChartModeMenu');
+  if (menu) menu.style.display = 'none';
+  render();
+}
 
 var CHART_COLORS = ['#00c48c','#5b9cf6','#f6c15b','#e05c5c','#b47ef6','#5bf6e4','#f65b9c','#c4a000','#5bf65b','#f6825b'];
 
@@ -3007,6 +3016,11 @@ function loadPositionsChartData(range, selectedTickers) {
 }
 
 function loadSummaryChartData(range, mode) {
+  var el = document.getElementById('chartArea');
+  if (range === '1d' && mode === 'total') {
+    el.innerHTML = '<span style="color:var(--dim)">1D is not available in TOTAL mode — switch to BY PORTFOLIO</span>';
+    return;
+  }
   var baseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
   var token = getToken();
   if (!baseUrl) { document.getElementById('chartArea').innerHTML = '<span style="color:var(--red)">API URL not set</span>'; return; }
@@ -3457,14 +3471,20 @@ function render() {
   if (viewMode === 'summary-chart') {
     var scRange2 = window.chartRange || '1mo';
     var scMode2 = window.summaryChartMode || 'total';
-    area.innerHTML = '<div style="padding:8px 0 4px;display:flex;gap:6px;flex-wrap:wrap">'
-      + ['1mo','3mo','6mo'].map(function(r) {
+    area.innerHTML = '<div style="padding:8px 0 4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
+      + ['1d','5d','1mo','3mo','6mo','1y','5y'].map(function(r) {
           var active = scRange2 === r;
-          return '<button onclick="setSummaryChartRange(&apos;' + r + '&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 10px;border:1px solid ' + (active ? 'var(--green)' : 'var(--border)') + ';background:' + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">' + r.toUpperCase().replace('MO','M') + '</button>';
+          return '<button onclick="setSummaryChartRange(&apos;' + r + '&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 6px;border:1px solid ' + (active ? 'var(--green)' : 'var(--border)') + ';background:' + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">' + r.toUpperCase().replace('MO','M') + '</button>';
         }).join('')
       + '<div style="flex:1"></div>'
-      + '<button onclick="setSummaryChartMode(&apos;total&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 10px;border:1px solid ' + (scMode2==='total' ? 'var(--green)' : 'var(--border)') + ';background:' + (scMode2==='total' ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (scMode2==='total' ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">TOTAL</button>'
-      + '<button onclick="setSummaryChartMode(&apos;byportfolio&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 10px;border:1px solid ' + (scMode2==='byportfolio' ? 'var(--green)' : 'var(--border)') + ';background:' + (scMode2==='byportfolio' ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (scMode2==='byportfolio' ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">BY PORTFOLIO</button>'
+      + '<div style="position:relative">'
+      + '<button onclick="toggleSummaryChartModeMenu()" style="font-size:9px;letter-spacing:1px;padding:4px 8px;border:1px solid var(--green);background:var(--bg2);color:var(--green);cursor:pointer;font-family:var(--font);text-transform:uppercase">' + (scMode2 === 'total' ? 'TOTAL' : 'BY PORTFOLIO') + '</button>'
+      + '<div id="summaryChartModeMenu" style="display:none;position:absolute;right:0;top:100%;background:var(--bg2);border:1px solid var(--border);z-index:100;min-width:120px">'
+      + ['total','byportfolio'].map(function(m) {
+          var label = m === 'total' ? 'TOTAL' : 'BY PORTFOLIO';
+          return '<div onclick="setSummaryChartMode(&apos;' + m + '&apos;)" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;color:' + (scMode2 === m ? 'var(--green)' : 'var(--bright)') + '">' + label + '</div>';
+        }).join('')
+      + '</div></div>'
       + '</div>'
       + '<div id="chartArea" style="min-height:200px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px">Loading...</div>';
     loadSummaryChartData(scRange2, scMode2);
