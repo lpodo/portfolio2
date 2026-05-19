@@ -880,7 +880,13 @@ function renameBondPortfolio(id) {
   renderSwitcher();
   if (editingPortfolioId) {
     var el = document.getElementById('pfName_' + id);
-    if (el) { el.focus(); el.select(); }
+    if (el) { el.focus(); el.select();
+      setTimeout(function() {
+        var list = document.getElementById('portfolioList');
+        var form = el.parentNode && el.parentNode.parentNode && el.parentNode.parentNode.parentNode;
+        if (list && form) list.scrollTop = form.offsetTop + form.offsetHeight;
+      }, 30);
+    }
   }
 }
 
@@ -1164,7 +1170,13 @@ function renamePortfolio(id) {
   renderSwitcher();
   if (editingPortfolioId) {
     var el = document.getElementById('pfName_' + id);
-    if (el) { el.focus(); el.select(); }
+    if (el) { el.focus(); el.select();
+      setTimeout(function() {
+        var list = document.getElementById('portfolioList');
+        var form = el.parentNode && el.parentNode.parentNode && el.parentNode.parentNode.parentNode;
+        if (list && form) list.scrollTop = form.offsetTop + form.offsetHeight;
+      }, 30);
+    }
   }
 }
 
@@ -2688,6 +2700,11 @@ function chartCacheSet(ticker, range, points) {
 }
 
 function loadChartData(range) {
+  var el = document.getElementById('chartArea');
+  if (range === '1d') {
+    el.innerHTML = '<span style="color:var(--dim)">1D is not available in PORTFOLIO mode — switch to POSITIONS</span>';
+    return;
+  }
   var baseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
   var token = getToken();
   if (!baseUrl) {
