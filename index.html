@@ -3017,8 +3017,8 @@ function loadPositionsChartData(range, selectedTickers) {
 
 function loadSummaryChartData(range, mode) {
   var el = document.getElementById('chartArea');
-  if (range === '1d' && mode === 'total') {
-    el.innerHTML = '<span style="color:var(--dim)">1D is not available in TOTAL mode — switch to BY PORTFOLIO</span>';
+  if (range === '1d') {
+    el.innerHTML = '<span style="color:var(--dim)">1D is not available in SUMMARY mode</span>';
     return;
   }
   var baseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
