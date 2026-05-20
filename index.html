@@ -1112,15 +1112,18 @@ function switchPortfolio(id) {
   var btn = document.getElementById('viewMenuBtn');
   var refreshBtn = document.getElementById('refreshAllBtn');
   if (portfolios[id].watchlist) {
-    if (viewMode !== 'chart') viewMode = 'main';
+    // Watchlist supports: market, movers, chart
+    if (['market','movers','chart'].indexOf(viewMode) === -1) viewMode = 'market';
     btn.style.display = '';
     btn.disabled = false; btn.style.opacity = '';
     refreshBtn.style.display = '';
   } else if (portfolios[id].archive) {
-    if (['market','summary','archive-summary'].indexOf(viewMode) !== -1) viewMode = 'main';
+    // Archive supports: main, weight, analytics
+    if (['main','weight','analytics'].indexOf(viewMode) === -1) viewMode = 'main';
     refreshBtn.style.display = 'none';
     btn.style.display = ''; btn.disabled = false; btn.style.opacity = '';
   } else {
+    // Regular supports all modes
     btn.style.display = ''; btn.disabled = false; btn.style.opacity = '';
     refreshBtn.style.display = '';
   }
