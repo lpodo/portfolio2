@@ -348,13 +348,15 @@ Shows positions ranked by absolute Δ% (largest moves first), using the same CLO
 
 Available via dropdown menu → CHART for individual portfolios and Summary.
 
-**Controls:** 5D / 1MO / 3MO / 6MO / 1Y range buttons. Individual portfolio charts also have **PORTFOLIO / POSITIONS** toggle.
+**Controls:** 7 range buttons — **1D · 5D · 1M · 3M · 6M · 1Y · 5Y**. A dropdown button (showing current mode) selects between **PORTFOLIO** and **POSITIONS** for individual charts, and **TOTAL** and **BY PORTFOLIO** for Summary chart.
 
 **Data:** Historical daily closes fetched via `/api/history` endpoint. For multi-currency portfolios, FX history is fetched for each non-base currency and applied per day.
 
 **Spike prevention:** Missing trading days (holidays, exchange closures) are forward-filled per ticker. Only dates where all tickers have data are plotted.
 
-**Caching:** Historical data is cached in localStorage per ticker+range with a daily TTL. Stale entries are purged automatically on each new cache write. Repeated chart opens within the same day make zero network requests. The positions chart shares the same cache as the portfolio chart.
+**Caching:** Historical data is cached in localStorage per ticker+range with a daily TTL. 1D data is never cached (always fetched fresh). Stale entries are purged automatically on each new cache write. Repeated chart opens within the same day make zero network requests. The positions chart shares the same cache as the portfolio chart.
+
+**Range notes:** 1D uses `interval=5m` (~78 intraday points), all other ranges use `interval=1d`. 1D is blocked in PORTFOLIO mode and in Summary chart (with an explanatory message) — it only works in POSITIONS mode for individual portfolios and watchlists.
 
 **Today's point:** After loading history, a current-price point is appended if the last history entry doesn't match the latest price timestamp. This keeps the chart up to date even when Yahoo delays adding the current session to the history feed (common for European instruments). The timestamp comes from `regularMarketTime` returned by the worker.
 
