@@ -2314,7 +2314,6 @@ function applyChartSelection() {
     var cb = document.getElementById('chartcb_' + t);
     return cb && cb.checked;
   });
-  if (!selected.length) selected = allTickers;
   saveChartSelection(selected);
   window.chartSelectionOpen = false;
   render();
