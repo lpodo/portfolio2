@@ -507,7 +507,18 @@ var loadingSet = {};
 var editId = null;
 var sortKey = null;
 var sortDir = 1;
+var archiveSortKey = null;
+var archiveSortDir = 1;
 try { var _s = JSON.parse(localStorage.getItem('pt_sort')); if (_s && _s.key) { sortKey = _s.key; sortDir = _s.dir || 1; } } catch(e) {}
+try { var _sa = JSON.parse(localStorage.getItem('pt_sort_archive')); if (_sa && _sa.key) { archiveSortKey = _sa.key; archiveSortDir = _sa.dir || 1; } } catch(e) {}
+
+function isArchivePortfolio() { return !!(currentPortfolio() && currentPortfolio().archive); }
+function getSortKey() { return isArchivePortfolio() ? archiveSortKey : sortKey; }
+function getSortDir() { return isArchivePortfolio() ? archiveSortDir : sortDir; }
+function setSortState(key, dir) {
+  if (isArchivePortfolio()) { archiveSortKey = key; archiveSortDir = dir; try { localStorage.setItem('pt_sort_archive', JSON.stringify({key: key, dir: dir})); } catch(e) {} }
+  else { sortKey = key; sortDir = dir; try { localStorage.setItem('pt_sort', JSON.stringify({key: key, dir: dir})); } catch(e) {} }
+}
 try { var _ws = JSON.parse(localStorage.getItem('pt_wl_sort')); if (_ws) { watchlistSort = _ws; } } catch(e) {}
 
 // --- Local storage ---
@@ -2041,20 +2052,21 @@ function refreshAll() {
 
 
 function thBtn(key, label, align) {
-  var arrow = sortKey === key ? (sortDir === 1 ? ' &#9650;' : ' &#9660;') : '';
+  var arrow = getSortKey() === key ? (getSortDir() === 1 ? ' &#9650;' : ' &#9660;') : '';
   var al = align === 'left' ? 'left' : 'right';
   return '<th style="text-align:' + al + ';cursor:pointer;user-select:none" onclick="sortBy(\'' + key + '\')">' + label + arrow + '</th>';
 }
 function sortBy(key) {
-  if (sortKey === key) {
-    if (sortDir === 1) { sortDir = -1; }
-    else { sortKey = null; sortDir = 1; }
-  } else { sortKey = key; sortDir = 1; }
-  try { localStorage.setItem('pt_sort', JSON.stringify({key: sortKey, dir: sortDir})); } catch(e) {}
+  var curKey = getSortKey(), curDir = getSortDir();
+  if (curKey === key) {
+    if (curDir === 1) { setSortState(key, -1); }
+    else { setSortState(null, 1); }
+  } else { setSortState(key, 1); }
   render();
 }
 
 function getSorted() {
+  var sortKey = getSortKey(), sortDir = getSortDir();
   if (!sortKey) return positions.slice();
   return positions.slice().sort(function(a, b) {
     var va, vb;
