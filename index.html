@@ -2081,6 +2081,7 @@ function getSorted() {
 }
 
 function getSortedForRender() {
+  var sortKey = getSortKey(), sortDir = getSortDir();
   if (!isAggregated()) return getSorted().map(function(p) { return { agg: false, pos: p }; });
   // Aggregate first on unsorted positions, then sort aggregated entries
   var entries = aggregatePositions(positions.slice());
