@@ -2046,7 +2046,10 @@ function thBtn(key, label, align) {
   return '<th style="text-align:' + al + ';cursor:pointer;user-select:none" onclick="sortBy(\'' + key + '\')">' + label + arrow + '</th>';
 }
 function sortBy(key) {
-  if (sortKey === key) { sortDir *= -1; } else { sortKey = key; sortDir = 1; }
+  if (sortKey === key) {
+    if (sortDir === 1) { sortDir = -1; }
+    else { sortKey = null; sortDir = 1; }
+  } else { sortKey = key; sortDir = 1; }
   try { localStorage.setItem('pt_sort', JSON.stringify({key: sortKey, dir: sortDir})); } catch(e) {}
   render();
 }
