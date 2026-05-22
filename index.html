@@ -507,17 +507,19 @@ var loadingSet = {};
 var editId = null;
 var sortKey = null;
 var sortDir = 1;
-var archiveSortKey = null;
-var archiveSortDir = 1;
 try { var _s = JSON.parse(localStorage.getItem('pt_sort')); if (_s && _s.key) { sortKey = _s.key; sortDir = _s.dir || 1; } } catch(e) {}
-try { var _sa = JSON.parse(localStorage.getItem('pt_sort_archive')); if (_sa && _sa.key) { archiveSortKey = _sa.key; archiveSortDir = _sa.dir || 1; } } catch(e) {}
 
-function isArchivePortfolio() { return !!(currentPortfolio() && currentPortfolio().archive); }
-function getSortKey() { return isArchivePortfolio() ? archiveSortKey : sortKey; }
-function getSortDir() { return isArchivePortfolio() ? archiveSortDir : sortDir; }
+function _sortStorageKey() { return 'pt_sort_' + (currentPortfolioId || 'default'); }
+function getSortKey() {
+  try { var s = JSON.parse(localStorage.getItem(_sortStorageKey())); if (s) return s.key || null; } catch(e) {}
+  return null;
+}
+function getSortDir() {
+  try { var s = JSON.parse(localStorage.getItem(_sortStorageKey())); if (s) return s.dir || 1; } catch(e) {}
+  return 1;
+}
 function setSortState(key, dir) {
-  if (isArchivePortfolio()) { archiveSortKey = key; archiveSortDir = dir; try { localStorage.setItem('pt_sort_archive', JSON.stringify({key: key, dir: dir})); } catch(e) {} }
-  else { sortKey = key; sortDir = dir; try { localStorage.setItem('pt_sort', JSON.stringify({key: key, dir: dir})); } catch(e) {} }
+  try { localStorage.setItem(_sortStorageKey(), JSON.stringify({key: key, dir: dir})); } catch(e) {}
 }
 try { var _ws = JSON.parse(localStorage.getItem('pt_wl_sort')); if (_ws) { watchlistSort = _ws; } } catch(e) {}
 
