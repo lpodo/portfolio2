@@ -505,21 +505,17 @@ var marketSort = { key: null, dir: -1 }; // null = portfolio order
 var watchlistSort = { key: null, dir: -1 };
 var loadingSet = {};
 var editId = null;
-var sortKey = null;
-var sortDir = 1;
-try { var _s = JSON.parse(localStorage.getItem('pt_sort')); if (_s && _s.key) { sortKey = _s.key; sortDir = _s.dir || 1; } } catch(e) {}
+var sortKey = null, sortDir = 1;
+var archiveSortKey = null, archiveSortDir = 1;
+try { var _s = JSON.parse(localStorage.getItem('pt_sort')); if (_s) { sortKey = _s.key||null; sortDir = _s.dir||1; } } catch(e) {}
+try { var _sa = JSON.parse(localStorage.getItem('pt_sort_arc')); if (_sa) { archiveSortKey = _sa.key||null; archiveSortDir = _sa.dir||1; } } catch(e) {}
 
-function _sortStorageKey() { return 'pt_sort_' + (currentPortfolioId || 'default'); }
-function getSortKey() {
-  try { var s = JSON.parse(localStorage.getItem(_sortStorageKey())); if (s) return s.key || null; } catch(e) {}
-  return null;
-}
-function getSortDir() {
-  try { var s = JSON.parse(localStorage.getItem(_sortStorageKey())); if (s) return s.dir || 1; } catch(e) {}
-  return 1;
-}
+function _isArc() { var p = portfolios[currentPortfolioId]; return !!(p && p.archive); }
+function getSortKey() { return _isArc() ? archiveSortKey : sortKey; }
+function getSortDir() { return _isArc() ? archiveSortDir : sortDir; }
 function setSortState(key, dir) {
-  try { localStorage.setItem(_sortStorageKey(), JSON.stringify({key: key, dir: dir})); } catch(e) {}
+  if (_isArc()) { archiveSortKey = key; archiveSortDir = dir; try { localStorage.setItem('pt_sort_arc', JSON.stringify({key:key,dir:dir})); } catch(e) {} }
+  else { sortKey = key; sortDir = dir; try { localStorage.setItem('pt_sort', JSON.stringify({key:key,dir:dir})); } catch(e) {} }
 }
 try { var _ws = JSON.parse(localStorage.getItem('pt_wl_sort')); if (_ws) { watchlistSort = _ws; } } catch(e) {}
 
