@@ -245,7 +245,8 @@
     <div style="display:flex;align-items:center;margin-top:8px">
       <button class="btn-primary" onclick="addPosition()">ADD</button>
       <div style="flex:1"></div>
-      <button class="btn" onclick="openPositionCsvImport()" title="Import positions from CSV" style="padding:8px 12px;color:var(--dim);font-size:10px;letter-spacing:1px">&#8679; Import CSV</button>
+      <button class="btn" onclick="exportPositionsCsv()" title="Export positions to CSV" style="padding:8px 12px;color:var(--dim);font-size:10px;letter-spacing:1px">&#8681; Export CSV</button>
+      <button class="btn" onclick="openPositionCsvImport()" title="Import positions from CSV" style="padding:8px 12px;color:var(--dim);font-size:10px;letter-spacing:1px;margin-left:6px">&#8679; Import CSV</button>
     </div>
     <div class="err" id="addErr"></div>
   </div>
@@ -2506,6 +2507,34 @@ function exportCsv() {
   a.click();
 }
 
+
+function exportPositionsCsv() {
+  var p = currentPortfolio();
+  var rows = [['ticker','qty','entry','current','pnl','pnl_pct','category','region','sector','currency']];
+  (p.positions || []).forEach(function(pos) {
+    if (pos.sold) return;
+    var pnl = (pos.current !== null && pos.qty > 0) ? ((pos.current - pos.entry) * pos.qty).toFixed(2) : '';
+    var pnlPct = (pos.current !== null && pos.entry && pos.qty > 0) ? (((pos.current - pos.entry) / pos.entry) * 100).toFixed(2) + '%' : '';
+    rows.push([
+      pos.ticker,
+      pos.qty,
+      pos.entry,
+      pos.current !== null ? pos.current : '',
+      pnl,
+      pnlPct,
+      pos.category || '',
+      pos.region || '',
+      pos.sector || '',
+      getPositionCurrencyCode(pos)
+    ]);
+  });
+  var csv = rows.map(function(r) { return r.join(','); }).join('\n');
+  var blob = new Blob([csv], { type: 'text/csv' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (p.name || 'portfolio').toLowerCase().replace(/\s+/g, '_') + '_pl.csv';
+  a.click();
+}
 
 function openPositionCsvImport() {
   var inp = document.createElement('input');
