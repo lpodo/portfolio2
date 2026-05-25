@@ -245,8 +245,8 @@
     <div style="display:flex;align-items:center;margin-top:8px">
       <button class="btn-primary" onclick="addPosition()">ADD</button>
       <div style="flex:1"></div>
-      <button class="btn" onclick="exportPositionsCsv()" title="Export positions to CSV" style="padding:8px 12px;color:var(--dim);font-size:10px;letter-spacing:1px">&#8681; Export CSV</button>
-      <button class="btn" onclick="openPositionCsvImport()" title="Import positions from CSV" style="padding:8px 12px;color:var(--dim);font-size:10px;letter-spacing:1px;margin-left:6px">&#8679; Import CSV</button>
+      <button class="btn" onclick="openPositionCsvImport()" title="Import positions from CSV" style="padding:8px 12px;color:var(--dim);font-size:10px;letter-spacing:1px">&#8679; Import CSV</button>
+      <button class="btn" onclick="exportPositionsCsv()" title="Export positions to CSV" style="padding:8px 12px;color:var(--dim);font-size:10px;letter-spacing:1px;margin-left:6px">&#8681; Export CSV</button>
     </div>
     <div class="err" id="addErr"></div>
   </div>
@@ -2475,7 +2475,7 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
   }).join('');
 
   return '<div style="padding:8px 0 12px;display:flex;gap:6px">' + btns + '</div>'
-    + (isSummary ? '' : '<div style="text-align:right;font-size:10px;color:var(--dim);margin-bottom:4px"><a href="#" onclick="exportCsv();return false" style="color:var(--dim);margin-right:12px">↓ Export CSV</a><a href="#" onclick="openCsvImport();return false" style="color:var(--dim)">↑ Import CSV</a></div>')
+    + (isSummary ? '' : '<div style="text-align:right;font-size:10px;color:var(--dim);margin-bottom:4px"><a href="#" onclick="openCsvImport();return false" style="color:var(--dim);margin-right:12px">↑ Import CSV</a><a href="#" onclick="exportCsv();return false" style="color:var(--dim)">↓ Export CSV</a></div>')
     + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
     + '<thead><tr>'
     + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);text-transform:uppercase">' + breakdown + '</th>'
@@ -2514,7 +2514,7 @@ function exportPositionsCsv() {
   (p.positions || []).forEach(function(pos) {
     if (pos.sold) return;
     var pnl = (pos.current !== null && pos.qty > 0) ? ((pos.current - pos.entry) * pos.qty).toFixed(2) : '';
-    var pnlPct = (pos.current !== null && pos.entry && pos.qty > 0) ? (((pos.current - pos.entry) / pos.entry) * 100).toFixed(2) + '%' : '';
+    var pnlPct = (pos.current !== null && pos.entry) ? (((pos.current - pos.entry) / pos.entry) * 100).toFixed(2) + '%' : '';
     rows.push([
       pos.ticker,
       pos.qty,
