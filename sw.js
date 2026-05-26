@@ -1,19 +1,9 @@
-var CACHE = 'portfolio-v305';
-var VERSION = 'v305';
+var CACHE = 'portfolio-v306';
 
 self.addEventListener('install', function(e) {
   e.waitUntil(
     caches.open(CACHE).then(function(c) {
-      return Promise.all([
-        './index.html?v=' + VERSION,
-        './manifest.json?v=' + VERSION,
-        './icon-192.png'
-      ].map(function(url) {
-        return fetch(url, { cache: 'no-store' }).then(function(resp) {
-          var key = url.split('?')[0];
-          return c.put(new Request(key), resp);
-        });
-      }));
+      return c.addAll(['./index.html', './manifest.json', './icon-192.png']);
     })
   );
   self.skipWaiting();
