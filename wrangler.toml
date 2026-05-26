@@ -1,3 +1,7 @@
-name = "portfolio2"
+name = "portfolio-quotes"
 main = "worker.js"
 compatibility_date = "2024-01-01"
+
+[[kv_namespaces]]
+binding = "PORTFOLIO_KV"
+id = "f36d8de334a942d4a6a6462735fda047"
