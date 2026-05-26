@@ -6,8 +6,8 @@ export default {
       return new Response(null, {
         headers: {
           'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, OPTIONS',
-          'Access-Control-Allow-Headers': 'X-API-Token',
+          'Access-Control-Allow-Methods': 'GET, PUT, POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'X-API-Token, X-KV-Key, Content-Type',
         }
       });
     }
