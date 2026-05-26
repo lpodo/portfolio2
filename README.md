@@ -389,11 +389,17 @@ Shows portfolio breakdown by **CATEGORY**, **REGION**, **SECTOR**, or **CURRENCY
 
 Each position has three optional fields: **category**, **region**, **sector**. Set via the ✎ edit row (expands below the position). Grouping normalizes whitespace (trims and collapses multiple spaces) but preserves original casing.
 
+### Attribute Inheritance
+
+When a position is added (via the Add form or CSV import in the Add form), the app automatically checks all existing portfolios for a position with the same ticker. If found and it has category/region/sector values, those are copied to the new position. This means you only need to classify a ticker once — subsequent additions inherit the values automatically.
+
 ### CSV Import / Export
 
-In Analytics view (portfolio level), two links appear: **↓ Export CSV** and **↑ Import CSV**.
+In Analytics view (portfolio level), three links appear: **↑ Import CSV**, **↓ Export CSV**, and **↓ Incomplete**.
 
-**Export** downloads `tickers.csv` — all unique tickers across all portfolios with their current category/region/sector values.
+**Export CSV** downloads `tickers.csv` — all unique tickers across all portfolios with their current category/region/sector values.
+
+**Incomplete** downloads `incomplete_analytics.csv` — all unique tickers across all regular and archive portfolios (watchlist excluded) where at least one of category/region/sector is empty. Useful for identifying what still needs to be classified. Includes all positions regardless of sold/qty status.
 
 **Import** reads a CSV and updates matching positions across all portfolios. Supports comma (`,`) or semicolon (`;`) delimiter, auto-detected from the header row. Empty fields in the CSV do not overwrite existing values.
 
