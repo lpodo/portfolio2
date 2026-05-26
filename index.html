@@ -1480,6 +1480,14 @@ function syncFromCloud() {
 
 
 function migrateToCloud() {
+  if (getCloudBackend() === 'kv') {
+    if (!getApiKey()) { updateJbStatus('✗ Backend URL required', 'var(--red)'); return; }
+    if (!getKvKey()) { updateJbStatus('✗ KV Key required', 'var(--red)'); return; }
+    if (!Object.keys(portfolios).length) { updateJbStatus('✗ No local data to upload', 'var(--dim)'); return; }
+    updateJbStatus('Uploading to KV...', 'var(--dim)');
+    cloudSaveKV();
+    return;
+  }
   var key = getJbKey();
   if (!key) {
     updateJbStatus('✗ Enter Master Key first', 'var(--red)');
