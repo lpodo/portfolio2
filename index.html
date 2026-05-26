@@ -2486,7 +2486,7 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
   }).join('');
 
   return '<div style="padding:8px 0 12px;display:flex;gap:6px">' + btns + '</div>'
-    + (isSummary ? '' : '<div style="text-align:right;font-size:10px;color:var(--dim);margin-bottom:4px"><a href="#" onclick="openCsvImport();return false" style="color:var(--dim);margin-right:12px">↑ Import CSV</a><a href="#" onclick="exportCsv();return false" style="color:var(--dim);margin-right:12px">↓ Export CSV</a><a href="#" onclick="exportIncompletePositionsCsv();return false" style="color:var(--dim)">↓ Incomplete</a></div>')
+    + (isSummary ? '' : '<div style="text-align:right;font-size:11px;color:var(--dim);margin-bottom:8px"><a href="#" onclick="openCsvImport();return false" style="color:var(--dim);margin-right:12px">↑ Import CSV</a><a href="#" onclick="exportCsv();return false" style="color:var(--dim);margin-right:12px">↓ Export CSV</a><a href="#" onclick="exportIncompletePositionsCsv();return false" style="color:var(--dim)">↓ Incomplete</a></div>')
     + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
     + '<thead><tr>'
     + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);text-transform:uppercase">' + breakdown + '</th>'
