@@ -1393,7 +1393,7 @@ function manualCloudLoad() {
   updateJbStatus('Loading...', 'var(--dim)');
   bondsDb = getBondsDb();
 bondPortfolios = getBondPortfolios();
-showCloudOverlay('Loading from cloud...', 'var(--dim)');
+(function() { var b = getCloudBackend(); var configured = b === 'kv' ? (getApiKey() && getKvKey()) : (getJbKey() && getJbBin()); if (configured) showCloudOverlay('Loading from cloud...', 'var(--dim)'); })();
 autoCloudLoad(function(loaded) {
     if (loaded) { render(); closeSettings(); if (getApiKey()) refreshAll(); }
   });
@@ -4635,7 +4635,7 @@ loadLocal();
 document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
 showKeyStatus();
 render();
-showCloudOverlay('Loading from cloud...', 'var(--dim)');
+(function() { var b = getCloudBackend(); var configured = b === 'kv' ? (getApiKey() && getKvKey()) : (getJbKey() && getJbBin()); if (configured) showCloudOverlay('Loading from cloud...', 'var(--dim)'); })();
 autoCloudLoad(function(loaded) {
   if (loaded) render();
   if (getApiKey()) refreshAll();
