@@ -1531,7 +1531,16 @@ function _doCloudSave(key, binId) {
       }).then(function(res) {
         localStorage.setItem('pt_cloud_ts', res.metadata && res.metadata.updatedAt ? res.metadata.updatedAt : new Date().toISOString());
         updateJbStatus('✓ Cloud: saved ' + new Date().toLocaleTimeString(), 'var(--green)');
-      }).catch(function() { updateJbStatus('✗ Save error', 'var(--red)'); });
+      }).catch(function(e) {
+        var msg = '✗ Save error';
+        var hint = String(e && e.message || '');
+        if (hint.indexOf('http_401') !== -1 || hint.indexOf('http_403') !== -1) msg = '✗ Save: invalid API key';
+        else if (hint.indexOf('http_404') !== -1) msg = '✗ Save: bin not found';
+        else if (hint.indexOf('http_5') !== -1) msg = '✗ Save: JSONBin server error (' + hint.replace('http_','') + ')';
+        else if (hint.indexOf('Failed to fetch') !== -1 || hint.indexOf('NetworkError') !== -1) msg = '✗ Save: network error (JSONBin unreachable)';
+        else if (hint) msg = '✗ Save: ' + hint;
+        updateJbStatus(msg, 'var(--red)');
+      });
     }
   }
 
@@ -1605,7 +1614,15 @@ function cloudLoad(callback) {
       processData(data);
     }
   }).catch(function(e) {
-    updateJbStatus('✗ Cloud load error', 'var(--red)');
+    var msg = '✗ Cloud load error';
+    var hint = String(e && e.message || '');
+    if (hint.indexOf('http_401') !== -1 || hint.indexOf('http_403') !== -1) msg = '✗ Cloud: invalid API key';
+    else if (hint.indexOf('http_404') !== -1) msg = '✗ Cloud: bin not found';
+    else if (hint.indexOf('http_5') !== -1 || hint.indexOf('http_504') !== -1) msg = '✗ Cloud: JSONBin server error (' + hint.replace('http_','') + ')';
+    else if (hint.indexOf('Failed to fetch') !== -1 || hint.indexOf('NetworkError') !== -1) msg = '✗ Cloud: network error (JSONBin unreachable)';
+    else if (hint.indexOf('CORS') !== -1 || hint.indexOf('Access-Control') !== -1) msg = '✗ Cloud: CORS error — check API key';
+    else if (hint) msg = '✗ Cloud: ' + hint;
+    updateJbStatus(msg, 'var(--red)');
     callback(false);
   });
 }
