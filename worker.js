@@ -80,6 +80,33 @@ export default {
       });
     }
 
+    // KV endpoints
+    if (url.pathname === '/api/kv') {
+      const kvKey = request.headers.get('X-KV-Key');
+      if (!kvKey) return json({ error: 'X-KV-Key required' }, 400);
+      if (!env.PORTFOLIO_KV) return json({ error: 'KV not configured' }, 503);
+
+      if (request.method === 'GET') {
+        const { value, metadata } = await env.PORTFOLIO_KV.getWithMetadata(kvKey);
+        if (value === null) return json({ error: 'not_found' }, 404);
+        return json({ data: JSON.parse(value), updatedAt: metadata?.updatedAt || null });
+      }
+      if (request.method === 'PUT') {
+        const body = await request.text();
+        const now = new Date().toISOString();
+        await env.PORTFOLIO_KV.put(kvKey, body, { metadata: { updatedAt: now } });
+        return json({ ok: true, updatedAt: now });
+      }
+    }
+
+    if (url.pathname === '/api/kv/meta') {
+      const kvKey = request.headers.get('X-KV-Key');
+      if (!kvKey) return json({ error: 'X-KV-Key required' }, 400);
+      if (!env.PORTFOLIO_KV) return json({ error: 'KV not configured' }, 503);
+      const { metadata } = await env.PORTFOLIO_KV.getWithMetadata(kvKey);
+      return json({ updatedAt: metadata?.updatedAt || null });
+    }
+
     // Profile endpoint: /api/profile?ticker=NVDA → { sector, industry, country }
     if (url.pathname === '/api/profile') {
       const t = url.searchParams.get('ticker');
