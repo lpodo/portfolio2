@@ -165,7 +165,7 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
 
   Aggregated rows show ×N instead of action buttons (SELL, MOVE, EDIT, DELETE are hidden). Source positions are unchanged — aggregation is display-only.
 
-- **CSV position import** (↑ CSV button in the Add form): bulk-import positions from a CSV file. Each ticker is validated against Yahoo Finance and receives correct currency and shortName. Supports comma and semicolon delimiters; `current` and `sold` columns are optional.
+- **CSV position import** (↑ Import CSV button in the Add form): bulk-import positions from a CSV file. Each ticker is validated against Yahoo Finance and receives correct currency and shortName. Supports comma and semicolon delimiters; `current` and `sold` columns are optional. Analytics fields (category/region/sector) are inherited automatically if the ticker already exists elsewhere.
 
   Minimal format:
   ```
@@ -179,6 +179,8 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
   NVDA,10,500.00,,
   MU,5,80.00,95.00,true
   ```
+
+- **CSV position export** (↓ Export CSV button in the Add form): exports all non-sold positions of the current portfolio to a CSV file (`{name}_pl.csv`). Includes columns: `ticker`, `qty`, `entry`, `current`, `pnl`, `pnl_pct`, `category`, `region`, `sector`, `currency`. Useful for pasting into Excel or any spreadsheet tool.
 - **Watchlist portfolio** (WATCHLIST radio button at creation): designed for tracking indices, commodities, currencies and any instruments without a held position (e.g. `^KS11`, `BZ=F`, `EURUSD=X`). Essentially a regular portfolio with qty/entry forced to 0 and some UI restrictions suited to its purpose:
   - Add form hides qty/entry fields
   - View shows CLOSE / PRICE / Δ% / market state icon / NAME — sortable by TICKER and Δ%
@@ -388,6 +390,21 @@ Shows portfolio breakdown by **CATEGORY**, **REGION**, **SECTOR**, or **CURRENCY
 ### Position Classification Fields
 
 Each position has three optional fields: **category**, **region**, **sector**. Set via the ✎ edit row (expands below the position). Grouping normalizes whitespace (trims and collapses multiple spaces) but preserves original casing.
+
+### Note Field
+
+Each position also has a free-text **note** field. Set via the ✎ edit row. Notes are personal annotations — they don't affect any calculations or groupings and appear only in the expanded view and the edit form.
+
+### Viewing Attributes Without Editing
+
+Tapping/clicking the **ticker name** in the P&L view toggles an expandable sub-row showing the position's classification fields and note in read-only format:
+
+```
+CAT  AI & Semi    REG  US    SEC  Technology
+NOTE  Bought on dip after earnings
+```
+
+Tap the ticker again to collapse. The expanded state resets when switching portfolios or views.
 
 ### Attribute Inheritance
 
