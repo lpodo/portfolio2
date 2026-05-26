@@ -357,17 +357,32 @@
     <input type="password" id="apiTokenInput" placeholder="secret token" style="font-size:11px" autocomplete="new-password">
     <button class="btn btn-green" onclick="saveToken()">OK</button>
   </div>
-  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">CLOUD STORAGE — JSONBIN</div>
-  <div class="key-row">
-    <label>MASTER KEY</label>
-    <input type="password" id="jbKeyInput" placeholder="jsonbin.io → API Keys" autocomplete="new-password">
-    <button class="btn btn-green" onclick="saveJbKey()">OK</button>
+  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">CLOUD STORAGE</div>
+  <div style="display:flex;gap:8px;margin-bottom:10px">
+    <button id="backendJB" onclick="setCloudBackend('jsonbin')" style="flex:1;padding:7px;font-size:10px;letter-spacing:1px;cursor:pointer;font-family:var(--font)">JSONBIN</button>
+    <button id="backendKV" onclick="setCloudBackend('kv')" style="flex:1;padding:7px;font-size:10px;letter-spacing:1px;cursor:pointer;font-family:var(--font)">CLOUDFLARE KV</button>
   </div>
-  <div class="key-row" style="margin-top:6px">
-    <label>BIN ID</label>
-    <input type="text" id="jbBinInput" placeholder="paste from another device" style="font-size:11px">
-    <button class="btn btn-green" onclick="manualCloudLoad()">OK</button>
-    <button class="btn" onclick="clearJbBin()">✕</button>
+  <!-- JSONBin section -->
+  <div id="jbSection">
+    <div class="key-row">
+      <label>MASTER KEY</label>
+      <input type="password" id="jbKeyInput" placeholder="jsonbin.io → API Keys" autocomplete="new-password">
+      <button class="btn btn-green" onclick="saveJbKey()">OK</button>
+    </div>
+    <div class="key-row" style="margin-top:6px">
+      <label>BIN ID</label>
+      <input type="text" id="jbBinInput" placeholder="paste from another device" style="font-size:11px">
+      <button class="btn btn-green" onclick="manualCloudLoad()">OK</button>
+      <button class="btn" onclick="clearJbBin()">✕</button>
+    </div>
+  </div>
+  <!-- KV section -->
+  <div id="kvSection" style="display:none">
+    <div class="key-row">
+      <label>KV KEY</label>
+      <input type="text" id="kvKeyInput" placeholder="your unique storage key" autocomplete="off" style="font-size:11px">
+      <button class="btn btn-green" onclick="saveKvKey()">OK</button>
+    </div>
   </div>
   <div class="api-status" id="jbStatus"></div>
   <div class="key-row" style="margin-top:6px">
@@ -1310,6 +1325,41 @@ async function decryptData(b64, password) {
 
 function getJbKey() { return localStorage.getItem('pt_jbkey') || ''; }
 function getJbBin() { return localStorage.getItem('pt_jbbin') || ''; }
+function getCloudBackend() { return localStorage.getItem('pt_cloud_backend') || 'jsonbin'; }
+function getKvKey() { return localStorage.getItem('pt_kv_key') || ''; }
+
+function saveKvKey() {
+  var v = (document.getElementById('kvKeyInput').value || '').trim();
+  if (!v) return;
+  localStorage.setItem('pt_kv_key', v);
+  updateJbStatus('✓ KV key saved', 'var(--green)');
+}
+
+function setCloudBackend(b) {
+  localStorage.setItem('pt_cloud_backend', b);
+  updateCloudBackendUI();
+}
+
+function updateCloudBackendUI() {
+  var b = getCloudBackend();
+  var jbBtn = document.getElementById('backendJB');
+  var kvBtn = document.getElementById('backendKV');
+  var jbSec = document.getElementById('jbSection');
+  var kvSec = document.getElementById('kvSection');
+  if (!jbBtn) return;
+  var green = 'var(--green)', dim = 'var(--dim)', bg2 = 'var(--bg2)', bg = 'var(--bg)', border = 'var(--border)';
+  jbBtn.style.border = '1px solid ' + (b === 'jsonbin' ? green : border);
+  jbBtn.style.color = b === 'jsonbin' ? green : dim;
+  jbBtn.style.background = b === 'jsonbin' ? bg2 : bg;
+  kvBtn.style.border = '1px solid ' + (b === 'kv' ? green : border);
+  kvBtn.style.color = b === 'kv' ? green : dim;
+  kvBtn.style.background = b === 'kv' ? bg2 : bg;
+  if (jbSec) jbSec.style.display = b === 'jsonbin' ? '' : 'none';
+  if (kvSec) kvSec.style.display = b === 'kv' ? '' : 'none';
+  // Populate KV key input
+  var kvInput = document.getElementById('kvKeyInput');
+  if (kvInput && !kvInput.value) kvInput.value = getKvKey();
+}
 
 function saveJbKey() {
   var k = document.getElementById('jbKeyInput').value.trim();
@@ -1343,7 +1393,7 @@ function manualCloudLoad() {
   bondsDb = getBondsDb();
 bondPortfolios = getBondPortfolios();
 showCloudOverlay('Loading from cloud...', 'var(--dim)');
-cloudLoad(function(loaded) {
+autoCloudLoad(function(loaded) {
     if (loaded) { render(); closeSettings(); if (getApiKey()) refreshAll(); }
   });
 }
@@ -1407,6 +1457,12 @@ function restoreData(event) {
 }
 
 function syncFromCloud() {
+  if (getCloudBackend() === 'kv') {
+    if (!getKvKey()) { updateJbStatus('✗ KV Key required', 'var(--red)'); return; }
+    if (!getApiKey()) { updateJbStatus('✗ Backend URL required', 'var(--red)'); return; }
+    cloudLoadKV(function(loaded) { if (loaded) { render(); if (getApiKey()) refreshAll(); } });
+    return;
+  }
   if (!getJbKey()) { updateJbStatus('✗ Master Key required', 'var(--red)'); return; }
   if (!getJbBin()) { updateJbStatus('✗ Bin ID required', 'var(--red)'); return; }
   updateJbStatus('Syncing...', 'var(--dim)');
@@ -1572,6 +1628,92 @@ function dismissCloudOverlay() {
   if (el) el.style.display = 'none';
 }
 
+
+function cloudLoadKV(callback) {
+  var baseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
+  var token = getToken();
+  var kvKey = getKvKey();
+  if (!baseUrl || !kvKey) { callback(false); return; }
+  var opts = { headers: { 'X-API-Token': token, 'X-KV-Key': kvKey } };
+  updateJbStatus('Loading from cloud (KV)...', 'var(--dim)');
+  fetch(baseUrl + '/api/kv', opts)
+    .then(function(r) {
+      if (r.status === 404) throw new Error('not_found');
+      if (!r.ok) throw new Error('http_' + r.status);
+      return r.json();
+    })
+    .then(function(res) {
+      var data = res.data;
+      localStorage.setItem('pt_cloud_ts', res.updatedAt || new Date().toISOString());
+      function processKVData(data) {
+        if (data && data.portfolios) {
+          portfolios = data.portfolios;
+          if (data.bondsDb) { bondsDb = data.bondsDb; localStorage.setItem('pt_bonds_db', JSON.stringify(bondsDb)); }
+          if (data.bondPortfolios) { bondPortfolios = data.bondPortfolios; localStorage.setItem('pt_bond_portfolios', JSON.stringify(bondPortfolios)); }
+          savePortfolios();
+          if (!portfolios[currentPortfolioId]) { currentPortfolioId = Object.keys(portfolios)[0]; localStorage.setItem('pt_current', currentPortfolioId); }
+          loadLocal();
+          document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
+          updateJbStatus('✓ Loaded from KV', 'var(--green)');
+          showCloudOverlay('✓ Loaded from KV', 'var(--green)');
+          setTimeout(dismissCloudOverlay, 800);
+          callback(true);
+        } else { callback(false); }
+      }
+      if (data && data.encrypted) {
+        var encKey = getEncKey();
+        if (!encKey) { updateJbStatus('✗ Encrypted — enter ENC KEY', 'var(--red)'); callback(false); return; }
+        decryptData(data.encrypted, encKey).then(function(plain) {
+          try { processKVData(JSON.parse(plain)); } catch(e) { updateJbStatus('✗ KV decrypt error', 'var(--red)'); callback(false); }
+        }).catch(function() { updateJbStatus('✗ Wrong encryption key', 'var(--red)'); callback(false); });
+      } else { processKVData(data); }
+    })
+    .catch(function(e) {
+      var hint = String(e && e.message || '');
+      var msg = hint === 'not_found' ? '✗ KV: no data yet — save first' :
+                hint.indexOf('http_401') !== -1 ? '✗ KV: invalid token' :
+                hint.indexOf('http_503') !== -1 ? '✗ KV: not configured on server' :
+                hint.indexOf('Failed to fetch') !== -1 ? '✗ KV: worker unreachable' : '✗ KV: ' + hint;
+      updateJbStatus(msg, 'var(--red)');
+      showCloudOverlay(msg + ' · tap to dismiss', 'var(--red)');
+      callback(false);
+    });
+}
+
+function cloudSaveKV() {
+  var baseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
+  var token = getToken();
+  var kvKey = getKvKey();
+  if (!baseUrl || !kvKey) return;
+  var payload = { portfolios: portfolios, bondsDb: bondsDb, bondPortfolios: bondPortfolios };
+  var encKey = getEncKey();
+  function doSave(body) {
+    fetch(baseUrl + '/api/kv', {
+      method: 'PUT',
+      headers: { 'X-API-Token': token, 'X-KV-Key': kvKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function(r) {
+      if (!r.ok) throw new Error('http_' + r.status);
+      return r.json();
+    }).then(function(res) {
+      localStorage.setItem('pt_cloud_ts', res.updatedAt || new Date().toISOString());
+      updateJbStatus('✓ Saved to KV', 'var(--green)');
+    }).catch(function(e) {
+      var hint = String(e && e.message || '');
+      var msg = hint.indexOf('http_503') !== -1 ? '✗ KV: not configured on server' : '✗ KV save: ' + hint;
+      updateJbStatus(msg, 'var(--red)');
+    });
+  }
+  if (encKey) {
+    encryptData(JSON.stringify(payload), encKey).then(function(enc) { doSave({ encrypted: enc }); });
+  } else { doSave(payload); }
+}
+
+function autoCloudLoad(callback) {
+  if (getCloudBackend() === 'kv') cloudLoadKV(callback);
+  else cloudLoad(callback);
+}
+
 function cloudLoad(callback) {
   var key = getJbKey();
   var binId = getJbBin();
@@ -1652,7 +1794,7 @@ function cloudLoad(callback) {
 function load() { loadLocal(); }
 function save() {
   saveLocal();
-  cloudSave();
+  if (getCloudBackend() === 'kv') cloudSaveKV(); else cloudSave();
 }
 function validateCurrencyCode(code, callback) {
   if (code === 'USD') { callback(true); return; }
@@ -1747,8 +1889,11 @@ function updateSettingsUI() {
   var jbBin = getJbBin();
   if (document.getElementById('jbKeyInput')) document.getElementById('jbKeyInput').value = jbKey;
   if (document.getElementById('jbBinInput')) document.getElementById('jbBinInput').value = jbBin;
-  document.getElementById('settingsNote').textContent = 'Prices: Yahoo Finance via Cloudflare Worker. Cloud: jsonbin.io.';
-  var cloudStatus = jbKey ? (jbBin ? '&#9729; Cloud' : '&#9729; Cloud') : '&#128190; Local';
+  updateCloudBackendUI();
+  var backend = getCloudBackend();
+  var hasCloud = backend === 'kv' ? !!getKvKey() : !!(jbKey && jbBin);
+  document.getElementById('settingsNote').textContent = 'Prices: Yahoo Finance via Cloudflare Worker. Cloud: ' + (backend === 'kv' ? 'Cloudflare KV' : 'JSONBin') + '.';
+  var cloudStatus = hasCloud ? '&#9729; Cloud' : '&#128190; Local';
   var srcStatus = k ? '&#10003; Yahoo Finance' : '&#9888; Backend URL required';
   document.getElementById('providerLabel').innerHTML = srcStatus + ' &nbsp;|&nbsp; ' + cloudStatus;
   document.getElementById('mainNote').textContent = '* Prices via Yahoo Finance — all exchanges, extended hours.';
@@ -4490,7 +4635,7 @@ document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
 showKeyStatus();
 render();
 showCloudOverlay('Loading from cloud...', 'var(--dim)');
-cloudLoad(function(loaded) {
+autoCloudLoad(function(loaded) {
   if (loaded) render();
   if (getApiKey()) refreshAll();
 });
