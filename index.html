@@ -2520,11 +2520,19 @@ function exportCsv() {
 
 
 function exportIncompletePositionsCsv() {
-  var p = currentPortfolio();
-  var incomplete = (p.positions || []).filter(function(pos) {
-    return !pos.sold && (!pos.category || !pos.region || !pos.sector);
+  var seen = {}, incomplete = [];
+  Object.keys(portfolios).forEach(function(pid) {
+    var p = portfolios[pid];
+    if (p.watchlist) return;
+    (p.positions || []).forEach(function(pos) {
+      if (seen[pos.ticker]) return;
+      seen[pos.ticker] = true;
+      if (!pos.category || !pos.region || !pos.sector) {
+        incomplete.push(pos);
+      }
+    });
   });
-  if (!incomplete.length) { alert('All positions have complete analytics fields'); return; }
+  if (!incomplete.length) { alert('All tickers have complete analytics fields'); return; }
   var rows = [['ticker','category','region','sector']];
   incomplete.forEach(function(pos) {
     rows.push([pos.ticker, pos.category || '', pos.region || '', pos.sector || '']);
@@ -2533,7 +2541,7 @@ function exportIncompletePositionsCsv() {
   var blob = new Blob([csv], { type: 'text/csv' });
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = (p.name || 'portfolio').toLowerCase().replace(/\s+/g, '_') + '_incomplete.csv';
+  a.download = 'incomplete_analytics.csv';
   a.click();
 }
 
