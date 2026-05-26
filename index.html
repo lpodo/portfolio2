@@ -506,6 +506,7 @@ var marketSort = { key: null, dir: -1 }; // null = portfolio order
 var watchlistSort = { key: null, dir: -1 };
 var loadingSet = {};
 var editId = null;
+var expandedId = null;
 var sortKey = null, sortDir = 1;
 var archiveSortKey = null, archiveSortDir = 1;
 try { var _s = JSON.parse(localStorage.getItem('pt_sort')); if (_s) { sortKey = _s.key||null; sortDir = _s.dir||1; } } catch(e) {}
@@ -1168,7 +1169,7 @@ function addPortfolio() {
     currentPortfolioId = id;
     localStorage.setItem('pt_current', id);
     loadLocal();
-    editId = null; loadingSet = {};
+    editId = null; expandedId = null; loadingSet = {};
     document.getElementById('portfolioTitle').textContent = name;
     updateAddForm();
     renderSwitcher();
@@ -1245,7 +1246,7 @@ function deletePortfolio(id) {
     currentPortfolioId = Object.keys(portfolios)[0];
     localStorage.setItem('pt_current', currentPortfolioId);
     loadLocal();
-    editId = null; loadingSet = {};
+    editId = null; expandedId = null; loadingSet = {};
     document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
     render();
   }
@@ -1878,7 +1879,8 @@ function removePosition(id) {
   positions = positions.filter(function(p) { return p.id !== id; });
   save(); render();
 }
-function startEdit(id) { editId = id; render(); }
+function toggleExpand(id) { expandedId = (expandedId === id) ? null : id; render(); }
+function startEdit(id) { editId = id; expandedId = null; render(); }
 function cancelEdit() { editId = null; render(); }
 function saveEdit(id) {
   var newTicker = (document.getElementById('editTicker').value || '').trim().toUpperCase();
@@ -1889,12 +1891,13 @@ function saveEdit(id) {
   for (var i = 0; i < positions.length; i++) { if (positions[i].id === id) { pos = positions[i]; break; } }
   var current = curRaw ? parseFloat(curRaw) : (pos ? pos.current : null);
   if (qty === null || isNaN(qty) || qty < 0 || (qty > 0 && entry <= 0)) return;
-  var catEl = document.getElementById('editCategory'); var regEl = document.getElementById('editRegion'); var secEl = document.getElementById('editSector');
+  var catEl = document.getElementById('editCategory'); var regEl = document.getElementById('editRegion'); var secEl = document.getElementById('editSector'); var noteEl = document.getElementById('editNote');
   var category = catEl ? (catEl.value.trim() || null) : (pos ? pos.category : null);
   var region   = regEl ? (regEl.value.trim() || null) : (pos ? pos.region   : null);
   var sector   = secEl ? (secEl.value.trim() || null) : (pos ? pos.sector   : null);
+  var note     = noteEl ? (noteEl.value.trim() || null) : (pos ? pos.note    : null);
   positions = positions.map(function(p) {
-    return p.id === id ? Object.assign({}, p, { ticker: newTicker || p.ticker, qty: qty, entry: entry, current: current, category: category, region: region, sector: sector }) : p;
+    return p.id === id ? Object.assign({}, p, { ticker: newTicker || p.ticker, qty: qty, entry: entry, current: current, category: category, region: region, sector: sector, note: note }) : p;
   });
   save(); editId = null; render();
 }
@@ -3639,7 +3642,8 @@ function render() {
         + '<button class="btn-icon" onclick="removePosition(' + p.id + ')">&#10005;</button>';
     }
 
-    var tickerCell = isEdit ? '<input class="edit-input" id="editTicker" type="text" value="' + p.ticker + '" style="width:60px;text-transform:uppercase">' : p.ticker;
+    var isExpanded = expandedId === p.id;
+    var tickerCell = isEdit ? '<input class="edit-input" id="editTicker" type="text" value="' + p.ticker + '" style="width:60px;text-transform:uppercase">' : '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + (isExpanded ? ' &#9650;' : '') + '</span>';
     var soldStyle = (p.sold || p.qty === 0) ? 'font-style:italic;opacity:0.5' : '';
     rows += '<tr style="' + soldStyle + '">'
       + '<td>' + tickerCell + '</td>'
@@ -3657,8 +3661,18 @@ function render() {
         + '<div class="field"><label>CATEGORY</label><input type="text" id="editCategory" value="' + (p.category || '') + '" placeholder="e.g. AI &amp; Semi" style="width:100px" autocomplete="off" autocorrect="off"></div>'
         + '<div class="field"><label>REGION</label><input type="text" id="editRegion" value="' + (p.region || '') + '" placeholder="e.g. US" style="width:70px" autocomplete="off" autocorrect="off"></div>'
         + '<div class="field"><label>SECTOR</label><input type="text" id="editSector" value="' + (p.sector || '') + '" placeholder="e.g. Technology" style="width:110px" autocomplete="off" autocorrect="off"></div>'
-        + '</div></td></tr>'
-        : '');
+        + '</div>'
+        + '<div style="margin-top:6px"><div class="field" style="width:100%"><label>NOTE</label><input type="text" id="editNote" value="' + (p.note || '') + '" placeholder="optional note..." style="width:100%;box-sizing:border-box" autocomplete="off" autocorrect="off"></div></div>'
+        + '</td></tr>'
+        : (isExpanded ? '<tr><td colspan="8" style="padding:4px 8px 8px;background:var(--bg2)">'
+        + '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px">'
+        + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (p.category || '—') + '</span></span>'
+        + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (p.region || '—') + '</span></span>'
+        + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (p.sector || '—') + '</span></span>'
+        + (p.note ? '<span style="flex:1"><span style="opacity:0.6">NOTE</span> <span style="color:var(--bright)">' + p.note + '</span></span>' : '')
+        + '</div>'
+        + '</td></tr>'
+        : ''));
   });
 
   var totCost = 0, totVal = 0, hasAny = false;
