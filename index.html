@@ -731,7 +731,10 @@ function moveToPortfolio(targetPid) {
     previousClose: pos.previousClose,
     regularMarketPrice: pos.regularMarketPrice,
     marketState: pos.marketState,
-    priceType: pos.priceType
+    priceType: pos.priceType,
+    category: pos.category || null,
+    region: pos.region || null,
+    sector: pos.sector || null
   });
   // Remove from current
   positions = positions.filter(function(p) { return p.id !== movePosId; });
@@ -788,7 +791,10 @@ function moveToArchive(archivePid) {
     current: pos.current,
     sold: true,
     currency: pos.currency,
-    shortName: pos.shortName
+    shortName: pos.shortName,
+    category: pos.category || null,
+    region: pos.region || null,
+    sector: pos.sector || null
   });
   // Remove from current portfolio
   positions = positions.filter(function(p) { return p.id !== archiveMenuPosId; });
