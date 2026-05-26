@@ -391,7 +391,7 @@ Each position has three optional fields: **category**, **region**, **sector**. S
 
 ### Attribute Inheritance
 
-When a position is added (via the Add form or CSV import in the Add form), the app automatically checks all existing portfolios for a position with the same ticker. If found and it has category/region/sector values, those are copied to the new position. This means you only need to classify a ticker once — subsequent additions inherit the values automatically.
+When a position is added (via the Add form or CSV import in the Add form), the app automatically checks all existing portfolios (active, archive, and watchlist) for a position with the same ticker. If found and it has category/region/sector values, those are copied to the new position. This means you only need to classify a ticker once — subsequent additions inherit the values automatically.
 
 ### CSV Import / Export
 
