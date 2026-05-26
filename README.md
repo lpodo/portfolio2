@@ -2,7 +2,7 @@
 
 ## What it is
 
-A PWA stock portfolio tracker with a Cloudflare Worker backend. Supports all major exchanges, extended hours (pre/post market), and cross-device sync via JSONBin.
+A PWA stock portfolio tracker with a Cloudflare Worker backend. Supports all major exchanges, extended hours (pre/post market), and cross-device sync via cloud storage.
 
 ## Hosting & Access
 
@@ -34,7 +34,8 @@ Yahoo Finance via Cloudflare Worker — free, all major exchanges, extended hour
 
 **Worker endpoints:**
 - `/api/quote?ticker=AAPL` — price quote. Returns `price`, `priceType`, `marketState`, `regularMarketPrice`, `previousClose`, `priceTimestamp`, `currency`, `shortName`. Optional `&simple=1` skips extended-hours candle logic.
-- `/api/history?ticker=AAPL&range=1mo` — historical OHLCV for charts. Supported ranges: `5d`, `1mo`, `3mo`, `6mo`, `1y`. Returns `{ points: [{t, o, h, l, c, v}] }`.
+- `/api/history?ticker=AAPL&range=1mo` — historical OHLCV for charts. Supported ranges: `1d`, `5d`, `1mo`, `3mo`, `6mo`, `1y`, `5y`. Returns `{ points: [{t, o, h, l, c, v}] }`.
+- `/api/kv` — cloud storage proxy (GET to load, PUT to save). Requires `X-KV-Key` header with user's storage key. Only available when Cloudflare KV backend is configured.
 - `/api/profile?ticker=AAPL` — sector/industry/country from Yahoo assetProfile. Returns nulls for ETFs and when Yahoo blocks the request.
 - `/api/debug?ticker=AAPL` — processed result (same logic as `/api/quote`)
 - `/api/debug1?ticker=AAPL` — raw meta from Yahoo 1d request
@@ -72,15 +73,19 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
   - `pt_finnhub` — Cloudflare Worker URL
   - `pt_token` — API token for Cloudflare Worker
   - `pt_sort`, `pt_wl_sort` — sort state (regular and watchlist)
+  - `pt_cloud_backend` — cloud storage backend: `jsonbin` (default) or `kv`
   - `pt_jbkey` — JSONBin master key
   - `pt_jbbin` — JSONBin bin ID
+  - `pt_kv_key` — Cloudflare KV user key
   - `pt_cloud_ts` — cloud sync timestamp (conflict prevention)
   - `pt_enc_key` — AES-GCM encryption password
   - `pt_close_mode` — close column mode: `prev` (Prev.Close) or `reg` (Reg.Price), default `prev`
   - `pt_current_mode` — current column mode: `cur` (Current) or `reg` (Reg.Price), default `cur`
   - `pt_chart_sel_{portfolioId}` — per-portfolio ticker selection for POSITIONS chart
   - `chart_hist_{ticker}_{range}` — historical price cache (daily TTL)
-- **JSONBin.io** — cloud sync for cross-device access. Stores `{ portfolios, bondsDb, bondPortfolios }` — structural data only, no prices.
+- **Cloud storage** — cross-device sync via two supported backends (selected in Settings):
+  - **JSONBin.io** — direct browser-to-API requests; requires Master Key and Bin ID
+  - **Cloudflare KV** — routed through the Worker; requires only a user-defined KV Key. More reliable and no extra API keys needed.
 
 ## Position Structure
 
@@ -109,6 +114,7 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
 - `sold` — marks position as sold; price frozen at sell price, excluded from Refresh.
 - `previousClose`, `regularMarketPrice` — cached from worker response for Market view Δ% calculations.
 - `category`, `region`, `sector` — optional classification fields for Analytics view. Set manually via ✎ edit row or via CSV import.
+- `note` — optional free-text annotation. Visible only in the expanded position row and edit form.
 
 **qty=0** is allowed — used for watchlist candidates. P&L $ shows `—`, P&L% is calculated if entry > 0. Entry=0 is allowed only when qty=0 (pure price tracking). Excluded from WEIGHTS and Analytics totals.
 
@@ -276,17 +282,33 @@ If no ENC KEY is set, data is stored in plaintext (previous behavior).
 
 ## Cloud Sync (Settings panel)
 
-- **↓ SYNC FROM CLOUD** — pull latest data from JSONBin to current device
-- **↑ OVERWRITE CLOUD** — push local data to JSONBin (destructive)
+Two cloud storage backends are supported. Select in Settings under **CLOUD STORAGE**:
+
+**JSONBin** (default)
+- Requires **Master Key** (from jsonbin.io → API Keys) and a **Bin ID** (auto-created on first save, or paste from another device)
+- Direct browser-to-JSONBin requests
+
+**Cloudflare KV**
+- Requires only a **KV Key** — any unique string you choose (e.g. `lpodo`). Data is stored under this key in the KV namespace bound to your Worker.
+- Requests are routed through your Cloudflare Worker (no external API keys needed)
+- More reliable — no dependency on third-party availability
+
+**Switching backends:** select the new backend in Settings, enter its credentials, then tap **↑ OVERWRITE CLOUD** to push your local data. Both backends are independent and can coexist.
+
+**Common behaviour (both backends):**
+- **↓ SYNC FROM CLOUD** — pull latest data from cloud to current device
+- **↑ OVERWRITE CLOUD** — push local data to cloud (destructive)
 - Auto-save to cloud on every structural change (add/edit/delete position)
 - Single cloud save after Refresh All completes
-- Auto-load from cloud on app open
+- Auto-load from cloud on app open with status overlay (disappears automatically on success, stays on error)
+
+**Encryption:** optional AES-GCM 256-bit client-side encryption via **ENC KEY** in Settings. Applied before sending to either backend — the cloud stores only an encrypted blob.
 
 ## Service Worker
 
 Caches app shell for offline use. API requests are **never cached**:
-- `workers.dev` — Cloudflare Worker (prices)
-- `jsonbin.io` — cloud storage
+- `workers.dev` — Cloudflare Worker (prices and KV proxy)
+- `jsonbin.io` — cloud storage (JSONBin backend only)
 - `finnhub.io` — legacy
 
 **IMPORTANT: increment cache version string in `sw.js` on every deploy** (e.g. `portfolio-v35` → `portfolio-v36`).
@@ -332,7 +354,7 @@ Remaining coupons are calculated by stepping back from maturity date in coupon i
 
 ### Storage
 
-Bond data (`bondsDb`, `bondPortfolios`) is stored in `pt_bonds_db` and `pt_bond_portfolios` in localStorage, and is included in cloud sync alongside equity portfolios in the same JSONBin record.
+Bond data (`bondsDb`, `bondPortfolios`) is stored in `pt_bonds_db` and `pt_bond_portfolios` in localStorage, and is included in cloud sync alongside equity portfolios in the same cloud storage record (regardless of backend).
 
 ## TOP MOVERS view
 
@@ -376,7 +398,7 @@ Normalized % lines for individually selected tickers (deduplicated — if the sa
 
 ### Summary Chart
 
-In Summary, the dropdown menu → CHART shows two modes toggled by TOTAL / BY PORTFOLIO buttons:
+In Summary, the dropdown menu → CHART shows two modes selectable via a green dropdown button:
 
 - **TOTAL** — single line showing combined value of all active portfolios in USD with FX conversion
 - **BY PORTFOLIO** — one normalized line per portfolio starting at 0%, each calculated in its own base currency (no USD conversion, so FX effects don't distort relative stock performance). Color-coded with a legend showing final % change.
