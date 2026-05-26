@@ -295,6 +295,11 @@
   <div id="archivePosMenuList"></div>
 </div>
 <!-- Portfolio Switcher -->
+<div id="cloudOverlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:500;align-items:center;justify-content:center" onclick="dismissCloudOverlay()">
+  <div style="background:var(--bg2);border:1px solid var(--border);padding:20px 28px;min-width:260px;max-width:85vw;text-align:center" onclick="event.stopPropagation()">
+    <div id="cloudOverlayMsg" style="font-size:12px;letter-spacing:1px;color:var(--dim)">Loading from cloud...</div>
+  </div>
+</div>
 <div class="portfolio-switcher" id="portfolioSwitcher" onclick="closeSwitcherOutside(event)">
   <div class="portfolio-dropdown">
     <div class="portfolio-dropdown-title" style="display:flex;align-items:center;justify-content:space-between;padding-right:8px">
@@ -1337,6 +1342,7 @@ function manualCloudLoad() {
   updateJbStatus('Loading...', 'var(--dim)');
   bondsDb = getBondsDb();
 bondPortfolios = getBondPortfolios();
+showCloudOverlay('Loading from cloud...', 'var(--dim)');
 cloudLoad(function(loaded) {
     if (loaded) { render(); closeSettings(); if (getApiKey()) refreshAll(); }
   });
@@ -1553,6 +1559,19 @@ function _doCloudSave(key, binId) {
   }
 }
 
+function showCloudOverlay(msg, color) {
+  var el = document.getElementById('cloudOverlay');
+  var msg_el = document.getElementById('cloudOverlayMsg');
+  if (!el || !msg_el) return;
+  msg_el.textContent = msg;
+  msg_el.style.color = color || 'var(--dim)';
+  el.style.display = 'flex';
+}
+function dismissCloudOverlay() {
+  var el = document.getElementById('cloudOverlay');
+  if (el) el.style.display = 'none';
+}
+
 function cloudLoad(callback) {
   var key = getJbKey();
   var binId = getJbBin();
@@ -1586,6 +1605,8 @@ function cloudLoad(callback) {
         document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
         localStorage.setItem('pt_cloud_ts', res.metadata && res.metadata.updatedAt ? res.metadata.updatedAt : new Date().toISOString());
         updateJbStatus('✓ Loaded from cloud', 'var(--green)');
+        showCloudOverlay('✓ Loaded from cloud', 'var(--green)');
+        setTimeout(dismissCloudOverlay, 800);
         callback(true);
       } else if (data && Array.isArray(data.positions)) {
         portfolios[currentPortfolioId].positions = data.positions;
@@ -1623,6 +1644,7 @@ function cloudLoad(callback) {
     else if (hint.indexOf('CORS') !== -1 || hint.indexOf('Access-Control') !== -1) msg = '✗ Cloud: CORS error — check API key';
     else if (hint) msg = '✗ Cloud: ' + hint;
     updateJbStatus(msg, 'var(--red)');
+    showCloudOverlay(msg + ' · tap to dismiss', 'var(--red)');
     callback(false);
   });
 }
@@ -4467,6 +4489,7 @@ loadLocal();
 document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
 showKeyStatus();
 render();
+showCloudOverlay('Loading from cloud...', 'var(--dim)');
 cloudLoad(function(loaded) {
   if (loaded) render();
   if (getApiKey()) refreshAll();
