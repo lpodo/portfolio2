@@ -2139,6 +2139,18 @@ function addAlert(posId) {
   save(); render();
 }
 
+function quickAddAlert(posId) {
+  var cond = document.getElementById('quickAlertCond').value;
+  var val = parseFloat(document.getElementById('quickAlertVal').value);
+  if (isNaN(val) || val <= 0) return;
+  positions = positions.map(function(p) {
+    if (p.id !== posId) return p;
+    var alerts = (p.alerts || []).concat([{ condition: cond, value: val, triggered: false }]);
+    return Object.assign({}, p, { alerts: alerts });
+  });
+  save(); render();
+}
+
 function toggleExpand(id) { expandedId = (expandedId === id) ? null : id; render(); }
 function startEdit(id) { editId = id; expandedId = null; render(); }
 function cancelEdit() { editId = null; render(); }
@@ -3960,13 +3972,17 @@ function render() {
         + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (p.sector || '—') + '</span></span>'
         + (p.note ? '<span style="flex:1"><span style="opacity:0.6">NOTE</span> <span style="color:var(--bright)">' + p.note + '</span></span>' : '')
         + '</div>'
-        + (p.alerts && p.alerts.length ? '<div style="margin-top:6px;display:flex;gap:10px;flex-wrap:wrap;align-items:center"><span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
-          + p.alerts.map(function(a, i) {
-              var color = a.triggered ? '#f6c15b' : 'var(--bright)';
-              return '<span style="font-size:10px;color:' + color + '">' + (a.triggered ? '&#9679; ' : '') + a.condition + ' ' + a.value + '</span>'
-                + '<span onclick="deleteAlert(' + p.id + ',' + i + ')" style="cursor:pointer;font-size:11px;color:var(--dim);margin-left:-6px">&#10005;</span>';
-            }).join('')
-          + '</div>' : '')
+        + '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+        + '<span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
+        + ((p.alerts && p.alerts.length) ? p.alerts.map(function(a, i) {
+            var color = a.triggered ? '#f6c15b' : 'var(--bright)';
+            return '<span style="font-size:10px;color:' + color + '">' + (a.triggered ? '&#9679; ' : '') + a.condition + ' ' + a.value + '</span>'
+              + '<span onclick="deleteAlert(' + p.id + ',' + i + ')" style="cursor:pointer;font-size:11px;color:var(--dim);margin-left:-6px">&#10005;</span>';
+          }).join('') : '')
+        + '<select id="quickAlertCond" style="background:var(--bg);border:1px solid var(--border);color:var(--dim);font-family:var(--font);font-size:11px;padding:1px 4px;-webkit-appearance:none;appearance:none;cursor:pointer"><option value=">">></option><option value="<"><</option></select>'
+        + '<input type="number" id="quickAlertVal" placeholder="price" step="any" min="0" style="width:65px;font-size:11px;padding:2px 4px;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font)">'
+        + '<span onclick="quickAddAlert(' + p.id + ')" style="cursor:pointer;font-size:11px;color:var(--green);border:1px solid var(--green);padding:1px 5px">+</span>'
+        + '</div>'
         + '</td></tr>'
         : ''));
   });
