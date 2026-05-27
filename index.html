@@ -3943,10 +3943,14 @@ function render() {
               + '</div>';
           }).join('') : '')
         + '<div style="display:flex;gap:6px;align-items:center;margin-top:4px">'
-        + '<select id="alertCond" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:13px;padding:5px 4px"><option value=">">  &gt;</option><option value="<">  &lt;</option></select>'
+        + '<select id="alertCond" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:13px;padding:5px 8px;-webkit-appearance:none;appearance:none;cursor:pointer"><option value=">"> &gt; </option><option value="<"> &lt; </option></select>'
         + '<input type="number" id="alertVal" placeholder="price" step="any" min="0" style="width:90px;box-sizing:border-box">'
         + '<button onclick="addAlert(' + p.id + ')" class="btn btn-green" style="padding:5px 10px;font-size:11px">+ ADD</button>'
         + '</div>'
+        + '</div>'
+        + '<div style="margin-top:12px;display:flex;gap:8px">'
+        + '<button class="btn btn-green" style="padding:6px 16px" onclick="saveEdit(' + p.id + ')">SAVE</button>'
+        + '<button class="btn" style="padding:6px 16px;color:var(--dim)" onclick="cancelEdit()">CANCEL</button>'
         + '</div>'
         + '</td></tr>'
         : (isExpanded ? '<tr><td colspan="8" style="padding:4px 8px 8px;background:var(--bg2)">'
@@ -3958,7 +3962,7 @@ function render() {
         + '</div>'
         + (p.alerts && p.alerts.length ? '<div style="margin-top:6px;display:flex;gap:10px;flex-wrap:wrap;align-items:center"><span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
           + p.alerts.map(function(a, i) {
-              var color = a.triggered ? '#f6c15b' : 'var(--dim)';
+              var color = a.triggered ? '#f6c15b' : 'var(--bright)';
               return '<span style="font-size:10px;color:' + color + '">' + (a.triggered ? '&#9679; ' : '') + a.condition + ' ' + a.value + '</span>'
                 + '<span onclick="deleteAlert(' + p.id + ',' + i + ')" style="cursor:pointer;font-size:11px;color:var(--dim);margin-left:-6px">&#10005;</span>';
             }).join('')
