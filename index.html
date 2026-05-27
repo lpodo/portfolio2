@@ -2117,6 +2117,28 @@ function removePosition(id) {
   positions = positions.filter(function(p) { return p.id !== id; });
   save(); render();
 }
+
+function deleteAlert(posId, alertIdx) {
+  positions = positions.map(function(p) {
+    if (p.id !== posId) return p;
+    var alerts = (p.alerts || []).filter(function(_, i) { return i !== alertIdx; });
+    return Object.assign({}, p, { alerts: alerts });
+  });
+  save(); render();
+}
+
+function addAlert(posId) {
+  var cond = document.getElementById('alertCond').value;
+  var val = parseFloat(document.getElementById('alertVal').value);
+  if (isNaN(val) || val <= 0) return;
+  positions = positions.map(function(p) {
+    if (p.id !== posId) return p;
+    var alerts = (p.alerts || []).concat([{ condition: cond, value: val, triggered: false }]);
+    return Object.assign({}, p, { alerts: alerts });
+  });
+  save(); render();
+}
+
 function toggleExpand(id) { expandedId = (expandedId === id) ? null : id; render(); }
 function startEdit(id) { editId = id; expandedId = null; render(); }
 function cancelEdit() { editId = null; render(); }
@@ -2135,7 +2157,7 @@ function saveEdit(id) {
   var sector   = secEl ? (secEl.value.trim() || null) : (pos ? pos.sector   : null);
   var note     = noteEl ? (noteEl.value.trim() || null) : (pos ? pos.note    : null);
   positions = positions.map(function(p) {
-    return p.id === id ? Object.assign({}, p, { ticker: newTicker || p.ticker, qty: qty, entry: entry, current: current, category: category, region: region, sector: sector, note: note }) : p;
+    return p.id === id ? Object.assign({}, p, { ticker: newTicker || p.ticker, qty: qty, entry: entry, current: current, category: category, region: region, sector: sector, note: note, alerts: p.alerts || [] }) : p;
   });
   save(); editId = null; render();
 }
@@ -3881,7 +3903,10 @@ function render() {
     }
 
     var isExpanded = expandedId === p.id;
-    var tickerCell = isEdit ? '<input class="edit-input" id="editTicker" type="text" value="' + p.ticker + '" style="width:60px;text-transform:uppercase">' : '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + '</span>';
+    var hasActiveAlert = !isEdit && p.alerts && p.alerts.some(function(a) { return a.triggered; });
+    var tickerCell = isEdit
+      ? '<input class="edit-input" id="editTicker" type="text" value="' + p.ticker + '" style="width:60px;text-transform:uppercase">'
+      : '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + (hasActiveAlert ? ' <span style="color:#f6c15b;font-size:11px">&#9679;</span>' : '') + '</span>';
     var soldStyle = (p.sold || p.qty === 0) ? 'font-style:italic;opacity:0.5' : '';
     rows += '<tr style="' + soldStyle + '">'
       + '<td>' + tickerCell + '</td>'
@@ -3901,6 +3926,20 @@ function render() {
         + '<div class="field"><label>SECTOR</label><input type="text" id="editSector" value="' + (p.sector || '') + '" placeholder="e.g. Technology" style="width:110px" autocomplete="off" autocorrect="off"></div>'
         + '</div>'
         + '<div style="margin-top:6px"><div class="field" style="width:100%"><label>NOTE</label><input type="text" id="editNote" value="' + (p.note || '') + '" placeholder="optional note..." style="width:100%;box-sizing:border-box" autocomplete="off" autocorrect="off"></div></div>'
+        + '<div style="margin-top:8px">'
+        + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:6px">ALERTS</div>'
+        + ((p.alerts && p.alerts.length) ? p.alerts.map(function(a, i) {
+            return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'
+              + '<span style="font-size:12px;color:' + (a.triggered ? '#f6c15b' : 'var(--bright)') + '">' + a.condition + ' ' + a.value + '</span>'
+              + '<button onclick="deleteAlert(' + p.id + ',' + i + ')" class="btn" style="padding:2px 6px;font-size:10px">&#10005;</button>'
+              + '</div>';
+          }).join('') : '')
+        + '<div style="display:flex;gap:6px;align-items:center;margin-top:4px">'
+        + '<select id="alertCond" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:13px;padding:5px 4px"><option value=">">  &gt;</option><option value="<">  &lt;</option></select>'
+        + '<input type="number" id="alertVal" placeholder="price" step="any" min="0" style="width:90px;box-sizing:border-box">'
+        + '<button onclick="addAlert(' + p.id + ')" class="btn btn-green" style="padding:5px 10px;font-size:11px">+ ADD</button>'
+        + '</div>'
+        + '</div>'
         + '</td></tr>'
         : (isExpanded ? '<tr><td colspan="8" style="padding:4px 8px 8px;background:var(--bg2)">'
         + '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px">'
@@ -3909,6 +3948,13 @@ function render() {
         + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (p.sector || '—') + '</span></span>'
         + (p.note ? '<span style="flex:1"><span style="opacity:0.6">NOTE</span> <span style="color:var(--bright)">' + p.note + '</span></span>' : '')
         + '</div>'
+        + (p.alerts && p.alerts.length ? '<div style="margin-top:6px;display:flex;gap:10px;flex-wrap:wrap;align-items:center"><span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
+          + p.alerts.map(function(a, i) {
+              var color = a.triggered ? '#f6c15b' : 'var(--dim)';
+              return '<span style="font-size:10px;color:' + color + '">' + (a.triggered ? '&#9679; ' : '') + a.condition + ' ' + a.value + '</span>'
+                + '<span onclick="deleteAlert(' + p.id + ',' + i + ')" style="cursor:pointer;font-size:11px;color:var(--dim);margin-left:-6px">&#10005;</span>';
+            }).join('')
+          + '</div>' : '')
         + '</td></tr>'
         : ''));
   });
