@@ -528,6 +528,7 @@ var watchlistSort = { key: null, dir: -1 };
 var loadingSet = {};
 var editId = null;
 var expandedId = null;
+var editNoteId = null;
 var sortKey = null, sortDir = 1;
 var archiveSortKey = null, archiveSortDir = 1;
 try { var _s = JSON.parse(localStorage.getItem('pt_sort')); if (_s) { sortKey = _s.key||null; sortDir = _s.dir||1; } } catch(e) {}
@@ -1141,7 +1142,7 @@ function switchPortfolio(id) {
   currentPortfolioId = id;
   localStorage.setItem('pt_current', id);
   loadLocal();
-  editId = null;
+  editId = null; editNoteId = null;
   loadingSet = {};
   // Reset view mode from any special modes
   var prevMode = viewMode;
@@ -1190,7 +1191,7 @@ function addPortfolio() {
     currentPortfolioId = id;
     localStorage.setItem('pt_current', id);
     loadLocal();
-    editId = null; expandedId = null; loadingSet = {};
+    editId = null; expandedId = null; editNoteId = null; loadingSet = {};
     document.getElementById('portfolioTitle').textContent = name;
     updateAddForm();
     renderSwitcher();
@@ -1267,7 +1268,7 @@ function deletePortfolio(id) {
     currentPortfolioId = Object.keys(portfolios)[0];
     localStorage.setItem('pt_current', currentPortfolioId);
     loadLocal();
-    editId = null; expandedId = null; loadingSet = {};
+    editId = null; expandedId = null; editNoteId = null; loadingSet = {};
     document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
     render();
   }
@@ -2145,8 +2146,12 @@ function buildExpandedInner(p) {
     + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (p.region || '—') + '</span></span>'
     + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (p.sector || '—') + '</span></span>'
     + '</div>'
-    + '<div style="margin-top:4px;font-size:10px;color:var(--dim);letter-spacing:1px">'
-    + '<span style="opacity:0.6">NOTE</span> <span style="color:var(--bright)">' + (p.note || '—') + '</span>'
+    + '<div style="margin-top:4px;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
+    + '<span style="opacity:0.6">NOTE</span>'
+    + (editNoteId === p.id
+      ? '<input id="noteEditInput" type="text" value="' + (p.note || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;') + '" style="font-size:10px;font-family:var(--font);background:var(--bg);border:1px solid var(--border);color:var(--bright);padding:1px 4px;width:200px;box-sizing:border-box" onkeydown="if(event.key===\'Enter\'){event.preventDefault();saveNoteInline(' + p.id + ');}else if(event.key===\'Escape\'){event.preventDefault();cancelNoteEdit();}" onblur="saveNoteInline(' + p.id + ')">'
+      : '<span style="color:var(--bright)">' + (p.note || '—') + '</span>'
+        + '<span onclick="startNoteEdit(' + p.id + ')" style="cursor:pointer;color:var(--dim);font-size:11px;line-height:1">&#9998;</span>')
     + '</div>'
     + '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
     + '<span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
@@ -2180,6 +2185,22 @@ function toggleAlertCondQuick(el) { _alertCondQuick = _alertCondQuick === '>' ? 
 function toggleExpand(id) { expandedId = (expandedId === id) ? null : id; render(); }
 function startEdit(id) { editId = id; expandedId = null; render(); }
 function cancelEdit() { editId = null; render(); }
+function startNoteEdit(posId) {
+  editNoteId = posId;
+  render();
+  setTimeout(function() { var el = document.getElementById('noteEditInput'); if (el) { el.focus(); el.select(); } }, 0);
+}
+function cancelNoteEdit() { editNoteId = null; render(); }
+function saveNoteInline(posId) {
+  var el = document.getElementById('noteEditInput');
+  if (!el) return;
+  var note = el.value.trim();
+  positions = positions.map(function(p) {
+    return p.id === posId ? Object.assign({}, p, { note: note }) : p;
+  });
+  editNoteId = null;
+  save(); render();
+}
 function saveEdit(id) {
   var newTicker = (document.getElementById('editTicker').value || '').trim().toUpperCase();
   var qty = document.getElementById('editQty').value.trim() === '' ? null : parseFloat(document.getElementById('editQty').value);
