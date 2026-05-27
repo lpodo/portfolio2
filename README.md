@@ -72,7 +72,11 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
   - `pt_current` — active portfolio ID
   - `pt_finnhub` — Cloudflare Worker URL
   - `pt_token` — API token for Cloudflare Worker
-  - `pt_sort`, `pt_wl_sort` — sort state (regular and watchlist)
+  - `pt_sort` — P&L sort state for active portfolios
+  - `pt_sort_arc` — P&L sort state for archive portfolios
+  - `pt_wl_sort` — sort state for watchlist market view
+  - `pt_agg_active`, `pt_agg_archive` — aggregation mode state
+  - `pt_movers_limit` — TOP MOVERS show limit (3–50)
   - `pt_cloud_backend` — cloud storage backend: `jsonbin` (default) or `kv`
   - `pt_jbkey` — JSONBin master key
   - `pt_jbbin` — JSONBin bin ID
@@ -115,6 +119,8 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
 - `previousClose`, `regularMarketPrice` — cached from worker response for Market view Δ% calculations.
 - `category`, `region`, `sector` — optional classification fields for Analytics view. Set manually via ✎ edit row or via CSV import.
 - `note` — optional free-text annotation. Visible only in the expanded position row and edit form.
+- `priceTimestamp` — Unix timestamp of last price from `regularMarketTime`; used to align the "today's point" in charts.
+- `alerts` — array of price alert objects: `[{ condition: ">" | "<", value: 134.5, triggered: true|false }]`. Checked on every price refresh.
 
 **qty=0** is allowed — used for watchlist candidates. P&L $ shows `—`, P&L% is calculated if entry > 0. Entry=0 is allowed only when qty=0 (pure price tracking). Excluded from WEIGHTS and Analytics totals.
 
@@ -213,7 +219,7 @@ Backup format:
 
 ## Data Architecture
 
-**Cloud (JSONBin)** stores structural data — portfolios, positions, entry prices. Current prices are not actively synced to cloud — `cloudSave` is only triggered by structural changes (add/edit/delete position, portfolio changes), not by price updates.
+**Cloud storage** (JSONBin or Cloudflare KV) stores structural data — portfolios, positions, entry prices. Current prices are not actively synced to cloud — `cloudSave` is only triggered by structural changes (add/edit/delete position, portfolio changes), not by price updates.
 
 **Prices** are always fetched live from Yahoo Finance via Cloudflare Worker. After every `cloudLoad`, `refreshAll` is triggered automatically for the current portfolio.
 
@@ -230,7 +236,8 @@ Only one position is held in the clipboard at a time. The clipboard is cleared o
 ## Selling Positions
 
 Any position in a regular portfolio can be marked as sold via the **SELL** button (appears before ✎ and ✕):
-- A prompt asks for the sell price (pre-filled with current price, editable)
+- A modal dialog asks for quantity to sell (default: full position) and sell price (pre-filled with current price)
+- **Partial sell**: if quantity < position qty, the position is split into two records — the sold portion (marked `sold: true` with sell price) and the remainder (active, original entry price)
 - The position is marked `sold: true` with the sell price locked as `current`
 - Sold positions are displayed in *italic* with reduced opacity and a ⊘ icon instead of market state
 - Sold positions are excluded from Refresh — their price is frozen at the sell price
@@ -367,6 +374,23 @@ Shows positions ranked by absolute Δ% (largest moves first), using the same CLO
 - **SHOW TOP N**: configurable limit (3–50), saved in `pt_movers_limit`, persists across sessions
 - **CLOSE / CURRENT** column headers are clickable menus (same as Market view)
 - qty=0 positions shown in italic/dimmed style
+
+## Price Alerts
+
+Each position can have one or more price alerts. Alerts are set via the ✎ edit form under the **ALERTS** section:
+- Select condition `>` or `<` from a dropdown
+- Enter a price value
+- Click **+ ADD**
+
+**Triggering:** on every price refresh, each alert is checked against the current price. If `condition = ">"` and `current > value`, or `condition = "<"` and `current < value`, the alert is marked `triggered: true`.
+
+**Indicator:** a yellow dot `●` appears after the ticker name in the P&L view while any alert is active (triggered).
+
+**Expanded view:** clicking the ticker shows alerts in the read-only sub-row. Triggered alerts are highlighted yellow. Each alert has a ✕ button for deletion.
+
+**Edit form:** lists existing alerts with ✕ buttons, plus the ADD row for new ones.
+
+**Persistence:** alerts are stored in the position object and synced to cloud. The `triggered` state is recalculated on every refresh — it is not persisted.
 
 ## Chart View
 
