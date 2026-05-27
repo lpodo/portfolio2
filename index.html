@@ -111,7 +111,7 @@
   .note { margin-top: 16px; font-size: 10px; color: var(--dim); line-height: 1.6; }
   .dict-trigger { cursor:pointer; background:var(--bg); border:1px solid var(--border); color:var(--bright); font-family:var(--font); font-size:11px; padding:3px 6px; display:flex; justify-content:space-between; align-items:center; user-select:none; box-sizing:border-box; }
   .dict-drop { position:absolute; z-index:200; background:var(--bg2); border:1px solid var(--border); max-height:180px; overflow-y:auto; display:none; box-sizing:border-box; }
-  .dict-opt { padding:5px 8px; font-size:11px; color:var(--bright); cursor:pointer; font-family:var(--font); }
+  .dict-opt { padding:5px 8px; font-size:11px; color:var(--bright); cursor:pointer; font-family:var(--font); white-space:nowrap; }
   .dict-opt:hover { background:var(--border); }
   .dict-opt-new { color:var(--green); border-top:1px solid var(--border); }
   .dict-opt-empty { color:var(--dim); }
@@ -621,7 +621,7 @@ function buildDictSelectHtml(field, dict, currentVal, label, width) {
     + '<span id="dictDisplay_' + field + '">' + dispHtml + '</span>'
     + '<span style="font-size:9px;color:var(--dim);margin-left:4px">&#9660;</span>'
     + '</div>'
-    + '<div id="dictDrop_' + field + '" class="dict-drop" style="width:' + width + '">'
+    + '<div id="dictDrop_' + field + '" class="dict-drop" style="min-width:' + width + '">'
     + buildDictDropOptions(field, dict, currentVal)
     + '</div>'
     + '<span id="dictNew_' + field + '" style="display:none;gap:4px;align-items:center">'
