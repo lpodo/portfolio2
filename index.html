@@ -2055,7 +2055,8 @@ function sellPosition(id) {
 
   // Build sell modal
   var overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:500;display:flex;align-items:center;justify-content:center';
+  overlay.id = 'sellOverlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:500;display:flex;align-items:flex-start;justify-content:center;padding-top:60px';
   overlay.innerHTML =
     '<div style="background:var(--bg2);border:1px solid var(--border);padding:20px 24px;min-width:260px;max-width:85vw" onclick="event.stopPropagation()">'
     + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:14px">SELL ' + pos.ticker + '</div>'
@@ -2069,7 +2070,7 @@ function sellPosition(id) {
     + '</div>'
     + '<div id="sellErr" style="color:var(--red);font-size:11px;margin-top:6px"></div>'
     + '</div>';
-  overlay.onclick = function() { overlay.remove(); };
+  overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
   document.body.appendChild(overlay);
   document.getElementById('sellPriceInput').focus();
 }
@@ -2086,7 +2087,7 @@ function confirmSell(id) {
   if (qtyInput > pos.qty) { errEl.textContent = 'Quantity exceeds position (' + pos.qty + ')'; return; }
 
   // Remove modal
-  var overlay = document.querySelector('[style*="rgba(0,0,0,0.6)"]');
+  var overlay = document.getElementById('sellOverlay');
   if (overlay) overlay.remove();
 
   if (Math.abs(qtyInput - pos.qty) < 0.0001) {
