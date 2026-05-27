@@ -167,7 +167,9 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
     - **CURRENT column**: `Current` (current price including extended hours, default) or `Reg.Price` (regularMarketPrice)
     - Δ% is always computed from the selected CLOSE vs selected CURRENT values
     - Settings apply globally to all portfolios (regular, watchlist, summary) and persist across sessions
-  - other view modes are described below 
+  - **TOP MOVERS** — see [TOP MOVERS view](#top-movers-view)
+  - **ALERTS** — see [Price Alerts](#price-alerts)
+  - other view modes are described below
 - **Aggregation mode** (≡ button in the P&L table header, above the action buttons): collapses duplicate tickers into single rows for a cleaner view. Active separately for regular and archive portfolios; state persists across sessions (`pt_agg_active`, `pt_agg_archive`). The ≡ icon turns green when enabled. Weight view inherits the same mode automatically.
 
   Aggregation rules:
@@ -196,7 +198,7 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
 - **Watchlist portfolio** (WATCHLIST radio button at creation): designed for tracking indices, commodities, currencies and any instruments without a held position (e.g. `^KS11`, `BZ=F`, `EURUSD=X`). Essentially a regular portfolio with qty/entry forced to 0 and some UI restrictions suited to its purpose:
   - Add form hides qty/entry fields
   - View shows CLOSE / PRICE / Δ% / market state icon / NAME — sortable by TICKER and Δ%
-  - ⋮ menu shows MARKET and CHART only (P&L, WEIGHT, ANALYTICS hidden)
+  - ⋮ menu shows MARKET, TOP MOVERS, ALERTS, and CHART only (P&L, WEIGHT, ANALYTICS hidden)
   - CHART mode: positions-only (no portfolio value line); ticker selection works the same as regular portfolios
   - Appears at the top of the active portfolio list, separated by a divider
   - Excluded from Summary, Summary Market, Summary Chart and Analytics
@@ -374,23 +376,58 @@ Shows positions ranked by absolute Δ% (largest moves first), using the same CLO
 - **SHOW TOP N**: configurable limit (3–50), saved in `pt_movers_limit`, persists across sessions
 - **CLOSE / CURRENT** column headers are clickable menus (same as Market view)
 - qty=0 positions shown in italic/dimmed style
+- **Expanded row**: tap a ticker to open the expanded sub-row (same as MARKET view) — shows CAT/REG/SEC, NOTE, and ALERTS with quick-add
 
 ## Price Alerts
 
-Each position can have one or more price alerts. Alerts are set via the ✎ edit form under the **ALERTS** section:
-- Select condition `>` or `<` from a dropdown
+Each position can have one or more price alerts. Alerts are checked on every price refresh and shown across all market-style views.
+
+### Setting alerts
+
+**From the ✎ edit form** — under the ALERTS section at the bottom of the form:
+- Click the `>` / `<` toggle button to select condition (tap to switch in place)
 - Enter a price value
 - Click **+ ADD**
 
-**Triggering:** on every price refresh, each alert is checked against the current price. If `condition = ">"` and `current > value`, or `condition = "<"` and `current < value`, the alert is marked `triggered: true`.
+**From the expanded row** (faster, without opening the edit form) — tap a ticker to expand, then use the inline ALERTS row:
+- Click the `>` / `<` toggle to select condition
+- Enter a price value
+- Click `+`
 
-**Indicator:** a yellow dot `●` appears after the ticker name in the P&L view while any alert is active (triggered).
+### Triggering
 
-**Expanded view:** clicking the ticker shows alerts in the read-only sub-row. Triggered alerts are highlighted yellow. Each alert has a ✕ button for deletion.
+On every price refresh, each alert is re-evaluated:
+- `>` — triggers when `current price > alert value`
+- `<` — triggers when `current price < alert value`
 
-**Edit form:** lists existing alerts with ✕ buttons, plus the ADD row for new ones.
+`triggered` is recalculated on every refresh and is not persisted to storage.
 
-**Persistence:** alerts are stored in the position object and synced to cloud. The `triggered` state is recalculated on every refresh — it is not persisted.
+### Indicators
+
+A yellow dot `●` appears after the ticker name when any alert on that position is triggered. The dot is visible in all views that show tickers: P&L, MARKET, WEIGHTS, TOP MOVERS, ALERTS.
+
+### Expanded row
+
+Tap any ticker (in P&L, MARKET, TOP MOVERS, ALERTS, or a watchlist) to open the expanded sub-row. The ALERTS line shows:
+- All active alerts with their condition and value — yellow if triggered, white if not
+- ✕ button to delete each alert
+- Inline quick-add controls (`>` / `<` toggle + price input + `+`)
+
+### ALERTS view
+
+Available via ⋮ menu → **ALERTS** for individual portfolios, watchlists, and Summary. Not available for Archive portfolios.
+
+Shows all positions that have at least one alert set (sold positions excluded), sorted by Δ% descending (biggest gainers first, biggest losers last). Same columns as MARKET view. Tap a ticker to expand.
+
+- **Individual portfolio**: shows positions from the current portfolio only
+- **Summary**: collects all positions with alerts from regular and watchlist portfolios, deduplicated by ticker
+- Empty state: displays "NO ALERTS SET"
+
+This view is useful as a single dashboard of everything being watched — you see current prices and conditions without visiting each portfolio individually.
+
+### Persistence
+
+Alerts are stored in the position object (`pos.alerts` array) and included in cloud sync. The `triggered` flag is runtime-only.
 
 ## Chart View
 
@@ -441,16 +478,23 @@ Each position has three optional fields: **category**, **region**, **sector**. S
 
 Each position also has a free-text **note** field. Set via the ✎ edit row. Notes are personal annotations — they don't affect any calculations or groupings and appear only in the expanded view and the edit form.
 
-### Viewing Attributes Without Editing
+### Expanded Row
 
-Tapping/clicking the **ticker name** in the P&L view toggles an expandable sub-row showing the position's classification fields and note in read-only format:
+Tapping/clicking the **ticker name** in any market-style view toggles an expandable sub-row. Available in: **P&L**, **MARKET**, **TOP MOVERS**, **ALERTS**, and **watchlist** views.
+
+The expanded row always shows three lines:
 
 ```
 CAT  AI & Semi    REG  US    SEC  Technology
-NOTE  Bought on dip after earnings
+NOTE  Bought on dip after earnings  ✎
+ALERTS  > 920  ✕    [>] [price] [+]
 ```
 
-Tap the ticker again to collapse. The expanded state resets when switching portfolios or views.
+- **CAT / REG / SEC** — classification fields (show `—` if empty)
+- **NOTE** — free-text annotation. Click the ✎ button to edit inline: the value becomes an input field; press **Enter** or click away to save, **Escape** to cancel
+- **ALERTS** — existing alerts with ✕ delete buttons, plus inline quick-add controls
+
+Tap the ticker again to collapse. The expanded state resets when switching portfolios.
 
 ### Attribute Inheritance
 
