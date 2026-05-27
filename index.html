@@ -2139,6 +2139,28 @@ function addAlert(posId) {
   save(); render();
 }
 
+function buildExpandedInner(p) {
+  return '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px">'
+    + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (p.category || '—') + '</span></span>'
+    + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (p.region || '—') + '</span></span>'
+    + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (p.sector || '—') + '</span></span>'
+    + '</div>'
+    + '<div style="margin-top:4px;font-size:10px;color:var(--dim);letter-spacing:1px">'
+    + '<span style="opacity:0.6">NOTE</span> <span style="color:var(--bright)">' + (p.note || '—') + '</span>'
+    + '</div>'
+    + '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+    + '<span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
+    + ((p.alerts && p.alerts.length) ? p.alerts.map(function(a, i) {
+        var color = a.triggered ? '#f6c15b' : 'var(--bright)';
+        return '<span style="font-size:10px;color:' + color + '">' + (a.triggered ? '&#9679; ' : '') + a.condition + ' ' + a.value + '</span>'
+          + '<span onclick="deleteAlert(' + p.id + ',' + i + ')" style="cursor:pointer;font-size:11px;color:var(--dim);margin-left:-6px">&#10005;</span>';
+      }).join('') : '')
+    + '<span onclick="toggleAlertCondQuick(this)" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;min-width:20px;background:var(--bg);border:1px solid var(--border);color:var(--dim);font-family:var(--font);font-size:11px;padding:1px 5px;user-select:none">' + _alertCondQuick + '</span>'
+    + '<input type="number" id="quickAlertVal" placeholder="price" step="any" min="0" style="width:65px;font-size:11px;padding:2px 4px;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font)">'
+    + '<span onclick="quickAddAlert(' + p.id + ')" style="cursor:pointer;font-size:11px;color:var(--green);border:1px solid var(--green);padding:1px 5px">+</span>'
+    + '</div>';
+}
+
 function quickAddAlert(posId) {
   var cond = _alertCondQuick;
   var val = parseFloat(document.getElementById('quickAlertVal').value);
@@ -3969,25 +3991,7 @@ function render() {
         + '<button class="btn" style="padding:6px 16px;color:var(--dim)" onclick="cancelEdit()">CANCEL</button>'
         + '</div>'
         + '</td></tr>'
-        : (isExpanded ? '<tr><td colspan="8" style="padding:4px 8px 8px;background:var(--bg2)">'
-        + '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px">'
-        + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (p.category || '—') + '</span></span>'
-        + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (p.region || '—') + '</span></span>'
-        + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (p.sector || '—') + '</span></span>'
-        + (p.note ? '<span style="flex:1"><span style="opacity:0.6">NOTE</span> <span style="color:var(--bright)">' + p.note + '</span></span>' : '')
-        + '</div>'
-        + '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
-        + '<span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
-        + ((p.alerts && p.alerts.length) ? p.alerts.map(function(a, i) {
-            var color = a.triggered ? '#f6c15b' : 'var(--bright)';
-            return '<span style="font-size:10px;color:' + color + '">' + (a.triggered ? '&#9679; ' : '') + a.condition + ' ' + a.value + '</span>'
-              + '<span onclick="deleteAlert(' + p.id + ',' + i + ')" style="cursor:pointer;font-size:11px;color:var(--dim);margin-left:-6px">&#10005;</span>';
-          }).join('') : '')
-        + '<span onclick="toggleAlertCondQuick(this)" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;min-width:20px;background:var(--bg);border:1px solid var(--border);color:var(--dim);font-family:var(--font);font-size:11px;padding:1px 5px;user-select:none">' + _alertCondQuick + '</span>'
-        + '<input type="number" id="quickAlertVal" placeholder="price" step="any" min="0" style="width:65px;font-size:11px;padding:2px 4px;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font)">'
-        + '<span onclick="quickAddAlert(' + p.id + ')" style="cursor:pointer;font-size:11px;color:var(--green);border:1px solid var(--green);padding:1px 5px">+</span>'
-        + '</div>'
-        + '</td></tr>'
+        : (isExpanded ? '<tr><td colspan="8" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>'
         : ''));
   });
 
@@ -4472,8 +4476,11 @@ function render() {
       var price = currentMode === 'reg' ? (p.regularMarketPrice || null) : (p.current || null);
       var delta = (close && price) ? (price - close) / close * 100 : null;
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
+      var isExpanded = expandedId === p.id;
+      var hasActiveAlert = p.alerts && p.alerts.some(function(a) { return a.triggered; });
+      var wlTickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + (hasActiveAlert ? ' <span style="color:#f6c15b;font-size:11px">&#9679;</span>' : '') + '</span>';
       wlRows += '<tr>'
-        + '<td style="text-align:left;white-space:nowrap">' + p.ticker + '</td>'
+        + '<td style="text-align:left;white-space:nowrap">' + wlTickerCell + '</td>'
         + '<td style="white-space:nowrap">' + (close ? getPositionCurrencySymbol(p) + f2(close) : '&mdash;') + '</td>'
         + '<td style="white-space:nowrap">' + (price ? getPositionCurrencySymbol(p) + f2(price) : '&mdash;') + '</td>'
         + '<td class="' + deltaClass + '" style="white-space:nowrap">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
@@ -4482,7 +4489,8 @@ function render() {
         + '<td style="white-space:nowrap">'
           + '<button class="btn-icon" onclick="removePosition(' + p.id + ')">&#10005;</button>'
         + '</td>'
-        + '</tr>';
+        + '</tr>'
+        + (isExpanded ? '<tr><td colspan="7" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>' : '');
     });
     area.innerHTML = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
       + '<table style="border-collapse:collapse;font-size:13px">'
@@ -4524,19 +4532,7 @@ function render() {
       var hasActiveAlert = p.alerts && p.alerts.some(function(a) { return a.triggered; });
       var mktTickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + (hasActiveAlert ? ' <span style="color:#f6c15b;font-size:11px">&#9679;</span>' : '') + '</span>';
       var mktExpandedRow = isExpanded
-        ? '<tr><td colspan="6" style="padding:4px 8px 8px;background:var(--bg2)">'
-          + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
-          + '<span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
-          + ((p.alerts && p.alerts.length) ? p.alerts.map(function(a, i) {
-              var color = a.triggered ? '#f6c15b' : 'var(--bright)';
-              return '<span style="font-size:10px;color:' + color + '">' + (a.triggered ? '&#9679; ' : '') + a.condition + ' ' + a.value + '</span>'
-                + '<span onclick="deleteAlert(' + p.id + ',' + i + ')" style="cursor:pointer;font-size:11px;color:var(--dim);margin-left:-6px">&#10005;</span>';
-            }).join('') : '')
-          + '<span onclick="toggleAlertCondQuick(this)" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;min-width:20px;background:var(--bg);border:1px solid var(--border);color:var(--dim);font-family:var(--font);font-size:11px;padding:1px 5px;user-select:none">' + _alertCondQuick + '</span>'
-          + '<input type="number" id="quickAlertVal" placeholder="price" step="any" min="0" style="width:65px;font-size:11px;padding:2px 4px;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font)">'
-          + '<span onclick="quickAddAlert(' + p.id + ')" style="cursor:pointer;font-size:11px;color:var(--green);border:1px solid var(--green);padding:1px 5px">+</span>'
-          + '</div>'
-          + '</td></tr>'
+        ? '<tr><td colspan="6" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>'
         : '';
       if (p.current == null) {
         marketRows += '<tr>'
