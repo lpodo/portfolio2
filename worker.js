@@ -1,3 +1,4 @@
+// Portfolio Terminal 2 — Cloudflare Worker
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
