@@ -202,6 +202,7 @@
       <div onclick="setView('weight')" id="vmWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">WEIGHTS</div>
       <div onclick="setView('market')" id="vmMarket" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">MARKET</div>
       <div onclick="setView('movers')" id="vmMovers" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">TOP MOVERS</div>
+      <div onclick="setView('alerts')" id="vmAlerts" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">ALERTS</div>
       <div onclick="setView('chart')" id="vmChart" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">CHART</div>
       <div onclick="setView('analytics')" id="vmAnalytics" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">ANALYTICS</div>
     </div>
@@ -1126,7 +1127,7 @@ function switchToArchiveSummary() {
 }
 
 function switchToSummary() {
-  viewMode = viewMode === 'movers' ? 'summary-movers' : 'summary';
+  viewMode = viewMode === 'movers' ? 'summary-movers' : viewMode === 'alerts' ? 'summary-alerts' : 'summary';
   document.getElementById('portfolioTitle').textContent = 'SUMMARY';
   document.getElementById('viewMenuBtn').style.display = '';
   document.getElementById('viewMenuBtn').disabled = false;
@@ -1148,11 +1149,12 @@ function switchPortfolio(id) {
   var prevMode = viewMode;
   if (['summary','archive-summary','summary-market','summary-chart','summary-analytics','bonds'].indexOf(viewMode) !== -1) viewMode = 'main';
   else if (viewMode === 'summary-movers') viewMode = 'movers';
+  else if (viewMode === 'summary-alerts') viewMode = 'alerts';
   var btn = document.getElementById('viewMenuBtn');
   var refreshBtn = document.getElementById('refreshAllBtn');
   if (portfolios[id].watchlist) {
     // Watchlist supports: market, movers, chart
-    if (['market','movers','chart'].indexOf(viewMode) === -1) viewMode = 'market';
+    if (['market','movers','chart','alerts'].indexOf(viewMode) === -1) viewMode = 'market';
     btn.style.display = '';
     btn.disabled = false; btn.style.opacity = '';
     refreshBtn.style.display = '';
@@ -2526,7 +2528,7 @@ function getWatchlistSorted(items) {
 function toggleViewMenu() {
   var menu = document.getElementById('viewMenu');
   if (menu.style.display === 'none') {
-    var isSummaryMode = ['summary','summary-market','summary-chart','summary-analytics','summary-movers'].indexOf(viewMode) !== -1;
+    var isSummaryMode = ['summary','summary-market','summary-chart','summary-analytics','summary-movers','summary-alerts'].indexOf(viewMode) !== -1;
     var isWL = !isSummaryMode && currentPortfolio() && currentPortfolio().watchlist;
     var isArchive = !isSummaryMode && !isWL && currentPortfolio() && currentPortfolio().archive;
     document.getElementById('vmMain').style.display = (isWL) ? 'none' : '';
@@ -2535,6 +2537,7 @@ function toggleViewMenu() {
     document.getElementById('vmChart').style.display = isArchive ? 'none' : '';
     document.getElementById('vmAnalytics').style.display = isWL ? 'none' : '';
     document.getElementById('vmMovers').style.display = isArchive ? 'none' : '';
+    document.getElementById('vmAlerts').style.display = isArchive ? 'none' : '';
     menu.style.display = 'block';
   } else {
     menu.style.display = 'none';
@@ -2542,19 +2545,18 @@ function toggleViewMenu() {
 }
 function setView(mode) {
   // In summary context, market → summary-market, main → summary
-  var isSummaryContext = ['summary','summary-market','summary-chart','summary-analytics','summary-movers'].indexOf(viewMode) !== -1;
+  var isSummaryContext = ['summary','summary-market','summary-chart','summary-analytics','summary-movers','summary-alerts'].indexOf(viewMode) !== -1;
   if (isSummaryContext) {
-    viewMode = mode === 'market' ? 'summary-market' : mode === 'chart' ? 'summary-chart' : mode === 'analytics' ? 'summary-analytics' : mode === 'movers' ? 'summary-movers' : 'summary';
-
+    viewMode = mode === 'market' ? 'summary-market' : mode === 'chart' ? 'summary-chart' : mode === 'analytics' ? 'summary-analytics' : mode === 'movers' ? 'summary-movers' : mode === 'alerts' ? 'summary-alerts' : 'summary';
   } else {
     viewMode = mode;
     if (mode === 'weight') weightSort = { key: 'weight', dir: -1 };
     if (mode === 'market') marketSort = { key: null, dir: -1 };
   }
-  ['vmMain','vmWeight','vmMarket','vmMovers','vmChart','vmAnalytics'].forEach(function(id) {
+  ['vmMain','vmWeight','vmMarket','vmMovers','vmChart','vmAnalytics','vmAlerts'].forEach(function(id) {
     document.getElementById(id).style.color = '';
   });
-  var activeId = viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMovers' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'summary' ? 'vmMain' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMovers' : 'vmMarket';
+  var activeId = viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMovers' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'summary-alerts' ? 'vmAlerts' : viewMode === 'summary' ? 'vmMain' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMovers' : viewMode === 'alerts' ? 'vmAlerts' : 'vmMarket';
   document.getElementById(activeId).style.color = 'var(--green)';
   document.getElementById('viewMenu').style.display = 'none';
   // Refresh prices when entering chart view (updates today's point)
@@ -2739,14 +2741,18 @@ function buildMoversView(area) {
     var sym = getPositionCurrencySymbol(p);
     var cls = x.delta >= 0 ? 'pos' : 'neg';
     var dimStyle = p.qty === 0 ? 'font-style:italic;opacity:0.5' : '';
+    var isExpanded = expandedId === p.id;
+    var hasActiveAlert = p.alerts && p.alerts.some(function(a) { return a.triggered; });
+    var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + (hasActiveAlert ? ' <span style="color:#f6c15b;font-size:11px">&#9679;</span>' : '') + '</span>';
     return '<tr style="' + dimStyle + '">'
-      + '<td style="text-align:left;white-space:nowrap">' + p.ticker + '</td>'
+      + '<td style="text-align:left;white-space:nowrap">' + tickerCell + '</td>'
       + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.close ? ('' + x.close.toFixed(2)) : '—') + '</td>'
       + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.cur ? ('' + x.cur.toFixed(2)) : '—') + '</td>'
       + '<td style="text-align:right;padding:5px 4px;white-space:nowrap" class="' + cls + '">' + (x.delta >= 0 ? '+' : '') + x.delta.toFixed(2) + '%</td>'
       + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(p.marketState) + '</td>'
       + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
-      + '</tr>';
+      + '</tr>'
+      + (isExpanded ? '<tr><td colspan="6" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>' : '');
   }).join('');
 
   var limitInput = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
@@ -2766,6 +2772,67 @@ function buildMoversView(area) {
     + '</tr></thead>'
     + '<tbody>' + rows + '</tbody>'
     + '</table></div>';
+}
+
+function renderAlertsTable(posArr, area) {
+  var withDelta = posArr.map(function(p) {
+    var close = closeMode === 'prev' ? (p.previousClose || p.regularMarketPrice || null) : (p.regularMarketPrice || null);
+    var cur = currentMode === 'reg' ? (p.regularMarketPrice || null) : (p.current || null);
+    var delta = (close && cur) ? (cur - close) / close * 100 : null;
+    return { pos: p, close: close, cur: cur, delta: delta };
+  });
+  withDelta.sort(function(a, b) {
+    if (a.delta === null && b.delta === null) return 0;
+    if (a.delta === null) return 1;
+    if (b.delta === null) return -1;
+    return b.delta - a.delta;
+  });
+  if (!withDelta.length) {
+    area.innerHTML = '<div style="padding:20px 0;color:var(--dim);font-size:11px;letter-spacing:1px">NO ALERTS SET</div>';
+    return;
+  }
+  var rows = withDelta.map(function(x) {
+    var p = x.pos; var sym = getPositionCurrencySymbol(p);
+    var cls = x.delta !== null ? (x.delta >= 0 ? 'pos' : 'neg') : '';
+    var dimStyle = p.qty === 0 ? 'font-style:italic;opacity:0.5' : '';
+    var isExpanded = expandedId === p.id;
+    var hasActiveAlert = p.alerts && p.alerts.some(function(a) { return a.triggered; });
+    var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + (hasActiveAlert ? ' <span style="color:#f6c15b;font-size:11px">&#9679;</span>' : '') + '</span>';
+    return '<tr style="' + dimStyle + '">'
+      + '<td style="text-align:left;white-space:nowrap">' + tickerCell + '</td>'
+      + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.close ? x.close.toFixed(2) : '—') + '</td>'
+      + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.cur ? x.cur.toFixed(2) : '—') + '</td>'
+      + '<td style="text-align:right;padding:5px 4px;white-space:nowrap" class="' + cls + '">' + (x.delta !== null ? (x.delta >= 0 ? '+' : '') + x.delta.toFixed(2) + '%' : '—') + '</td>'
+      + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(p.marketState) + '</td>'
+      + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
+      + '</tr>'
+      + (isExpanded ? '<tr><td colspan="6" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>' : '');
+  }).join('');
+  area.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
+    + '<thead><tr>'
+    + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">TICKER</th>'
+    + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + (closeMode === 'prev' ? 'PREV.CLOSE' : 'REG.PRICE') + '</th>'
+    + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
+    + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">&#916;%</th>'
+    + '<th style="width:16px;border-bottom:1px solid var(--border)"></th>'
+    + '<th style="text-align:left;padding:5px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">NAME</th>'
+    + '</tr></thead>'
+    + '<tbody>' + rows + '</tbody>'
+    + '</table></div>';
+}
+
+function buildSummaryAlertsView(area) {
+  var seen = {}, allPos = [];
+  Object.keys(portfolios).forEach(function(pid) {
+    var port = portfolios[pid];
+    if (port.archive) return;
+    (port.positions || []).forEach(function(pos) {
+      if (pos.sold) return;
+      if (!pos.alerts || !pos.alerts.length) return;
+      if (!seen[pos.ticker]) { seen[pos.ticker] = true; allPos.push(pos); }
+    });
+  });
+  renderAlertsTable(allPos, area);
 }
 
 function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
@@ -3833,14 +3900,18 @@ function render() {
       var p = x.pos; var sym = getPositionCurrencySymbol(p);
       var cls = x.delta >= 0 ? 'pos' : 'neg';
       var dimStyle = p.qty === 0 ? 'font-style:italic;opacity:0.5' : '';
+      var isExpanded = expandedId === p.id;
+      var hasActiveAlert = p.alerts && p.alerts.some(function(a) { return a.triggered; });
+      var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + (hasActiveAlert ? ' <span style="color:#f6c15b;font-size:11px">&#9679;</span>' : '') + '</span>';
       return '<tr style="' + dimStyle + '">'
-        + '<td style="text-align:left;white-space:nowrap">' + p.ticker + '</td>'
+        + '<td style="text-align:left;white-space:nowrap">' + tickerCell + '</td>'
         + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.close ? x.close.toFixed(2) : '—') + '</td>'
         + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.cur ? x.cur.toFixed(2) : '—') + '</td>'
         + '<td style="text-align:right;padding:5px 4px;white-space:nowrap" class="' + cls + '">' + (x.delta >= 0 ? '+' : '') + x.delta.toFixed(2) + '%</td>'
         + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(p.marketState) + '</td>'
         + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
-        + '</tr>';
+        + '</tr>'
+        + (isExpanded ? '<tr><td colspan="6" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>' : '');
     }).join('');
     var limitInput2 = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
       + '<span style="font-size:9px;color:var(--dim);letter-spacing:1px">SHOW TOP</span>'
@@ -3862,6 +3933,19 @@ function render() {
   // Summary movers view
   if (viewMode === 'summary-movers') {
     buildMoversView(area);
+    return;
+  }
+
+  // Alerts view
+  if (viewMode === 'alerts') {
+    var alertsPos = positions.filter(function(p) { return !p.sold && p.alerts && p.alerts.length; });
+    renderAlertsTable(alertsPos, area);
+    return;
+  }
+
+  // Summary alerts view
+  if (viewMode === 'summary-alerts') {
+    buildSummaryAlertsView(area);
     return;
   }
 
