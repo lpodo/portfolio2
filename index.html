@@ -2176,7 +2176,12 @@ function refreshPrice(id) {
   loadingSet[id] = true; render();
   return fetchPrice(pos.ticker).then(function(price) {
     positions = positions.map(function(p) {
-      if (p.id === id) { return Object.assign({}, p, { current: price, priceType: __priceType, marketState: __marketState, regularMarketPrice: __regularMarketPrice, previousClose: __previousClose, currency: __currency, shortName: __shortName }); }
+      if (p.id === id) {
+        var updatedAlerts = (p.alerts || []).map(function(a) {
+          return Object.assign({}, a, { triggered: a.condition === '>' ? price > a.value : price < a.value });
+        });
+        return Object.assign({}, p, { current: price, priceType: __priceType, marketState: __marketState, regularMarketPrice: __regularMarketPrice, previousClose: __previousClose, currency: __currency, shortName: __shortName, alerts: updatedAlerts });
+      }
       return p;
     });
     saveLocal();
@@ -2206,6 +2211,9 @@ function refreshAllPortfolios() {
         p.marketState = __marketState;
         p.regularMarketPrice = __regularMarketPrice;
         p.previousClose = __previousClose;
+        p.alerts = (p.alerts || []).map(function(a) {
+          return Object.assign({}, a, { triggered: a.condition === '>' ? price > a.value : price < a.value });
+        });
       }).catch(function() {});
       allPromises.push(promise);
     });
