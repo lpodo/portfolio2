@@ -2146,12 +2146,12 @@ function buildExpandedInner(p) {
     + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (p.region || '—') + '</span></span>'
     + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (p.sector || '—') + '</span></span>'
     + '</div>'
-    + '<div style="margin-top:4px;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
+    + '<div style="margin-top:8px;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
     + '<span style="opacity:0.6">NOTE</span>'
     + (editNoteId === p.id
       ? '<input id="noteEditInput" type="text" value="' + (p.note || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;') + '" style="font-size:10px;font-family:var(--font);background:var(--bg);border:1px solid var(--border);color:var(--bright);padding:1px 4px;width:200px;box-sizing:border-box" onkeydown="if(event.key===\'Enter\'){event.preventDefault();saveNoteInline(' + p.id + ');}else if(event.key===\'Escape\'){event.preventDefault();cancelNoteEdit();}" onblur="saveNoteInline(' + p.id + ')">'
       : '<span style="color:var(--bright)">' + (p.note || '—') + '</span>'
-        + '<span onclick="startNoteEdit(' + p.id + ')" style="cursor:pointer;color:var(--dim);font-size:11px;line-height:1">&#9998;</span>')
+        + '<button class="btn-icon" onclick="startNoteEdit(' + p.id + ')" style="font-size:12px;padding:0 3px">&#9998;</button>')
     + '</div>'
     + '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
     + '<span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
