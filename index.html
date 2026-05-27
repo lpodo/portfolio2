@@ -109,6 +109,12 @@
   .fetch-btn { border: 1px solid var(--dim); color: var(--dim); font-family: var(--font); font-size: 10px; padding: 2px 7px; cursor: pointer; background: transparent; }
   .err { color: var(--red); font-size: 11px; margin-top: 7px; }
   .note { margin-top: 16px; font-size: 10px; color: var(--dim); line-height: 1.6; }
+  .dict-trigger { cursor:pointer; background:var(--bg); border:1px solid var(--border); color:var(--bright); font-family:var(--font); font-size:11px; padding:3px 6px; display:flex; justify-content:space-between; align-items:center; user-select:none; box-sizing:border-box; }
+  .dict-drop { position:absolute; z-index:200; background:var(--bg2); border:1px solid var(--border); max-height:180px; overflow-y:auto; display:none; box-sizing:border-box; }
+  .dict-opt { padding:5px 8px; font-size:11px; color:var(--bright); cursor:pointer; font-family:var(--font); }
+  .dict-opt:hover { background:var(--border); }
+  .dict-opt-new { color:var(--green); border-top:1px solid var(--border); }
+  .dict-opt-empty { color:var(--dim); }
 
   /* Portfolio switcher */
   .portfolio-switcher {
@@ -589,24 +595,35 @@ function migrateDicts() {
   saveDicts();
 }
 
+var _openDictDrop = null;
+var _activeDictPanel = null;
+
+function buildDictDropOptions(field, dict, currentVal) {
+  var opts = '<div class="dict-opt dict-opt-empty" onclick="pickDictVal(\'' + field + '\',\'\')">— (not set) —</div>';
+  if (currentVal && dict.indexOf(currentVal) === -1) {
+    var e0 = currentVal.replace(/'/g,'&#39;');
+    opts += '<div class="dict-opt" onclick="pickDictVal(\'' + field + '\',\'' + e0 + '\')">' + currentVal.replace(/&/g,'&amp;') + '</div>';
+  }
+  dict.forEach(function(v) {
+    var esc = v.replace(/'/g,'&#39;');
+    opts += '<div class="dict-opt" onclick="pickDictVal(\'' + field + '\',\'' + esc + '\')">' + v.replace(/&/g,'&amp;') + '</div>';
+  });
+  opts += '<div class="dict-opt dict-opt-new" onclick="dictNewMode(\'' + field + '\')">+ new...</div>';
+  return opts;
+}
 function buildDictSelectHtml(field, dict, currentVal, label, width) {
   var id = field === 'cat' ? 'editCategory' : field === 'reg' ? 'editRegion' : 'editSector';
-  var opts = '<option value="">— (not set) —</option>';
-  dict.forEach(function(v) {
-    var esc = v.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
-    opts += '<option value="' + esc + '"' + (v === currentVal ? ' selected' : '') + '>' + esc + '</option>';
-  });
-  if (currentVal && dict.indexOf(currentVal) === -1) {
-    var esc2 = currentVal.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
-    opts += '<option value="' + esc2 + '" selected>' + esc2 + '</option>';
-  }
-  opts += '<option value="__new__">+ new...</option>';
-  var prevVal = (currentVal || '').replace(/"/g,'&quot;');
-  return '<div class="field">'
+  var dispHtml = currentVal ? currentVal.replace(/&/g,'&amp;') : '<span style="color:var(--dim)">—</span>';
+  return '<div class="field" style="position:relative">'
     + '<label>' + label + '</label>'
-    + '<select id="' + id + '" data-prev-val="' + prevVal + '" onchange="onDictSelectChange(\'' + field + '\',this)" style="width:' + width + ';background:var(--bg);color:var(--bright);border:1px solid var(--border);font-family:var(--font);font-size:11px;padding:3px 4px">'
-    + opts
-    + '</select>'
+    + '<input type="hidden" id="' + id + '" value="' + (currentVal || '').replace(/"/g,'&quot;') + '">'
+    + '<div id="dictTrigger_' + field + '" class="dict-trigger" style="width:' + width + '" onclick="toggleDictDropdown(\'' + field + '\')">'
+    + '<span id="dictDisplay_' + field + '">' + dispHtml + '</span>'
+    + '<span style="font-size:9px;color:var(--dim);margin-left:4px">&#9660;</span>'
+    + '</div>'
+    + '<div id="dictDrop_' + field + '" class="dict-drop" style="width:' + width + '">'
+    + buildDictDropOptions(field, dict, currentVal)
+    + '</div>'
     + '<span id="dictNew_' + field + '" style="display:none;gap:4px;align-items:center">'
     + '<input type="text" id="dictNewVal_' + field + '" style="width:' + width + ';background:var(--bg);color:var(--bright);border:1px solid var(--border);font-family:var(--font);font-size:11px;padding:3px 4px" autocomplete="off">'
     + '<button onclick="confirmDictNew(\'' + field + '\')" class="btn btn-green" style="padding:2px 6px;font-size:11px">&#10003;</button>'
@@ -614,16 +631,37 @@ function buildDictSelectHtml(field, dict, currentVal, label, width) {
     + '</span>'
     + '</div>';
 }
-function onDictSelectChange(field, el) {
-  if (el.value === '__new__') {
-    el.style.display = 'none';
-    var ns = document.getElementById('dictNew_' + field);
-    if (ns) ns.style.display = 'inline-flex';
-    var ni = document.getElementById('dictNewVal_' + field);
-    if (ni) { ni.value = ''; ni.focus(); }
-  } else {
-    el.dataset.prevVal = el.value;
+function toggleDictDropdown(field) {
+  if (_openDictDrop && _openDictDrop !== field) {
+    var prev = document.getElementById('dictDrop_' + _openDictDrop);
+    if (prev) prev.style.display = 'none';
   }
+  var drop = document.getElementById('dictDrop_' + field);
+  if (!drop) return;
+  var open = drop.style.display !== 'none';
+  drop.style.display = open ? 'none' : 'block';
+  _openDictDrop = open ? null : field;
+}
+function pickDictVal(field, val) {
+  var id = field === 'cat' ? 'editCategory' : field === 'reg' ? 'editRegion' : 'editSector';
+  var hidden = document.getElementById(id);
+  if (hidden) hidden.value = val;
+  var display = document.getElementById('dictDisplay_' + field);
+  if (display) display.innerHTML = val ? val.replace(/&/g,'&amp;') : '<span style="color:var(--dim)">—</span>';
+  var drop = document.getElementById('dictDrop_' + field);
+  if (drop) drop.style.display = 'none';
+  _openDictDrop = null;
+}
+function dictNewMode(field) {
+  var drop = document.getElementById('dictDrop_' + field);
+  if (drop) drop.style.display = 'none';
+  var trigger = document.getElementById('dictTrigger_' + field);
+  if (trigger) trigger.style.display = 'none';
+  var ns = document.getElementById('dictNew_' + field);
+  if (ns) ns.style.display = 'inline-flex';
+  var ni = document.getElementById('dictNewVal_' + field);
+  if (ni) { ni.value = ''; ni.focus(); }
+  _openDictDrop = null;
 }
 function confirmDictNew(field) {
   var input = document.getElementById('dictNewVal_' + field);
@@ -632,24 +670,18 @@ function confirmDictNew(field) {
   var dict = field === 'cat' ? catDict : field === 'reg' ? regDict : secDict;
   addToDict(dict, val);
   saveDicts();
-  var selId = field === 'cat' ? 'editCategory' : field === 'reg' ? 'editRegion' : 'editSector';
-  var sel = document.getElementById(selId);
-  if (sel) {
-    var opt = document.createElement('option');
-    opt.value = val; opt.textContent = val;
-    sel.insertBefore(opt, sel.lastChild);
-    sel.value = val;
-    sel.dataset.prevVal = val;
-    sel.style.display = '';
-  }
+  var drop = document.getElementById('dictDrop_' + field);
+  if (drop) drop.innerHTML = buildDictDropOptions(field, dict, val);
+  pickDictVal(field, val);
+  var trigger = document.getElementById('dictTrigger_' + field);
+  if (trigger) trigger.style.display = '';
   var ns = document.getElementById('dictNew_' + field);
   if (ns) ns.style.display = 'none';
   renderDictsPanel();
 }
 function cancelDictNew(field) {
-  var selId = field === 'cat' ? 'editCategory' : field === 'reg' ? 'editRegion' : 'editSector';
-  var sel = document.getElementById(selId);
-  if (sel) { sel.value = sel.dataset.prevVal || ''; sel.style.display = ''; }
+  var trigger = document.getElementById('dictTrigger_' + field);
+  if (trigger) trigger.style.display = '';
   var ns = document.getElementById('dictNew_' + field);
   if (ns) ns.style.display = 'none';
 }
@@ -660,12 +692,23 @@ function removeFromDict(field, value) {
   saveDicts();
   renderDictsPanel();
 }
+function showDictPanel(field) {
+  _activeDictPanel = (_activeDictPanel === field) ? null : field;
+  renderDictsPanel();
+}
 function renderDictsPanel() {
   var el = document.getElementById('dictsPanel');
   if (!el) return;
-  function renderList(dict, field, label) {
-    return '<div style="margin-bottom:10px">'
-      + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:5px">' + label + '</div>'
+  var btns = ['cat','reg','sec'].map(function(f) {
+    var label = f === 'cat' ? 'CATEGORIES' : f === 'reg' ? 'REGIONS' : 'SECTORS';
+    var active = _activeDictPanel === f;
+    return '<button onclick="showDictPanel(\'' + f + '\')" class="btn' + (active ? ' btn-green' : '') + '" style="flex:1;padding:5px 2px;font-size:9px;letter-spacing:1px">' + label + '</button>';
+  }).join('');
+  var content = '';
+  if (_activeDictPanel) {
+    var dict = _activeDictPanel === 'cat' ? catDict : _activeDictPanel === 'reg' ? regDict : secDict;
+    var field = _activeDictPanel;
+    content = '<div style="margin-top:8px;max-height:140px;overflow-y:auto">'
       + (dict.length ? dict.map(function(v) {
           var esc = v.replace(/&/g,'&amp;').replace(/'/g,'&#39;');
           return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">'
@@ -675,9 +718,7 @@ function renderDictsPanel() {
         }).join('') : '<div style="font-size:10px;color:var(--dim);font-style:italic">empty</div>')
       + '</div>';
   }
-  el.innerHTML = renderList(catDict, 'cat', 'CATEGORIES')
-    + renderList(regDict, 'reg', 'REGIONS')
-    + renderList(secDict, 'sec', 'SECTORS');
+  el.innerHTML = '<div style="display:flex;gap:6px">' + btns + '</div>' + content;
 }
 
 // --- Portfolio switcher ---
@@ -2356,14 +2397,25 @@ function saveEdit(id) {
   var current = curRaw ? parseFloat(curRaw) : (pos ? pos.current : null);
   if (qty === null || isNaN(qty) || qty < 0 || (qty > 0 && entry <= 0)) return;
   var catEl = document.getElementById('editCategory'); var regEl = document.getElementById('editRegion'); var secEl = document.getElementById('editSector'); var noteEl = document.getElementById('editNote');
-  var category = catEl ? (catEl.value === '__new__' ? (pos ? pos.category : null) : (catEl.value.trim() || null)) : (pos ? pos.category : null);
-  var region   = regEl ? (regEl.value === '__new__' ? (pos ? pos.region   : null) : (regEl.value.trim() || null)) : (pos ? pos.region   : null);
-  var sector   = secEl ? (secEl.value === '__new__' ? (pos ? pos.sector   : null) : (secEl.value.trim() || null)) : (pos ? pos.sector   : null);
+  var category = catEl ? (catEl.value.trim() || null) : (pos ? pos.category : null);
+  var region   = regEl ? (regEl.value.trim() || null) : (pos ? pos.region   : null);
+  var sector   = secEl ? (secEl.value.trim() || null) : (pos ? pos.sector   : null);
   var note     = noteEl ? (noteEl.value.trim() || null) : (pos ? pos.note    : null);
+  var syncTicker = (newTicker || (pos ? pos.ticker : '')).toUpperCase();
   positions = positions.map(function(p) {
     return p.id === id ? Object.assign({}, p, { ticker: newTicker || p.ticker, qty: qty, entry: entry, current: current, category: category, region: region, sector: sector, note: note, alerts: p.alerts || [] }) : p;
   });
-  save(); editId = null; render();
+  portfolios[currentPortfolioId].positions = positions;
+  Object.keys(portfolios).forEach(function(pid) {
+    portfolios[pid].positions = (portfolios[pid].positions || []).map(function(p) {
+      if (p.ticker.toUpperCase() === syncTicker && (pid !== currentPortfolioId || p.id !== id)) {
+        return Object.assign({}, p, { category: category, region: region, sector: sector });
+      }
+      return p;
+    });
+  });
+  positions = portfolios[currentPortfolioId].positions;
+  savePortfolios(); cloudSave(); editId = null; render();
 }
 
 function refreshPrice(id) {
@@ -5047,6 +5099,15 @@ render();
 autoCloudLoad(function(loaded) {
   if (loaded) render();
   if (getApiKey()) refreshAll();
+});
+document.addEventListener('click', function(e) {
+  if (!_openDictDrop) return;
+  var drop = document.getElementById('dictDrop_' + _openDictDrop);
+  var trigger = document.getElementById('dictTrigger_' + _openDictDrop);
+  if (drop && !drop.contains(e.target) && trigger && !trigger.contains(e.target)) {
+    drop.style.display = 'none';
+    _openDictDrop = null;
+  }
 });
 </script>
 <script>
