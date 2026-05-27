@@ -414,6 +414,9 @@
   </div>
   <div class="api-status" id="backupStatus"></div>
 
+  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">DICTIONARIES</div>
+  <div id="dictsPanel"></div>
+
   <div class="settings-note" id="settingsNote"></div>
 </div>
 
@@ -544,6 +547,10 @@ function setSortState(key, dir) {
 }
 try { var _ws = JSON.parse(localStorage.getItem('pt_wl_sort')); if (_ws) { watchlistSort = _ws; } } catch(e) {}
 
+var catDict = [];
+var regDict = [];
+var secDict = [];
+
 // --- Local storage ---
 function loadLocal() {
   positions = currentPortfolio().positions;
@@ -551,6 +558,126 @@ function loadLocal() {
 function saveLocal() {
   portfolios[currentPortfolioId].positions = positions;
   savePortfolios();
+}
+
+function loadDicts() {
+  try { catDict = JSON.parse(localStorage.getItem('pt_cat_dict')) || []; } catch(e) { catDict = []; }
+  try { regDict = JSON.parse(localStorage.getItem('pt_reg_dict')) || []; } catch(e) { regDict = []; }
+  try { secDict = JSON.parse(localStorage.getItem('pt_sec_dict')) || []; } catch(e) { secDict = []; }
+}
+function saveDicts() {
+  try { localStorage.setItem('pt_cat_dict', JSON.stringify(catDict)); } catch(e) {}
+  try { localStorage.setItem('pt_reg_dict', JSON.stringify(regDict)); } catch(e) {}
+  try { localStorage.setItem('pt_sec_dict', JSON.stringify(secDict)); } catch(e) {}
+}
+function addToDict(dict, value) {
+  value = String(value).trim();
+  if (!value) return;
+  for (var i = 0; i < dict.length; i++) { if (dict[i] === value) return; }
+  dict.push(value);
+  dict.sort(function(a, b) { return a.localeCompare(b); });
+}
+function migrateDicts() {
+  if (localStorage.getItem('pt_cat_dict') !== null) return;
+  Object.keys(portfolios).forEach(function(pid) {
+    (portfolios[pid].positions || []).forEach(function(pos) {
+      if (pos.category) addToDict(catDict, pos.category);
+      if (pos.region)   addToDict(regDict, pos.region);
+      if (pos.sector)   addToDict(secDict, pos.sector);
+    });
+  });
+  saveDicts();
+}
+
+function buildDictSelectHtml(field, dict, currentVal, label, width) {
+  var id = field === 'cat' ? 'editCategory' : field === 'reg' ? 'editRegion' : 'editSector';
+  var opts = '<option value="">— (not set) —</option>';
+  dict.forEach(function(v) {
+    var esc = v.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+    opts += '<option value="' + esc + '"' + (v === currentVal ? ' selected' : '') + '>' + esc + '</option>';
+  });
+  if (currentVal && dict.indexOf(currentVal) === -1) {
+    var esc2 = currentVal.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+    opts += '<option value="' + esc2 + '" selected>' + esc2 + '</option>';
+  }
+  opts += '<option value="__new__">+ new...</option>';
+  var prevVal = (currentVal || '').replace(/"/g,'&quot;');
+  return '<div class="field">'
+    + '<label>' + label + '</label>'
+    + '<select id="' + id + '" data-prev-val="' + prevVal + '" onchange="onDictSelectChange(\'' + field + '\',this)" style="width:' + width + ';background:var(--bg);color:var(--bright);border:1px solid var(--border);font-family:var(--font);font-size:11px;padding:3px 4px">'
+    + opts
+    + '</select>'
+    + '<span id="dictNew_' + field + '" style="display:none;gap:4px;align-items:center">'
+    + '<input type="text" id="dictNewVal_' + field + '" style="width:' + width + ';background:var(--bg);color:var(--bright);border:1px solid var(--border);font-family:var(--font);font-size:11px;padding:3px 4px" autocomplete="off">'
+    + '<button onclick="confirmDictNew(\'' + field + '\')" class="btn btn-green" style="padding:2px 6px;font-size:11px">&#10003;</button>'
+    + '<button onclick="cancelDictNew(\'' + field + '\')" class="btn" style="padding:2px 6px;font-size:11px">&#10005;</button>'
+    + '</span>'
+    + '</div>';
+}
+function onDictSelectChange(field, el) {
+  if (el.value === '__new__') {
+    el.style.display = 'none';
+    var ns = document.getElementById('dictNew_' + field);
+    if (ns) ns.style.display = 'inline-flex';
+    var ni = document.getElementById('dictNewVal_' + field);
+    if (ni) { ni.value = ''; ni.focus(); }
+  } else {
+    el.dataset.prevVal = el.value;
+  }
+}
+function confirmDictNew(field) {
+  var input = document.getElementById('dictNewVal_' + field);
+  var val = input ? input.value.trim() : '';
+  if (!val) { cancelDictNew(field); return; }
+  var dict = field === 'cat' ? catDict : field === 'reg' ? regDict : secDict;
+  addToDict(dict, val);
+  saveDicts();
+  var selId = field === 'cat' ? 'editCategory' : field === 'reg' ? 'editRegion' : 'editSector';
+  var sel = document.getElementById(selId);
+  if (sel) {
+    var opt = document.createElement('option');
+    opt.value = val; opt.textContent = val;
+    sel.insertBefore(opt, sel.lastChild);
+    sel.value = val;
+    sel.dataset.prevVal = val;
+    sel.style.display = '';
+  }
+  var ns = document.getElementById('dictNew_' + field);
+  if (ns) ns.style.display = 'none';
+  renderDictsPanel();
+}
+function cancelDictNew(field) {
+  var selId = field === 'cat' ? 'editCategory' : field === 'reg' ? 'editRegion' : 'editSector';
+  var sel = document.getElementById(selId);
+  if (sel) { sel.value = sel.dataset.prevVal || ''; sel.style.display = ''; }
+  var ns = document.getElementById('dictNew_' + field);
+  if (ns) ns.style.display = 'none';
+}
+function removeFromDict(field, value) {
+  var dict = field === 'cat' ? catDict : field === 'reg' ? regDict : secDict;
+  var idx = dict.indexOf(value);
+  if (idx !== -1) dict.splice(idx, 1);
+  saveDicts();
+  renderDictsPanel();
+}
+function renderDictsPanel() {
+  var el = document.getElementById('dictsPanel');
+  if (!el) return;
+  function renderList(dict, field, label) {
+    return '<div style="margin-bottom:10px">'
+      + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:5px">' + label + '</div>'
+      + (dict.length ? dict.map(function(v) {
+          var esc = v.replace(/&/g,'&amp;').replace(/'/g,'&#39;');
+          return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">'
+            + '<span style="font-size:11px;color:var(--bright)">' + v.replace(/&/g,'&amp;') + '</span>'
+            + '<button onclick="removeFromDict(\'' + field + '\',\'' + esc + '\')" class="btn" style="padding:1px 6px;font-size:10px">&#10005;</button>'
+            + '</div>';
+        }).join('') : '<div style="font-size:10px;color:var(--dim);font-style:italic">empty</div>')
+      + '</div>';
+  }
+  el.innerHTML = renderList(catDict, 'cat', 'CATEGORIES')
+    + renderList(regDict, 'reg', 'REGIONS')
+    + renderList(secDict, 'sec', 'SECTORS');
 }
 
 // --- Portfolio switcher ---
@@ -1408,7 +1535,10 @@ function backupData() {
     date: new Date().toISOString(),
     portfolios: portfolios,
     bondsDb: getBondsDb(),
-    bondPortfolios: getBondPortfolios()
+    bondPortfolios: getBondPortfolios(),
+    catDict: catDict,
+    regDict: regDict,
+    secDict: secDict
   };
   var json = JSON.stringify(data, null, 2);
   var blob = new Blob([json], { type: 'application/json' });
@@ -1441,6 +1571,10 @@ function restoreData(event) {
         bondPortfolios = data.bondPortfolios;
         localStorage.setItem('pt_bond_portfolios', JSON.stringify(bondPortfolios));
       }
+      if (data.catDict && Array.isArray(data.catDict)) { catDict = data.catDict; }
+      if (data.regDict && Array.isArray(data.regDict)) { regDict = data.regDict; }
+      if (data.secDict && Array.isArray(data.secDict)) { secDict = data.secDict; }
+      saveDicts();
       currentPortfolioId = Object.keys(portfolios)[0];
       localStorage.setItem('pt_current', currentPortfolioId);
       localStorage.setItem('pt_cloud_ts', '');
@@ -1577,7 +1711,7 @@ function cloudSave() {
 }
 
 function _doCloudSave(key, binId) {
-  var plaintext = JSON.stringify({ portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios() });
+  var plaintext = JSON.stringify({ portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict });
   var encKey = getEncKey();
 
   function doSend(body) {
@@ -1623,7 +1757,7 @@ function _doCloudSave(key, binId) {
       doSend(JSON.stringify({ encrypted: encrypted }));
     }).catch(function() { updateJbStatus('✗ Encryption error', 'var(--red)'); });
   } else {
-    doSend(JSON.stringify({ portfolios: portfolios }));
+    doSend(JSON.stringify({ portfolios: portfolios, catDict: catDict, regDict: regDict, secDict: secDict }));
   }
 }
 
@@ -1662,6 +1796,10 @@ function cloudLoadKV(callback) {
           portfolios = data.portfolios;
           if (data.bondsDb) { bondsDb = data.bondsDb; localStorage.setItem('pt_bonds_db', JSON.stringify(bondsDb)); }
           if (data.bondPortfolios) { bondPortfolios = data.bondPortfolios; localStorage.setItem('pt_bond_portfolios', JSON.stringify(bondPortfolios)); }
+          if (data.catDict && Array.isArray(data.catDict)) { catDict = data.catDict; }
+          if (data.regDict && Array.isArray(data.regDict)) { regDict = data.regDict; }
+          if (data.secDict && Array.isArray(data.secDict)) { secDict = data.secDict; }
+          saveDicts();
           savePortfolios();
           if (!portfolios[currentPortfolioId]) { currentPortfolioId = Object.keys(portfolios)[0]; localStorage.setItem('pt_current', currentPortfolioId); }
           loadLocal();
@@ -1697,7 +1835,7 @@ function cloudSaveKV() {
   var token = getToken();
   var kvKey = getKvKey();
   if (!baseUrl || !kvKey) return;
-  var payload = { portfolios: portfolios, bondsDb: bondsDb, bondPortfolios: bondPortfolios };
+  var payload = { portfolios: portfolios, bondsDb: bondsDb, bondPortfolios: bondPortfolios, catDict: catDict, regDict: regDict, secDict: secDict };
   var encKey = getEncKey();
   function doSave(body) {
     fetch(baseUrl + '/api/kv', {
@@ -1750,6 +1888,10 @@ function cloudLoad(callback) {
           bondPortfolios = data.bondPortfolios;
           localStorage.setItem('pt_bond_portfolios', JSON.stringify(bondPortfolios));
         }
+        if (data.catDict && Array.isArray(data.catDict)) { catDict = data.catDict; }
+        if (data.regDict && Array.isArray(data.regDict)) { regDict = data.regDict; }
+        if (data.secDict && Array.isArray(data.secDict)) { secDict = data.secDict; }
+        saveDicts();
         savePortfolios();
         if (!portfolios[currentPortfolioId]) {
           currentPortfolioId = Object.keys(portfolios)[0];
@@ -1883,6 +2025,7 @@ function toggleSettings() {
   var o = document.getElementById('overlay');
   p.classList.toggle('open');
   o.classList.toggle('open');
+  if (p.classList.contains('open')) renderDictsPanel();
 }
 function closeSettings() {
   document.getElementById('settingsPanel').classList.remove('open');
@@ -2213,9 +2356,9 @@ function saveEdit(id) {
   var current = curRaw ? parseFloat(curRaw) : (pos ? pos.current : null);
   if (qty === null || isNaN(qty) || qty < 0 || (qty > 0 && entry <= 0)) return;
   var catEl = document.getElementById('editCategory'); var regEl = document.getElementById('editRegion'); var secEl = document.getElementById('editSector'); var noteEl = document.getElementById('editNote');
-  var category = catEl ? (catEl.value.trim() || null) : (pos ? pos.category : null);
-  var region   = regEl ? (regEl.value.trim() || null) : (pos ? pos.region   : null);
-  var sector   = secEl ? (secEl.value.trim() || null) : (pos ? pos.sector   : null);
+  var category = catEl ? (catEl.value === '__new__' ? (pos ? pos.category : null) : (catEl.value.trim() || null)) : (pos ? pos.category : null);
+  var region   = regEl ? (regEl.value === '__new__' ? (pos ? pos.region   : null) : (regEl.value.trim() || null)) : (pos ? pos.region   : null);
+  var sector   = secEl ? (secEl.value === '__new__' ? (pos ? pos.sector   : null) : (secEl.value.trim() || null)) : (pos ? pos.sector   : null);
   var note     = noteEl ? (noteEl.value.trim() || null) : (pos ? pos.note    : null);
   positions = positions.map(function(p) {
     return p.id === id ? Object.assign({}, p, { ticker: newTicker || p.ticker, qty: qty, entry: entry, current: current, category: category, region: region, sector: sector, note: note, alerts: p.alerts || [] }) : p;
@@ -3116,6 +3259,13 @@ function processCsvImport(text) {
       updated++;
     });
   });
+  Object.keys(map).forEach(function(ticker) {
+    var m = map[ticker];
+    if (m.category) addToDict(catDict, m.category);
+    if (m.region)   addToDict(regDict, m.region);
+    if (m.sector)   addToDict(secDict, m.sector);
+  });
+  saveDicts();
   savePortfolios(); cloudSave();
   alert('Updated ' + updated + ' position(s)');
   render();
@@ -4076,9 +4226,9 @@ function render() {
       + '</tr>'
       + (isEdit ? '<tr><td colspan="8" style="padding:6px 4px 10px;background:var(--bg2)">'
         + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">'
-        + '<div class="field"><label>CATEGORY</label><input type="text" id="editCategory" value="' + (p.category || '') + '" placeholder="e.g. AI &amp; Semi" style="width:100px" autocomplete="off" autocorrect="off"></div>'
-        + '<div class="field"><label>REGION</label><input type="text" id="editRegion" value="' + (p.region || '') + '" placeholder="e.g. US" style="width:70px" autocomplete="off" autocorrect="off"></div>'
-        + '<div class="field"><label>SECTOR</label><input type="text" id="editSector" value="' + (p.sector || '') + '" placeholder="e.g. Technology" style="width:110px" autocomplete="off" autocorrect="off"></div>'
+        + buildDictSelectHtml('cat', catDict, p.category || null, 'CATEGORY', '115px')
+        + buildDictSelectHtml('reg', regDict, p.region || null, 'REGION', '80px')
+        + buildDictSelectHtml('sec', secDict, p.sector || null, 'SECTOR', '120px')
         + '</div>'
         + '<div style="margin-top:6px"><div class="field" style="width:100%"><label>NOTE</label><input type="text" id="editNote" value="' + (p.note || '') + '" placeholder="optional note..." style="width:100%;box-sizing:border-box" autocomplete="off" autocorrect="off"></div></div>'
         + '<div style="margin-top:8px">'
@@ -4888,6 +5038,8 @@ function render() {
 
 initPortfolios();
 loadLocal();
+loadDicts();
+migrateDicts();
 document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
 showKeyStatus();
 render();
