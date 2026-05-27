@@ -2415,7 +2415,7 @@ function saveEdit(id) {
     });
   });
   positions = portfolios[currentPortfolioId].positions;
-  savePortfolios(); cloudSave(); editId = null; render();
+  savePortfolios(); if (getCloudBackend() === 'kv') cloudSaveKV(); else cloudSave(); editId = null; render();
 }
 
 function refreshPrice(id) {
