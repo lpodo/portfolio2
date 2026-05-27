@@ -3774,7 +3774,7 @@ function aggregatePositions(posns) {
       entry: totalQty > 0 ? totalCost / totalQty : 0,
       current: isSold ? (totalQty > 0 ? totalSell / totalQty : 0) : group[0].current
     });
-    return { agg: true, count: group.length, pos: rep };
+    return { agg: true, count: group.length, pos: rep, group: group };
   }
 
   // Emit in the order of first appearance in posns
@@ -4011,7 +4011,7 @@ function render() {
   var rowsSource = getSortedForRender();
   var rows = '';
   rowsSource.forEach(function(entry) {
-    var p = entry.pos; var isAgg = entry.agg; var aggCount = entry.count || 1;
+    var p = entry.pos; var isAgg = entry.agg; var aggCount = entry.count || 1; var aggGroup = entry.group || null;
     var pnl = (p.current !== null && p.current !== undefined) ? p.current - p.entry : null;
     var pnlPct = (pnl !== null && p.entry && p.entry > 0) ? (pnl / p.entry) * 100 : null;
     if (p.qty === 0 || !p.entry) pnl = null;
@@ -4053,11 +4053,15 @@ function render() {
         + '<button class="btn-icon" onclick="removePosition(' + p.id + ')">&#10005;</button>';
     }
 
-    var isExpanded = expandedId === p.id;
-    var hasActiveAlert = !isEdit && p.alerts && p.alerts.some(function(a) { return a.triggered; });
+    var isExpanded = !isAgg && expandedId === p.id;
+    var hasActiveAlert = !isEdit && (isAgg
+      ? (aggGroup || []).some(function(gp) { return gp.alerts && gp.alerts.some(function(a) { return a.triggered; }); })
+      : p.alerts && p.alerts.some(function(a) { return a.triggered; }));
     var tickerCell = isEdit
       ? '<input class="edit-input" id="editTicker" type="text" value="' + p.ticker + '" style="width:60px;text-transform:uppercase">'
-      : '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + (hasActiveAlert ? ' <span style="color:#f6c15b;font-size:11px">&#9679;</span>' : '') + '</span>';
+      : isAgg
+        ? p.ticker + (hasActiveAlert ? ' <span style="color:#f6c15b;font-size:11px">&#9679;</span>' : '')
+        : '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + (hasActiveAlert ? ' <span style="color:#f6c15b;font-size:11px">&#9679;</span>' : '') + '</span>';
     var soldStyle = (p.sold || p.qty === 0) ? 'font-style:italic;opacity:0.5' : '';
     rows += '<tr style="' + soldStyle + '">'
       + '<td>' + tickerCell + '</td>'
