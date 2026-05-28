@@ -206,6 +206,7 @@
     <div id="viewMenu" style="display:none;position:absolute;right:0;top:110%;background:var(--bg2);border:1px solid var(--border);z-index:200;min-width:110px">
       <div onclick="setView('main')" id="vmMain" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">P&amp;L</div>
       <div onclick="setView('weight')" id="vmWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">WEIGHTS</div>
+      <div onclick="setView('global-weight')" id="vmGlobalWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">ALL WEIGHTS</div>
       <div onclick="setView('market')" id="vmMarket" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">MARKET</div>
       <div onclick="setView('movers')" id="vmMovers" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">TOP MOVERS</div>
       <div onclick="setView('alerts')" id="vmAlerts" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">ALERTS</div>
@@ -1211,7 +1212,7 @@ function openBondDetail(idx) {
 
 function renderSwitcher() {
   var list = document.getElementById('portfolioList');
-  var summaryActive = viewMode === 'summary';
+  var summaryActive = ['summary','summary-market','summary-chart','summary-analytics','summary-movers','summary-alerts','global-weight'].indexOf(viewMode) !== -1;
   var html = '';
   var ids = Object.keys(portfolios);
 
@@ -1315,7 +1316,7 @@ function switchPortfolio(id) {
   loadingSet = {};
   // Reset view mode from any special modes
   var prevMode = viewMode;
-  if (['summary','archive-summary','summary-market','summary-chart','summary-analytics','bonds'].indexOf(viewMode) !== -1) viewMode = 'main';
+  if (['summary','archive-summary','summary-market','summary-chart','summary-analytics','bonds','global-weight'].indexOf(viewMode) !== -1) viewMode = 'main';
   else if (viewMode === 'summary-movers') viewMode = 'movers';
   else if (viewMode === 'summary-alerts') viewMode = 'alerts';
   var btn = document.getElementById('viewMenuBtn');
@@ -2723,12 +2724,13 @@ function getWatchlistSorted(items) {
 function toggleViewMenu() {
   var menu = document.getElementById('viewMenu');
   if (menu.style.display === 'none') {
-    var isSummaryMode = ['summary','summary-market','summary-chart','summary-analytics','summary-movers','summary-alerts'].indexOf(viewMode) !== -1;
+    var isSummaryMode = ['summary','summary-market','summary-chart','summary-analytics','summary-movers','summary-alerts','global-weight'].indexOf(viewMode) !== -1;
     var isWL = !isSummaryMode && currentPortfolio() && currentPortfolio().watchlist;
     var isArchive = !isSummaryMode && !isWL && currentPortfolio() && currentPortfolio().archive;
     document.getElementById('vmMain').style.display = (isWL) ? 'none' : '';
     document.getElementById('vmMarket').style.display = isArchive ? 'none' : '';
     document.getElementById('vmWeight').style.display = (isSummaryMode || isWL) ? 'none' : '';
+    document.getElementById('vmGlobalWeight').style.display = isSummaryMode ? '' : 'none';
     document.getElementById('vmChart').style.display = isArchive ? 'none' : '';
     document.getElementById('vmAnalytics').style.display = isWL ? 'none' : '';
     document.getElementById('vmMovers').style.display = isArchive ? 'none' : '';
@@ -2740,18 +2742,18 @@ function toggleViewMenu() {
 }
 function setView(mode) {
   // In summary context, market → summary-market, main → summary
-  var isSummaryContext = ['summary','summary-market','summary-chart','summary-analytics','summary-movers','summary-alerts'].indexOf(viewMode) !== -1;
+  var isSummaryContext = ['summary','summary-market','summary-chart','summary-analytics','summary-movers','summary-alerts','global-weight'].indexOf(viewMode) !== -1;
   if (isSummaryContext) {
-    viewMode = mode === 'market' ? 'summary-market' : mode === 'chart' ? 'summary-chart' : mode === 'analytics' ? 'summary-analytics' : mode === 'movers' ? 'summary-movers' : mode === 'alerts' ? 'summary-alerts' : 'summary';
+    viewMode = mode === 'market' ? 'summary-market' : mode === 'chart' ? 'summary-chart' : mode === 'analytics' ? 'summary-analytics' : mode === 'movers' ? 'summary-movers' : mode === 'alerts' ? 'summary-alerts' : mode === 'global-weight' ? 'global-weight' : 'summary';
   } else {
     viewMode = mode;
-    if (mode === 'weight') weightSort = { key: 'weight', dir: -1 };
+    if (mode === 'weight' || mode === 'global-weight') weightSort = { key: 'weight', dir: -1 };
     if (mode === 'market') marketSort = { key: null, dir: -1 };
   }
-  ['vmMain','vmWeight','vmMarket','vmMovers','vmChart','vmAnalytics','vmAlerts'].forEach(function(id) {
+  ['vmMain','vmWeight','vmGlobalWeight','vmMarket','vmMovers','vmChart','vmAnalytics','vmAlerts'].forEach(function(id) {
     document.getElementById(id).style.color = '';
   });
-  var activeId = viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMovers' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'summary-alerts' ? 'vmAlerts' : viewMode === 'summary' ? 'vmMain' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMovers' : viewMode === 'alerts' ? 'vmAlerts' : 'vmMarket';
+  var activeId = viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMovers' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'summary-alerts' ? 'vmAlerts' : viewMode === 'summary' ? 'vmMain' : viewMode === 'global-weight' ? 'vmGlobalWeight' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMovers' : viewMode === 'alerts' ? 'vmAlerts' : 'vmMarket';
   document.getElementById(activeId).style.color = 'var(--green)';
   document.getElementById('viewMenu').style.display = 'none';
   // Refresh prices when entering chart view (updates today's point)
@@ -3930,7 +3932,7 @@ function renderMultiChart(lines) {
 function updateViewMenuBtn() {
   var btn = document.getElementById('viewMenuBtn');
   if (!btn) return;
-  var labels = { 'main': 'P&L', 'weight': 'WEIGHTS', 'market': 'MARKET', 'chart': 'CHART', 'analytics': 'ANALYTICS',
+  var labels = { 'main': 'P&L', 'weight': 'WEIGHTS', 'global-weight': 'ALL WEIGHTS', 'market': 'MARKET', 'chart': 'CHART', 'analytics': 'ANALYTICS',
     'summary': 'P&L', 'summary-market': 'MARKET', 'summary-chart': 'CHART', 'summary-analytics': 'ANALYTICS', 'summary-movers': 'TOP MOVERS', 'movers': 'TOP MOVERS' };
   var label = labels[viewMode] || 'P&L';
   if (viewMode === 'main' && currentPortfolio() && currentPortfolio().watchlist) label = 'MARKET';
@@ -4048,7 +4050,7 @@ function toggleCurrentModeMenu(el) {
 function render() {
   updateViewMenuBtn();
   var stockForm = document.getElementById('stockAddForm');
-  if (stockForm) stockForm.style.display = (['bonds','summary','summary-market','summary-chart','summary-analytics','archive-summary'].indexOf(viewMode) !== -1) ? 'none' : '';
+  if (stockForm) stockForm.style.display = (['bonds','summary','summary-market','summary-chart','summary-analytics','archive-summary','global-weight'].indexOf(viewMode) !== -1) ? 'none' : '';
   var area = document.getElementById('tableArea');
 
   // Analytics view (single portfolio)
@@ -5039,6 +5041,85 @@ function render() {
       Promise.all(wFxP).then(function() {
         var tb = document.getElementById('weightTbody');
         if (tb) tb.innerHTML = buildWeightRows(wFxMap2);
+      });
+    }
+    return;
+  }
+
+  // All-portfolios global weights view
+  if (viewMode === 'global-weight') {
+    var gwFxRates = {};
+    var gwNonUSD = [];
+    var gwPids = Object.keys(portfolios).filter(function(pid) {
+      return !portfolios[pid].watchlist && !portfolios[pid].archive;
+    });
+    gwPids.forEach(function(pid) {
+      (portfolios[pid].positions || []).forEach(function(pos) {
+        var c = pos.currency || portfolios[pid].currencyCode || 'USD';
+        if (c !== 'USD' && gwNonUSD.indexOf(c) === -1) gwNonUSD.push(c);
+      });
+    });
+
+    function buildGlobalWeightRows(fxRates) {
+      var tickerMap = {};
+      gwPids.forEach(function(pid) {
+        (portfolios[pid].positions || []).forEach(function(pos) {
+          if (!pos.qty || pos.qty <= 0 || pos.current == null || pos.sold) return;
+          var posCur = pos.currency || portfolios[pid].currencyCode || 'USD';
+          var rateToUSD = posCur === 'USD' ? 1 : (fxRates[posCur] || 1);
+          var valUSD = pos.qty * pos.current * rateToUSD;
+          var t = pos.ticker.toUpperCase();
+          if (!tickerMap[t]) tickerMap[t] = { valUSD: 0, shortName: '' };
+          tickerMap[t].valUSD += valUSD;
+          if (pos.shortName && !tickerMap[t].shortName) tickerMap[t].shortName = pos.shortName;
+        });
+      });
+      var totalValUSD = 0;
+      Object.keys(tickerMap).forEach(function(t) { totalValUSD += tickerMap[t].valUSD; });
+      var rows = Object.keys(tickerMap).map(function(t) {
+        return { ticker: t, valUSD: tickerMap[t].valUSD, shortName: tickerMap[t].shortName,
+                 weight: totalValUSD > 0 ? tickerMap[t].valUSD / totalValUSD * 100 : 0 };
+      });
+      rows.sort(function(a, b) {
+        if (weightSort.key === 'ticker') return weightSort.dir * a.ticker.localeCompare(b.ticker);
+        return weightSort.dir * (a.valUSD > b.valUSD ? 1 : a.valUSD < b.valUSD ? -1 : 0);
+      });
+      return rows.map(function(r) {
+        return '<tr>'
+          + '<td style="text-align:left;white-space:nowrap">' + r.ticker + '</td>'
+          + '<td style="padding:5px 4px;white-space:nowrap">$' + f2(r.valUSD) + '</td>'
+          + '<td style="padding:5px 4px;white-space:nowrap">' + fPctNoSign(r.weight) + '</td>'
+          + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + r.shortName + '</td>'
+          + '</tr>';
+      }).join('');
+    }
+
+    var gwTableHtml = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
+      + '<table style="border-collapse:collapse;font-size:13px">'
+      + '<thead><tr>'
+      + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortWeight(&apos;ticker&apos;)">' + (weightSort.key==='ticker' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'TICKER</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortWeight(&apos;value&apos;)">' + (weightSort.key==='value' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'VALUE ($)</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortWeight(&apos;weight&apos;)">' + (weightSort.key==='weight' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'WEIGHT</th>'
+      + '<th style="text-align:left;padding:5px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">NAME</th>'
+      + '</tr></thead>'
+      + '<tbody id="gwTbody"></tbody>'
+      + '</table>'
+      + '</div>';
+
+    area.innerHTML = gwTableHtml;
+
+    if (gwNonUSD.length === 0) {
+      document.getElementById('gwTbody').innerHTML = buildGlobalWeightRows({});
+    } else {
+      var baseUrlGw = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
+      var tokenGw = getToken();
+      Promise.all(gwNonUSD.map(function(code) {
+        return fetchFxRate(baseUrlGw, tokenGw, code + 'USD=X').then(function(rate) {
+          if (rate) gwFxRates[code] = rate;
+        });
+      })).then(function() {
+        var tb = document.getElementById('gwTbody');
+        if (tb) tb.innerHTML = buildGlobalWeightRows(gwFxRates);
       });
     }
     return;
