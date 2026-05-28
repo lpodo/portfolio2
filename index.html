@@ -206,7 +206,7 @@
     <div id="viewMenu" style="display:none;position:absolute;right:0;top:110%;background:var(--bg2);border:1px solid var(--border);z-index:200;min-width:110px">
       <div onclick="setView('main')" id="vmMain" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">P&amp;L</div>
       <div onclick="setView('weight')" id="vmWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">WEIGHTS</div>
-      <div onclick="setView('global-weight')" id="vmGlobalWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">ALL WEIGHTS</div>
+      <div onclick="setView('global-weight')" id="vmGlobalWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">TOTAL WEIGHTS</div>
       <div onclick="setView('market')" id="vmMarket" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">MARKET</div>
       <div onclick="setView('movers')" id="vmMovers" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">TOP MOVERS</div>
       <div onclick="setView('alerts')" id="vmAlerts" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px">ALERTS</div>
@@ -2527,7 +2527,7 @@ function refreshAll() {
           }
         });
         if (!hasPos) {
-          rows += '<tr><td style="text-align:left">' + p.name + '</td><td colspan="4" style="color:var(--dim)">—</td></tr>';
+          rows += '<tr><td style="text-align:left;white-space:nowrap">' + p.name + '</td><td colspan="4" style="color:var(--dim)">—</td></tr>';
           return;
         }
         var delta = currentVal - closeVal;
@@ -2535,7 +2535,7 @@ function refreshAll() {
         var dClass = delta >= 0 ? 'pos' : 'neg';
         totCloseUSD += closeUSD; totCurrentUSD += currentUSD; hasAny = true;
         rows += '<tr style="cursor:pointer" onclick="switchPortfolio(&apos;' + pid + '&apos;)">'
-          + '<td style="text-align:left">' + p.name + '</td>'
+          + '<td style="text-align:left;white-space:nowrap">' + p.name + '</td>'
           + '<td>' + baseSym2 + f2(closeVal) + '</td>'
           + '<td>' + baseSym2 + f2(currentVal) + '</td>'
           + '<td class="' + dClass + '">' + fSign(delta) + '</td>'
@@ -3932,7 +3932,7 @@ function renderMultiChart(lines) {
 function updateViewMenuBtn() {
   var btn = document.getElementById('viewMenuBtn');
   if (!btn) return;
-  var labels = { 'main': 'P&L', 'weight': 'WEIGHTS', 'global-weight': 'ALL WEIGHTS', 'market': 'MARKET', 'chart': 'CHART', 'analytics': 'ANALYTICS',
+  var labels = { 'main': 'P&L', 'weight': 'WEIGHTS', 'global-weight': 'TOTAL WEIGHTS', 'market': 'MARKET', 'chart': 'CHART', 'analytics': 'ANALYTICS',
     'summary': 'P&L', 'summary-market': 'MARKET', 'summary-chart': 'CHART', 'summary-analytics': 'ANALYTICS', 'summary-movers': 'TOP MOVERS', 'movers': 'TOP MOVERS' };
   var label = labels[viewMode] || 'P&L';
   if (viewMode === 'main' && currentPortfolio() && currentPortfolio().watchlist) label = 'MARKET';
@@ -4622,7 +4622,7 @@ function render() {
           }
         });
         if (!hasPos) {
-          rows += '<tr><td style="text-align:left">' + p.name + '</td><td colspan="4" style="color:var(--dim)">—</td></tr>';
+          rows += '<tr><td style="text-align:left;white-space:nowrap">' + p.name + '</td><td colspan="4" style="color:var(--dim)">—</td></tr>';
           return;
         }
         var delta = currentVal - closeVal;
@@ -4630,7 +4630,7 @@ function render() {
         var dClass = delta >= 0 ? 'pos' : 'neg';
         totCloseUSD += closeUSD; totCurrentUSD += currentUSD; hasAny = true;
         rows += '<tr style="cursor:pointer" onclick="switchPortfolio(&apos;' + pid + '&apos;)">'
-          + '<td style="text-align:left">' + p.name + '</td>'
+          + '<td style="text-align:left;white-space:nowrap">' + p.name + '</td>'
           + '<td>' + baseSym2 + f2(closeVal) + '</td>'
           + '<td>' + baseSym2 + f2(currentVal) + '</td>'
           + '<td class="' + dClass + '">' + fSign(delta) + '</td>'
@@ -4779,8 +4779,8 @@ function render() {
     return;
   }
 
-  // Watchlist/Index view — but let chart mode pass through
-  if (isWatchlist() && viewMode !== 'chart') {
+  // Watchlist/Index view — but let chart mode and summary-context modes pass through
+  if (isWatchlist() && viewMode !== 'chart' && viewMode !== 'global-weight') {
     var wlRows = '';
     var wlTickerArrow = watchlistSort.key === 'ticker' ? (watchlistSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
     var wlDeltaArrow = watchlistSort.key === 'delta' ? (watchlistSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
@@ -4870,7 +4870,7 @@ function render() {
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
       var mktSoldStyle = (p.sold || p.qty === 0 || allWatchlist) ? 'font-style:italic;opacity:0.5' : '';
       marketRows += '<tr style="' + mktSoldStyle + '">'
-        + '<td style="text-align:left">' + mktTickerCell + '</td>'
+        + '<td style="text-align:left;white-space:nowrap">' + mktTickerCell + '</td>'
         + '<td style="text-align:right;padding:5px 4px">' + getPositionCurrencySymbol(p) + f2(regPrice) + '</td>'
         + '<td style="text-align:right;padding:5px 4px">' + getPositionCurrencySymbol(p) + f2(mktCurrent) + '</td>'
         + '<td style="text-align:right;padding:5px 4px" class="' + deltaClass + '">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
@@ -5069,15 +5069,17 @@ function render() {
           var rateToUSD = posCur === 'USD' ? 1 : (fxRates[posCur] || 1);
           var valUSD = pos.qty * pos.current * rateToUSD;
           var t = pos.ticker.toUpperCase();
-          if (!tickerMap[t]) tickerMap[t] = { valUSD: 0, shortName: '' };
+          if (!tickerMap[t]) tickerMap[t] = { valUSD: 0, valNative: 0, currency: posCur, shortName: '' };
           tickerMap[t].valUSD += valUSD;
+          tickerMap[t].valNative += pos.qty * pos.current;
           if (pos.shortName && !tickerMap[t].shortName) tickerMap[t].shortName = pos.shortName;
         });
       });
       var totalValUSD = 0;
       Object.keys(tickerMap).forEach(function(t) { totalValUSD += tickerMap[t].valUSD; });
       var rows = Object.keys(tickerMap).map(function(t) {
-        return { ticker: t, valUSD: tickerMap[t].valUSD, shortName: tickerMap[t].shortName,
+        return { ticker: t, valUSD: tickerMap[t].valUSD, valNative: tickerMap[t].valNative,
+                 currency: tickerMap[t].currency, shortName: tickerMap[t].shortName,
                  weight: totalValUSD > 0 ? tickerMap[t].valUSD / totalValUSD * 100 : 0 };
       });
       rows.sort(function(a, b) {
@@ -5085,8 +5087,10 @@ function render() {
         return weightSort.dir * (a.valUSD > b.valUSD ? 1 : a.valUSD < b.valUSD ? -1 : 0);
       });
       return rows.map(function(r) {
+        var nativeSym = CURRENCY_SYMBOLS[r.currency] || r.currency;
         return '<tr>'
           + '<td style="text-align:left;white-space:nowrap">' + r.ticker + '</td>'
+          + '<td style="padding:5px 4px;white-space:nowrap">' + nativeSym + f2(r.valNative) + '</td>'
           + '<td style="padding:5px 4px;white-space:nowrap">$' + f2(r.valUSD) + '</td>'
           + '<td style="padding:5px 4px;white-space:nowrap">' + fPctNoSign(r.weight) + '</td>'
           + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + r.shortName + '</td>'
@@ -5098,6 +5102,7 @@ function render() {
       + '<table style="border-collapse:collapse;font-size:13px">'
       + '<thead><tr>'
       + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortWeight(&apos;ticker&apos;)">' + (weightSort.key==='ticker' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'TICKER</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortWeight(&apos;value&apos;)">' + (weightSort.key==='value' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'VALUE</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortWeight(&apos;value&apos;)">' + (weightSort.key==='value' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'VALUE ($)</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortWeight(&apos;weight&apos;)">' + (weightSort.key==='weight' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'WEIGHT</th>'
       + '<th style="text-align:left;padding:5px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">NAME</th>'
