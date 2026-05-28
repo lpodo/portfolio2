@@ -3930,7 +3930,7 @@ function renderMultiChart(lines) {
 function updateViewMenuBtn() {
   var btn = document.getElementById('viewMenuBtn');
   if (!btn) return;
-  var labels = { 'main': 'P&L', 'weight': 'WEIGHT', 'market': 'MARKET', 'chart': 'CHART', 'analytics': 'ANALYTICS',
+  var labels = { 'main': 'P&L', 'weight': 'WEIGHTS', 'market': 'MARKET', 'chart': 'CHART', 'analytics': 'ANALYTICS',
     'summary': 'P&L', 'summary-market': 'MARKET', 'summary-chart': 'CHART', 'summary-analytics': 'ANALYTICS', 'summary-movers': 'TOP MOVERS', 'movers': 'TOP MOVERS' };
   var label = labels[viewMode] || 'P&L';
   if (viewMode === 'main' && currentPortfolio() && currentPortfolio().watchlist) label = 'MARKET';
@@ -4266,7 +4266,7 @@ function render() {
         : '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + (hasActiveAlert ? ' <span style="color:#f6c15b;font-size:11px">&#9679;</span>' : '') + '</span>';
     var soldStyle = (p.sold || p.qty === 0) ? 'font-style:italic;opacity:0.5' : '';
     rows += '<tr style="' + soldStyle + '">'
-      + '<td>' + tickerCell + '</td>'
+      + '<td style="white-space:nowrap">' + tickerCell + '</td>'
       + '<td>' + qtyCell + '</td>'
       + '<td>' + entryCell + '</td>'
       + '<td>' + curEditCell + '</td>'
@@ -4403,7 +4403,7 @@ function render() {
         var weight = (s.valUSD !== null && totalValUSD > 0) ? s.valUSD / totalValUSD * 100 : null;
         var c = pnl === null ? '' : (pnl >= 0 ? 'pos' : 'neg');
         summaryRows += '<tr style="cursor:pointer" onclick="switchPortfolio(&apos;' + s.id + '&apos;)">'
-          + '<td style="text-align:left">' + s.name + '</td>'
+          + '<td style="text-align:left;white-space:nowrap">' + s.name + '</td>'
           + '<td>' + (s.val !== null ? (CURRENCY_SYMBOLS[s.currencyCode] || s.currencyCode) + f2(s.val) : '&mdash;') + '</td>'
           + '<td class="' + c + '">' + (pnl !== null ? fSign(pnl) : '&mdash;') + '</td>'
           + '<td class="' + c + '">' + (ret !== null ? fPct(ret) : '&mdash;') + '</td>'
@@ -4727,7 +4727,7 @@ function render() {
         var weight = (s.valUSD !== null && totalValUSD > 0) ? s.valUSD / totalValUSD * 100 : null;
         var c = pnl === null ? '' : (pnl >= 0 ? 'pos' : 'neg');
         summaryRows += '<tr style="cursor:pointer" onclick="switchPortfolio(&apos;' + s.id + '&apos;)">'
-        + '<td style="text-align:left">' + s.name + '</td>'
+        + '<td style="text-align:left;white-space:nowrap">' + s.name + '</td>'
         + '<td>' + (s.val !== null ? (CURRENCY_SYMBOLS[s.currencyCode] || s.currencyCode) + f2(s.val) : '&mdash;') + '</td>'
         + '<td class="' + c + '">' + (pnl !== null ? fSign(pnl) : '&mdash;') + '</td>'
         + '<td class="' + c + '">' + (ret !== null ? fPct(ret) : '&mdash;') + '</td>'
