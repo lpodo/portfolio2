@@ -79,14 +79,13 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
   - `pt_reg_dict` — REGION dictionary
   - `pt_sec_dict` — SECTOR dictionary
   - `pt_agg_active`, `pt_agg_archive` — aggregation mode state
-  - `pt_movers_limit` — TOP MOVERS show limit (3–50)
   - `pt_cloud_backend` — cloud storage backend: `jsonbin` (default) or `kv`
   - `pt_jbkey` — JSONBin master key
   - `pt_jbbin` — JSONBin bin ID
   - `pt_kv_key` — Cloudflare KV user key
   - `pt_cloud_ts` — cloud sync timestamp (conflict prevention)
   - `pt_enc_key` — AES-GCM encryption password
-  - `pt_close_mode` — close column mode: `prev` (Prev.Close) or `reg` (Reg.Price), default `prev`
+  - `pt_close_mode` — close column mode: `prev` (Prev.Close), `reg` (Reg.Price), or a historical period (`5d`, `1mo`, `3mo`, `6mo`, `1y`, `5y`); default `prev`
   - `pt_current_mode` — current column mode: `cur` (Current) or `reg` (Reg.Price), default `cur`
   - `pt_chart_sel_{portfolioId}` — per-portfolio ticker selection for POSITIONS chart
   - `chart_hist_{ticker}_{range}` — historical price cache (daily TTL)
@@ -160,17 +159,23 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
   - ✦ — market closed (CLOSED)
 - Total: VALUE, P&L, RETURN
 - **Multi-currency portfolios**: each position carries its own currency (from Yahoo Finance). ENTRY/CURRENT show position currency symbol. Totals and weights are converted to portfolio base currency via live FX rates (`EURUSD=X` etc.)
-- **Summary view**: selected from the portfolio switcher (Σ SUMMARY at the bottom). Shows all non-watchlist portfolios: NAME / VALUE (in native currency) / P&L / RETURN / SHARE%. Total row always in USD with live FX conversion. Clicking a row switches to that portfolio. Refresh on Summary updates all portfolios.
+- **Summary view**: selected from the portfolio switcher (Σ SUMMARY at the bottom). Shows all non-watchlist portfolios: NAME / VALUE (in native currency) / P&L / RETURN / SHARE%. Total row always in USD with live FX conversion. Clicking a portfolio name switches to it. Refresh on Summary updates all portfolios.
+
+  In Summary, the ⋮ dropdown menu shows Summary-specific views (marked with Σ prefix):
+  - **Σ MARKET** — cross-portfolio market view. Collects all non-sold positions from all non-archive portfolios, deduplicates by ticker, and shows them in a single table. Same CLOSE/CURRENT menus and Δ% sort cycle as the regular MARKET view (including historical period comparison).
+  - **Σ WEIGHTS** — cross-portfolio weights (described above)
+  - **Σ ALERTS** — alerts across all portfolios (see [Price Alerts](#price-alerts))
+  - **Σ ANALYTICS** — analytics across all portfolios (see [Analytics View](#analytics-view))
 
 - **View modes** via dropdown menu (sometimes referred to as ⋮ menu):
   - **P&L** — default view with full position details
-  - **WEIGHTS** — TICKER / VALUE / WEIGHT %; sortable by any column
-  - **MARKET** — TICKER / CLOSE / CURRENT / Δ%; sortable by TICKER or Δ% (3rd click resets to portfolio order); market state icon included. The CLOSE and CURRENT column headers are clickable menus (shown in green) to control what each column displays:
-    - **CLOSE column**: `Prev.Close` (chartPreviousClose, default) or `Reg.Price` (regularMarketPrice)
+  - **MARKET** — TICKER / CLOSE / CURRENT / Δ%; sortable by TICKER or Δ%. The Δ% column header cycles through three sort modes: Δ%↓ → Δ%↑ → |Δ%|↓ (absolute, biggest movers first) → reset. Market state icon included. The CLOSE and CURRENT column headers are clickable menus (shown in green) to control what each column displays:
+    - **CLOSE column**: `Prev.Close` (previousClose, default), `Reg.Price` (regularMarketPrice), or a historical period — **5D**, **1M**, **3M**, **6M**, **1Y**, **5Y**. Historical data is fetched from `/api/history` (shared with the Chart view cache) and loaded asynchronously on first use; subsequent opens use the daily cache. When a period is selected, Δ% shows performance over that period.
     - **CURRENT column**: `Current` (current price including extended hours, default) or `Reg.Price` (regularMarketPrice)
     - Δ% is always computed from the selected CLOSE vs selected CURRENT values
     - Settings apply globally to all portfolios (regular, watchlist, summary) and persist across sessions
-  - **TOP MOVERS** — see [TOP MOVERS view](#top-movers-view)
+  - **WEIGHTS** — TICKER / VALUE / WEIGHT %; sortable by any column
+  - **Σ WEIGHTS** — cross-portfolio weights view (Summary only). Aggregates all active positions from all non-archive portfolios by ticker. Columns: TICKER / VALUE (native currency, dimmed) / VALUE ($) (USD-converted) / WEIGHT % / NAME. All non-USD values converted using live FX rates. Sortable by TICKER, VALUE ($), or WEIGHT.
   - **ALERTS** — see [Price Alerts](#price-alerts)
   - other view modes are described below
 - **Aggregation mode** (≡ button in the P&L table header, above the action buttons): collapses duplicate tickers into single rows for a cleaner view. Active separately for regular and archive portfolios; state persists across sessions (`pt_agg_active`, `pt_agg_archive`). The ≡ icon turns green when enabled. Weight view inherits the same mode automatically.
@@ -203,7 +208,7 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
 - **Watchlist portfolio** (WATCHLIST radio button at creation): designed for tracking indices, commodities, currencies and any instruments without a held position (e.g. `^KS11`, `BZ=F`, `EURUSD=X`). Essentially a regular portfolio with qty/entry forced to 0 and some UI restrictions suited to its purpose:
   - Add form hides qty/entry fields
   - View shows CLOSE / PRICE / Δ% / market state icon / NAME — sortable by TICKER and Δ%
-  - ⋮ menu shows MARKET, TOP MOVERS, ALERTS, and CHART only (P&L, WEIGHT, ANALYTICS hidden)
+  - ⋮ menu shows MARKET, ALERTS, and CHART only (P&L, WEIGHTS, ANALYTICS hidden)
   - CHART mode: positions-only (no portfolio value line); ticker selection works the same as regular portfolios
   - Appears at the top of the active portfolio list, separated by a divider
   - Excluded from Summary, Summary Market, Summary Chart and Analytics
@@ -373,18 +378,6 @@ Remaining coupons are calculated by stepping back from maturity date in coupon i
 
 Bond data (`bondsDb`, `bondPortfolios`) is stored in `pt_bonds_db` and `pt_bond_portfolios` in localStorage, and is included in cloud sync alongside equity portfolios in the same cloud storage record (regardless of backend).
 
-## TOP MOVERS view
-
-Available via ⋮ menu → TOP MOVERS in individual portfolios, watchlist portfolios, and Summary.
-
-Shows positions ranked by absolute Δ% (largest moves first), using the same CLOSE/CURRENT mode as the Market view. Useful for quickly spotting the biggest movers without scrolling through the full list.
-
-- **Individual portfolio**: deduplicates by ticker, excludes sold positions, includes qty=0
-- **Summary (cross-portfolio)**: collects all positions from regular and watchlist portfolios, deduplicates by ticker globally, excludes sold and archive portfolios
-- **SHOW TOP N**: configurable limit (3–50), saved in `pt_movers_limit`, persists across sessions
-- **CLOSE / CURRENT** column headers are clickable menus (same as Market view)
-- qty=0 positions shown in italic/dimmed style
-- **Expanded row**: tap a ticker to open the expanded sub-row (same as MARKET view) — shows CAT/REG/SEC, NOTE, and ALERTS with quick-add
 
 ## Price Alerts
 
@@ -412,7 +405,7 @@ On every price refresh, each alert is re-evaluated:
 
 ### Indicators
 
-A yellow dot `●` appears after the ticker name when any alert on that position is triggered. The dot is visible in all views that show tickers: P&L, MARKET, WEIGHTS, TOP MOVERS, ALERTS.
+A yellow dot `●` appears after the ticker name when any alert on that position is triggered. The dot is visible in all views that show tickers: P&L, MARKET, WEIGHTS, Σ MARKET, Σ WEIGHTS, ALERTS.
 
 ### Expanded row
 
@@ -428,7 +421,7 @@ Available via ⋮ menu → **ALERTS** for individual portfolios, watchlists, and
 Shows all positions that have at least one alert set (sold positions excluded), sorted by Δ% descending (biggest gainers first, biggest losers last). Same columns as MARKET view. Tap a ticker to expand.
 
 - **Individual portfolio**: shows positions from the current portfolio only
-- **Summary**: collects all positions with alerts from regular and watchlist portfolios, deduplicated by ticker
+- **Summary (Σ ALERTS)**: collects all positions with alerts from regular and watchlist portfolios, deduplicated by ticker
 - Empty state: displays "NO ALERTS SET"
 
 This view is useful as a single dashboard of everything being watched — you see current prices and conditions without visiting each portfolio individually.
@@ -500,7 +493,7 @@ Each position also has a free-text **note** field. Set via the ✎ edit row. Not
 
 ### Expanded Row
 
-Tapping/clicking the **ticker name** in any market-style view toggles an expandable sub-row. Available in: **P&L**, **MARKET**, **TOP MOVERS**, **ALERTS**, and **watchlist** views.
+Tapping/clicking the **ticker name** in any market-style view toggles an expandable sub-row. Available in: **P&L**, **MARKET**, **Σ MARKET**, **ALERTS**, and **watchlist** views.
 
 The expanded row always shows three lines:
 
