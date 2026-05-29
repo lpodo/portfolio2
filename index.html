@@ -1624,7 +1624,7 @@ function restoreData(event) {
       render();
       document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
       renderSwitcher();
-      cloudSave();
+      if (getCloudBackend() === 'kv') cloudSaveKV(); else cloudSave();
       var el = document.getElementById('backupStatus');
       if (el) { el.textContent = '✓ Data restored and saved to cloud'; el.style.color = 'var(--green)'; }
     } catch(err) {
@@ -3356,7 +3356,7 @@ function processCsvImport(text) {
     if (m.sector)   addToDict(secDict, m.sector);
   });
   saveDicts();
-  savePortfolios(); cloudSave();
+  savePortfolios(); if (getCloudBackend() === 'kv') cloudSaveKV(); else cloudSave();
   alert('Updated ' + updated + ' position(s)');
   render();
 }
