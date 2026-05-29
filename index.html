@@ -1000,14 +1000,14 @@ function getBondsDb() {
 }
 function saveBondsDb() {
   try { localStorage.setItem('pt_bonds_db', JSON.stringify(bondsDb)); } catch(e) {}
-  cloudSave();
+  if (getCloudBackend() === 'kv') cloudSaveKV(); else cloudSave();
 }
 function getBondPortfolios() {
   try { return JSON.parse(localStorage.getItem('pt_bond_portfolios') || '{}'); } catch(e) { return {}; }
 }
 function saveBondPortfolios() {
   try { localStorage.setItem('pt_bond_portfolios', JSON.stringify(bondPortfolios)); } catch(e) {}
-  cloudSave();
+  if (getCloudBackend() === 'kv') cloudSaveKV(); else cloudSave();
 }
 
 function addBondPortfolio() {
@@ -1877,7 +1877,7 @@ function cloudSaveKV() {
   var token = getToken();
   var kvKey = getKvKey();
   if (!baseUrl || !kvKey) return;
-  var payload = { portfolios: portfolios, bondsDb: bondsDb, bondPortfolios: bondPortfolios, catDict: catDict, regDict: regDict, secDict: secDict };
+  var payload = { portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict };
   var encKey = getEncKey();
   function doSave(body) {
     fetch(baseUrl + '/api/kv', {
