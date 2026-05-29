@@ -4755,8 +4755,8 @@ function render() {
         var ret = (pnl !== null && s.cost) ? pnl / s.cost * 100 : null;
         var weight = (s.valUSD !== null && totalValUSD > 0) ? s.valUSD / totalValUSD * 100 : null;
         var c = pnl === null ? '' : (pnl >= 0 ? 'pos' : 'neg');
-        summaryRows += '<tr style="cursor:pointer" onclick="switchPortfolio(&apos;' + s.id + '&apos;)">'
-        + '<td style="text-align:left;white-space:nowrap">' + s.name + '</td>'
+        summaryRows += '<tr>'
+        + '<td style="text-align:left;white-space:nowrap;cursor:pointer" onclick="switchPortfolio(&apos;' + s.id + '&apos;)">' + s.name + '</td>'
         + '<td>' + (s.val !== null ? (CURRENCY_SYMBOLS[s.currencyCode] || s.currencyCode) + f2(s.val) : '&mdash;') + '</td>'
         + '<td class="' + c + '">' + (pnl !== null ? fSign(pnl) : '&mdash;') + '</td>'
         + '<td class="' + c + '">' + (ret !== null ? fPct(ret) : '&mdash;') + '</td>'
