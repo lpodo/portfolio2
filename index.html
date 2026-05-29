@@ -206,11 +206,11 @@
     <div id="viewMenu" style="display:none;position:absolute;right:0;top:110%;background:var(--bg2);border:1px solid var(--border);z-index:200;min-width:110px">
       <div onclick="setView('main')" id="vmMain" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">P&amp;L</div>
       <div onclick="setView('market')" id="vmMarket" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">MARKET</div>
-      <div onclick="setView('market-total')" id="vmMarketTotal" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">MARKET &#931;</div>
-      <div onclick="setView('weight')" id="vmWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">WEIGHTS</div>
-      <div onclick="setView('global-weight')" id="vmGlobalWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">WEIGHTS &#931;</div>
-      <div onclick="setView('alerts')" id="vmAlerts" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">ALERTS</div>
+      <div onclick="setView('market-total')" id="vmMarketTotal" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">&#931; MARKET</div>
       <div onclick="setView('chart')" id="vmChart" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">CHART</div>
+      <div onclick="setView('weight')" id="vmWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">WEIGHTS</div>
+      <div onclick="setView('global-weight')" id="vmGlobalWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">&#931; WEIGHTS</div>
+      <div onclick="setView('alerts')" id="vmAlerts" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">ALERTS</div>
       <div onclick="setView('analytics')" id="vmAnalytics" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">ANALYTICS</div>
     </div>
   </div>
@@ -2515,7 +2515,7 @@ function refreshAll() {
             var pc = pos.currency || base;
             var rateToUSD = pc === 'USD' ? 1 : (fxRates[pc] || fxRates[pc + 'USD'] || 1);
             var rateBaseToUSD = base === 'USD' ? 1 : (fxRates[base] || fxRates[base + 'USD'] || 1);
-            var closePrice = pos.sold ? pos.current : (closeMode === 'prev' ? (pos.previousClose || pos.regularMarketPrice || pos.current) : (pos.regularMarketPrice || pos.current));
+            var closePrice = pos.sold ? pos.current : (HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(pos.ticker, closeMode) || pos.regularMarketPrice || pos.current) : (closeMode === 'prev' ? (pos.previousClose || pos.regularMarketPrice || pos.current) : (pos.regularMarketPrice || pos.current)));
             var curPrice = pos.sold ? pos.current : (currentMode === 'reg' ? (pos.regularMarketPrice || pos.current) : pos.current);
             var posClose = pos.qty * closePrice * rateToUSD / rateBaseToUSD;
             var posCurrent = pos.qty * curPrice * rateToUSD / rateBaseToUSD;
@@ -2548,7 +2548,7 @@ function refreshAll() {
       area.innerHTML = '<div class="table-wrap"><table>'
         + '<thead><tr>'
         + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO</th>'
-        + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + (closeMode === 'prev' ? 'PREV.CLOSE' : 'REG.PRICE') + '</th>'
+        + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">&#916;</th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">&#916;%</th>'
@@ -2561,6 +2561,13 @@ function refreshAll() {
           + '<div class="total-block"><div class="total-label">&#916;</div><div class="total-value ' + tClass + '">' + fSign(totDelta) + '</div></div>'
           + '<div class="total-block"><div class="total-label">&#916;%</div><div class="total-value ' + tClass + '">' + (totDeltaPct !== null ? fSign(totDeltaPct) + '%' : '—') + '</div></div>'
           + '</div>' : '');
+      var smAllTickers = [];
+      smPids.forEach(function(pid2) {
+        (portfolios[pid2].positions || []).forEach(function(pos2) {
+          if (!pos2.sold && pos2.qty > 0 && smAllTickers.indexOf(pos2.ticker) === -1) smAllTickers.push(pos2.ticker);
+        });
+      });
+      fetchHistoricalIfNeeded(smAllTickers);
     }
 
     if (smNonUSD.length === 0) {
@@ -2691,8 +2698,8 @@ function getMarketSorted(items) {
       return marketSort.dir * a.ticker.localeCompare(b.ticker);
     }
     // delta% — use previousClose same as render
-    var aBase = (a.marketState === 'REGULAR') ? (a.previousClose || a.regularMarketPrice) : ((closeMode === 'prev' ? a.previousClose : a.regularMarketPrice) || a.regularMarketPrice);
-    var bBase = (b.marketState === 'REGULAR') ? (b.previousClose || b.regularMarketPrice) : ((closeMode === 'prev' ? b.previousClose : b.regularMarketPrice) || b.regularMarketPrice);
+    var aBase = HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(a.ticker, closeMode) || a.previousClose || a.regularMarketPrice) : ((a.marketState === 'REGULAR') ? (a.previousClose || a.regularMarketPrice) : ((closeMode === 'prev' ? a.previousClose : a.regularMarketPrice) || a.regularMarketPrice));
+    var bBase = HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(b.ticker, closeMode) || b.previousClose || b.regularMarketPrice) : ((b.marketState === 'REGULAR') ? (b.previousClose || b.regularMarketPrice) : ((closeMode === 'prev' ? b.previousClose : b.regularMarketPrice) || b.regularMarketPrice));
     va = (a.current != null && aBase) ? (a.current - aBase) / aBase * 100 : null;
     vb = (b.current != null && bBase) ? (b.current - bBase) / bBase * 100 : null;
     if (marketSort.key === 'absdelta') {
@@ -2754,10 +2761,10 @@ function toggleViewMenu() {
     document.getElementById('vmWeight').style.display = (isSummaryMode || isWL) ? 'none' : '';
     document.getElementById('vmGlobalWeight').style.display = isSummaryMode ? '' : 'none';
     document.getElementById('vmAlerts').style.display = isArchive ? 'none' : '';
-    document.getElementById('vmAlerts').textContent = isSummaryMode ? 'ALERTS Σ' : 'ALERTS';
+    document.getElementById('vmAlerts').textContent = isSummaryMode ? 'Σ ALERTS' : 'ALERTS';
     document.getElementById('vmChart').style.display = isArchive ? 'none' : '';
     document.getElementById('vmAnalytics').style.display = isWL ? 'none' : '';
-    document.getElementById('vmAnalytics').textContent = isSummaryMode ? 'ANALYTICS Σ' : 'ANALYTICS';
+    document.getElementById('vmAnalytics').textContent = isSummaryMode ? 'Σ ANALYTICS' : 'ANALYTICS';
     menu.style.display = 'block';
   } else {
     menu.style.display = 'none';
@@ -2803,7 +2810,7 @@ function buildMarketTotals(fxMap, baseCode, baseSym) {
   var mktTotClose = 0, mktTotCurrent = 0, mktHasAny = false;
   getSorted().forEach(function(p) {
     if (p.current != null && p.qty > 0) {
-      var closeVal = p.sold ? p.current : (closeMode === 'prev' ? (p.previousClose || p.regularMarketPrice || p.current) : (p.regularMarketPrice || p.current));
+      var closeVal = p.sold ? p.current : (HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(p.ticker, closeMode) || p.regularMarketPrice || p.current) : (closeMode === 'prev' ? (p.previousClose || p.regularMarketPrice || p.current) : (p.regularMarketPrice || p.current)));
       var curVal   = p.sold ? p.current : (currentMode === 'reg' ? (p.regularMarketPrice || p.current) : p.current);
       var pc = getPositionCurrencyCode(p);
       var rate = pc !== baseCode ? (fxMap[pc + baseCode] || fxMap[pc] || 1) : 1;
@@ -2948,7 +2955,7 @@ function buildMoversView(area) {
 
   // Compute delta% for each using closeMode/currentMode
   var withDelta = allPos.map(function(p) {
-    var close = closeMode === 'prev' ? (p.previousClose || p.regularMarketPrice || null) : (p.regularMarketPrice || null);
+    var close = getCloseForMode(p);
     var cur = currentMode === 'reg' ? (p.regularMarketPrice || null) : (p.current || null);
     var delta = (close && cur) ? (cur - close) / close * 100 : null;
     return { pos: p, close: close, cur: cur, delta: delta };
@@ -2988,7 +2995,7 @@ function buildMoversView(area) {
   area.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
     + '<thead><tr>'
     + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortMarket(&apos;ticker&apos;)">TICKER' + smTickerArrow + '</th>'
-    + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + (closeMode === 'prev' ? 'PREV.CLOSE' : 'REG.PRICE') + '</th>'
+    + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
     + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
     + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortMarket(&apos;delta&apos;)">&#916;%' + smDeltaArrow + '</th>'
     + '<th style="width:16px;border-bottom:1px solid var(--border)"></th>'
@@ -2996,6 +3003,8 @@ function buildMoversView(area) {
     + '</tr></thead>'
     + '<tbody>' + rows + '</tbody>'
     + '</table></div>';
+
+  fetchHistoricalIfNeeded(allPos.map(function(p) { return p.ticker; }));
 }
 
 function renderAlertsTable(posArr, area) {
@@ -3035,7 +3044,7 @@ function renderAlertsTable(posArr, area) {
   area.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
     + '<thead><tr>'
     + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">TICKER</th>'
-    + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + (closeMode === 'prev' ? 'PREV.CLOSE' : 'REG.PRICE') + '</th>'
+    + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
     + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
     + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">&#916;%</th>'
     + '<th style="width:16px;border-bottom:1px solid var(--border)"></th>'
@@ -3423,6 +3432,39 @@ function chartCacheSet(ticker, range, points) {
     toDelete.forEach(function(k) { localStorage.removeItem(k); });
     localStorage.setItem(chartCacheKey(ticker, range), JSON.stringify({ date: today, points: points }));
   } catch(e) {}
+}
+
+var HIST_MODES = ['5d','1mo','3mo','6mo','1y','5y'];
+
+function closeModeLabel(mode) {
+  var map = { 'prev': 'PREV.CLOSE', 'reg': 'REG.PRICE', '5d': '5D', '1mo': '1M', '3mo': '3M', '6mo': '6M', '1y': '1Y', '5y': '5Y' };
+  return map[mode] || mode.toUpperCase();
+}
+
+function getHistoricalClose(ticker, mode) {
+  var pts = chartCacheGet(ticker, mode);
+  return (pts && pts.length > 0) ? pts[0].c : null;
+}
+
+function getCloseForMode(p) {
+  if (HIST_MODES.indexOf(closeMode) !== -1) return getHistoricalClose(p.ticker, closeMode);
+  return closeMode === 'prev' ? (p.previousClose || p.regularMarketPrice || null) : (p.regularMarketPrice || null);
+}
+
+function fetchHistoricalIfNeeded(tickers) {
+  if (HIST_MODES.indexOf(closeMode) === -1) return;
+  var baseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
+  if (!baseUrl) return;
+  var token = getToken();
+  var opts = token ? { headers: { 'X-API-Token': token } } : {};
+  var mode = closeMode;
+  tickers.forEach(function(ticker) {
+    if (!chartCacheGet(ticker, mode)) {
+      fetchWithTimeout(baseUrl + '/api/history?ticker=' + encodeURIComponent(ticker) + '&range=' + mode, opts, 12000)
+        .then(function(d) { if (d && d.points && closeMode === mode) { chartCacheSet(ticker, mode, d.points); render(); } })
+        .catch(function() {});
+    }
+  });
 }
 
 function loadChartData(range) {
@@ -3959,8 +4001,8 @@ function renderMultiChart(lines) {
 function updateViewMenuBtn() {
   var btn = document.getElementById('viewMenuBtn');
   if (!btn) return;
-  var labels = { 'main': 'P&L', 'weight': 'WEIGHTS', 'global-weight': 'WEIGHTS Σ', 'market': 'MARKET', 'movers': 'MARKET', 'chart': 'CHART', 'analytics': 'ANALYTICS', 'alerts': 'ALERTS',
-    'summary': 'P&L', 'summary-market': 'MARKET', 'summary-chart': 'CHART', 'summary-analytics': 'ANALYTICS Σ', 'summary-movers': 'MARKET Σ', 'summary-alerts': 'ALERTS Σ' };
+  var labels = { 'main': 'P&L', 'weight': 'WEIGHTS', 'global-weight': 'Σ WEIGHTS', 'market': 'MARKET', 'movers': 'MARKET', 'chart': 'CHART', 'analytics': 'ANALYTICS', 'alerts': 'ALERTS',
+    'summary': 'P&L', 'summary-market': 'MARKET', 'summary-chart': 'CHART', 'summary-analytics': 'Σ ANALYTICS', 'summary-movers': 'Σ MARKET', 'summary-alerts': 'Σ ALERTS' };
   var label = labels[viewMode] || 'P&L';
   if (viewMode === 'main' && currentPortfolio() && currentPortfolio().watchlist) label = 'MARKET';
   btn.textContent = label;
@@ -4044,7 +4086,7 @@ function toggleCloseModeMenu(el) {
   var menu = document.createElement('div');
   menu.id = 'closeModeMenu';
   menu.style.cssText = 'position:absolute;z-index:100;background:var(--bg2);border:1px solid var(--border);padding:4px 0;min-width:110px';
-  ['Prev.Close|prev','Reg.Price|reg'].forEach(function(item) {
+  ['Prev.Close|prev','Reg.Price|reg','5D|5d','1M|1mo','3M|3mo','6M|6mo','1Y|1y','5Y|5y'].forEach(function(item) {
     var parts = item.split('|'); var label = parts[0]; var val = parts[1];
     var d = document.createElement('div');
     d.style.cssText = 'padding:6px 12px;cursor:pointer;font-size:11px;color:' + (closeMode === val ? 'var(--green)' : 'var(--bright)');
@@ -4120,7 +4162,7 @@ function render() {
       });
     })();
     var withDeltaSingle = moversPos.map(function(p) {
-      var close2 = closeMode === 'prev' ? (p.previousClose || p.regularMarketPrice || null) : (p.regularMarketPrice || null);
+      var close2 = getCloseForMode(p);
       var cur2 = currentMode === 'reg' ? (p.regularMarketPrice || null) : (p.current || null);
       var delta2 = (close2 && cur2) ? (cur2 - close2) / close2 * 100 : null;
       return { pos: p, close: close2, cur: cur2, delta: delta2 };
@@ -4152,12 +4194,13 @@ function render() {
       + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
       + '<thead><tr>'
       + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">TICKER</th>'
-      + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + (closeMode === 'prev' ? 'PREV.CLOSE' : 'REG.PRICE') + '</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">&#916;%</th>'
       + '<th style="width:16px;border-bottom:1px solid var(--border)"></th>'
       + '<th style="text-align:left;padding:5px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">NAME</th>'
       + '</tr></thead><tbody>' + rowsSingle + '</tbody></table></div>';
+    fetchHistoricalIfNeeded(moversPos.map(function(p) { return p.ticker; }));
     return;
   }
 
@@ -4637,7 +4680,7 @@ function render() {
             var pc = pos.currency || base;
             var rateToUSD = pc === 'USD' ? 1 : (fxRates[pc] || fxRates[pc + 'USD'] || 1);
             var rateBaseToUSD = base === 'USD' ? 1 : (fxRates[base] || fxRates[base + 'USD'] || 1);
-            var closePrice = pos.sold ? pos.current : (closeMode === 'prev' ? (pos.previousClose || pos.regularMarketPrice || pos.current) : (pos.regularMarketPrice || pos.current));
+            var closePrice = pos.sold ? pos.current : (HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(pos.ticker, closeMode) || pos.regularMarketPrice || pos.current) : (closeMode === 'prev' ? (pos.previousClose || pos.regularMarketPrice || pos.current) : (pos.regularMarketPrice || pos.current)));
             var curPrice = pos.sold ? pos.current : (currentMode === 'reg' ? (pos.regularMarketPrice || pos.current) : pos.current);
             var posClose = pos.qty * closePrice * rateToUSD / rateBaseToUSD;
             var posCurrent = pos.qty * curPrice * rateToUSD / rateBaseToUSD;
@@ -4670,7 +4713,7 @@ function render() {
       area.innerHTML = '<div class="table-wrap"><table>'
         + '<thead><tr>'
         + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO</th>'
-        + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + (closeMode === 'prev' ? 'PREV.CLOSE' : 'REG.PRICE') + '</th>'
+        + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">&#916;</th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">&#916;%</th>'
@@ -4683,6 +4726,13 @@ function render() {
           + '<div class="total-block"><div class="total-label">&#916;</div><div class="total-value ' + tClass + '">' + fSign(totDelta) + '</div></div>'
           + '<div class="total-block"><div class="total-label">&#916;%</div><div class="total-value ' + tClass + '">' + (totDeltaPct !== null ? fSign(totDeltaPct) + '%' : '—') + '</div></div>'
           + '</div>' : '');
+      var smAllTickers = [];
+      smPids.forEach(function(pid2) {
+        (portfolios[pid2].positions || []).forEach(function(pos2) {
+          if (!pos2.sold && pos2.qty > 0 && smAllTickers.indexOf(pos2.ticker) === -1) smAllTickers.push(pos2.ticker);
+        });
+      });
+      fetchHistoricalIfNeeded(smAllTickers);
     }
 
     if (smNonUSD.length === 0) {
@@ -4812,7 +4862,7 @@ function render() {
     var wlTickerArrow = watchlistSort.key === 'ticker' ? (watchlistSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
     var wlDeltaArrow = watchlistSort.key === 'absdelta' ? ' &#177;&#9660;' : watchlistSort.key === 'delta' ? (watchlistSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
     getWatchlistSorted(positions).forEach(function(p) {
-      var close = closeMode === 'prev' ? (p.previousClose || p.regularMarketPrice || null) : (p.regularMarketPrice || null);
+      var close = getCloseForMode(p);
       var price = currentMode === 'reg' ? (p.regularMarketPrice || null) : (p.current || null);
       var delta = (close && price) ? (price - close) / close * 100 : null;
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
@@ -4836,7 +4886,7 @@ function render() {
       + '<table style="border-collapse:collapse;font-size:13px">'
       + '<thead><tr>'
       + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortWatchlist(&apos;ticker&apos;)">TICKER' + wlTickerArrow + '</th>'
-      + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + (closeMode === 'prev' ? 'PREV.CLOSE' : 'REG.PRICE') + '</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortWatchlist(&apos;delta&apos;)">&#916;%' + wlDeltaArrow + '</th>'
       + '<th style="width:16px;border-bottom:1px solid var(--border)"></th>'
@@ -4845,6 +4895,7 @@ function render() {
       + '</tr></thead>'
       + '<tbody>' + wlRows + '</tbody>'
       + '</table></div>';
+    fetchHistoricalIfNeeded(positions.map(function(p) { return p.ticker; }));
     return;
   }
 
@@ -4889,16 +4940,18 @@ function render() {
       var regPrice;
       if (p.sold) {
         regPrice = p.current;
+      } else if (HIST_MODES.indexOf(closeMode) !== -1) {
+        regPrice = getHistoricalClose(p.ticker, closeMode);
       } else {
         regPrice = closeMode === 'prev' ? (p.previousClose || p.regularMarketPrice || p.current) : (p.regularMarketPrice || p.current);
       }
       var mktCurrent = currentMode === 'reg' ? (p.regularMarketPrice || p.current) : p.current;
-      var delta = (p.sold) ? 0 : (regPrice ? (mktCurrent - regPrice) / regPrice * 100 : null);
+      var delta = p.sold ? 0 : (regPrice !== null ? (mktCurrent - regPrice) / regPrice * 100 : null);
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
       var mktSoldStyle = (p.sold || p.qty === 0 || allWatchlist) ? 'font-style:italic;opacity:0.5' : '';
       marketRows += '<tr style="' + mktSoldStyle + '">'
         + '<td style="text-align:left;white-space:nowrap">' + mktTickerCell + '</td>'
-        + '<td style="text-align:right;padding:5px 4px">' + getPositionCurrencySymbol(p) + f2(regPrice) + '</td>'
+        + '<td style="text-align:right;padding:5px 4px">' + (regPrice !== null ? getPositionCurrencySymbol(p) + f2(regPrice) : '&mdash;') + '</td>'
         + '<td style="text-align:right;padding:5px 4px">' + getPositionCurrencySymbol(p) + f2(mktCurrent) + '</td>'
         + '<td style="text-align:right;padding:5px 4px" class="' + deltaClass + '">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
         + '<td style="width:16px;padding:0 2px;text-align:center">' + (p.sold ? '<span style="color:#7090b0;font-size:13px">&#8960;</span>' : marketIcon(p.marketState)) + '</td>'
@@ -4920,7 +4973,7 @@ function render() {
       + '<table style="border-collapse:collapse;font-size:13px">'
       + '<thead><tr>'
       + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortMarket(&apos;ticker&apos;)">TICKER' + mkTickerArrow + '</th>'
-      + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + (closeMode === 'prev' ? 'PREV.CLOSE' : 'REG.PRICE') + '</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortMarket(&apos;delta&apos;)">&#916;%' + mkDeltaArrow + '</th>'
       + '<th style="width:16px;padding:0"></th>'
@@ -4930,6 +4983,7 @@ function render() {
       + '</table>'
       + '</div>'
       + '<div id="mktTotalsSlot">' + mktTotalsHtml + '</div>';
+    fetchHistoricalIfNeeded(marketPositions.map(function(e) { return e.pos.ticker; }));
     if (mktFxNeeded.length > 0) {
       var mktFxMap = {};
       var mktBaseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
