@@ -4738,50 +4738,59 @@ function render() {
         var bp = bondPortfolios[bpId];
         var bpCurrency = (bp.currencyCode || 'USD').toUpperCase();
         var bpRateToUSD = bpCurrency === 'USD' ? 1 : (bsFxRates[bpCurrency] || 1);
-        var valBase = 0, profitBase = 0, valUSD = 0, profitUSD = 0, hasAny = false;
+        var aValBase = 0, aProfitBase = 0, aValUSD = 0, aProfitUSD = 0, hasActive = false;
+        var mValBase = 0, mProfitBase = 0, mValUSD = 0, mProfitUSD = 0, hasMatured = false;
         (bp.positions || []).forEach(function(pos) {
           var calc = calcBondPosSummary(pos);
-          if (!calc || calc.isMatured) return;
+          if (!calc) return;
           var rate = calc.currency === 'USD' ? 1 : (bsFxRates[calc.currency] || 1);
-          valUSD += calc.positionValue * rate;
-          profitUSD += calc.totalProfit * rate;
-          valBase += calc.positionValue * rate / bpRateToUSD;
-          profitBase += calc.totalProfit * rate / bpRateToUSD;
-          hasAny = true;
+          var vUSD = calc.positionValue * rate, pUSD = calc.totalProfit * rate;
+          if (calc.isMatured) {
+            mValBase += vUSD / bpRateToUSD; mProfitBase += pUSD / bpRateToUSD;
+            mValUSD += vUSD; mProfitUSD += pUSD; hasMatured = true;
+          } else {
+            aValBase += vUSD / bpRateToUSD; aProfitBase += pUSD / bpRateToUSD;
+            aValUSD += vUSD; aProfitUSD += pUSD; hasActive = true;
+          }
         });
         return {
           id: bpId, name: bp.name,
           currency: CURRENCY_SYMBOLS[bpCurrency] || bpCurrency,
-          currencyCode: bpCurrency,
-          val: hasAny ? valBase : null,
-          profit: hasAny ? profitBase : null,
-          valUSD: hasAny ? valUSD : null,
-          profitUSD: hasAny ? profitUSD : null
+          active: hasActive ? { val: aValBase, profit: aProfitBase, valUSD: aValUSD, profitUSD: aProfitUSD } : null,
+          matured: hasMatured ? { val: mValBase, profit: mProfitBase, valUSD: mValUSD, profitUSD: mProfitUSD } : null
         };
       });
     }
 
     function renderBondSummaryWithRates() {
       var bpStats = buildBondSummaryStats();
-      var totalValUSD = 0, totalProfitUSD = 0;
+      var totAValUSD = 0, totAProfitUSD = 0, totMValUSD = 0, totMProfitUSD = 0;
       bpStats.forEach(function(s) {
-        if (s.valUSD !== null) { totalValUSD += s.valUSD; totalProfitUSD += s.profitUSD; }
+        if (s.active) { totAValUSD += s.active.valUSD; totAProfitUSD += s.active.profitUSD; }
+        if (s.matured) { totMValUSD += s.matured.valUSD; totMProfitUSD += s.matured.profitUSD; }
       });
       var bsRows = '';
       bpStats.forEach(function(s) {
-        var ret = (s.profit !== null && s.val) ? s.profit / s.val * 100 : null;
-        var weight = (s.valUSD !== null && totalValUSD > 0) ? s.valUSD / totalValUSD * 100 : null;
-        var c = s.profit === null ? '' : (s.profit >= 0 ? 'pos' : 'neg');
-        bsRows += '<tr>'
-          + '<td style="text-align:left;white-space:nowrap;cursor:pointer" onclick="showBondPortfolio(&apos;' + s.id + '&apos;)">' + s.name + '</td>'
-          + '<td>' + (s.val !== null ? s.currency + f2(s.val) : '&mdash;') + '</td>'
-          + '<td class="' + c + '">' + (s.profit !== null ? s.currency + f2(s.profit) : '&mdash;') + '</td>'
-          + '<td class="' + c + '">' + (ret !== null ? fPct(ret) : '&mdash;') + '</td>'
-          + '<td>' + (weight !== null ? fPctNoSign(weight) : '&mdash;') + '</td>'
-          + '</tr>';
+        function makeRow(d, isMatured) {
+          var ret = d.val ? d.profit / d.val * 100 : null;
+          var weight = (totAValUSD > 0 && !isMatured) ? d.valUSD / totAValUSD * 100 : null;
+          var c = d.profit >= 0 ? 'pos' : 'neg';
+          var rowStyle = isMatured ? ' style="font-style:italic;opacity:0.6"' : '';
+          return '<tr' + rowStyle + '>'
+            + '<td style="text-align:left;white-space:nowrap;cursor:pointer" onclick="showBondPortfolio(&apos;' + s.id + '&apos;)">' + s.name + (isMatured ? ' <span style="font-size:10px;color:var(--dim)">(matured)</span>' : '') + '</td>'
+            + '<td>' + s.currency + f2(d.val) + '</td>'
+            + '<td class="' + c + '">' + s.currency + f2(d.profit) + '</td>'
+            + '<td class="' + c + '">' + (ret !== null ? fPct(ret) : '&mdash;') + '</td>'
+            + '<td>' + (weight !== null ? fPctNoSign(weight) : '&mdash;') + '</td>'
+            + '</tr>';
+        }
+        if (s.active) bsRows += makeRow(s.active, false);
+        if (s.matured) bsRows += makeRow(s.matured, true);
       });
-      var totRet = totalValUSD > 0 ? totalProfitUSD / totalValUSD * 100 : null;
-      var c = totalProfitUSD >= 0 ? 'pos' : 'neg';
+      var cA = totAProfitUSD >= 0 ? 'pos' : 'neg';
+      var cM = totMProfitUSD >= 0 ? 'pos' : 'neg';
+      var totAret = totAValUSD > 0 ? totAProfitUSD / totAValUSD * 100 : null;
+      var totMret = totMValUSD > 0 ? totMProfitUSD / totMValUSD * 100 : null;
       area.innerHTML = '<div class="table-wrap">'
         + '<table>'
         + '<thead><tr>'
@@ -4793,11 +4802,16 @@ function render() {
         + '</tr></thead>'
         + '<tbody>' + bsRows + '</tbody>'
         + '</table></div>'
-        + '<div class="totals-bar">'
-        + '<div class="total-block"><div class="total-label">TOTAL VALUE</div><div class="total-value" style="color:var(--bright)">$' + f2(totalValUSD) + '</div></div>'
-        + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + c + '">$' + f2(totalProfitUSD) + '</div></div>'
-        + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + c + '">' + (totRet !== null ? fPct(totRet) : '&mdash;') + '</div></div>'
-        + '</div>';
+        + (totAValUSD > 0 ? '<div class="totals-bar">'
+        + '<div class="total-block"><div class="total-label">TOTAL VALUE</div><div class="total-value" style="color:var(--bright)">$' + f2(totAValUSD) + '</div></div>'
+        + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + cA + '">$' + f2(totAProfitUSD) + '</div></div>'
+        + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + cA + '">' + (totAret !== null ? fPct(totAret) : '&mdash;') + '</div></div>'
+        + '</div>' : '')
+        + (totMValUSD > 0 ? '<div class="totals-bar" style="opacity:0.6">'
+        + '<div class="total-block"><div class="total-label">MATURED VALUE</div><div class="total-value" style="color:var(--bright)">$' + f2(totMValUSD) + '</div></div>'
+        + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + cM + '">$' + f2(totMProfitUSD) + '</div></div>'
+        + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + cM + '">' + (totMret !== null ? fPct(totMret) : '&mdash;') + '</div></div>'
+        + '</div>' : '');
     }
 
     if (bsNonUSD.length === 0) {
