@@ -276,17 +276,18 @@
     <div style="border-top:1px solid var(--border);padding:12px 14px">
       <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">ADD BOND</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
-        <input type="text" id="bondDbName" placeholder="Bond name" autocomplete="off" oninput="this.value=this.value.toUpperCase()" style="text-transform:uppercase;flex:2;min-width:120px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none">
-        <input type="text" id="bondDbCurrency" placeholder="USD" maxlength="3" style="width:44px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">
+        <div class="field"><label>NAME</label><input type="text" id="bondDbName" placeholder="e.g. OFZ 26238" autocomplete="off" oninput="this.value=this.value.toUpperCase()" style="text-transform:uppercase;min-width:120px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none"></div>
+        <div class="field"><label>CURRENCY</label><input type="text" id="bondDbCurrency" placeholder="USD" maxlength="3" style="width:44px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
-        <input type="number" id="bondDbPar" placeholder="Par Value" min="0" step="any" style="flex:1;min-width:80px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none">
-        <input type="number" id="bondDbYield" placeholder="Yield %" min="0" step="0.01" style="flex:1;min-width:80px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none">
-        <input type="number" id="bondDbFreq" placeholder="2" min="1" max="12" step="1" style="width:50px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none">
-        <input type="date" id="bondDbMaturity" style="flex:1;min-width:110px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none">
+        <div class="field"><label>PAR VALUE</label><input type="number" id="bondDbPar" placeholder="1000" min="0" step="any" style="min-width:80px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none"></div>
+        <div class="field"><label>YIELD %</label><input type="number" id="bondDbYield" placeholder="7.25" min="0" step="0.01" style="min-width:80px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none"></div>
+        <div class="field"><label>FREQ/YR</label><input type="number" id="bondDbFreq" placeholder="2" min="1" max="12" step="1" style="width:50px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none"></div>
+        <div class="field"><label>MATURITY</label><input type="date" id="bondDbMaturity" style="min-width:110px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none"></div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
         <button class="btn btn-green" onclick="addBondToDb()">+ ADD</button>
+        <button class="btn" onclick="clearBondDbForm()">CANCEL</button>
         <span id="bondDbErr" style="color:var(--red);font-size:11px"></span>
       </div>
     </div>
@@ -1155,6 +1156,11 @@ function renderBondDbModal() {
   });
   if (bondsDb.length === 0) html = '<div style="color:var(--dim);font-size:11px;padding:10px 0">No bonds in database</div>';
   list.innerHTML = html;
+}
+function clearBondDbForm() {
+  ['bondDbName','bondDbPar','bondDbYield','bondDbMaturity','bondDbCurrency'].forEach(function(id) { document.getElementById(id).value = ''; });
+  document.getElementById('bondDbFreq').value = '';
+  document.getElementById('bondDbErr').textContent = '';
 }
 function addBondToDb() {
   var name = document.getElementById('bondDbName').value.trim();
@@ -4610,9 +4616,9 @@ function render() {
         + '<td>' + f2(pos.cleanPrice) + '%</td>'
         + '<td>' + calc.currSym + f2(pos.accruedInterest) + '</td>'
         + '<td>' + calc.currSym + f2(calc.positionValue) + '</td>'
-        + '<td class="' + pClass + '">' + calc.currSym + fSign(calc.totalProfit) + '</td>'
-        + '<td class="' + pClass + '">' + (calc.profitPct !== null ? fSign(calc.profitPct) + '%' : '—') + '</td>'
-        + '<td class="' + pClass + '">' + (calc.annualYield !== null ? fSign(calc.annualYield) + '%' : '—') + '</td>'
+        + '<td class="' + pClass + '">' + calc.currSym + f2(calc.totalProfit) + '</td>'
+        + '<td class="' + pClass + '">' + (calc.profitPct !== null ? f2(calc.profitPct) + '%' : '—') + '</td>'
+        + '<td class="' + pClass + '">' + (calc.annualYield !== null ? f2(calc.annualYield) + '%' : '—') + '</td>'
         + '<td style="white-space:nowrap">'
           + '<button class="btn-icon" onclick="editBondPosition(&apos;' + pos.id + '&apos;)">&#9998;</button>'
           + '<button class="btn-icon" onclick="deleteBondPosition(&apos;' + pos.id + '&apos;)" style="color:var(--red)">&#10005;</button>'
@@ -4652,14 +4658,14 @@ function render() {
       + '<tbody>' + rows + '</tbody>'
       + '</table></div>'
       + (totValueActive > 0 ? '<div class="totals-bar">'
-      + '<div class="total-block"><div class="total-label">ACTIVE VALUE</div><div class="total-value" style="color:var(--bright)">' + currSym + f2(totValueActive) + '</div></div>'
-      + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + pClassA + '">' + fSign(totProfitActive) + '</div></div>'
-      + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + pClassA + '">' + (totValueActive > 0 ? fSign(totProfitActive/totValueActive*100) + '%' : '—') + '</div></div>'
+      + '<div class="total-block"><div class="total-label">VALUE</div><div class="total-value" style="color:var(--bright)">' + currSym + f2(totValueActive) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + pClassA + '">' + currSym + f2(totProfitActive) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + pClassA + '">' + (totValueActive > 0 ? f2(totProfitActive/totValueActive*100) + '%' : '—') + '</div></div>'
       + '</div>' : '')
       + (totValueMatured > 0 ? '<div class="totals-bar" style="opacity:0.6">'
       + '<div class="total-block"><div class="total-label">MATURED VALUE</div><div class="total-value" style="color:var(--bright)">' + currSym + f2(totValueMatured) + '</div></div>'
-      + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + pClassM + '">' + fSign(totProfitMatured) + '</div></div>'
-      + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + pClassM + '">' + (totValueMatured > 0 ? fSign(totProfitMatured/totValueMatured*100) + '%' : '—') + '</div></div>'
+      + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + pClassM + '">' + currSym + f2(totProfitMatured) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + pClassM + '">' + (totValueMatured > 0 ? f2(totProfitMatured/totValueMatured*100) + '%' : '—') + '</div></div>'
       + '</div>' : '')
       + renderBondAddForm(currentBondPortfolioId);
     return;
