@@ -276,18 +276,18 @@
     <div style="border-top:1px solid var(--border);padding:12px 14px">
       <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">ADD BOND</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
-        <div class="field"><label>NAME</label><input type="text" id="bondDbName" placeholder="e.g. OFZ 26238" autocomplete="off" oninput="this.value=this.value.toUpperCase()" style="text-transform:uppercase;min-width:120px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none"></div>
+        <div class="field"><label>NAME</label><input type="text" id="bondDbName" placeholder="e.g. T-NOTE 2030" autocomplete="off" oninput="this.value=this.value.toUpperCase()" style="text-transform:uppercase;min-width:120px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none"></div>
         <div class="field"><label>CURRENCY</label><input type="text" id="bondDbCurrency" placeholder="USD" maxlength="3" style="width:44px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>
       </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;align-items:flex-end">
         <div class="field"><label>PAR VALUE</label><input type="number" id="bondDbPar" placeholder="1000" min="0" step="any" style="min-width:80px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none"></div>
         <div class="field"><label>YIELD %</label><input type="number" id="bondDbYield" placeholder="7.25" min="0" step="0.01" style="min-width:80px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none"></div>
         <div class="field"><label>FREQ/YR</label><input type="number" id="bondDbFreq" placeholder="2" min="1" max="12" step="1" style="width:50px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none"></div>
         <div class="field"><label>MATURITY</label><input type="date" id="bondDbMaturity" style="min-width:110px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none"></div>
+        <button class="btn-icon" onclick="clearBondDbForm()" title="Clear" style="font-size:14px;padding:4px 6px;color:var(--dim);flex:none">&#10005;</button>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
         <button class="btn btn-green" onclick="addBondToDb()">+ ADD</button>
-        <button class="btn" onclick="clearBondDbForm()">CANCEL</button>
         <span id="bondDbErr" style="color:var(--red);font-size:11px"></span>
       </div>
     </div>
@@ -790,10 +790,11 @@ function renderBondAddForm(bpId) {
     + '<div style="margin-bottom:8px">'
     + '<div class="field"><label>BOND</label><select id="bpBondId" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none">' + options + '</select></div>'
     + '</div>'
-    + '<div style="display:flex;gap:8px;margin-bottom:8px">'
+    + '<div style="display:flex;gap:8px;margin-bottom:8px;align-items:flex-end">'
     + '<div class="field"><label>QTY</label><input type="number" id="bpQty" placeholder="10" min="1" step="1" style="width:70px"></div>'
     + '<div class="field"><label>CLEAN PRICE %</label><input type="number" id="bpClean" placeholder="98.50" min="0" step="0.01" style="width:90px"></div>'
     + '<div class="field"><label>ACCRUED INT.</label><input type="number" id="bpNkd" placeholder="0.00" min="0" step="0.01" style="width:90px"></div>'
+    + '<button class="btn-icon" onclick="clearBondPosForm()" title="Clear" style="font-size:14px;padding:4px 6px;color:var(--dim);flex:none">&#10005;</button>'
     + '</div>'
     + '<div style="display:flex;gap:8px;align-items:flex-end">'
     + '<div class="field"><label>PURCHASE DATE</label><input type="date" id="bpDate" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none"></div>'
@@ -803,6 +804,14 @@ function renderBondAddForm(bpId) {
     + '</div>';
 }
 
+function clearBondPosForm() {
+  ['bpBondId','bpQty','bpClean','bpNkd','bpDate'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  var err = document.getElementById('bpErr');
+  if (err) err.textContent = '';
+}
 function addBondPosition(bpId) {
   var bondId = document.getElementById('bpBondId').value;
   var purchaseDate = document.getElementById('bpDate').value;
@@ -1138,6 +1147,7 @@ function openBondDb() {
 function closeBondDb() {
   var modal = document.getElementById('bondDbModal');
   if (modal) modal.style.display = 'none';
+  clearBondDbForm();
 }
 function renderBondDbModal() {
   var list = document.getElementById('bondDbList');
