@@ -379,6 +379,57 @@ Remaining coupons are calculated by stepping back from maturity date in coupon i
 Bond data (`bondsDb`, `bondPortfolios`) is stored in `pt_bonds_db` and `pt_bond_portfolios` in localStorage, and is included in cloud sync alongside equity portfolios in the same cloud storage record (regardless of backend).
 
 
+## Deposit Portfolios
+
+Deposit portfolios live in the same **BONDS** tab as bond portfolios. When creating a portfolio, a **Bond / Deposit** radio button selects the type. Deposit portfolios appear below bond portfolios in the switcher, separated by a divider. They share the same storage keys (`pt_bond_portfolios`) and cloud sync as bond portfolios. No Bond Database entry is required — all data is entered directly per position.
+
+### Position Fields
+
+- **Name** — arbitrary label (e.g. `BANK 12M`)
+- **Open Date** — date the deposit was opened
+- **Term** — duration in months
+- **Rate %** — nominal annual interest rate
+- **Amount** — principal deposited (inherits portfolio currency)
+- **Type** — one of three payout modes (see below)
+- **Freq/yr** — coupon/payout frequency per year (shown only for Regular Payouts and Compounded)
+
+### Deposit Types and Calculations
+
+**At Maturity** — interest is paid in full at the end of the term:
+```
+profit = amount × (rate / 100) × (termMonths / 12)
+annYield = rate
+```
+
+**Regular Payouts** — interest is paid periodically; principal returned at maturity. Same profit formula as At Maturity; `freqPerYear` records how often payouts occur (for reference only — does not change the total):
+```
+profit = amount × (rate / 100) × (termMonths / 12)
+annYield = rate
+```
+
+**Compounded** — interest is reinvested at each period; effective annual yield exceeds nominal rate:
+```
+profit = amount × ((1 + rate/100 / freq) ^ (freq × termYears) − 1)
+annYield = ((1 + rate/100 / freq) ^ freq − 1) × 100
+```
+
+**Maturity date** = `openDate + termMonths`. A deposit is considered matured when `maturityDate ≤ today`.
+
+### Table View
+
+Columns: **NAME · OPEN DATE · TERM · RATE · AMOUNT · PROFIT · RETURN · ANN.YIELD**
+
+Click any row to open a detail modal showing all fields plus the calculated maturity date, profit, return, and status (Active / Matured). Edit (✎) and delete (✕) buttons appear on each row.
+
+**Editing** opens an inline form beneath the row (same style as bond position editing) with all fields including the Type radio buttons and conditional Freq/yr field.
+
+**Matured deposits** are shown in italic with reduced opacity, grouped in a separate MATURED VALUE totals bar. Active deposits have their own ACTIVE VALUE totals bar.
+
+### Σ SUMMARY
+
+Deposit portfolios appear in the bond **Σ SUMMARY** view alongside bond portfolios. Each deposit portfolio contributes one row (or two rows if it contains both active and matured deposits). Reported columns are identical to bonds: **VALUE · PROFIT · RETURN · WEIGHT**. Non-USD portfolios are converted using the same FX rate lookup as bonds.
+
+
 ## Price Alerts
 
 Each position can have one or more price alerts. Alerts are checked on every price refresh and shown across all market-style views.
