@@ -795,7 +795,7 @@ function renderBondAddForm(bpId) {
     + '<div class="field"><label>BOND</label><select id="bpBondId" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none">' + options + '</select></div>'
     + '</div>'
     + '<div style="display:flex;gap:8px;margin-bottom:6px">'
-    + '<div class="field"><label>QTY</label><input type="number" id="bpQty" placeholder="10" min="1" step="1" style="width:70px"></div>'
+    + '<div class="field"><label>QTY</label><input type="number" id="bpQty" placeholder="0" min="0" step="1" style="width:70px"></div>'
     + '<div class="field"><label>CLEAN PRICE %</label><input type="number" id="bpClean" placeholder="98.50" min="0" step="0.01" style="width:90px"></div>'
     + '<div class="field"><label>ACCRUED INT.</label><input type="number" id="bpNkd" placeholder="0.00" min="0" step="0.01" style="width:90px"></div>'
     + '</div>'
@@ -827,7 +827,7 @@ function addBondPosition(bpId) {
   var err = document.getElementById('bpErr');
   if (!bondId) { err.textContent = 'Select bond'; return; }
   if (!purchaseDate) { err.textContent = 'Enter purchase date'; return; }
-  if (!qty || qty <= 0) { err.textContent = 'Enter qty'; return; }
+  if (isNaN(qty) || qty < 0) { err.textContent = 'Enter qty'; return; }
   if (!cleanPrice || cleanPrice <= 0) { err.textContent = 'Enter clean price'; return; }
   var bond = bondsDb.find(function(b) { return b.id === bondId; });
   if (!bond) { err.textContent = 'Bond not found'; return; }
@@ -864,7 +864,7 @@ function saveBondPosEdit(posId) {
   var newClean = parseFloat(document.getElementById('editBpClean').value);
   var newNkd = parseFloat(document.getElementById('editBpNkd').value);
   if (newDate) pos.purchaseDate = newDate;
-  if (newQty > 0) pos.qty = newQty;
+  if (!isNaN(newQty) && newQty >= 0) pos.qty = newQty;
   if (!isNaN(newClean) && newClean > 0) pos.cleanPrice = newClean;
   if (!isNaN(newNkd) && newNkd >= 0) pos.accruedInterest = newNkd;
   editingBondPosId = null;
@@ -890,11 +890,12 @@ function openBondPosDetail(posId) {
   var intervalMonths = Math.round(12 / b.couponFrequency);
   var d = new Date(b.maturityDate), purchase = new Date(pos.purchaseDate), count = 0;
   while (d > purchase) { count++; d.setMonth(d.getMonth() - intervalMonths); }
-  var totalProfit = (couponAmt * count + b.parValue - dirtyPrice) * pos.qty;
-  var profitPct = dirtyPrice > 0 ? (couponAmt * count + b.parValue - dirtyPrice) / dirtyPrice * 100 : null;
+  var profitPerBond = couponAmt * count + b.parValue - dirtyPrice;
+  var totalProfit = profitPerBond * pos.qty;
+  var profitPct = dirtyPrice > 0 ? profitPerBond / dirtyPrice * 100 : null;
   var daysHeld = (new Date(b.maturityDate) - new Date(pos.purchaseDate)) / 86400000;
   var annYield = (daysHeld > 0 && profitPct !== null) ? profitPct / daysHeld * 365 : null;
-  var pClass = totalProfit >= 0 ? 'pos' : 'neg';
+  var pClass = profitPerBond >= 0 ? 'pos' : 'neg';
   var existing = document.getElementById('bondPosDetailModal');
   if (existing) existing.remove();
   var modal = document.createElement('div');
@@ -914,8 +915,8 @@ function openBondPosDetail(posId) {
     + '<span style="color:var(--dim)">CLEAN PRICE</span><span>' + f2(pos.cleanPrice) + '%</span>'
     + '<span style="color:var(--dim)">ACC.INT.</span><span>' + currSym + f2(pos.accruedInterest) + '</span>'
     + '<span style="color:var(--dim)">DIRTY PRICE</span><span>' + currSym + f2(dirtyPrice) + '</span>'
-    + '<span style="color:var(--dim)">VALUE</span><span>' + currSym + f2(positionValue) + '</span>'
-    + '<span style="color:var(--dim)">PROFIT</span><span class="' + pClass + '">' + currSym + f2(totalProfit) + '</span>'
+    + '<span style="color:var(--dim)">VALUE</span><span>' + (pos.qty > 0 ? currSym + f2(positionValue) : '&mdash;') + '</span>'
+    + '<span style="color:var(--dim)">PROFIT</span><span class="' + pClass + '">' + (pos.qty > 0 ? currSym + f2(totalProfit) : '&mdash;') + '</span>'
     + '<span style="color:var(--dim)">RETURN</span><span class="' + pClass + '">' + (profitPct !== null ? f2(profitPct) + '%' : '&mdash;') + '</span>'
     + '<span style="color:var(--dim)">ANN.YIELD</span><span>' + (annYield !== null ? f2(annYield) + '%' : '&mdash;') + '</span>'
     + '<span style="color:var(--dim)">COUPONS LEFT</span><span>' + count + '</span>'
@@ -1296,7 +1297,7 @@ function renderBondsSwitcher(html, list, summaryActive) {
 
   // Σ SUMMARY
   var bondSummaryActive = viewMode === 'bond-summary';
-  var totalAllPos = allIds.reduce(function(n, id) { return n + (bondPortfolios[id].positions || []).length; }, 0);
+  var totalAllPos = allIds.reduce(function(n, id) { return n + (bondPortfolios[id].positions || []).filter(function(p) { return p.qty > 0; }).length; }, 0);
   html += '<div class="portfolio-item' + (bondSummaryActive ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);margin-top:4px;padding-top:4px" onclick="switchToBondSummary()">'
     + '<div style="flex:1"><span class="portfolio-item-name">&#931; SUMMARY</span> <span class="portfolio-item-count">' + totalAllPos + ' items</span></div>'
     + '</div>';
@@ -4950,7 +4951,7 @@ function render() {
       var totalCouponIncome = couponPrice * couponsLeft;
       var profitPerBond = totalCouponIncome + bond.parValue - dirtyPrice;
       var totalProfit = profitPerBond * pos.qty;
-      var profitPct = positionValue > 0 ? profitPerBond / dirtyPrice * 100 : null;
+      var profitPct = dirtyPrice > 0 ? profitPerBond / dirtyPrice * 100 : null;
       // Annual yield: days from purchase to maturity
       var purchaseD = new Date(pos.purchaseDate);
       var maturityD = new Date(bond.maturityDate);
@@ -4977,22 +4978,23 @@ function render() {
         rows += '<tr><td style="text-align:left">' + (pos.bondName || '?') + '</td><td colspan="7" style="color:var(--red);font-size:10px">Bond not in DB</td></tr>';
         return;
       }
-      totValue += calc.positionValue;
-      totProfit += calc.totalProfit;
+      var isWatchlist = pos.qty === 0;
       var isMatured = new Date(calc.bond.maturityDate) <= today;
-      var rowStyle = isMatured ? 'font-style:italic;opacity:0.5' : '';
-      if (isMatured) { totValueMatured += calc.positionValue; totProfitMatured += calc.totalProfit; }
-      else { totValueActive += calc.positionValue; totProfitActive += calc.totalProfit; }
-      var pClass = calc.totalProfit >= 0 ? 'pos' : 'neg';
+      if (!isWatchlist) {
+        if (isMatured) { totValueMatured += calc.positionValue; totProfitMatured += calc.totalProfit; }
+        else { totValueActive += calc.positionValue; totProfitActive += calc.totalProfit; }
+      }
+      var rowStyle = isMatured ? 'font-style:italic;opacity:0.5' : (isWatchlist ? 'opacity:0.7' : '');
+      var pClass = calc.profitPct !== null ? (calc.profitPct >= 0 ? 'pos' : 'neg') : '';
       var isEditing = editingBondPosId === pos.id;
       rows += '<tr style="' + rowStyle + '">'
-        + '<td style="text-align:left;cursor:pointer;white-space:nowrap" onclick="openBondPosDetail(&apos;' + pos.id + '&apos;)">' + calc.bond.name + '</td>'
+        + '<td style="text-align:left;cursor:pointer;white-space:nowrap" onclick="openBondPosDetail(&apos;' + pos.id + '&apos;)">' + calc.bond.name + (isWatchlist ? ' <span style="font-size:9px;color:var(--dim);letter-spacing:1px">WL</span>' : '') + '</td>'
         + '<td style="white-space:nowrap">' + pos.purchaseDate + '</td>'
-        + '<td>' + pos.qty + '</td>'
+        + '<td>' + (isWatchlist ? '<span style="color:var(--dim)">—</span>' : pos.qty) + '</td>'
         + '<td>' + f2(pos.cleanPrice) + '%</td>'
         + '<td>' + calc.currSym + f2(pos.accruedInterest) + '</td>'
-        + '<td>' + calc.currSym + f2(calc.positionValue) + '</td>'
-        + '<td class="' + pClass + '">' + calc.currSym + f2(calc.totalProfit) + '</td>'
+        + '<td>' + (isWatchlist ? '<span style="color:var(--dim)">—</span>' : calc.currSym + f2(calc.positionValue)) + '</td>'
+        + '<td>' + (isWatchlist ? '<span style="color:var(--dim)">—</span>' : '<span class="' + pClass + '">' + calc.currSym + f2(calc.totalProfit) + '</span>') + '</td>'
         + '<td class="' + pClass + '">' + (calc.profitPct !== null ? f2(calc.profitPct) + '%' : '—') + '</td>'
         + '<td class="' + pClass + '">' + (calc.annualYield !== null ? f2(calc.annualYield) + '%' : '—') + '</td>'
         + '<td style="white-space:nowrap">'
@@ -5004,7 +5006,7 @@ function render() {
         rows += '<tr><td colspan="10" style="padding:8px 4px 10px;background:var(--bg2)">'
           + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">'
           + '<div class="field"><label>PURCHASE DATE</label><input type="date" id="editBpDate" value="' + pos.purchaseDate + '" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none"></div>'
-          + '<div class="field"><label>QTY</label><input type="number" id="editBpQty" value="' + pos.qty + '" min="1" step="1" style="width:70px"></div>'
+          + '<div class="field"><label>QTY</label><input type="number" id="editBpQty" value="' + pos.qty + '" min="0" step="1" style="width:70px"></div>'
           + '<div class="field"><label>CLEAN PRICE %</label><input type="number" id="editBpClean" value="' + pos.cleanPrice + '" min="0" step="0.01" style="width:90px"></div>'
           + '<div class="field"><label>ACC.INT.</label><input type="number" id="editBpNkd" value="' + pos.accruedInterest + '" min="0" step="0.01" style="width:90px"></div>'
           + '<div style="display:flex;gap:6px;align-self:flex-end">'
@@ -5119,6 +5121,7 @@ function render() {
           });
         } else {
           (bp.positions || []).forEach(function(pos) {
+            if (pos.qty === 0) return;
             var calc = calcBondPosSummary(pos);
             if (!calc) return;
             var rate = calc.currency === 'USD' ? 1 : (bsFxRates[calc.currency] || 1);
