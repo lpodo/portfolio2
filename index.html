@@ -866,18 +866,57 @@ function editBondPosition(posId) {
   render();
 }
 
-function openBondDetailById(bondId) {
+function openBondPosDetail(posId) {
+  var bp = bondPortfolios[currentBondPortfolioId];
+  if (!bp) return;
+  var pos = (bp.positions || []).find(function(p) { return p.id === posId; });
+  if (!pos) return;
   bondsDb = getBondsDb();
-  var b = bondsDb.find(function(x) { return x.id === bondId; });
+  var b = bondsDb.find(function(x) { return x.id === pos.bondId; });
   if (!b) return;
   var currSym = CURRENCY_SYMBOLS[b.currency] || b.currency;
+  var dirtyPrice = pos.cleanPrice / 100 * b.parValue + pos.accruedInterest;
+  var positionValue = pos.qty * dirtyPrice;
   var couponAmt = b.parValue * b.nominalYield / b.couponFrequency;
-  alert(b.name
-    + '\nCurrency: ' + b.currency
-    + '\nPar Value: ' + currSym + b.parValue
-    + '\nNominal Yield: ' + (b.nominalYield*100).toFixed(2) + '%'
-    + '\nCoupon: ' + currSym + f2(couponAmt) + ' × ' + b.couponFrequency + 'x/year'
-    + '\nMaturity: ' + b.maturityDate);
+  var today = new Date(); today.setHours(0,0,0,0);
+  var isMatured = new Date(b.maturityDate) <= today;
+  // recalc profit
+  var intervalMonths = Math.round(12 / b.couponFrequency);
+  var d = new Date(b.maturityDate), purchase = new Date(pos.purchaseDate), count = 0;
+  while (d > purchase) { count++; d.setMonth(d.getMonth() - intervalMonths); }
+  var totalProfit = (couponAmt * count + b.parValue - dirtyPrice) * pos.qty;
+  var profitPct = dirtyPrice > 0 ? (couponAmt * count + b.parValue - dirtyPrice) / dirtyPrice * 100 : null;
+  var daysHeld = (new Date(b.maturityDate) - new Date(pos.purchaseDate)) / 86400000;
+  var annYield = (daysHeld > 0 && profitPct !== null) ? profitPct / daysHeld * 365 : null;
+  var pClass = totalProfit >= 0 ? 'pos' : 'neg';
+  var existing = document.getElementById('bondPosDetailModal');
+  if (existing) existing.remove();
+  var modal = document.createElement('div');
+  modal.id = 'bondPosDetailModal';
+  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:300;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:20px 24px;min-width:260px;position:relative">'
+    + '<button class="btn-icon" onclick="document.getElementById(\'bondPosDetailModal\').remove()" style="position:absolute;top:10px;right:10px;font-size:16px">&#10005;</button>'
+    + '<div style="font-size:14px;color:var(--bright);font-weight:bold;margin-bottom:14px">' + b.name + '</div>'
+    + '<div style="display:grid;grid-template-columns:auto 1fr;gap:5px 16px;font-size:12px">'
+    + '<span style="color:var(--dim)">CURRENCY</span><span>' + b.currency + '</span>'
+    + '<span style="color:var(--dim)">PAR VALUE</span><span>' + currSym + f2(b.parValue) + '</span>'
+    + '<span style="color:var(--dim)">NOMINAL YIELD</span><span>' + (b.nominalYield*100).toFixed(2) + '%</span>'
+    + '<span style="color:var(--dim)">COUPON</span><span>' + currSym + f2(couponAmt) + ' × ' + b.couponFrequency + 'x/yr</span>'
+    + '<span style="color:var(--dim)">MATURITY</span><span>' + b.maturityDate + '</span>'
+    + '<span style="color:var(--dim);border-top:1px solid var(--border);padding-top:6px;margin-top:2px">PURCHASE DATE</span><span style="border-top:1px solid var(--border);padding-top:6px;margin-top:2px">' + pos.purchaseDate + '</span>'
+    + '<span style="color:var(--dim)">QTY</span><span>' + pos.qty + '</span>'
+    + '<span style="color:var(--dim)">CLEAN PRICE</span><span>' + f2(pos.cleanPrice) + '%</span>'
+    + '<span style="color:var(--dim)">ACC.INT.</span><span>' + currSym + f2(pos.accruedInterest) + '</span>'
+    + '<span style="color:var(--dim)">DIRTY PRICE</span><span>' + currSym + f2(dirtyPrice) + '</span>'
+    + '<span style="color:var(--dim)">VALUE</span><span>' + currSym + f2(positionValue) + '</span>'
+    + '<span style="color:var(--dim)">PROFIT</span><span class="' + pClass + '">' + currSym + f2(totalProfit) + '</span>'
+    + '<span style="color:var(--dim)">RETURN</span><span class="' + pClass + '">' + (profitPct !== null ? f2(profitPct) + '%' : '&mdash;') + '</span>'
+    + '<span style="color:var(--dim)">ANN.YIELD</span><span>' + (annYield !== null ? f2(annYield) + '%' : '&mdash;') + '</span>'
+    + '<span style="color:var(--dim)">COUPONS LEFT</span><span>' + count + '</span>'
+    + '<span style="color:var(--dim)">STATUS</span><span style="color:var(--' + (isMatured ? 'dim' : 'green') + ')">' + (isMatured ? 'Matured' : 'Active') + '</span>'
+    + '</div></div>';
+  document.body.appendChild(modal);
+  modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
 }
 
 
@@ -945,19 +984,27 @@ function editDepositPosition(posId) {
   if (!pos) return;
   var newName = prompt('Name:', pos.name);
   if (newName === null) return;
-  var newRate = prompt('Rate (%):', pos.rate);
-  if (newRate === null) return;
   var newAmount = prompt('Amount:', pos.amount);
   if (newAmount === null) return;
+  var newRate = prompt('Rate (%):', pos.rate);
+  if (newRate === null) return;
   var newDate = prompt('Open Date (YYYY-MM-DD):', pos.openDate);
   if (newDate === null) return;
   var newTerm = prompt('Term (months):', pos.termMonths);
   if (newTerm === null) return;
+  var typeMap = { '1': 'at-maturity', '2': 'regular-payouts', '3': 'compounded' };
+  var curType = pos.depositType === 'at-maturity' ? '1' : pos.depositType === 'regular-payouts' ? '2' : '3';
+  var newType = prompt('Type:\n1 = At Maturity\n2 = Regular Payouts\n3 = Compounded\nCurrent: ' + curType, curType);
+  if (newType === null) return;
+  var newFreq = prompt('Freq/yr (for Regular Payouts / Compounded):', pos.freqPerYear || 12);
+  if (newFreq === null) return;
   if (newName.trim()) pos.name = newName.trim().toUpperCase();
-  if (!isNaN(parseFloat(newRate)) && parseFloat(newRate) >= 0) pos.rate = parseFloat(newRate);
   if (parseFloat(newAmount) > 0) pos.amount = parseFloat(newAmount);
+  if (!isNaN(parseFloat(newRate)) && parseFloat(newRate) >= 0) pos.rate = parseFloat(newRate);
   if (newDate.trim()) pos.openDate = newDate.trim();
   if (parseInt(newTerm) > 0) pos.termMonths = parseInt(newTerm);
+  if (typeMap[newType.trim()]) pos.depositType = typeMap[newType.trim()];
+  if (parseInt(newFreq) > 0) pos.freqPerYear = parseInt(newFreq);
   saveBondPortfolios();
   render();
 }
@@ -972,6 +1019,11 @@ function deleteDepositPosition(posId) {
   render();
 }
 
+function toggleDepFreq(val) {
+  var fw = document.getElementById('depFreqWrap');
+  if (fw) fw.style.display = val === 'at-maturity' ? 'none' : '';
+}
+
 function renderDepositAddForm(bpId) {
   return '<div class="add-form" style="margin-top:12px">'
     + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">+ ADD DEPOSIT</div>'
@@ -983,14 +1035,14 @@ function renderDepositAddForm(bpId) {
     + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;align-items:flex-end">'
     + '<div class="field"><label>OPEN DATE</label><input type="date" id="depOpenDate" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none"></div>'
     + '<div class="field"><label>TERM (MO)</label><input type="number" id="depTermMonths" placeholder="12" min="1" step="1" style="width:55px"></div>'
-    + '<div class="field"><label>FREQ/YR</label><input type="number" id="depFreq" placeholder="12" min="1" max="365" step="1" style="width:55px"></div>'
+    + '<div class="field" id="depFreqWrap" style="display:none"><label>FREQ/YR</label><input type="number" id="depFreq" placeholder="12" min="1" max="365" step="1" style="width:55px"></div>'
     + '<button class="btn-icon" onclick="clearDepositPosForm()" title="Clear" style="font-size:14px;padding:4px 6px;color:var(--dim);flex:none">&#10005;</button>'
     + '</div>'
-    + '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px">'
-    + '<span style="font-size:9px;color:var(--dim);letter-spacing:1px">TYPE</span>'
-    + '<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="radio" name="depType" value="at-maturity" checked style="accent-color:var(--green)"> At Maturity</label>'
-    + '<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="radio" name="depType" value="regular-payouts" style="accent-color:var(--green)"> Regular Payouts</label>'
-    + '<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="radio" name="depType" value="compounded" style="accent-color:var(--green)"> Compounded</label>'
+    + '<div style="font-size:9px;color:var(--dim);letter-spacing:1px;margin-bottom:4px">TYPE</div>'
+    + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px">'
+    + '<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="radio" name="depType" value="at-maturity" checked onchange="toggleDepFreq(this.value)" style="accent-color:var(--green)"> At Maturity</label>'
+    + '<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="radio" name="depType" value="regular-payouts" onchange="toggleDepFreq(this.value)" style="accent-color:var(--green)"> Regular Payouts</label>'
+    + '<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="radio" name="depType" value="compounded" onchange="toggleDepFreq(this.value)" style="accent-color:var(--green)"> Compounded</label>'
     + '</div>'
     + '<div style="margin-top:2px"><button class="btn btn-green" onclick="addDepositPosition(&apos;' + bpId + '&apos;)">ADD</button></div>'
     + '<span id="depErr" style="color:var(--red);font-size:11px;display:block;margin-top:6px"></span>'
@@ -1003,6 +1055,7 @@ function clearDepositPosForm() {
   });
   var r = document.querySelector('input[name="depType"][value="at-maturity"]');
   if (r) r.checked = true;
+  toggleDepFreq('at-maturity');
   var err = document.getElementById('depErr');
   if (err) err.textContent = '';
 }
@@ -1514,7 +1567,7 @@ function switchToSummary() {
 
 function switchToBondSummary() {
   viewMode = 'bond-summary';
-  document.getElementById('portfolioTitle').textContent = 'Σ BONDS';
+  document.getElementById('portfolioTitle').textContent = 'SUMMARY';
   document.getElementById('viewMenuBtn').style.display = 'none';
   document.getElementById('refreshAllBtn').style.display = 'none';
   closeSwitcher();
@@ -4786,7 +4839,7 @@ function render() {
           + '<td class="' + pClass + '">' + depCurrSym + f2(calc.profit) + '</td>'
           + '<td class="' + pClass + '">' + (calc.ret !== null ? f2(calc.ret) + '%' : '&mdash;') + '</td>'
           + '<td class="' + pClass + '">' + f2(calc.annYield) + '%</td>'
-          + '<td>'
+          + '<td style="white-space:nowrap">'
             + '<button class="btn-icon" onclick="editDepositPosition(&apos;' + dep.id + '&apos;)">&#9998;</button>'
             + '<button class="btn-icon" onclick="deleteDepositPosition(&apos;' + dep.id + '&apos;)" style="color:var(--red)">&#10005;</button>'
           + '</td>'
@@ -4877,7 +4930,7 @@ function render() {
       else { totValueActive += calc.positionValue; totProfitActive += calc.totalProfit; }
       var pClass = calc.totalProfit >= 0 ? 'pos' : 'neg';
       rows += '<tr style="' + rowStyle + '">'
-        + '<td style="text-align:left;cursor:pointer;white-space:nowrap" onclick="openBondDetailById(&apos;' + calc.bond.id + '&apos;)">' + calc.bond.name + '</td>'
+        + '<td style="text-align:left;cursor:pointer;white-space:nowrap" onclick="openBondPosDetail(&apos;' + pos.id + '&apos;)">' + calc.bond.name + '</td>'
         + '<td style="white-space:nowrap">' + pos.purchaseDate + '</td>'
         + '<td>' + pos.qty + '</td>'
         + '<td>' + f2(pos.cleanPrice) + '%</td>'
