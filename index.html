@@ -4984,11 +4984,11 @@ function render() {
         if (isMatured) { totValueMatured += calc.positionValue; totProfitMatured += calc.totalProfit; }
         else { totValueActive += calc.positionValue; totProfitActive += calc.totalProfit; }
       }
-      var rowStyle = isMatured ? 'font-style:italic;opacity:0.5' : (isWatchlist ? 'opacity:0.7' : '');
+      var rowStyle = (isMatured || isWatchlist) ? 'font-style:italic;opacity:0.5' : '';
       var pClass = calc.profitPct !== null ? (calc.profitPct >= 0 ? 'pos' : 'neg') : '';
       var isEditing = editingBondPosId === pos.id;
       rows += '<tr style="' + rowStyle + '">'
-        + '<td style="text-align:left;cursor:pointer;white-space:nowrap" onclick="openBondPosDetail(&apos;' + pos.id + '&apos;)">' + calc.bond.name + (isWatchlist ? ' <span style="font-size:9px;color:var(--dim);letter-spacing:1px">WL</span>' : '') + '</td>'
+        + '<td style="text-align:left;cursor:pointer;white-space:nowrap" onclick="openBondPosDetail(&apos;' + pos.id + '&apos;)">' + calc.bond.name + '</td>'
         + '<td style="white-space:nowrap">' + pos.purchaseDate + '</td>'
         + '<td>' + (isWatchlist ? '<span style="color:var(--dim)">—</span>' : pos.qty) + '</td>'
         + '<td>' + f2(pos.cleanPrice) + '%</td>'
