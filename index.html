@@ -533,8 +533,9 @@ function fetchFxRate(baseUrl, token, ticker) {
 
  // { ticker, qty, entry, current }
 var bondsDb = []; // bond database: { id, name, currency, parValue, nominalYield, couponFrequency, maturityDate }
-var bondPortfolios = {}; // bond portfolios: { id: { name, positions: [] } }
+var bondPortfolios = {}; // bond portfolios: { id: { name, type:'bond'|'deposit', positions: [] } }
 var currentBondPortfolioId = null; // default: weight descending
+var newBondPortfolioType = 'bond'; // type selector in add portfolio form
 var marketSort = { key: null, dir: -1 }; // null = portfolio order
 var watchlistSort = { key: null, dir: -1 };
 var loadingSet = {};
@@ -881,6 +882,154 @@ function openBondDetailById(bondId) {
 
 
 
+// ─── Deposit functions ─────────────────────────────────────────────────────────
+function calcDeposit(dep, currencyCode) {
+  var termYears = dep.termMonths / 12;
+  var rate = dep.rate / 100;
+  var openDate = new Date(dep.openDate);
+  var maturityDate = new Date(openDate);
+  maturityDate.setMonth(maturityDate.getMonth() + dep.termMonths);
+  var today = new Date(); today.setHours(0,0,0,0);
+  var isMatured = maturityDate <= today;
+  var profit, annYield;
+  if (dep.depositType === 'compounded') {
+    var freq = dep.freqPerYear || 12;
+    profit = dep.amount * (Math.pow(1 + rate / freq, freq * termYears) - 1);
+    annYield = (Math.pow(1 + rate / freq, freq) - 1) * 100;
+  } else {
+    profit = dep.amount * rate * termYears;
+    annYield = dep.rate;
+  }
+  var ret = dep.amount > 0 ? profit / dep.amount * 100 : null;
+  return { profit: profit, ret: ret, annYield: annYield, maturityDate: maturityDate, isMatured: isMatured, currSym: CURRENCY_SYMBOLS[currencyCode] || currencyCode };
+}
+
+function openDepositDetail(posId) {
+  var bp = bondPortfolios[currentBondPortfolioId];
+  if (!bp) return;
+  var pos = (bp.positions || []).find(function(p) { return p.id === posId; });
+  if (!pos) return;
+  var currencyCode = bp.currencyCode || 'USD';
+  var calc = calcDeposit(pos, currencyCode);
+  var typeLabels = { 'at-maturity': 'At Maturity', 'regular-payouts': 'Regular Payouts', 'compounded': 'Compounded Interest' };
+  var matStr = calc.maturityDate.toISOString().slice(0, 10);
+  var existing = document.getElementById('depositDetailModal');
+  if (existing) existing.remove();
+  var modal = document.createElement('div');
+  modal.id = 'depositDetailModal';
+  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:300;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:20px 24px;min-width:260px;position:relative">'
+    + '<button class="btn-icon" onclick="document.getElementById(\'depositDetailModal\').remove()" style="position:absolute;top:10px;right:10px;font-size:16px">&#10005;</button>'
+    + '<div style="font-size:14px;color:var(--bright);font-weight:bold;margin-bottom:14px">' + pos.name + '</div>'
+    + '<div style="display:grid;grid-template-columns:auto 1fr;gap:5px 16px;font-size:12px">'
+    + '<span style="color:var(--dim)">TYPE</span><span>' + (typeLabels[pos.depositType] || pos.depositType) + '</span>'
+    + '<span style="color:var(--dim)">OPEN DATE</span><span>' + pos.openDate + '</span>'
+    + '<span style="color:var(--dim)">TERM</span><span>' + pos.termMonths + ' months</span>'
+    + '<span style="color:var(--dim)">MATURITY</span><span>' + matStr + '</span>'
+    + '<span style="color:var(--dim)">RATE</span><span>' + f2(pos.rate) + '%</span>'
+    + (pos.depositType !== 'at-maturity' ? '<span style="color:var(--dim)">FREQ/YR</span><span>' + (pos.freqPerYear || 12) + '</span>' : '')
+    + '<span style="color:var(--dim)">AMOUNT</span><span>' + calc.currSym + f2(pos.amount) + '</span>'
+    + '<span style="color:var(--dim)">PROFIT</span><span class="' + (calc.profit >= 0 ? 'pos' : 'neg') + '">' + calc.currSym + f2(calc.profit) + '</span>'
+    + '<span style="color:var(--dim)">RETURN</span><span class="' + (calc.ret >= 0 ? 'pos' : 'neg') + '">' + f2(calc.ret) + '%</span>'
+    + '<span style="color:var(--dim)">ANN.YIELD</span><span>' + f2(calc.annYield) + '%</span>'
+    + '<span style="color:var(--dim)">STATUS</span><span style="color:var(--' + (calc.isMatured ? 'dim' : 'green') + ')">' + (calc.isMatured ? 'Matured' : 'Active') + '</span>'
+    + '</div></div>';
+  document.body.appendChild(modal);
+  modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
+}
+
+function editDepositPosition(posId) {
+  var bp = bondPortfolios[currentBondPortfolioId];
+  if (!bp) return;
+  var pos = (bp.positions || []).find(function(p) { return p.id === posId; });
+  if (!pos) return;
+  var newName = prompt('Name:', pos.name);
+  if (newName === null) return;
+  var newRate = prompt('Rate (%):', pos.rate);
+  if (newRate === null) return;
+  var newAmount = prompt('Amount:', pos.amount);
+  if (newAmount === null) return;
+  var newDate = prompt('Open Date (YYYY-MM-DD):', pos.openDate);
+  if (newDate === null) return;
+  var newTerm = prompt('Term (months):', pos.termMonths);
+  if (newTerm === null) return;
+  if (newName.trim()) pos.name = newName.trim().toUpperCase();
+  if (!isNaN(parseFloat(newRate)) && parseFloat(newRate) >= 0) pos.rate = parseFloat(newRate);
+  if (parseFloat(newAmount) > 0) pos.amount = parseFloat(newAmount);
+  if (newDate.trim()) pos.openDate = newDate.trim();
+  if (parseInt(newTerm) > 0) pos.termMonths = parseInt(newTerm);
+  saveBondPortfolios();
+  render();
+}
+
+function deleteDepositPosition(posId) {
+  var bp = bondPortfolios[currentBondPortfolioId];
+  if (!bp) return;
+  var pos = (bp.positions || []).find(function(p) { return p.id === posId; });
+  if (!confirm('Delete "' + (pos ? pos.name : 'this deposit') + '"?')) return;
+  bp.positions = bp.positions.filter(function(p) { return p.id !== posId; });
+  saveBondPortfolios();
+  render();
+}
+
+function renderDepositAddForm(bpId) {
+  return '<div class="add-form" style="margin-top:12px">'
+    + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">+ ADD DEPOSIT</div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">'
+    + '<div class="field"><label>NAME</label><input type="text" id="depName" placeholder="BANK 12M" autocomplete="off" oninput="this.value=this.value.toUpperCase()" style="text-transform:uppercase;width:110px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none"></div>'
+    + '<div class="field"><label>AMOUNT</label><input type="number" id="depAmount" placeholder="10000" min="0" step="any" style="width:90px"></div>'
+    + '<div class="field"><label>RATE %</label><input type="number" id="depRate" placeholder="5.50" min="0" step="0.01" style="width:70px"></div>'
+    + '</div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;align-items:flex-end">'
+    + '<div class="field"><label>OPEN DATE</label><input type="date" id="depOpenDate" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none"></div>'
+    + '<div class="field"><label>TERM (MO)</label><input type="number" id="depTermMonths" placeholder="12" min="1" step="1" style="width:55px"></div>'
+    + '<div class="field"><label>FREQ/YR</label><input type="number" id="depFreq" placeholder="12" min="1" max="365" step="1" style="width:55px"></div>'
+    + '<button class="btn-icon" onclick="clearDepositPosForm()" title="Clear" style="font-size:14px;padding:4px 6px;color:var(--dim);flex:none">&#10005;</button>'
+    + '</div>'
+    + '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px">'
+    + '<span style="font-size:9px;color:var(--dim);letter-spacing:1px">TYPE</span>'
+    + '<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="radio" name="depType" value="at-maturity" checked style="accent-color:var(--green)"> At Maturity</label>'
+    + '<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="radio" name="depType" value="regular-payouts" style="accent-color:var(--green)"> Regular Payouts</label>'
+    + '<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="radio" name="depType" value="compounded" style="accent-color:var(--green)"> Compounded</label>'
+    + '</div>'
+    + '<div style="margin-top:2px"><button class="btn btn-green" onclick="addDepositPosition(&apos;' + bpId + '&apos;)">ADD</button></div>'
+    + '<span id="depErr" style="color:var(--red);font-size:11px;display:block;margin-top:6px"></span>'
+    + '</div>';
+}
+
+function clearDepositPosForm() {
+  ['depName','depAmount','depRate','depOpenDate','depTermMonths','depFreq'].forEach(function(id) {
+    var el = document.getElementById(id); if (el) el.value = '';
+  });
+  var r = document.querySelector('input[name="depType"][value="at-maturity"]');
+  if (r) r.checked = true;
+  var err = document.getElementById('depErr');
+  if (err) err.textContent = '';
+}
+
+function addDepositPosition(bpId) {
+  var name = (document.getElementById('depName').value || '').trim().toUpperCase();
+  var amount = parseFloat(document.getElementById('depAmount').value);
+  var rate = parseFloat(document.getElementById('depRate').value);
+  var openDate = document.getElementById('depOpenDate').value;
+  var termMonths = parseInt(document.getElementById('depTermMonths').value);
+  var freq = parseInt(document.getElementById('depFreq').value) || 12;
+  var depTypeEl = document.querySelector('input[name="depType"]:checked');
+  var depositType = depTypeEl ? depTypeEl.value : 'at-maturity';
+  var err = document.getElementById('depErr');
+  if (!name) { err.textContent = 'Enter name'; return; }
+  if (!amount || amount <= 0) { err.textContent = 'Enter amount'; return; }
+  if (isNaN(rate) || rate < 0) { err.textContent = 'Enter rate'; return; }
+  if (!openDate) { err.textContent = 'Enter open date'; return; }
+  if (!termMonths || termMonths <= 0) { err.textContent = 'Enter term'; return; }
+  if (!bondPortfolios[bpId]) return;
+  bondPortfolios[bpId].positions.push({ id: 'dep_' + Date.now(), name: name, openDate: openDate, termMonths: termMonths, rate: rate, amount: amount, depositType: depositType, freqPerYear: freq });
+  saveBondPortfolios();
+  clearDepositPosForm();
+  render();
+}
+// ───────────────────────────────────────────────────────────────────────────────
+
 var movePosId = null;
 
 function showMoveMenu(posId, btn) {
@@ -1045,40 +1194,69 @@ function showBondPortfolio(id) {
   render();
 }
 
+function bondPortfolioEditFormHtml(id, p) {
+  return '<div style="padding:8px 12px 10px;background:var(--bg2);border-top:1px solid var(--border)">'
+    + '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">'
+    + '<div class="field"><label>NAME</label><input type="search" id="pfName_' + id + '" value="' + p.name + '" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" oninput="this.value=this.value.toUpperCase()" style="width:140px;text-transform:uppercase"></div>'
+    + '<div class="field"><label>CURRENCY</label><input type="search" id="pfCur_' + id + '" value="' + (p.currencyCode || 'USD') + '" autocomplete="off" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()" maxlength="3" style="width:52px;text-align:center;text-transform:uppercase"></div>'
+    + '<div style="display:flex;gap:6px;align-self:flex-end">'
+    + '<button class="btn btn-green" style="padding:6px 12px" onclick="saveBondPortfolioEdit(&apos;' + id + '&apos;)">SAVE</button>'
+    + '<button class="btn" style="padding:6px 12px;color:var(--dim)" onclick="editingPortfolioId=null;renderSwitcher()">CANCEL</button>'
+    + '</div></div></div>';
+}
+
 function renderBondsSwitcher(html, list, summaryActive) {
   bondsDb = getBondsDb();
   bondPortfolios = getBondPortfolios();
-  var bpIds = Object.keys(bondPortfolios).sort(function(a,b) { return bondPortfolios[a].name.localeCompare(bondPortfolios[b].name); });
-  bpIds.forEach(function(id) {
+  var allIds = Object.keys(bondPortfolios).sort(function(a,b) { return bondPortfolios[a].name.localeCompare(bondPortfolios[b].name); });
+  var bondIds = allIds.filter(function(id) { return bondPortfolios[id].type !== 'deposit'; });
+  var depIds  = allIds.filter(function(id) { return bondPortfolios[id].type === 'deposit'; });
+
+  function renderBpItem(id) {
     var p = bondPortfolios[id];
     var active = id === currentBondPortfolioId && viewMode === 'bonds';
-    html += '<div class="portfolio-item' + (active ? ' active' : '') + '" data-pfid="' + id + '" style="display:flex;align-items:center">'
+    var posLabel = p.type === 'deposit' ? ' dep' : ' bonds';
+    return '<div class="portfolio-item' + (active ? ' active' : '') + '" data-pfid="' + id + '" style="display:flex;align-items:center">'
       + '<div onclick="showBondPortfolio(&apos;' + id + '&apos;)" style="flex:1;cursor:pointer;min-width:0">'
       + '<span class="portfolio-item-name">' + p.name + '</span> <span style="color:var(--dim);font-size:10px">' + (p.currencyCode || 'USD') + '</span> '
-      + '<span class="portfolio-item-count">' + p.positions.length + ' bonds' + (active ? ' &#10003;' : '') + '</span>'
+      + '<span class="portfolio-item-count">' + p.positions.length + posLabel + (active ? ' &#10003;' : '') + '</span>'
       + '</div>'
       + '<button class="btn-icon" onclick="renameBondPortfolio(&apos;' + id + '&apos;)" style="font-size:13px;padding:4px 7px">&#9998;</button>'
       + '<button class="btn-icon" onclick="deleteBondPortfolio(&apos;' + id + '&apos;)" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
       + '</div>'
-      + (editingPortfolioId === id ? portfolioEditFormHtml(id, bondPortfolios[id]) : '');
-  });
-  if (bpIds.length === 0) html += '<div style="padding:10px 14px;font-size:11px;color:var(--dim)">No bond portfolios</div>';
-  // Bond summary
+      + (editingPortfolioId === id ? bondPortfolioEditFormHtml(id, p) : '');
+  }
+
+  bondIds.forEach(function(id) { html += renderBpItem(id); });
+  if (bondIds.length === 0) html += '<div style="padding:10px 14px;font-size:11px;color:var(--dim)">No bond portfolios</div>';
+  if (depIds.length > 0) {
+    html += '<div style="border-top:1px solid var(--border);margin:4px 0"></div>';
+    depIds.forEach(function(id) { html += renderBpItem(id); });
+  }
+
+  // Σ SUMMARY
   var bondSummaryActive = viewMode === 'bond-summary';
-  var totalBondPos = bpIds.reduce(function(n, id) { return n + (bondPortfolios[id].positions || []).length; }, 0);
+  var totalAllPos = allIds.reduce(function(n, id) { return n + (bondPortfolios[id].positions || []).length; }, 0);
   html += '<div class="portfolio-item' + (bondSummaryActive ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);margin-top:4px;padding-top:4px" onclick="switchToBondSummary()">'
-    + '<div style="flex:1"><span class="portfolio-item-name">&#931; SUMMARY</span> <span class="portfolio-item-count">' + totalBondPos + ' bonds</span></div>'
+    + '<div style="flex:1"><span class="portfolio-item-name">&#931; SUMMARY</span> <span class="portfolio-item-count">' + totalAllPos + ' items</span></div>'
     + '</div>';
+
   // Bond DB button
   html += '<div style="border-top:1px solid var(--border);margin-top:4px;padding:8px 14px;display:flex;gap:8px">'
     + '<button class="btn btn-green" onclick="openBondDb()" style="flex:1;font-size:10px;padding:7px">&#9776; BOND DATABASE</button>'
     + '</div>';
-  // Add form for bond portfolio
+
+  // Add portfolio form
+  var isBond = newBondPortfolioType !== 'deposit';
   html += '<div style="border-top:1px solid var(--border);padding:10px 14px">'
     + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">+ ADD PORTFOLIO</div>'
     + '<div style="display:flex;gap:8px;margin-bottom:8px">'
     + '<input type="search" id="newBondPortfolioName" placeholder="NAME" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" style="-webkit-appearance:none;flex:2;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">'
     + '<input type="search" id="newBondPortfolioCurrency" placeholder="USD" autocomplete="off" autocapitalize="characters" spellcheck="false" style="-webkit-appearance:none;width:52px;flex:none;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;text-align:center;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">'
+    + '</div>'
+    + '<div style="display:flex;gap:14px;margin-bottom:8px">'
+    + '<label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer"><input type="radio" name="newBpType" value="bond" ' + (isBond ? 'checked' : '') + ' onchange="newBondPortfolioType=\'bond\'" style="accent-color:var(--green)"> Bond</label>'
+    + '<label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer"><input type="radio" name="newBpType" value="deposit" ' + (!isBond ? 'checked' : '') + ' onchange="newBondPortfolioType=\'deposit\'" style="accent-color:var(--green)"> Deposit</label>'
     + '</div>'
     + '<button class="btn btn-green" onclick="addBondPortfolio2()" style="white-space:nowrap">+ ADD</button>'
     + '</div>';
@@ -1093,7 +1271,7 @@ function addBondPortfolio2() {
   if (!name) return;
   var cur = (curEl ? curEl.value.trim().toUpperCase() : '') || 'USD';
   var id = 'bp_' + Date.now();
-  bondPortfolios[id] = { name: name, currencyCode: cur, positions: [] };
+  bondPortfolios[id] = { name: name, currencyCode: cur, type: newBondPortfolioType, positions: [] };
   saveBondPortfolios();
   currentBondPortfolioId = id;
   nameEl.value = '';
@@ -4580,6 +4758,65 @@ function render() {
     var bp = bondPortfolios[currentBondPortfolioId];
     if (!bp) { area.innerHTML = '<div style="color:var(--dim);padding:20px">Select a bond portfolio</div>'; return; }
 
+    // ── Deposit portfolio view ───────────────────────────────────────────────
+    if (bp.type === 'deposit') {
+      var depCurrencyCode = bp.currencyCode || 'USD';
+      var depCurrSym = CURRENCY_SYMBOLS[depCurrencyCode] || depCurrencyCode;
+      var depToday = new Date(); depToday.setHours(0,0,0,0);
+      var sortedDeps = (bp.positions || []).slice().sort(function(a, b) {
+        var ma = new Date(a.openDate); ma.setMonth(ma.getMonth() + a.termMonths);
+        var mb = new Date(b.openDate); mb.setMonth(mb.getMonth() + b.termMonths);
+        return ma - mb;
+      });
+      var depRows = '';
+      var depAmtActive = 0, depProfitActive = 0;
+      var depAmtMatured = 0, depProfitMatured = 0;
+      sortedDeps.forEach(function(dep) {
+        var calc = calcDeposit(dep, depCurrencyCode);
+        var pClass = calc.profit >= 0 ? 'pos' : 'neg';
+        var rowStyle = calc.isMatured ? 'font-style:italic;opacity:0.5' : '';
+        if (calc.isMatured) { depAmtMatured += dep.amount; depProfitMatured += calc.profit; }
+        else { depAmtActive += dep.amount; depProfitActive += calc.profit; }
+        depRows += '<tr style="' + rowStyle + '">'
+          + '<td style="text-align:left;cursor:pointer;white-space:nowrap" onclick="openDepositDetail(&apos;' + dep.id + '&apos;)">' + dep.name + '</td>'
+          + '<td style="white-space:nowrap">' + dep.openDate + '</td>'
+          + '<td>' + dep.termMonths + 'mo</td>'
+          + '<td>' + f2(dep.rate) + '%</td>'
+          + '<td>' + depCurrSym + f2(dep.amount) + '</td>'
+          + '<td class="' + pClass + '">' + depCurrSym + f2(calc.profit) + '</td>'
+          + '<td class="' + pClass + '">' + (calc.ret !== null ? f2(calc.ret) + '%' : '&mdash;') + '</td>'
+          + '<td class="' + pClass + '">' + f2(calc.annYield) + '%</td>'
+          + '<td>'
+            + '<button class="btn-icon" onclick="editDepositPosition(&apos;' + dep.id + '&apos;)">&#9998;</button>'
+            + '<button class="btn-icon" onclick="deleteDepositPosition(&apos;' + dep.id + '&apos;)" style="color:var(--red)">&#10005;</button>'
+          + '</td>'
+          + '</tr>';
+      });
+      var th = 'style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap"';
+      var pCA = depProfitActive >= 0 ? 'pos' : 'neg';
+      var pCM = depProfitMatured >= 0 ? 'pos' : 'neg';
+      area.innerHTML = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
+        + '<table style="border-collapse:collapse;font-size:13px"><thead><tr>'
+        + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">NAME</th>'
+        + '<th ' + th + '>OPEN DATE</th><th ' + th + '>TERM</th><th ' + th + '>RATE</th>'
+        + '<th ' + th + '>AMOUNT</th><th ' + th + '>PROFIT</th><th ' + th + '>RETURN</th><th ' + th + '>ANN.YIELD</th>'
+        + '<th style="border-bottom:1px solid var(--border)"></th>'
+        + '</tr></thead><tbody>' + depRows + '</tbody></table></div>'
+        + (depAmtActive > 0 ? '<div class="totals-bar">'
+          + '<div class="total-block"><div class="total-label">AMOUNT</div><div class="total-value" style="color:var(--bright)">' + depCurrSym + f2(depAmtActive) + '</div></div>'
+          + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + pCA + '">' + depCurrSym + f2(depProfitActive) + '</div></div>'
+          + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + pCA + '">' + (depAmtActive > 0 ? f2(depProfitActive/depAmtActive*100) + '%' : '&mdash;') + '</div></div>'
+          + '</div>' : '')
+        + (depAmtMatured > 0 ? '<div class="totals-bar" style="opacity:0.6">'
+          + '<div class="total-block"><div class="total-label">MATURED AMOUNT</div><div class="total-value" style="color:var(--bright)">' + depCurrSym + f2(depAmtMatured) + '</div></div>'
+          + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + pCM + '">' + depCurrSym + f2(depProfitMatured) + '</div></div>'
+          + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + pCM + '">' + (depAmtMatured > 0 ? f2(depProfitMatured/depAmtMatured*100) + '%' : '&mdash;') + '</div></div>'
+          + '</div>' : '')
+        + renderDepositAddForm(currentBondPortfolioId);
+      return;
+    }
+    // ────────────────────────────────────────────────────────────────────────
+
     // Calculations
     function calcCouponsRemaining(purchaseDate, maturityDate, couponFrequency) {
       var maturity = new Date(maturityDate);
@@ -4710,10 +4947,16 @@ function render() {
     var bsFxRates = {};
     var bsNonUSD = [];
     bsBpIds.forEach(function(bpId) {
-      (bondPortfolios[bpId].positions || []).forEach(function(pos) {
-        var bond = bondsDb.find(function(b) { return b.id === pos.bondId; });
-        if (bond && bond.currency !== 'USD' && bsNonUSD.indexOf(bond.currency) === -1) bsNonUSD.push(bond.currency);
-      });
+      var bp = bondPortfolios[bpId];
+      if (bp.type === 'deposit') {
+        var c = (bp.currencyCode || 'USD').toUpperCase();
+        if (c !== 'USD' && bsNonUSD.indexOf(c) === -1) bsNonUSD.push(c);
+      } else {
+        (bp.positions || []).forEach(function(pos) {
+          var bond = bondsDb.find(function(b) { return b.id === pos.bondId; });
+          if (bond && bond.currency !== 'USD' && bsNonUSD.indexOf(bond.currency) === -1) bsNonUSD.push(bond.currency);
+        });
+      }
     });
 
     function calcBondPosSummary(pos) {
@@ -4740,19 +4983,33 @@ function render() {
         var bpRateToUSD = bpCurrency === 'USD' ? 1 : (bsFxRates[bpCurrency] || 1);
         var aValBase = 0, aProfitBase = 0, aValUSD = 0, aProfitUSD = 0, hasActive = false;
         var mValBase = 0, mProfitBase = 0, mValUSD = 0, mProfitUSD = 0, hasMatured = false;
-        (bp.positions || []).forEach(function(pos) {
-          var calc = calcBondPosSummary(pos);
-          if (!calc) return;
-          var rate = calc.currency === 'USD' ? 1 : (bsFxRates[calc.currency] || 1);
-          var vUSD = calc.positionValue * rate, pUSD = calc.totalProfit * rate;
-          if (calc.isMatured) {
-            mValBase += vUSD / bpRateToUSD; mProfitBase += pUSD / bpRateToUSD;
-            mValUSD += vUSD; mProfitUSD += pUSD; hasMatured = true;
-          } else {
-            aValBase += vUSD / bpRateToUSD; aProfitBase += pUSD / bpRateToUSD;
-            aValUSD += vUSD; aProfitUSD += pUSD; hasActive = true;
-          }
-        });
+        if (bp.type === 'deposit') {
+          (bp.positions || []).forEach(function(dep) {
+            var calc = calcDeposit(dep, bpCurrency);
+            var vUSD = dep.amount * bpRateToUSD, pUSD = calc.profit * bpRateToUSD;
+            if (calc.isMatured) {
+              mValBase += dep.amount; mProfitBase += calc.profit;
+              mValUSD += vUSD; mProfitUSD += pUSD; hasMatured = true;
+            } else {
+              aValBase += dep.amount; aProfitBase += calc.profit;
+              aValUSD += vUSD; aProfitUSD += pUSD; hasActive = true;
+            }
+          });
+        } else {
+          (bp.positions || []).forEach(function(pos) {
+            var calc = calcBondPosSummary(pos);
+            if (!calc) return;
+            var rate = calc.currency === 'USD' ? 1 : (bsFxRates[calc.currency] || 1);
+            var vUSD = calc.positionValue * rate, pUSD = calc.totalProfit * rate;
+            if (calc.isMatured) {
+              mValBase += vUSD / bpRateToUSD; mProfitBase += pUSD / bpRateToUSD;
+              mValUSD += vUSD; mProfitUSD += pUSD; hasMatured = true;
+            } else {
+              aValBase += vUSD / bpRateToUSD; aProfitBase += pUSD / bpRateToUSD;
+              aValUSD += vUSD; aProfitUSD += pUSD; hasActive = true;
+            }
+          });
+        }
         return {
           id: bpId, name: bp.name,
           currency: CURRENCY_SYMBOLS[bpCurrency] || bpCurrency,
