@@ -12,4 +12,4 @@ If the system prompt contains a "Git Development Branch Requirements" section th
 
 ## Service Worker
 
-**Always increment the cache version string in `sw.js` on every deploy** (e.g. `portfolio-v347` → `portfolio-v348`). This must happen in the same commit as the code change. Never forget this — without it users get stale cached files.
+**Increment the cache version string in `sw.js`** whenever `index.html`, `manifest.json`, or `icon-192.png` changes (these are the files cached by the SW). Do it in the same commit as the code change. Changes to `worker.js`, `wrangler.toml`, `README.md`, or other non-cached files do **not** require a version bump.
