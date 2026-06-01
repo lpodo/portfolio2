@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Yahoo Sandbox — Portfolio Terminal 2</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+:root {
+  --bg: #0a0a0c;
+  --bg-elev: #141418;
+  --bg-card: #1c1c22;
+  --border: #2a2a32;
+  --text: #e4e4e7;
+  --text-dim: #888;
+  --text-faint: #555;
+  --accent: #4dabf7;
+  --accent-hover: #74c0fc;
+  --error: #ff6b6b;
+  --success: #51cf66;
+  --warning: #fcc419;
+  --mono: ui-monospace, 'SF Mono', Monaco, Consolas, 'Liberation Mono', monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  margin: 0;
+  padding: 16px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+h1 .sub {
+  color: var(--text-dim);
+  font-weight: 400;
+  margin-left: 8px;
+  font-size: 12px;
+}
+
+button {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+button:hover { background: var(--bg-card); border-color: var(--accent); }
+
+button.primary {
+  background: var(--accent);
+  color: #000;
+  border-color: var(--accent);
+  font-weight: 500;
+}
+
+button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+
+button.icon { padding: 6px 8px; font-size: 14px; }
+
+input[type="text"], input[type="password"] {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+input:focus { outline: none; border-color: var(--accent); }
+
+.query-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.query-bar input {
+  text-transform: uppercase;
+  font-family: var(--mono);
+  font-weight: 600;
+  width: 140px;
+}
+
+.modules {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.modules-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modules-actions button { font-size: 11px; padding: 4px 8px; }
+
+.module-group { margin-bottom: 8px; }
+.module-group:last-child { margin-bottom: 0; }
+
+.module-group-label {
+  font-size: 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 4px;
+}
+
+.module-group-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.module-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  font-family: var(--mono);
+}
+
+.module-checkbox input { margin: 0; cursor: pointer; }
+
+#status {
+  font-size: 12px;
+  min-height: 16px;
+  font-family: var(--mono);
+}
+
+#status.error { color: var(--error); }
+#status.loading { color: var(--warning); }
+#status.success { color: var(--success); }
+
+#results { display: flex; flex-direction: column; gap: 12px; }
+
+.module-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.module-card.empty { opacity: 0.5; }
+
+.module-card-header {
+  padding: 8px 12px;
+  background: var(--bg-elev);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+
+.module-card-header h3 {
+  margin: 0;
+  font-size: 13px;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+.module-card-header .status-badge {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: var(--mono);
+}
+
+.module-card-body { padding: 12px; }
+
+table.kv {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+table.kv tr { border-bottom: 1px solid var(--border); }
+table.kv tr:last-child { border-bottom: none; }
+
+table.kv td { padding: 4px 8px; vertical-align: top; }
+
+table.kv td.key {
+  color: var(--text-dim);
+  width: 35%;
+  font-family: var(--mono);
+  font-size: 11px;
+  word-break: break-word;
+}
+
+table.kv td.val { color: var(--text); word-break: break-word; }
+table.kv td.val.numeric { font-family: var(--mono); }
+
+.array-label {
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: var(--mono);
+}
+
+.array-sample { opacity: 0.85; margin-top: 4px; }
+.array-more { font-size: 10px; color: var(--text-faint); margin-top: 4px; }
+
+details.raw {
+  margin-top: 8px;
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+}
+
+details.raw summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 11px;
+  user-select: none;
+  font-family: var(--mono);
+}
+
+details.raw summary:hover { color: var(--accent); }
+
+details.raw pre {
+  margin-top: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow-x: auto;
+  color: var(--text-dim);
+  max-height: 400px;
+  overflow-y: auto;
+  white-space: pre;
+}
+
+.modal-bg {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal-bg.hidden { display: none; }
+
+.modal {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 24px;
+  width: 100%;
+  max-width: 460px;
+  margin: 16px;
+}
+
+.modal h2 { margin: 0 0 4px 0; font-size: 15px; }
+.modal .hint { font-size: 12px; color: var(--text-dim); margin-bottom: 16px; }
+
+.modal .field { margin-bottom: 12px; }
+.modal .field label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+  font-family: var(--mono);
+}
+.modal .field input { width: 100%; font-family: var(--mono); }
+
+.modal .actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.empty-state {
+  text-align: center;
+  color: var(--text-faint);
+  padding: 40px;
+  font-size: 13px;
+}
+
+.global-error {
+  background: var(--bg-card);
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--error);
+  color: var(--error);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Yahoo Sandbox <span class="sub">portfolio terminal 2 · experimental</span></h1>
+  <button id="settings-btn" class="icon" title="Settings">⚙</button>
+</header>
+
+<div class="query-bar">
+  <input type="text" id="ticker" placeholder="TICKER" value="AAPL" autocomplete="off">
+  <button id="go-btn" class="primary">Go</button>
+  <span id="status"></span>
+</div>
+
+<div class="modules">
+  <div class="modules-actions">
+    <button id="select-all">Select all</button>
+    <button id="select-none">Select none</button>
+    <button id="select-default">Default</button>
+  </div>
+  <div id="module-checkboxes"></div>
+</div>
+
+<div id="results">
+  <div class="empty-state">Enter a ticker and click Go.</div>
+</div>
+
+<!-- Settings modal -->
+<div id="modal-bg" class="modal-bg hidden">
+  <div class="modal">
+    <h2>Worker settings</h2>
+    <div class="hint">Saved in browser localStorage. Re-open with the ⚙ button.</div>
+    <div class="field">
+      <label for="cfg-url">Worker URL</label>
+      <input type="text" id="cfg-url" placeholder="https://portfolio-worker-test.your-name.workers.dev">
+    </div>
+    <div class="field">
+      <label for="cfg-token">API Token (X-API-Token)</label>
+      <input type="password" id="cfg-token" placeholder="token value">
+    </div>
+    <div class="actions">
+      <button id="cfg-cancel">Cancel</button>
+      <button id="cfg-save" class="primary">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SETTINGS_KEY = 'yahoo-sandbox-settings';
+const SELECTED_MODULES_KEY = 'yahoo-sandbox-modules';
+
+const MODULES = [
+  { group: 'Profile',    items: ['assetProfile', 'summaryDetail', 'price', 'quoteType'] },
+  { group: 'Statistics', items: ['defaultKeyStatistics', 'financialData'] },
+  { group: 'Analyst',    items: ['recommendationTrend', 'upgradeDowngradeHistory'] },
+  { group: 'Earnings',   items: ['earnings', 'earningsHistory', 'earningsTrend', 'calendarEvents'] },
+  { group: 'Financials', items: ['incomeStatementHistory', 'balanceSheetHistory', 'cashflowStatementHistory'] },
+  { group: 'Ownership',  items: ['majorHoldersBreakdown', 'institutionOwnership', 'fundOwnership', 'insiderTransactions', 'insiderHolders'] },
+  { group: 'Other',      items: ['secFilings'] },
+];
+
+const DEFAULT_MODULES = [
+  'assetProfile', 'summaryDetail', 'defaultKeyStatistics',
+  'financialData', 'recommendationTrend'
+];
+
+// ---- Settings ----
+function loadSettings() {
+  try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); }
+  catch { return {}; }
+}
+
+function saveSettings(s) {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+}
+
+function getSelectedModules() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SELECTED_MODULES_KEY) || 'null');
+    if (Array.isArray(saved) && saved.length) return saved;
+  } catch {}
+  return DEFAULT_MODULES.slice();
+}
+
+function saveSelectedModules() {
+  const selected = [...document.querySelectorAll('.module-checkbox input:checked')].map(cb => cb.value);
+  localStorage.setItem(SELECTED_MODULES_KEY, JSON.stringify(selected));
+}
+
+// ---- Settings modal ----
+function openSettings() {
+  const s = loadSettings();
+  document.getElementById('cfg-url').value = s.workerUrl || '';
+  document.getElementById('cfg-token').value = s.apiToken || '';
+  document.getElementById('modal-bg').classList.remove('hidden');
+  setTimeout(() => document.getElementById('cfg-url').focus(), 50);
+}
+
+function closeSettings() {
+  document.getElementById('modal-bg').classList.add('hidden');
+}
+
+// ---- Module checkboxes ----
+function renderModules() {
+  const container = document.getElementById('module-checkboxes');
+  const selected = new Set(getSelectedModules());
+
+  container.innerHTML = MODULES.map(group => `
+    <div class="module-group">
+      <div class="module-group-label">${group.group}</div>
+      <div class="module-group-items">
+        ${group.items.map(m => `
+          <label class="module-checkbox">
+            <input type="checkbox" value="${m}" ${selected.has(m) ? 'checked' : ''}>
+            ${m}
+          </label>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
+
+  container.querySelectorAll('input').forEach(cb => {
+    cb.addEventListener('change', saveSelectedModules);
+  });
+}
+
+// ---- Value formatting ----
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function formatNumber(n) {
+  if (!Number.isFinite(n)) return String(n);
+  if (Number.isInteger(n)) return n.toLocaleString('en-US');
+  if (Math.abs(n) < 0.001 && n !== 0) return n.toExponential(2);
+  return n.toFixed(Math.abs(n) < 10 ? 4 : 2);
+}
+
+function isNumericLike(v) {
+  if (typeof v === 'number') return true;
+  if (v && typeof v === 'object' && 'raw' in v && typeof v.raw === 'number') return true;
+  return false;
+}
+
+function formatVal(v) {
+  if (v === null || v === undefined) return '<span style="color:var(--text-faint)">—</span>';
+  if (typeof v === 'number') return escapeHtml(formatNumber(v));
+  if (typeof v === 'string') return escapeHtml(v);
+  if (typeof v === 'boolean') return v ? 'true' : 'false';
+  if (typeof v === 'object') {
+    if (Array.isArray(v)) return `<span style="color:var(--text-dim)">[${v.length} items]</span>`;
+    // Yahoo's typical wrapper: { raw, fmt, longFmt }
+    if ('fmt' in v && v.fmt !== undefined && v.fmt !== null) return escapeHtml(v.fmt);
+    if ('longFmt' in v && v.longFmt !== undefined) return escapeHtml(v.longFmt);
+    if ('raw' in v && v.raw !== undefined) return formatVal(v.raw);
+    const keys = Object.keys(v);
+    if (keys.length === 0) return '<span style="color:var(--text-faint)">{}</span>';
+    return `<span style="color:var(--text-dim)">{${keys.length} keys}</span>`;
+  }
+  return escapeHtml(String(v));
+}
+
+// ---- Module card rendering ----
+function buildKvTable(obj) {
+  const rows = [];
+  const arrays = [];
+
+  for (const [k, v] of Object.entries(obj)) {
+    if (Array.isArray(v)) {
+      arrays.push([k, v]);
+    } else {
+      const numClass = isNumericLike(v) ? ' numeric' : '';
+      rows.push(`<tr><td class="key">${escapeHtml(k)}</td><td class="val${numClass}">${formatVal(v)}</td></tr>`);
+    }
+  }
+
+  let html = '';
+  if (rows.length) html += `<table class="kv">${rows.join('')}</table>`;
+
+  for (const [k, arr] of arrays) {
+    html += `<div class="array-label">${escapeHtml(k)} (${arr.length} items)</div>`;
+    if (arr.length && typeof arr[0] === 'object' && arr[0] !== null) {
+      const sampleEntries = Object.entries(arr[0]).slice(0, 10);
+      const sampleRows = sampleEntries.map(([k2, v2]) =>
+        `<tr><td class="key">${escapeHtml(k2)}</td><td class="val${isNumericLike(v2) ? ' numeric' : ''}">${formatVal(v2)}</td></tr>`
+      ).join('');
+      html += `<table class="kv array-sample">${sampleRows}</table>`;
+      if (arr.length > 1) html += `<div class="array-more">…${arr.length - 1} more in raw JSON</div>`;
+    } else if (arr.length) {
+      html += `<div class="array-more">${escapeHtml(arr.slice(0, 5).map(x => JSON.stringify(x)).join(', '))}${arr.length > 5 ? '…' : ''}</div>`;
+    }
+  }
+
+  if (!rows.length && !arrays.length) {
+    html = `<div style="color:var(--text-dim)">Empty object</div>`;
+  }
+
+  return { html, fieldCount: rows.length, arrayCount: arrays.length };
+}
+
+function renderModuleCard(name, data) {
+  const card = document.createElement('div');
+  card.className = 'module-card';
+
+  let bodyHtml = '';
+  let badge = '';
+
+  if (data === null || data === undefined) {
+    bodyHtml = `<div style="color:var(--text-dim)">No data returned for this module</div>`;
+    badge = 'empty';
+    card.classList.add('empty');
+  } else if (typeof data !== 'object') {
+    bodyHtml = `<div>${formatVal(data)}</div>`;
+    badge = 'primitive';
+  } else {
+    const built = buildKvTable(data);
+    bodyHtml = built.html;
+    badge = `${built.fieldCount} fields${built.arrayCount ? ` · ${built.arrayCount} arrays` : ''}`;
+  }
+
+  bodyHtml += `
+    <details class="raw">
+      <summary>Raw JSON</summary>
+      <pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>
+    </details>
+  `;
+
+  card.innerHTML = `
+    <div class="module-card-header">
+      <h3>${escapeHtml(name)}</h3>
+      <span class="status-badge">${escapeHtml(badge)}</span>
+    </div>
+    <div class="module-card-body">${bodyHtml}</div>
+  `;
+  return card;
+}
+
+// ---- API call ----
+async function fetchData(ticker, modules) {
+  const settings = loadSettings();
+  if (!settings.workerUrl || !settings.apiToken) {
+    throw new Error('Worker URL or API Token not configured. Click ⚙ to set them.');
+  }
+
+  const url = `${settings.workerUrl.replace(/\/$/, '')}/api/quotesummary`
+    + `?ticker=${encodeURIComponent(ticker)}`
+    + `&modules=${encodeURIComponent(modules.join(','))}`;
+
+  const res = await fetch(url, { headers: { 'X-API-Token': settings.apiToken } });
+  const text = await res.text();
+
+  let data;
+  try { data = JSON.parse(text); }
+  catch { throw new Error(`Non-JSON response (HTTP ${res.status}): ${text.slice(0, 200)}`); }
+
+  if (!res.ok) {
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
+  return data;
+}
+
+// ---- Main flow ----
+function setStatus(msg, cls = '') {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = cls;
+}
+
+async function go() {
+  const tickerInput = document.getElementById('ticker');
+  const ticker = tickerInput.value.trim().toUpperCase();
+  if (!ticker) { setStatus('Enter a ticker first', 'error'); return; }
+  tickerInput.value = ticker;
+
+  const selected = [...document.querySelectorAll('.module-checkbox input:checked')].map(cb => cb.value);
+  if (!selected.length) { setStatus('Select at least one module', 'error'); return; }
+
+  const results = document.getElementById('results');
+  results.innerHTML = '';
+  setStatus(`Fetching ${selected.length} module${selected.length === 1 ? '' : 's'} for ${ticker}…`, 'loading');
+
+  try {
+    const t0 = performance.now();
+    const data = await fetchData(ticker, selected);
+    const dt = Math.round(performance.now() - t0);
+
+    // Worker-level error
+    if (data._error) {
+      setStatus(`Worker error: ${data._error}`, 'error');
+      results.innerHTML = `<div class="global-error">${escapeHtml(JSON.stringify(data, null, 2))}</div>`;
+      return;
+    }
+
+    // Yahoo response shape: { quoteSummary: { result: [...], error: ... } }
+    const yError = data?.quoteSummary?.error;
+    const yResult = data?.quoteSummary?.result?.[0];
+
+    if (yError) {
+      setStatus(`Yahoo error: ${yError.description || yError.code || JSON.stringify(yError)}`, 'error');
+      results.innerHTML = `<div class="global-error">${escapeHtml(JSON.stringify(data, null, 2))}</div>`;
+      return;
+    }
+
+    if (!yResult) {
+      setStatus(`No result. Raw response below.`, 'error');
+      results.innerHTML = `<div class="global-error">${escapeHtml(JSON.stringify(data, null, 2))}</div>`;
+      return;
+    }
+
+    setStatus(`OK · ${ticker} · ${selected.length} module${selected.length === 1 ? '' : 's'} · ${dt} ms`, 'success');
+
+    for (const moduleName of selected) {
+      const moduleData = (moduleName in yResult) ? yResult[moduleName] : null;
+      results.appendChild(renderModuleCard(moduleName, moduleData));
+    }
+  } catch (e) {
+    setStatus(`Error: ${e.message}`, 'error');
+  }
+}
+
+// ---- Init ----
+function init() {
+  renderModules();
+
+  document.getElementById('settings-btn').addEventListener('click', openSettings);
+  document.getElementById('cfg-cancel').addEventListener('click', closeSettings);
+  document.getElementById('cfg-save').addEventListener('click', () => {
+    const url = document.getElementById('cfg-url').value.trim();
+    const token = document.getElementById('cfg-token').value.trim();
+    if (!url || !token) { alert('Both fields are required'); return; }
+    saveSettings({ workerUrl: url, apiToken: token });
+    closeSettings();
+    setStatus('Settings saved', 'success');
+  });
+
+  document.getElementById('go-btn').addEventListener('click', go);
+  document.getElementById('ticker').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+
+  document.getElementById('select-all').addEventListener('click', () => {
+    document.querySelectorAll('.module-checkbox input').forEach(cb => cb.checked = true);
+    saveSelectedModules();
+  });
+  document.getElementById('select-none').addEventListener('click', () => {
+    document.querySelectorAll('.module-checkbox input').forEach(cb => cb.checked = false);
+    saveSelectedModules();
+  });
+  document.getElementById('select-default').addEventListener('click', () => {
+    const def = new Set(DEFAULT_MODULES);
+    document.querySelectorAll('.module-checkbox input').forEach(cb => cb.checked = def.has(cb.value));
+    saveSelectedModules();
+  });
+
+  // First-run check
+  const s = loadSettings();
+  if (!s.workerUrl || !s.apiToken) openSettings();
+}
+
+init();
+</script>
+
+</body>
+</html>

@@ -1,7 +1,7 @@
-name = "portfolio2"
-main = "worker.js"
-compatibility_date = "2024-01-01"
+# Portfolio Terminal 2 — TEST worker (experimental branch)
+# Used by Cloudflare's "Connect to Git" integration to deploy worker-test.js
+# from this branch. The production worker (main branch) is unaffected.
 
-[[kv_namespaces]]
-binding = "PORTFOLIO_KV"
-id = "f36d8de334a942d4a6a6462735fda047"
+name = "portfolio-worker-test"
+main = "worker-test.js"
+compatibility_date = "2025-01-01"
