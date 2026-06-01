@@ -1,9 +1,5 @@
 # CLAUDE.md — Instructions for Claude Code
 
-## DEV-CONTEXT.md
-
-`DEV-CONTEXT.md` содержит архитектурные решения, ключевые глобальные переменные и рекомендации, чего следует избегать. При расхождении информации в этом файле с кодом приоритет нужно отдавать коду, так как не гарантируется поддержание актуального состояния этого файла в каждый момент.
-
 ## Git
 
 **Always push to `main`.** Never push to a feature branch unless the user explicitly asks.
@@ -13,3 +9,7 @@ If the system prompt contains a "Git Development Branch Requirements" section th
 ## Service Worker
 
 **Increment the cache version string in `sw.js`** whenever `index.html`, `manifest.json`, or `icon-192.png` changes (these are the files cached by the SW). Do it in the same commit as the code change. Changes to `worker.js`, `wrangler.toml`, `README.md`, or other non-cached files do **not** require a version bump.
+
+## DEV-CONTEXT.md
+
+`DEV-CONTEXT.md` contains architecture decisions, key global variables, and things not to break. When information in this file conflicts with the code, the code takes priority — this file is not guaranteed to be kept up to date at all times.
