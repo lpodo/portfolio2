@@ -93,22 +93,26 @@ var editingBondDbId = null;
 | `main` | P&L (active / archive / watchlist) |
 | `weight` | WEIGHTS |
 | `market` | MARKET |
-| `movers` | TOP MOVERS |
+| `movers` | legacy per-portfolio top-movers (no UI entry point; preserved for backward compat) |
 | `chart` | CHART |
 | `analytics` | ANALYTICS |
 | `alerts` | ALERTS |
-| `global-weight` | cross-portfolio weights |
+| `global-weight` | Σ WEIGHTS (cross-portfolio) |
 | `summary` | P&L in summary |
 | `summary-market` | MARKET in summary |
-| `summary-movers` | TOP MOVERS in summary |
+| `summary-movers` | Σ MARKET in summary |
 | `summary-chart` | CHART in summary |
-| `summary-analytics` | ANALYTICS in summary |
-| `summary-alerts` | ALERTS in summary |
+| `summary-analytics` | Σ ANALYTICS in summary |
+| `summary-alerts` | Σ ALERTS in summary |
 | `archive-summary` | archive summary |
 | `bonds` | bond/deposit portfolio view |
 | `bond-summary` | Σ SUMMARY for bonds+deposits |
 
-`setView(mode)` handles routing from the ⋮ menu. `switchPortfolio(id)` resets summary modes to their base equivalents. `switchToSummary()` maps portfolio modes to summary modes.
+`setView(mode)` — routes ⋮ menu clicks. In summary context, maps `market→summary-market`, `chart→summary-chart`, `analytics→summary-analytics`, `market-total→summary-movers`, `alerts→summary-alerts`, `global-weight→global-weight`, everything else→`summary`.
+
+`switchToSummary()` — preserves `movers→summary-movers` and `alerts→summary-alerts`; everything else becomes `summary`.
+
+`switchPortfolio(id)` — resets: `summary*/archive-summary/bonds/bond-summary/global-weight → main`; `summary-movers → market`; `summary-alerts → alerts`; `movers` is kept only for watchlist portfolios.
 
 ---
 
