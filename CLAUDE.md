@@ -1,8 +1,8 @@
 # CLAUDE.md — Instructions for Claude Code
 
-## Session start
+## DEV-CONTEXT.md
 
-Read `DEV-CONTEXT.md` at the start of every session — it contains architecture decisions, key globals, and things not to break.
+`DEV-CONTEXT.md` содержит архитектурные решения, ключевые глобальные переменные и рекомендации, чего следует избегать. При расхождении информации в этом файле с кодом приоритет нужно отдавать коду, так как не гарантируется поддержание актуального состояния этого файла в каждый момент.
 
 ## Git
 
