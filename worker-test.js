@@ -1,6 +1,6 @@
 // Portfolio Terminal 2 — TEST Worker (experimental branch)
 // Extended Yahoo Finance access via quoteSummary + crumb auth.
-// Production worker is untouched.
+// ** Production worker is untouched. **
 
 // ---- Module-scoped crumb cache (in-memory, per isolate) ----
 let crumbCache = { crumb: null, cookie: null, expires: 0 };
