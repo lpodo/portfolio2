@@ -512,11 +512,6 @@ No bulk endpoint. Per-ticker fetches keep architecture simple. Crumb cache in th
 - For current scale (≤100 positions × 3 modules × ~5 KB each = ~1.5 MB), well under the 5 MB limit
 - IndexedDB migration remains viable if portfolios grow significantly
 
-### Pending design decisions
-
-- **Color coding for upside %** (deferred to follow-up).
-- **Whether More navigates as a route or a modal/overlay** in the main app UI.
-
 ### Resolved design decisions
 
 - **"More" button:** thin right-arrow icon inside a framed border, rendered in a blue accent color that is not used anywhere else in the app. The uniqueness of the color ensures the button stands out from the surrounding dim/bright terminal palette without requiring extra space for a text label.
@@ -530,16 +525,3 @@ No bulk endpoint. Per-ticker fetches keep architecture simple. Crumb cache in th
 - **`allTimeHigh` is undocumented.** It's not consistently present in Yahoo modules. We try `price.allTimeHigh` and `summaryDetail.allTimeHigh` and silently skip if absent.
 - **Per-analyst price targets exist in `upgradeDowngradeHistory`.** Initially thought Yahoo doesn't expose these — turned out they do, in the same history records: `currentPriceTarget`, `priorPriceTarget`, `priceTargetAction` ("Raises" / "Lowers" / "Maintains"). Used in the Analysts history table.
 - **ETFs have very sparse fundamental data.** Most `financialData`, `earnings`, and ownership modules are empty for ETFs. Views that depend on them will show empty states.
-
-## TODO / Ideas for later
-
-- **Merge worker logic into `worker.js`** when functionality stabilizes — single consolidated worker, crumb logic isolated to its own endpoint, old chart endpoints unaffected
-- **Decide what to use in the main app.** From everything explored, likely candidates:
-  - Analyst targets and recommendation summary on portfolio rows (upside %)
-  - Next earnings date as a soft warning indicator
-  - Sentiment as a tab/expandable section per position
-  - Avg-target spread (30d vs 100d) as a "what's analyst sentiment doing recently" indicator
-- **Possibly add color coding** for percentage changes (green up, red down) — kept dim/neutral so far to avoid suggesting trading signals
-- **Date filter for Analysts history** — quick toggle for 30d / 90d / 1y / all instead of hardcoded 100d
-- **Multi-ticker comparison view** — pick 2-3 tickers, see side-by-side metrics
-- **Persist last entered ticker** across sessions (currently always starts at AAPL)
