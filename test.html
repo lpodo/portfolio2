@@ -1650,7 +1650,19 @@ async function fetchModulesIntoCache(ticker, missing) {
   catch { throw new Error(`Non-JSON response (HTTP ${res.status}): ${text.slice(0, 200)}`); }
 
   if (!res.ok) throw new Error(parsed.error || `HTTP ${res.status}`);
-  if (parsed._error) throw new Error(parsed._error);
+  if (parsed._error) {
+    // Yahoo HTTP 404 with "No fundamentals data found for symbol: X" means the
+    // ticker lacks the requested modules entirely — common for ETFs, mutual
+    // funds, indices that have no analyst/earnings/financial coverage. The
+    // worker's per-module fallback already tried each individually and got
+    // nothing. Treat this as "no data" rather than an error: cache nulls so
+    // the view renders an empty state.
+    if (parsed._status === 404) {
+      for (const m of missing) dataCache.modules[m] = null;
+      return;
+    }
+    throw new Error(parsed._error);
+  }
 
   const yError = parsed?.quoteSummary?.error;
   if (yError) throw new Error(yError.description || yError.code || JSON.stringify(yError));
