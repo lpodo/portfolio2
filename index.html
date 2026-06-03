@@ -5498,10 +5498,11 @@ function render() {
       var result = [];
       getMarketSorted(getSorted()).forEach(function(p) {
         if (!seen[p.ticker]) {
-          seen[p.ticker] = { pos: p, hasActive: !p.sold && p.qty > 0 };
+          seen[p.ticker] = { pos: p, hasActive: !p.sold && p.qty > 0, group: [p] };
           result.push(p.ticker);
-        } else if (!p.sold && p.qty > 0) {
-          seen[p.ticker].hasActive = true;
+        } else {
+          seen[p.ticker].group.push(p);
+          if (!p.sold && p.qty > 0) seen[p.ticker].hasActive = true;
         }
       });
       return result.map(function(t) { return seen[t]; });
@@ -5511,10 +5512,10 @@ function render() {
       var p = entry.pos;
       var allWatchlist = !entry.hasActive;
       var isExpanded = expandedId === p.id;
-      var hasActiveAlert = p.alerts && p.alerts.some(function(a) { return a.triggered; });
+      var hasActiveAlert = entry.group.some(function(gp) { return gp.alerts && gp.alerts.some(function(a) { return a.triggered; }); });
       var mktTickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + (hasActiveAlert ? ' <span style="color:#f6c15b;font-size:11px">&#9679;</span>' : '') + '</span>';
       var mktExpandedRow = isExpanded
-        ? '<tr><td colspan="6" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>'
+        ? '<tr><td colspan="6" style="padding:4px 8px 8px;background:var(--bg2)">' + (entry.group.length > 1 ? buildExpandedInnerAgg(p, entry.group) : buildExpandedInner(p)) + '</td></tr>'
         : '';
       if (p.current == null) {
         marketRows += '<tr>'
