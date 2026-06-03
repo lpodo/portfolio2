@@ -220,8 +220,6 @@ beta                1.07
 - During post-market → `postMarketTime` freshest → shows post row
 - Overnight/weekends → whichever extended timestamp is most recent (typically last day's post) is shown
 
-The naive "show post if exists, else pre" logic was insufficient because Yahoo persists stale extended-hours fields in the response even after the session ends.
-
 ### Key Statistics
 
 Fundamentals grouped by topic.
