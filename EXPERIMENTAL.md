@@ -416,12 +416,24 @@ Only these three are persisted in localStorage. The other research modules (`cal
 
 These mechanisms do **not** share data. Opening More always fetches fresh, even if 4th-row cache has overlapping modules. Simplicity over micro-optimization.
 
+### More-screen header (layout)
+
+The More screen has a persistent top bar showing context and navigation, present on every tab:
+
+- **Ticker** — the symbol the screen was opened for (e.g. `NVDA`)
+- **Currency** — sourced from `price.currency` or `summaryDetail.currency` (whichever resolves first when live modules are fetched)
+- **Back/close button** — returns to the main portfolio view
+- **Tab menu** — five tabs: Market, Key Statistics, Quarterly Earnings, Analysts, Sentiment. **Raw is sandbox-only and is not included in the main app.**
+
+The default tab on every open is **Market**.
+
 ### More-screen behavior
 
 **On open:**
 - Screen opens directly to **Market tab** (always)
 - Triggers fetch of `price` + `summaryDetail` immediately → stored in memory
 - Memory store initialized empty for the session
+- Header currency populated as soon as the live fetch resolves
 
 **On tab switch (lazy module loading):**
 - If switching to a tab whose required modules are not yet in memory → fetch them, add to memory
@@ -445,7 +457,6 @@ These mechanisms do **not** share data. Opening More always fetches fresh, even 
 | Quarterly      | `earnings`                                                        |
 | Analysts       | `financialData`, `recommendationTrend`, `upgradeDowngradeHistory` |
 | Sentiment      | `defaultKeyStatistics`                                            |
-| Raw            | user-selected                                                     |
 
 ### 4th-row content (final)
 
