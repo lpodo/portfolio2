@@ -56,7 +56,7 @@ h1 .sub {
   font-size: 12px;
 }
 
-button {
+button, select {
   background: var(--bg-elev);
   border: 1px solid var(--border);
   color: var(--text);
@@ -67,7 +67,7 @@ button {
   font-family: inherit;
 }
 
-button:hover { background: var(--bg-card); border-color: var(--accent); }
+button:hover, select:hover { background: var(--bg-card); border-color: var(--accent); }
 
 button.primary {
   background: var(--accent);
@@ -107,6 +107,64 @@ input:focus { outline: none; border-color: var(--accent); }
   width: 140px;
 }
 
+.view-menu {
+  position: relative;
+  margin-left: auto;
+}
+
+.view-menu-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 140px;
+  justify-content: space-between;
+  font-family: var(--mono);
+}
+
+.view-menu-arrow {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.view-menu-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  min-width: 180px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
+.view-menu-panel.hidden { display: none; }
+
+.view-menu-item {
+  background: transparent;
+  border: none;
+  text-align: left;
+  padding: 6px 10px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  font-family: var(--mono);
+  border-radius: 3px;
+  width: 100%;
+}
+
+.view-menu-item:hover {
+  background: var(--bg-elev);
+  border-color: transparent;
+}
+
+.view-menu-item.current {
+  color: var(--accent);
+}
+
 .modules {
   background: var(--bg-elev);
   border: 1px solid var(--border);
@@ -114,6 +172,8 @@ input:focus { outline: none; border-color: var(--accent); }
   padding: 12px;
   margin-bottom: 16px;
 }
+
+.modules.hidden { display: none; }
 
 .modules-actions {
   display: flex;
@@ -158,11 +218,297 @@ input:focus { outline: none; border-color: var(--accent); }
   font-size: 12px;
   min-height: 16px;
   font-family: var(--mono);
+  margin-bottom: 16px;
 }
 
 #status.error { color: var(--error); }
 #status.loading { color: var(--warning); }
 #status.success { color: var(--success); }
+
+/* Field list views (Price, Statistics) */
+
+.field-list {
+  font-family: var(--mono);
+  font-size: 13px;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.field-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 3px 0;
+  gap: 16px;
+}
+
+.field-label {
+  color: var(--text-dim);
+}
+
+.field-value {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.field-divider {
+  border-top: 1px solid var(--border);
+  margin: 8px 0;
+}
+
+.field-row-composite {
+  padding: 3px 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow-x: auto;
+}
+
+.field-row-composite .lbl { color: var(--text-dim); }
+.field-row-composite .val {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.field-row-composite .sep { display: inline-block; width: 14px; }
+.field-row-composite .x { color: var(--text-faint); margin: 0 4px; }
+
+.field-value .change-val,
+.field-value .change-pct {
+  color: var(--text-dim);
+  font-size: 11px;
+  margin-left: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Quarterly table view */
+
+table.quarterly-table {
+  font-family: var(--mono);
+  font-size: 13px;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+table.quarterly-table th {
+  text-align: right;
+  padding: 6px 18px 6px 0;
+  font-weight: normal;
+  color: var(--text-dim);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+table.quarterly-table th:first-child {
+  text-align: left;
+}
+
+table.quarterly-table th:last-child {
+  padding-right: 0;
+}
+
+table.quarterly-table td {
+  padding: 5px 18px 5px 0;
+  text-align: right;
+  white-space: nowrap;
+}
+
+table.quarterly-table td:first-child {
+  text-align: left;
+  color: var(--text-dim);
+}
+
+table.quarterly-table td:last-child {
+  padding-right: 0;
+}
+
+table.quarterly-table tbody tr:hover {
+  background: var(--bg-elev);
+}
+
+/* Analyst view */
+
+.analyst-view {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.analyst-block-left {
+  display: grid;
+  grid-template-columns: auto auto auto;
+  column-gap: 8px;
+  row-gap: 4px;
+  align-items: baseline;
+}
+
+.analyst-block-right {
+  display: grid;
+  grid-template-columns: auto auto;
+  column-gap: 4px;
+  row-gap: 4px;
+  align-items: baseline;
+}
+
+.analyst-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border);
+}
+
+.analyst-view .label { color: var(--text-dim); }
+
+.analyst-view .value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.analyst-view .pct {
+  text-align: right;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.analyst-summary {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: auto auto;
+  column-gap: 8px;
+  row-gap: 4px;
+  align-items: baseline;
+  font-family: var(--mono);
+  font-size: 13px;
+  width: max-content;
+}
+
+.analyst-summary .label { color: var(--text-dim); }
+
+.analyst-summary .value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* History table (analyst upgrades/downgrades) */
+
+.analyst-history {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+table.history-table {
+  font-family: var(--mono);
+  font-size: 12px;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+table.history-table th {
+  font-weight: normal;
+  color: var(--text-dim);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid var(--border);
+  padding: 6px 16px 6px 0;
+  text-align: left;
+  white-space: nowrap;
+}
+
+table.history-table td {
+  padding: 5px 16px 5px 0;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+table.history-table th:last-child,
+table.history-table td:last-child {
+  padding-right: 0;
+}
+
+table.history-table th.num,
+table.history-table td.num {
+  text-align: right;
+}
+
+table.history-table td.date {
+  color: var(--text-dim);
+}
+
+table.history-table tbody tr:hover {
+  background: var(--bg-elev);
+}
+
+/* History summary (avg target rows above the table) */
+
+.history-summary {
+  display: grid;
+  grid-template-columns: auto auto auto;
+  column-gap: 14px;
+  row-gap: 6px;
+  align-items: baseline;
+  margin-bottom: 14px;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.history-summary .summary-label { color: var(--text-dim); }
+
+.history-summary .summary-value {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--text);
+}
+
+.history-summary .summary-pct {
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.days-input {
+  width: 44px;
+  padding: 1px 6px;
+  margin: 0 2px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 13px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 3px;
+  vertical-align: baseline;
+}
+
+.days-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.history-empty {
+  color: var(--text-dim);
+  font-size: 12px;
+  padding: 8px 0;
+}
+
+/* Raw view cards */
 
 #results { display: flex; flex-direction: column; gap: 12px; }
 
@@ -263,6 +609,8 @@ details.raw pre {
   white-space: pre;
 }
 
+/* Modal */
+
 .modal-bg {
   position: fixed;
   inset: 0;
@@ -335,10 +683,25 @@ details.raw pre {
 <div class="query-bar">
   <input type="text" id="ticker" placeholder="TICKER" value="AAPL" autocomplete="off">
   <button id="go-btn" class="primary">Go</button>
-  <span id="status"></span>
+  <div class="view-menu">
+    <button class="view-menu-button" id="view-menu-button" aria-haspopup="true" aria-expanded="false">
+      <span id="view-menu-label">Market</span>
+      <span class="view-menu-arrow">▾</span>
+    </button>
+    <div class="view-menu-panel hidden" id="view-menu-panel" role="menu">
+      <button class="view-menu-item" data-view="market">Market</button>
+      <button class="view-menu-item" data-view="statistics">Key Statistics</button>
+      <button class="view-menu-item" data-view="quarterly">Quarterly Earnings</button>
+      <button class="view-menu-item" data-view="analyst">Analysts</button>
+      <button class="view-menu-item" data-view="sentiment">Sentiment</button>
+      <button class="view-menu-item" data-view="raw">Raw</button>
+    </div>
+  </div>
 </div>
 
-<div class="modules">
+<div id="status"></div>
+
+<div id="modules-panel" class="modules hidden">
   <div class="modules-actions">
     <button id="select-all">Select all</button>
     <button id="select-none">Select none</button>
@@ -372,9 +735,16 @@ details.raw pre {
 </div>
 
 <script>
+/* ============================================================
+   Storage keys
+   ============================================================ */
 const SETTINGS_KEY = 'yahoo-sandbox-settings';
 const SELECTED_MODULES_KEY = 'yahoo-sandbox-modules';
+const CURRENT_VIEW_KEY = 'yahoo-sandbox-view';
 
+/* ============================================================
+   Modules catalog (for Raw view checkboxes)
+   ============================================================ */
 const MODULES = [
   { group: 'Profile',    items: ['assetProfile', 'summaryDetail', 'price', 'quoteType'] },
   { group: 'Statistics', items: ['defaultKeyStatistics', 'financialData'] },
@@ -385,35 +755,293 @@ const MODULES = [
   { group: 'Other',      items: ['secFilings'] },
 ];
 
-const DEFAULT_MODULES = [
+const DEFAULT_RAW_MODULES = [
   'assetProfile', 'summaryDetail', 'defaultKeyStatistics',
   'financialData', 'recommendationTrend'
 ];
 
-// ---- Settings ----
+/* ============================================================
+   Field descriptors (for Price / Statistics views).
+   Each field: 1+ candidate paths; first useful one wins.
+   Optional `format`: 'date' | 'date-range'
+   ============================================================ */
+const FIELDS = {
+  // Market — Quote
+  regularMarketPrice:    { paths: ['price.regularMarketPrice'] },
+  bid:                   { paths: ['summaryDetail.bid', 'price.bid'] },
+  bidSize:               { paths: ['summaryDetail.bidSize', 'price.bidSize'] },
+  ask:                   { paths: ['summaryDetail.ask', 'price.ask'] },
+  askSize:               { paths: ['summaryDetail.askSize', 'price.askSize'] },
+
+  // Market — Range
+  dayLow:                { paths: ['price.regularMarketDayLow', 'summaryDetail.dayLow'] },
+  dayHigh:               { paths: ['price.regularMarketDayHigh', 'summaryDetail.dayHigh'] },
+  '52WeekLow':           { paths: ['summaryDetail.fiftyTwoWeekLow'] },
+  '52WeekHigh':          { paths: ['summaryDetail.fiftyTwoWeekHigh'] },
+  '50DayAverage':        { paths: ['summaryDetail.fiftyDayAverage', 'price.fiftyDayAverage'] },
+  '200DayAverage':       { paths: ['summaryDetail.twoHundredDayAverage', 'price.twoHundredDayAverage'] },
+  allTimeHigh:           { paths: ['price.allTimeHigh', 'summaryDetail.allTimeHigh'] },
+
+  // Market — Volume
+  volume:                { paths: ['summaryDetail.volume', 'price.regularMarketVolume'] },
+  averageVolume:         { paths: ['summaryDetail.averageVolume'] },
+  averageVolume10days:   { paths: ['summaryDetail.averageVolume10days', 'summaryDetail.averageDailyVolume10Day'] },
+
+  // Market — Risk
+  beta:                  { paths: ['summaryDetail.beta'] },
+
+  // Statistics — Size
+  marketCap:             { paths: ['price.marketCap', 'summaryDetail.marketCap'] },
+  totalAssets:           { paths: ['defaultKeyStatistics.totalAssets'] },
+
+  // Statistics — Cash & Debt
+  totalCash:             { paths: ['financialData.totalCash'] },
+  totalDebt:             { paths: ['financialData.totalDebt'] },
+  operatingCashflow:     { paths: ['financialData.operatingCashflow'] },
+  freeCashflow:          { paths: ['financialData.freeCashflow'] },
+
+  // Statistics — Revenue & Margins
+  totalRevenue:          { paths: ['financialData.totalRevenue'] },
+  revenueGrowth:         { paths: ['financialData.revenueGrowth'] },
+  netIncomeToCommon:     { paths: ['defaultKeyStatistics.netIncomeToCommon'] },
+  earningsGrowth:        { paths: ['financialData.earningsGrowth', 'defaultKeyStatistics.earningsQuarterlyGrowth'] },
+  profitMargins:         { paths: ['financialData.profitMargins'] },
+
+  // Statistics — Valuations
+  trailingPE:                  { paths: ['summaryDetail.trailingPE', 'defaultKeyStatistics.trailingPE'] },
+  forwardPE:                   { paths: ['summaryDetail.forwardPE', 'defaultKeyStatistics.forwardPE'] },
+  priceToSalesTrailing12Months:{ paths: ['summaryDetail.priceToSalesTrailing12Months'] },
+  priceToBook:                 { paths: ['defaultKeyStatistics.priceToBook'] },
+  trailingEps:                 { paths: ['defaultKeyStatistics.trailingEps'] },
+  forwardEps:                  { paths: ['defaultKeyStatistics.forwardEps'] },
+  pegRatio:                    { paths: ['defaultKeyStatistics.pegRatio', 'financialData.pegRatio'] },
+
+  // Statistics — Dividends
+  lastDividendValue:     { paths: ['defaultKeyStatistics.lastDividendValue'] },
+  lastDividendDate:      { paths: ['defaultKeyStatistics.lastDividendDate'], format: 'date' },
+  exDividendDate:        { paths: ['calendarEvents.exDividendDate'], format: 'date' },
+
+  // Statistics — Earnings calendar
+  earningsDate:          { paths: ['calendarEvents.earnings.earningsDate'], format: 'date-range' },
+
+  // Sentiment — Ownership
+  heldPercentInsiders:     { paths: ['defaultKeyStatistics.heldPercentInsiders'] },
+  heldPercentInstitutions: { paths: ['defaultKeyStatistics.heldPercentInstitutions'] },
+
+  // Sentiment — Short interest
+  sharesShort:           { paths: ['defaultKeyStatistics.sharesShort'] },
+  sharesShortPriorMonth: { paths: ['defaultKeyStatistics.sharesShortPriorMonth'] },
+  shortPercentOfFloat:   { paths: ['defaultKeyStatistics.shortPercentOfFloat'] },
+};
+
+// MARKET_GROUPS — first group has a composite bid/ask custom row.
+// Uses renderFieldGroups's { custom: fn } pattern.
+
+// Helper: resolve a field descriptor (paths array) against data, return formatted string or null
+function formatFieldValue(desc, data) {
+  if (!desc) return null;
+  let value;
+  for (const path of desc.paths) {
+    const candidate = getValue(data, path);
+    if (isUseful(candidate)) { value = candidate; break; }
+  }
+  return formatField(value, desc.format);
+}
+
+// Composite row builder for the Market view's bid/ask line.
+// Returns full HTML string for one row, or null if no quote data at all.
+// Zero values (common after hours when there's no real quote) → "—".
+function buildBidAskRow(data) {
+  const bidRaw     = rawNum(getValue(data, 'summaryDetail.bid'))     ?? rawNum(getValue(data, 'price.bid'));
+  const bidSizeRaw = rawNum(getValue(data, 'summaryDetail.bidSize')) ?? rawNum(getValue(data, 'price.bidSize'));
+  const askRaw     = rawNum(getValue(data, 'summaryDetail.ask'))     ?? rawNum(getValue(data, 'price.ask'));
+  const askSizeRaw = rawNum(getValue(data, 'summaryDetail.askSize')) ?? rawNum(getValue(data, 'price.askSize'));
+
+  // If both bid AND ask data are missing entirely (not zero — just absent),
+  // there's no quote at all and the whole row should disappear.
+  if (bidRaw === null && askRaw === null) return null;
+
+  // Format raw value, treating 0 (and missing) as "—"
+  const fmt = (raw) => (raw === null || raw === 0) ? '—' : formatPrimitive(raw);
+
+  const bid     = fmt(bidRaw);
+  const bidSize = fmt(bidSizeRaw);
+  const ask     = fmt(askRaw);
+  const askSize = fmt(askSizeRaw);
+
+  let html = '<div class="field-row-composite">';
+
+  html += `<span class="lbl">bid</span> <span class="val">${escapeHtml(bid)}</span>`;
+  html += ` <span class="x">×</span> <span class="val">${escapeHtml(bidSize)}</span>`;
+  html += '&nbsp;&nbsp;&nbsp;&nbsp;';
+  html += `<span class="lbl">ask</span> <span class="val">${escapeHtml(ask)}</span>`;
+  html += ` <span class="x">×</span> <span class="val">${escapeHtml(askSize)}</span>`;
+
+  html += '</div>';
+  return html;
+}
+
+// Composite row builder for post/pre-market price, change, and percent.
+// Compares regularMarketTime, postMarketTime, preMarketTime to determine
+// which session is most recent:
+//   - If regular is freshest → regular session is live, hide extended row.
+//   - Otherwise show whichever of post/pre is the freshest.
+// This correctly handles all cases: pre-market, regular trading, post-market,
+// overnight, weekends, holidays.
+function buildExtendedHoursRow(data) {
+  const regularTime = rawNum(getValue(data, 'price.regularMarketTime'));
+  const postTime    = rawNum(getValue(data, 'price.postMarketTime'));
+  const preTime     = rawNum(getValue(data, 'price.preMarketTime'));
+  const postPrice   = getValue(data, 'price.postMarketPrice');
+  const prePrice    = getValue(data, 'price.preMarketPrice');
+
+  // Candidates with valid timestamps. Extended candidates also need a price
+  // (otherwise there's nothing to display anyway).
+  const candidates = [
+    { kind: 'regular', t: regularTime, ok: regularTime !== null },
+    { kind: 'post',    t: postTime,    ok: postTime    !== null && isUseful(postPrice) },
+    { kind: 'pre',     t: preTime,     ok: preTime     !== null && isUseful(prePrice)  },
+  ].filter(c => c.ok);
+
+  let useSession = null;
+  if (candidates.length > 0) {
+    candidates.sort((a, b) => b.t - a.t);
+    const winner = candidates[0].kind;
+    if (winner === 'regular') return null; // Regular session is live — hide extended row
+    useSession = winner;
+  } else {
+    // No usable timestamps — fall back to whichever extended price exists
+    if (isUseful(postPrice)) useSession = 'post';
+    else if (isUseful(prePrice)) useSession = 'pre';
+    else return null;
+  }
+
+  const label     = useSession === 'post' ? 'postMarketPrice' : 'preMarketPrice';
+  const priceVal  = useSession === 'post' ? postPrice : prePrice;
+  const changeVal = getValue(data, useSession === 'post' ? 'price.postMarketChange'        : 'price.preMarketChange');
+  const pctVal    = getValue(data, useSession === 'post' ? 'price.postMarketChangePercent' : 'price.preMarketChangePercent');
+
+  const priceFmt  = formatField(priceVal);
+  if (priceFmt === null) return null;
+
+  const changeFmt = isUseful(changeVal) ? formatField(changeVal) : null;
+  const pctFmt    = isUseful(pctVal) ? formatField(pctVal) : null;
+
+  let html = `<div class="field-row"><span class="field-label">${label}</span><span class="field-value">${escapeHtml(priceFmt)}`;
+  if (changeFmt) html += ` <span class="change-val">${escapeHtml(changeFmt)}</span>`;
+  if (pctFmt)    html += ` <span class="change-pct">(${escapeHtml(pctFmt)})</span>`;
+  html += `</span></div>`;
+  return html;
+}
+
+const MARKET_GROUPS = [
+  ['regularMarketPrice', { custom: buildExtendedHoursRow }, { custom: buildBidAskRow }],
+  ['dayLow', 'dayHigh', '52WeekLow', '52WeekHigh',
+   '50DayAverage', '200DayAverage', 'allTimeHigh'],
+  ['volume', 'averageVolume10days', 'averageVolume'],
+  ['beta'],
+];
+
+const STATISTICS_GROUPS = [
+  ['marketCap', 'totalAssets'],
+  ['totalCash', 'totalDebt', 'operatingCashflow', 'freeCashflow'],
+  ['totalRevenue', 'revenueGrowth', 'netIncomeToCommon', 'earningsGrowth', 'profitMargins'],
+  ['trailingPE', 'forwardPE', 'priceToSalesTrailing12Months', 'priceToBook',
+   'trailingEps', 'forwardEps', 'pegRatio'],
+  ['lastDividendValue', 'lastDividendDate', 'exDividendDate'],
+  ['earningsDate'],
+];
+
+const SENTIMENT_GROUPS = [
+  ['heldPercentInsiders', 'heldPercentInstitutions'],
+  ['sharesShort', 'sharesShortPriorMonth', 'shortPercentOfFloat'],
+];
+
+/* ============================================================
+   Views config.
+   Each view: label, required modules (or null for "use checkboxes"),
+   independent render function. New views (tables, charts, …) plug
+   in here without touching the rest.
+   ============================================================ */
+const VIEWS = {
+  market: {
+    label: 'Market',
+    modules: ['price', 'summaryDetail'],
+    showCheckboxes: false,
+    render: (data, container) => renderFieldGroups(MARKET_GROUPS, data, container),
+  },
+  statistics: {
+    label: 'Key Statistics',
+    modules: ['price', 'summaryDetail', 'defaultKeyStatistics', 'financialData', 'calendarEvents'],
+    showCheckboxes: false,
+    render: (data, container) => renderFieldGroups(STATISTICS_GROUPS, data, container),
+  },
+  quarterly: {
+    label: 'Quarterly Earnings',
+    modules: ['earnings'],
+    showCheckboxes: false,
+    render: renderQuarterlyView,
+  },
+  analyst: {
+    label: 'Analysts',
+    modules: ['financialData', 'recommendationTrend', 'upgradeDowngradeHistory'],
+    showCheckboxes: false,
+    render: renderAnalystView,
+  },
+  sentiment: {
+    label: 'Sentiment',
+    modules: ['defaultKeyStatistics'],
+    showCheckboxes: false,
+    render: (data, container) => renderFieldGroups(SENTIMENT_GROUPS, data, container),
+  },
+  raw: {
+    label: 'Raw',
+    modules: null,
+    showCheckboxes: true,
+    render: renderRawView,
+  },
+};
+
+/* ============================================================
+   State
+   ============================================================ */
+let dataCache = { ticker: null, modules: {} };
+let currentView = 'market';
+
+/* ============================================================
+   Settings (localStorage)
+   ============================================================ */
 function loadSettings() {
   try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); }
   catch { return {}; }
 }
+function saveSettings(s) { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }
 
-function saveSettings(s) {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
-}
-
-function getSelectedModules() {
+function getSelectedRawModules() {
   try {
     const saved = JSON.parse(localStorage.getItem(SELECTED_MODULES_KEY) || 'null');
     if (Array.isArray(saved) && saved.length) return saved;
   } catch {}
-  return DEFAULT_MODULES.slice();
+  return DEFAULT_RAW_MODULES.slice();
 }
-
-function saveSelectedModules() {
+function saveSelectedRawModules() {
   const selected = [...document.querySelectorAll('.module-checkbox input:checked')].map(cb => cb.value);
   localStorage.setItem(SELECTED_MODULES_KEY, JSON.stringify(selected));
 }
 
-// ---- Settings modal ----
+function loadCurrentView() {
+  const v = localStorage.getItem(CURRENT_VIEW_KEY);
+  // Migration: 'price' was renamed to 'market'
+  if (v === 'price') return 'market';
+  return v && VIEWS[v] ? v : 'market';
+}
+function saveCurrentView() {
+  localStorage.setItem(CURRENT_VIEW_KEY, currentView);
+}
+
+/* ============================================================
+   Settings modal
+   ============================================================ */
 function openSettings() {
   const s = loadSettings();
   document.getElementById('cfg-url').value = s.workerUrl || '';
@@ -421,15 +1049,14 @@ function openSettings() {
   document.getElementById('modal-bg').classList.remove('hidden');
   setTimeout(() => document.getElementById('cfg-url').focus(), 50);
 }
+function closeSettings() { document.getElementById('modal-bg').classList.add('hidden'); }
 
-function closeSettings() {
-  document.getElementById('modal-bg').classList.add('hidden');
-}
-
-// ---- Module checkboxes ----
-function renderModules() {
+/* ============================================================
+   Module checkboxes (Raw view)
+   ============================================================ */
+function renderCheckboxes() {
   const container = document.getElementById('module-checkboxes');
-  const selected = new Set(getSelectedModules());
+  const selected = new Set(getSelectedRawModules());
 
   container.innerHTML = MODULES.map(group => `
     <div class="module-group">
@@ -446,20 +1073,119 @@ function renderModules() {
   `).join('');
 
   container.querySelectorAll('input').forEach(cb => {
-    cb.addEventListener('change', saveSelectedModules);
+    cb.addEventListener('change', saveSelectedRawModules);
   });
 }
 
-// ---- Value formatting ----
+function getCheckedModules() {
+  return [...document.querySelectorAll('.module-checkbox input:checked')].map(cb => cb.value);
+}
+
+/* ============================================================
+   Value extraction & formatting
+   ============================================================ */
 function escapeHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function formatNumber(n) {
-  if (!Number.isFinite(n)) return String(n);
-  if (Number.isInteger(n)) return n.toLocaleString('en-US');
-  if (Math.abs(n) < 0.001 && n !== 0) return n.toExponential(2);
-  return n.toFixed(Math.abs(n) < 10 ? 4 : 2);
+function getValue(obj, path) {
+  const parts = path.split('.');
+  let v = obj;
+  for (const p of parts) {
+    if (v == null || typeof v !== 'object') return undefined;
+    v = v[p];
+  }
+  return v;
+}
+
+function isUseful(value) {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    if ('fmt' in value && value.fmt) return true;
+    if ('raw' in value && value.raw !== null && value.raw !== undefined) return true;
+    return false;
+  }
+  if (Array.isArray(value)) return value.length > 0;
+  return true;
+}
+
+function unixToISODate(sec) {
+  const d = new Date(sec * 1000);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
+}
+
+function formatField(value, format) {
+  if (!isUseful(value)) return null;
+
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    if (format === 'date') {
+      if ('raw' in value && typeof value.raw === 'number') return unixToISODate(value.raw);
+      return value.fmt || null;
+    }
+    if ('fmt' in value && value.fmt) return normalizeFmt(value.fmt);
+    if ('raw' in value) return formatPrimitive(value.raw);
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    if (format === 'date-range') {
+      const dates = value.map(v => {
+        if (v && typeof v === 'object') {
+          if ('raw' in v && typeof v.raw === 'number') return unixToISODate(v.raw);
+          return v.fmt || null;
+        }
+        if (typeof v === 'number') return unixToISODate(v);
+        return null;
+      }).filter(Boolean);
+      if (dates.length === 0) return null;
+      if (dates.length === 1) return dates[0];
+      return `${dates[0]} – ${dates[dates.length - 1]}`;
+    }
+    return JSON.stringify(value);
+  }
+
+  if (format === 'date' && typeof value === 'number') return unixToISODate(value);
+  return formatPrimitive(value);
+}
+
+function formatPrimitive(v) {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'number') {
+    if (!Number.isFinite(v)) return String(v);
+    if (Number.isInteger(v)) return v.toLocaleString('en-US');
+    return v.toFixed(2);
+  }
+  if (typeof v === 'boolean') return v ? 'true' : 'false';
+  return String(v);
+}
+
+// Normalize Yahoo's fmt strings so single-decimal numbers get padded
+// to two decimal places. "42.1B" → "42.10B", "+30.6%" → "+30.60%".
+// Already-2-decimal strings and strings with no decimal portion pass through.
+function normalizeFmt(s) {
+  if (typeof s !== 'string') return s;
+  return s.replace(/\.(\d)(?!\d)/, '.$10');
+}
+
+/* ============================================================
+   Formatter for Raw card view (richer, shows {N items} etc.)
+   ============================================================ */
+function formatValRich(v) {
+  if (v === null || v === undefined) return '<span style="color:var(--text-faint)">—</span>';
+  if (typeof v === 'number') return escapeHtml(formatPrimitive(v));
+  if (typeof v === 'string') return escapeHtml(v);
+  if (typeof v === 'boolean') return v ? 'true' : 'false';
+  if (typeof v === 'object') {
+    if (Array.isArray(v)) return `<span style="color:var(--text-dim)">[${v.length} items]</span>`;
+    if ('fmt' in v && v.fmt !== undefined && v.fmt !== null) return escapeHtml(v.fmt);
+    if ('longFmt' in v && v.longFmt !== undefined) return escapeHtml(v.longFmt);
+    if ('raw' in v && v.raw !== undefined) return formatValRich(v.raw);
+    const keys = Object.keys(v);
+    if (keys.length === 0) return '<span style="color:var(--text-faint)">{}</span>';
+    return `<span style="color:var(--text-dim)">{${keys.length} keys}</span>`;
+  }
+  return escapeHtml(String(v));
 }
 
 function isNumericLike(v) {
@@ -468,47 +1194,77 @@ function isNumericLike(v) {
   return false;
 }
 
-function formatVal(v) {
-  if (v === null || v === undefined) return '<span style="color:var(--text-faint)">—</span>';
-  if (typeof v === 'number') return escapeHtml(formatNumber(v));
-  if (typeof v === 'string') return escapeHtml(v);
-  if (typeof v === 'boolean') return v ? 'true' : 'false';
-  if (typeof v === 'object') {
-    if (Array.isArray(v)) return `<span style="color:var(--text-dim)">[${v.length} items]</span>`;
-    // Yahoo's typical wrapper: { raw, fmt, longFmt }
-    if ('fmt' in v && v.fmt !== undefined && v.fmt !== null) return escapeHtml(v.fmt);
-    if ('longFmt' in v && v.longFmt !== undefined) return escapeHtml(v.longFmt);
-    if ('raw' in v && v.raw !== undefined) return formatVal(v.raw);
-    const keys = Object.keys(v);
-    if (keys.length === 0) return '<span style="color:var(--text-faint)">{}</span>';
-    return `<span style="color:var(--text-dim)">{${keys.length} keys}</span>`;
+/* ============================================================
+   Renderers — Price / Statistics / Sentiment (shared)
+   ============================================================ */
+function renderFieldGroups(groups, data, container) {
+  const renderedGroups = [];
+
+  for (const group of groups) {
+    const rowsHtml = [];
+    for (const item of group) {
+      let rowHtml = null;
+
+      if (typeof item === 'string') {
+        // Standard field: { paths, format } from FIELDS
+        const desc = FIELDS[item];
+        if (!desc) continue;
+
+        let value;
+        for (const path of desc.paths) {
+          const candidate = getValue(data, path);
+          if (isUseful(candidate)) { value = candidate; break; }
+        }
+
+        const formatted = formatField(value, desc.format);
+        if (formatted === null) continue;
+
+        rowHtml = `<div class="field-row"><span class="field-label">${escapeHtml(item)}</span><span class="field-value">${escapeHtml(formatted)}</span></div>`;
+      } else if (item && typeof item === 'object' && typeof item.custom === 'function') {
+        // Custom inline row — function returns full HTML string, or null to skip
+        rowHtml = item.custom(data);
+      }
+
+      if (rowHtml) rowsHtml.push(rowHtml);
+    }
+    if (rowsHtml.length) renderedGroups.push(rowsHtml);
   }
-  return escapeHtml(String(v));
+
+  if (!renderedGroups.length) {
+    container.innerHTML = '<div class="empty-state">No data available for this ticker.</div>';
+    return;
+  }
+
+  let html = '<div class="field-list">';
+  for (let i = 0; i < renderedGroups.length; i++) {
+    if (i > 0) html += '<div class="field-divider"></div>';
+    html += renderedGroups[i].join('');
+  }
+  html += '</div>';
+  container.innerHTML = html;
 }
 
-// ---- Module card rendering ----
+/* ============================================================
+   Renderer — Raw
+   ============================================================ */
 function buildKvTable(obj) {
   const rows = [];
   const arrays = [];
-
   for (const [k, v] of Object.entries(obj)) {
-    if (Array.isArray(v)) {
-      arrays.push([k, v]);
-    } else {
+    if (Array.isArray(v)) arrays.push([k, v]);
+    else {
       const numClass = isNumericLike(v) ? ' numeric' : '';
-      rows.push(`<tr><td class="key">${escapeHtml(k)}</td><td class="val${numClass}">${formatVal(v)}</td></tr>`);
+      rows.push(`<tr><td class="key">${escapeHtml(k)}</td><td class="val${numClass}">${formatValRich(v)}</td></tr>`);
     }
   }
-
   let html = '';
   if (rows.length) html += `<table class="kv">${rows.join('')}</table>`;
-
   for (const [k, arr] of arrays) {
     html += `<div class="array-label">${escapeHtml(k)} (${arr.length} items)</div>`;
     if (arr.length && typeof arr[0] === 'object' && arr[0] !== null) {
       const sampleEntries = Object.entries(arr[0]).slice(0, 10);
       const sampleRows = sampleEntries.map(([k2, v2]) =>
-        `<tr><td class="key">${escapeHtml(k2)}</td><td class="val${isNumericLike(v2) ? ' numeric' : ''}">${formatVal(v2)}</td></tr>`
+        `<tr><td class="key">${escapeHtml(k2)}</td><td class="val${isNumericLike(v2) ? ' numeric' : ''}">${formatValRich(v2)}</td></tr>`
       ).join('');
       html += `<table class="kv array-sample">${sampleRows}</table>`;
       if (arr.length > 1) html += `<div class="array-more">…${arr.length - 1} more in raw JSON</div>`;
@@ -516,41 +1272,33 @@ function buildKvTable(obj) {
       html += `<div class="array-more">${escapeHtml(arr.slice(0, 5).map(x => JSON.stringify(x)).join(', '))}${arr.length > 5 ? '…' : ''}</div>`;
     }
   }
-
-  if (!rows.length && !arrays.length) {
-    html = `<div style="color:var(--text-dim)">Empty object</div>`;
-  }
-
+  if (!rows.length && !arrays.length) html = `<div style="color:var(--text-dim)">Empty object</div>`;
   return { html, fieldCount: rows.length, arrayCount: arrays.length };
 }
 
 function renderModuleCard(name, data) {
   const card = document.createElement('div');
   card.className = 'module-card';
-
   let bodyHtml = '';
   let badge = '';
-
   if (data === null || data === undefined) {
     bodyHtml = `<div style="color:var(--text-dim)">No data returned for this module</div>`;
     badge = 'empty';
     card.classList.add('empty');
   } else if (typeof data !== 'object') {
-    bodyHtml = `<div>${formatVal(data)}</div>`;
+    bodyHtml = `<div>${formatValRich(data)}</div>`;
     badge = 'primitive';
   } else {
     const built = buildKvTable(data);
     bodyHtml = built.html;
     badge = `${built.fieldCount} fields${built.arrayCount ? ` · ${built.arrayCount} arrays` : ''}`;
   }
-
   bodyHtml += `
     <details class="raw">
       <summary>Raw JSON</summary>
       <pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>
     </details>
   `;
-
   card.innerHTML = `
     <div class="module-card-header">
       <h3>${escapeHtml(name)}</h3>
@@ -561,122 +1309,520 @@ function renderModuleCard(name, data) {
   return card;
 }
 
-// ---- API call ----
-async function fetchData(ticker, modules) {
+function renderRawView(data, container) {
+  const selected = getCheckedModules();
+  container.innerHTML = '';
+  if (!selected.length) {
+    container.innerHTML = '<div class="empty-state">Select at least one module above.</div>';
+    return;
+  }
+  for (const moduleName of selected) {
+    const moduleData = (moduleName in data) ? data[moduleName] : null;
+    container.appendChild(renderModuleCard(moduleName, moduleData));
+  }
+}
+
+/* ============================================================
+   Renderer — Quarterly (joined table)
+   Joins financialsChart.quarterly (revenue, earnings) and
+   earningsChart.quarterly (actual EPS) by the `date` string.
+   Net margin is computed = earnings / revenue * 100.
+   ============================================================ */
+function parseQuarterDate(s) {
+  // "1Q2024" -> 2024.0, "2Q2024" -> 2024.25, etc. Used only for sorting.
+  const m = /^(\d)Q(\d{4})$/.exec(String(s));
+  if (!m) return 0;
+  return parseInt(m[2], 10) + (parseInt(m[1], 10) - 1) * 0.25;
+}
+
+function rawNum(v) {
+  if (v == null) return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  if (typeof v === 'object' && 'raw' in v && typeof v.raw === 'number' && Number.isFinite(v.raw)) return v.raw;
+  return null;
+}
+
+function fmtOrRaw(v) {
+  if (v == null) return '';
+  if (typeof v === 'object') {
+    if ('fmt' in v && v.fmt) return normalizeFmt(v.fmt);
+    if ('raw' in v && v.raw != null) return formatPrimitive(v.raw);
+    return '';
+  }
+  return formatPrimitive(v) || '';
+}
+
+function computeNetMargin(earnings, revenue) {
+  const e = rawNum(earnings);
+  const r = rawNum(revenue);
+  if (e === null || r === null || r === 0) return '';
+  return (e / r * 100).toFixed(2) + '%';
+}
+
+function renderQuarterlyView(data, container) {
+  const fin = data?.earnings?.financialsChart?.quarterly;
+  const eps = data?.earnings?.earningsChart?.quarterly;
+
+  if (!fin || !fin.length) {
+    container.innerHTML = '<div class="empty-state">No quarterly data available for this ticker.</div>';
+    return;
+  }
+
+  // Join by `date` ("1Q2024" etc.)
+  const byDate = new Map();
+  for (const q of fin) {
+    if (!q?.date) continue;
+    byDate.set(q.date, { date: q.date, revenue: q.revenue, earnings: q.earnings, eps: null });
+  }
+  if (Array.isArray(eps)) {
+    for (const q of eps) {
+      if (!q?.date) continue;
+      const existing = byDate.get(q.date) || { date: q.date, revenue: null, earnings: null, eps: null };
+      existing.eps = q.actual;
+      byDate.set(q.date, existing);
+    }
+  }
+
+  const quarters = [...byDate.values()].sort((a, b) => parseQuarterDate(a.date) - parseQuarterDate(b.date));
+
+  let html = '<table class="quarterly-table">';
+  html += '<thead><tr>'
+       + '<th>Quarter</th>'
+       + '<th>Revenue</th>'
+       + '<th>Earnings</th>'
+       + '<th>Net Margin</th>'
+       + '<th>EPS</th>'
+       + '</tr></thead><tbody>';
+
+  for (const q of quarters) {
+    html += '<tr>'
+         + `<td>${escapeHtml(q.date)}</td>`
+         + `<td>${escapeHtml(fmtOrRaw(q.revenue))}</td>`
+         + `<td>${escapeHtml(fmtOrRaw(q.earnings))}</td>`
+         + `<td>${escapeHtml(computeNetMargin(q.earnings, q.revenue))}</td>`
+         + `<td>${escapeHtml(fmtOrRaw(q.eps))}</td>`
+         + '</tr>';
+  }
+
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+/* ============================================================
+   Renderer — Analyst (two side-by-side blocks with divider)
+   Left:  financialData targets + recommendation summary
+   Right: recommendationTrend.trend[0] vote counts
+   Target prices show ±% vs currentPrice in parentheses.
+   ============================================================ */
+function formatTargetPct(targetValue, currentPrice) {
+  const t = rawNum(targetValue);
+  if (t === null || currentPrice === null || currentPrice === 0) return null;
+  const pct = (t - currentPrice) / currentPrice * 100;
+  return (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%';
+}
+
+const HISTORY_DAYS = 100;
+const DEFAULT_CUSTOM_DAYS = 30;
+
+function avgTargetInDays(history, days, currentPrice) {
+  if (!Array.isArray(history) || !Number.isFinite(days) || days <= 0) return null;
+  const cutoff = Math.floor(Date.now() / 1000) - days * 86400;
+  const targets = history
+    .filter(e => (e.epochGradeDate || 0) >= cutoff)
+    .map(e => rawNum(e.currentPriceTarget))
+    .filter(t => t !== null && t > 0);
+  if (targets.length === 0) return null;
+  const sum = targets.reduce((a, b) => a + b, 0);
+  const avg = sum / targets.length;
+  let pctStr = '';
+  if (currentPrice !== null && currentPrice > 0) {
+    const p = (avg - currentPrice) / currentPrice * 100;
+    pctStr = (p >= 0 ? '+' : '') + p.toFixed(2) + '%';
+  }
+  return { avg, count: targets.length, pctStr };
+}
+
+function renderAnalystView(data, container) {
+  const fd = data?.financialData;
+  const trend = data?.recommendationTrend?.trend?.[0];
+  const history = data?.upgradeDowngradeHistory?.history;
+  const currentPrice = rawNum(fd?.currentPrice);
+
+  // Targets block (left of top section): currentPrice + 4 target prices, with pct column.
+  const targetItems = [];
+  // Votes block (right of top section)
+  const rightItems = [];
+  // Recommendation summary (below top section): mean, key, # of analysts — no pct column.
+  // Kept separate so a long value like "strong_buy" doesn't widen the targets value column.
+  const summaryItems = [];
+
+  if (fd) {
+    const pushPlain = (arr, label, value) => {
+      if (!isUseful(value)) return;
+      arr.push({ label, value: fmtOrRaw(value) });
+    };
+    const pushWithPct = (label, value) => {
+      if (!isUseful(value)) return;
+      targetItems.push({
+        label,
+        value: fmtOrRaw(value),
+        pct: formatTargetPct(value, currentPrice) || '',
+      });
+    };
+
+    // Targets block
+    if (isUseful(fd.currentPrice)) {
+      targetItems.push({ label: 'currentPrice', value: fmtOrRaw(fd.currentPrice), pct: '' });
+    }
+    pushWithPct('targetHighPrice', fd.targetHighPrice);
+    pushWithPct('targetLowPrice', fd.targetLowPrice);
+    pushWithPct('targetMeanPrice', fd.targetMeanPrice);
+    pushWithPct('targetMedianPrice', fd.targetMedianPrice);
+
+    // Recommendation summary block
+    pushPlain(summaryItems, 'recommendationMean', fd.recommendationMean);
+    pushPlain(summaryItems, 'recommendationKey', fd.recommendationKey);
+    if (isUseful(fd.numberOfAnalystOpinions)) {
+      summaryItems.push({
+        label: '# of analysts',
+        value: fmtOrRaw(fd.numberOfAnalystOpinions),
+      });
+    }
+  }
+
+  if (trend) {
+    for (const key of ['strongBuy', 'buy', 'hold', 'sell', 'strongSell']) {
+      const v = trend[key];
+      if (v == null) continue;
+      rightItems.push({ label: key, value: fmtOrRaw(v) });
+    }
+  }
+
+  const hasTop = targetItems.length > 0 || rightItems.length > 0;
+  const hasSummary = summaryItems.length > 0;
+  const hasHistory = Array.isArray(history) && history.length > 0;
+
+  if (!hasTop && !hasSummary && !hasHistory) {
+    container.innerHTML = '<div class="empty-state">No analyst data available for this ticker.</div>';
+    return;
+  }
+
+  let html = '';
+
+  // --- Top: targets + votes side by side ---
+  if (hasTop) {
+    html += '<div class="analyst-view">';
+    if (targetItems.length) {
+      html += '<div class="analyst-block-left">';
+      for (const item of targetItems) {
+        html += `<span class="label">${escapeHtml(item.label)}</span>`;
+        html += `<span class="value">${escapeHtml(item.value)}</span>`;
+        html += `<span class="pct">${escapeHtml(item.pct)}</span>`;
+      }
+      html += '</div>';
+    }
+    if (rightItems.length) {
+      if (targetItems.length) html += '<div class="analyst-divider"></div>';
+      html += '<div class="analyst-block-right">';
+      for (const item of rightItems) {
+        html += `<span class="label">${escapeHtml(item.label)}</span>`;
+        html += `<span class="value">${escapeHtml(item.value)}</span>`;
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+
+  // --- Recommendation summary (separate, can have wide values like "strong_buy") ---
+  if (hasSummary) {
+    html += '<div class="analyst-summary">';
+    for (const item of summaryItems) {
+      html += `<span class="label">${escapeHtml(item.label)}</span>`;
+      html += `<span class="value">${escapeHtml(item.value)}</span>`;
+    }
+    html += '</div>';
+  }
+
+  // --- Bottom: history summary + filtered table (last HISTORY_DAYS days) ---
+  if (hasHistory) {
+    const cutoff = Math.floor(Date.now() / 1000) - HISTORY_DAYS * 86400;
+    const recentHistory = history
+      .filter(e => (e.epochGradeDate || 0) >= cutoff)
+      .sort((a, b) => (b.epochGradeDate || 0) - (a.epochGradeDate || 0));
+
+    const avgFixed = avgTargetInDays(history, HISTORY_DAYS, currentPrice);
+
+    html += '<div class="analyst-history">';
+
+    // Summary rows
+    html += '<div class="history-summary">';
+    html += `<span class="summary-label">Avg target (${HISTORY_DAYS}d)</span>`;
+    html += `<span class="summary-value">${avgFixed ? avgFixed.avg.toFixed(2) : '—'}</span>`;
+    html += `<span class="summary-pct">${avgFixed ? escapeHtml(avgFixed.pctStr) : ''}</span>`;
+    html += `<span class="summary-label">Avg target (<input type="text" class="days-input" id="custom-days" maxlength="2" inputmode="numeric" value="${DEFAULT_CUSTOM_DAYS}">d)</span>`;
+    html += '<span class="summary-value" id="custom-avg-value">—</span>';
+    html += '<span class="summary-pct" id="custom-avg-pct"></span>';
+    html += '</div>';
+
+    // Table or empty note
+    if (recentHistory.length === 0) {
+      html += `<div class="history-empty">No analyst activity in last ${HISTORY_DAYS} days.</div>`;
+    } else {
+      html += '<div class="table-scroll"><table class="history-table">';
+      html += '<thead><tr>'
+           + '<th>Date</th>'
+           + '<th>Firm</th>'
+           + '<th>Grade</th>'
+           + '<th class="num">Target</th>'
+           + '<th class="num">Prior</th>'
+           + '</tr></thead><tbody>';
+
+      for (const e of recentHistory) {
+        const date = e.epochGradeDate ? unixToISODate(e.epochGradeDate) : '';
+        const firm = e.firm || '';
+        const grade = e.toGrade || '';
+        const target = (e.currentPriceTarget != null) ? formatPrimitive(e.currentPriceTarget) : '';
+        const prior  = (e.priorPriceTarget   != null) ? formatPrimitive(e.priorPriceTarget)   : '';
+
+        html += '<tr>'
+             + `<td class="date">${escapeHtml(date)}</td>`
+             + `<td>${escapeHtml(firm)}</td>`
+             + `<td>${escapeHtml(grade)}</td>`
+             + `<td class="num">${escapeHtml(target)}</td>`
+             + `<td class="num">${escapeHtml(prior)}</td>`
+             + '</tr>';
+      }
+
+      html += '</tbody></table></div>';
+    }
+
+    html += '</div>';
+  }
+
+  container.innerHTML = html;
+
+  // Wire up the custom-days input now that nodes exist
+  if (hasHistory) {
+    const customInput = container.querySelector('#custom-days');
+    if (customInput) {
+      const customAvgValue = container.querySelector('#custom-avg-value');
+      const customAvgPct = container.querySelector('#custom-avg-pct');
+
+      const updateCustomAvg = () => {
+        const days = parseInt(customInput.value, 10);
+        const result = avgTargetInDays(history, days, currentPrice);
+        if (!result) {
+          customAvgValue.textContent = '—';
+          customAvgPct.textContent = '';
+        } else {
+          customAvgValue.textContent = result.avg.toFixed(2);
+          customAvgPct.textContent = result.pctStr;
+        }
+      };
+
+      customInput.addEventListener('input', () => {
+        const cleaned = customInput.value.replace(/\D/g, '').slice(0, 2);
+        if (customInput.value !== cleaned) customInput.value = cleaned;
+        updateCustomAvg();
+      });
+
+      updateCustomAvg();
+    }
+  }
+}
+
+/* ============================================================
+   Worker call — fetch missing modules into cache
+   ============================================================ */
+async function fetchModulesIntoCache(ticker, missing) {
   const settings = loadSettings();
   if (!settings.workerUrl || !settings.apiToken) {
     throw new Error('Worker URL or API Token not configured. Click ⚙ to set them.');
   }
-
   const url = `${settings.workerUrl.replace(/\/$/, '')}/api/quotesummary`
     + `?ticker=${encodeURIComponent(ticker)}`
-    + `&modules=${encodeURIComponent(modules.join(','))}`;
+    + `&modules=${encodeURIComponent(missing.join(','))}`;
 
   const res = await fetch(url, { headers: { 'X-API-Token': settings.apiToken } });
   const text = await res.text();
-
-  let data;
-  try { data = JSON.parse(text); }
+  let parsed;
+  try { parsed = JSON.parse(text); }
   catch { throw new Error(`Non-JSON response (HTTP ${res.status}): ${text.slice(0, 200)}`); }
 
-  if (!res.ok) {
-    throw new Error(data.error || `HTTP ${res.status}`);
+  if (!res.ok) throw new Error(parsed.error || `HTTP ${res.status}`);
+  if (parsed._error) throw new Error(parsed._error);
+
+  const yError = parsed?.quoteSummary?.error;
+  if (yError) throw new Error(yError.description || yError.code || JSON.stringify(yError));
+
+  const result = parsed?.quoteSummary?.result?.[0];
+  if (!result) throw new Error('No result returned by Yahoo');
+
+  for (const m of missing) {
+    dataCache.modules[m] = (m in result) ? result[m] : null;
   }
-  return data;
 }
 
-// ---- Main flow ----
+/* ============================================================
+   Main flow
+   ============================================================ */
 function setStatus(msg, cls = '') {
   const el = document.getElementById('status');
   el.textContent = msg;
   el.className = cls;
 }
 
-async function go() {
-  const tickerInput = document.getElementById('ticker');
-  const ticker = tickerInput.value.trim().toUpperCase();
-  if (!ticker) { setStatus('Enter a ticker first', 'error'); return; }
-  tickerInput.value = ticker;
+function getRequiredModulesForCurrentView() {
+  const view = VIEWS[currentView];
+  if (view.modules !== null) return view.modules;
+  return getCheckedModules();
+}
 
-  const selected = [...document.querySelectorAll('.module-checkbox input:checked')].map(cb => cb.value);
-  if (!selected.length) { setStatus('Select at least one module', 'error'); return; }
+async function ensureDataForCurrentView(ticker, forceRefresh) {
+  const needed = getRequiredModulesForCurrentView();
+  if (!needed.length) throw new Error('Select at least one module');
 
-  const results = document.getElementById('results');
-  results.innerHTML = '';
-  setStatus(`Fetching ${selected.length} module${selected.length === 1 ? '' : 's'} for ${ticker}…`, 'loading');
+  if (dataCache.ticker !== ticker) {
+    dataCache = { ticker, modules: {} };
+  }
+  if (forceRefresh) {
+    for (const m of needed) delete dataCache.modules[m];
+  }
+
+  const missing = needed.filter(m => !(m in dataCache.modules));
+  let fetchedNow = false;
+  let dt = 0;
+  if (missing.length) {
+    const t0 = performance.now();
+    setStatus(`Fetching ${missing.length} module${missing.length === 1 ? '' : 's'}…`, 'loading');
+    await fetchModulesIntoCache(ticker, missing);
+    dt = Math.round(performance.now() - t0);
+    fetchedNow = true;
+  }
+  return { fetchedNow, dt, missing };
+}
+
+async function renderCurrentView({ refresh = false } = {}) {
+  const tickerInput = document.getElementById('ticker').value.trim().toUpperCase();
+  document.getElementById('ticker').value = tickerInput;
+
+  const ticker = refresh ? tickerInput : (dataCache.ticker || tickerInput);
+  if (!ticker) { setStatus('Enter a ticker', 'error'); return; }
+
+  const container = document.getElementById('results');
+  const view = VIEWS[currentView];
 
   try {
-    const t0 = performance.now();
-    const data = await fetchData(ticker, selected);
-    const dt = Math.round(performance.now() - t0);
-
-    // Worker-level error
-    if (data._error) {
-      setStatus(`Worker error: ${data._error}`, 'error');
-      results.innerHTML = `<div class="global-error">${escapeHtml(JSON.stringify(data, null, 2))}</div>`;
-      return;
+    const { fetchedNow, dt, missing } = await ensureDataForCurrentView(ticker, refresh);
+    if (fetchedNow) {
+      setStatus(`${ticker} · ${missing.length} module${missing.length === 1 ? '' : 's'} · ${dt} ms`, 'success');
+    } else {
+      setStatus(`${ticker} · cached`, 'success');
     }
-
-    // Yahoo response shape: { quoteSummary: { result: [...], error: ... } }
-    const yError = data?.quoteSummary?.error;
-    const yResult = data?.quoteSummary?.result?.[0];
-
-    if (yError) {
-      setStatus(`Yahoo error: ${yError.description || yError.code || JSON.stringify(yError)}`, 'error');
-      results.innerHTML = `<div class="global-error">${escapeHtml(JSON.stringify(data, null, 2))}</div>`;
-      return;
-    }
-
-    if (!yResult) {
-      setStatus(`No result. Raw response below.`, 'error');
-      results.innerHTML = `<div class="global-error">${escapeHtml(JSON.stringify(data, null, 2))}</div>`;
-      return;
-    }
-
-    setStatus(`OK · ${ticker} · ${selected.length} module${selected.length === 1 ? '' : 's'} · ${dt} ms`, 'success');
-
-    for (const moduleName of selected) {
-      const moduleData = (moduleName in yResult) ? yResult[moduleName] : null;
-      results.appendChild(renderModuleCard(moduleName, moduleData));
-    }
+    view.render(dataCache.modules, container);
   } catch (e) {
-    setStatus(`Error: ${e.message}`, 'error');
+    setStatus(e.message, 'error');
   }
 }
 
-// ---- Init ----
+function updateUIForView() {
+  document.getElementById('modules-panel').classList.toggle('hidden', !VIEWS[currentView].showCheckboxes);
+  // Update menu button label and "current" item highlight
+  document.getElementById('view-menu-label').textContent = VIEWS[currentView].label;
+  document.querySelectorAll('.view-menu-item').forEach(item => {
+    item.classList.toggle('current', item.dataset.view === currentView);
+  });
+}
+
+async function onGoClicked() {
+  await renderCurrentView({ refresh: true });
+}
+
+async function onViewChanged(newView) {
+  currentView = newView;
+  saveCurrentView();
+  updateUIForView();
+  if (!dataCache.ticker) {
+    document.getElementById('results').innerHTML = '<div class="empty-state">Enter a ticker and click Go.</div>';
+    return;
+  }
+  await renderCurrentView({ refresh: false });
+}
+
+/* ============================================================
+   Init
+   ============================================================ */
 function init() {
-  renderModules();
+  currentView = loadCurrentView();
+  renderCheckboxes();
+  updateUIForView();
 
   document.getElementById('settings-btn').addEventListener('click', openSettings);
   document.getElementById('cfg-cancel').addEventListener('click', closeSettings);
   document.getElementById('cfg-save').addEventListener('click', () => {
-    const url = document.getElementById('cfg-url').value.trim();
+    let url = document.getElementById('cfg-url').value.trim();
     const token = document.getElementById('cfg-token').value.trim();
     if (!url || !token) { alert('Both fields are required'); return; }
+    // Auto-prepend https:// if missing (the TODO from earlier)
+    if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
     saveSettings({ workerUrl: url, apiToken: token });
     closeSettings();
     setStatus('Settings saved', 'success');
   });
 
-  document.getElementById('go-btn').addEventListener('click', go);
-  document.getElementById('ticker').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+  document.getElementById('go-btn').addEventListener('click', onGoClicked);
+  document.getElementById('ticker').addEventListener('keydown', e => { if (e.key === 'Enter') onGoClicked(); });
+
+  // View menu (custom dropdown)
+  const menuButton = document.getElementById('view-menu-button');
+  const menuPanel = document.getElementById('view-menu-panel');
+
+  const closeMenu = () => {
+    menuPanel.classList.add('hidden');
+    menuButton.setAttribute('aria-expanded', 'false');
+  };
+
+  menuButton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = !menuPanel.classList.contains('hidden');
+    if (isOpen) closeMenu();
+    else {
+      menuPanel.classList.remove('hidden');
+      menuButton.setAttribute('aria-expanded', 'true');
+    }
+  });
+
+  document.querySelectorAll('.view-menu-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeMenu();
+      const view = item.dataset.view;
+      if (view && view !== currentView) onViewChanged(view);
+    });
+  });
+
+  // Click anywhere else → close menu
+  document.addEventListener('click', () => closeMenu());
+
+  // Escape key → close menu
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeMenu();
+  });
 
   document.getElementById('select-all').addEventListener('click', () => {
     document.querySelectorAll('.module-checkbox input').forEach(cb => cb.checked = true);
-    saveSelectedModules();
+    saveSelectedRawModules();
   });
   document.getElementById('select-none').addEventListener('click', () => {
     document.querySelectorAll('.module-checkbox input').forEach(cb => cb.checked = false);
-    saveSelectedModules();
+    saveSelectedRawModules();
   });
   document.getElementById('select-default').addEventListener('click', () => {
-    const def = new Set(DEFAULT_MODULES);
+    const def = new Set(DEFAULT_RAW_MODULES);
     document.querySelectorAll('.module-checkbox input').forEach(cb => cb.checked = def.has(cb.value));
-    saveSelectedModules();
+    saveSelectedRawModules();
   });
 
-  // First-run check
   const s = loadSettings();
   if (!s.workerUrl || !s.apiToken) openSettings();
 }

@@ -1,6 +1,6 @@
 // Portfolio Terminal 2 — TEST Worker (experimental branch)
 // Extended Yahoo Finance access via quoteSummary + crumb auth.
-// ** Production worker is untouched. **
+// Production worker is untouched.
 
 // ---- Module-scoped crumb cache (in-memory, per isolate) ----
 let crumbCache = { crumb: null, cookie: null, expires: 0 };
@@ -78,7 +78,7 @@ async function ensureCrumb(force = false) {
 }
 
 // ---- quoteSummary fetch with one auto-retry on auth errors ----
-async function fetchQuoteSummary(ticker, modules) {
+async function fetchQuoteSummaryRaw(ticker, modules) {
   for (let attempt = 0; attempt < 2; attempt++) {
     const { crumb, cookie } = await ensureCrumb(attempt > 0);
     const url =
@@ -105,6 +105,48 @@ async function fetchQuoteSummary(ticker, modules) {
     return parsed;
   }
   return { _error: 'Auth failed after retry' };
+}
+
+// quoteSummary fetch with per-module fallback on 404.
+// Yahoo returns HTTP 404 for the entire request if ANY of the requested
+// modules is unsupported for the ticker (very common for ETFs / mutual funds /
+// indices — they lack earnings, upgradeDowngradeHistory, financialData, etc).
+// On 404 we retry each module individually in parallel and merge what works.
+async function fetchQuoteSummary(ticker, modules) {
+  const combined = await fetchQuoteSummaryRaw(ticker, modules);
+
+  // Success or non-404 error → return as-is
+  if (!combined._error || combined._status !== 404) return combined;
+
+  const moduleList = modules.split(',').map(m => m.trim()).filter(Boolean);
+  if (moduleList.length <= 1) return combined; // Already a single module, nothing to split
+
+  // Per-module parallel fetches
+  const settled = await Promise.allSettled(
+    moduleList.map(m => fetchQuoteSummaryRaw(ticker, m))
+  );
+
+  const merged = {};
+  let anySuccess = false;
+  for (let i = 0; i < settled.length; i++) {
+    const m = moduleList[i];
+    const s = settled[i];
+    if (s.status !== 'fulfilled') continue;
+    const r = s.value;
+    if (r._error) continue;
+    const moduleData = r?.quoteSummary?.result?.[0]?.[m];
+    if (moduleData !== undefined) {
+      merged[m] = moduleData;
+      anySuccess = true;
+    }
+  }
+
+  if (anySuccess) {
+    return { quoteSummary: { result: [merged], error: null } };
+  }
+
+  // Nothing worked — return the original 404 error
+  return combined;
 }
 
 // ---- Router ----
