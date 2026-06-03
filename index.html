@@ -2648,6 +2648,37 @@ function buildExpandedInner(p) {
     + '</div>';
 }
 
+function buildExpandedInnerAgg(p, group) {
+  var first = group[0];
+  var html = '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px">'
+    + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (first.category || '—') + '</span></span>'
+    + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (first.region || '—') + '</span></span>'
+    + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (first.sector || '—') + '</span></span>'
+    + '</div>';
+  var notes = group.map(function(g) { return g.note || ''; }).filter(Boolean).join('\n');
+  html += '<div style="margin-top:8px;font-size:10px;color:var(--dim);letter-spacing:1px">'
+    + '<span style="opacity:0.6">NOTE</span> '
+    + '<span style="color:var(--bright);white-space:pre-line">' + (notes || '—') + '</span>'
+    + '</div>';
+  var allAlerts = [];
+  group.forEach(function(g) {
+    (g.alerts || []).forEach(function(a, i) { allAlerts.push({ alert: a, posId: g.id, alertIdx: i }); });
+  });
+  html += '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+    + '<span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
+    + allAlerts.map(function(item) {
+        var a = item.alert;
+        var color = a.triggered ? '#f6c15b' : 'var(--bright)';
+        return '<span style="font-size:10px;color:' + color + '">' + (a.triggered ? '&#9679; ' : '') + a.condition + ' ' + a.value + '</span>'
+          + '<span onclick="deleteAlert(' + item.posId + ',' + item.alertIdx + ')" style="cursor:pointer;font-size:11px;color:var(--dim);margin-left:-6px">&#10005;</span>';
+      }).join('')
+    + '<span onclick="toggleAlertCondQuick(this)" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;min-width:20px;background:var(--bg);border:1px solid var(--border);color:var(--dim);font-family:var(--font);font-size:11px;padding:1px 5px;user-select:none">' + _alertCondQuick + '</span>'
+    + '<input type="number" id="quickAlertVal" placeholder="price" step="any" min="0" style="width:65px;font-size:11px;padding:2px 4px;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font)">'
+    + '<span onclick="quickAddAlert(' + first.id + ')" style="cursor:pointer;font-size:11px;color:var(--green);border:1px solid var(--green);padding:1px 5px">+</span>'
+    + '</div>';
+  return html;
+}
+
 function quickAddAlert(posId) {
   var cond = _alertCondQuick;
   var val = parseFloat(document.getElementById('quickAlertVal').value);
@@ -4309,6 +4340,7 @@ function isAggregated() {
 }
 
 function toggleAggregated() {
+  expandedId = null;
   if (currentPortfolio().archive) {
     aggregatedModeArchive = !aggregatedModeArchive;
     localStorage.setItem('pt_agg_archive', aggregatedModeArchive ? '1' : '0');
@@ -4638,15 +4670,13 @@ function render() {
         + '<button class="btn-icon" onclick="removePosition(' + p.id + ')">&#10005;</button>';
     }
 
-    var isExpanded = !isAgg && expandedId === p.id;
+    var isExpanded = expandedId === p.id;
     var hasActiveAlert = !isEdit && (isAgg
       ? (aggGroup || []).some(function(gp) { return gp.alerts && gp.alerts.some(function(a) { return a.triggered; }); })
       : p.alerts && p.alerts.some(function(a) { return a.triggered; }));
     var tickerCell = isEdit
       ? '<input class="edit-input" id="editTicker" type="text" value="' + p.ticker + '" style="width:60px;text-transform:uppercase">'
-      : isAgg
-        ? p.ticker + (hasActiveAlert ? ' <span style="color:#f6c15b;font-size:11px">&#9679;</span>' : '')
-        : '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + (hasActiveAlert ? ' <span style="color:#f6c15b;font-size:11px">&#9679;</span>' : '') + '</span>';
+      : '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + (hasActiveAlert ? ' <span style="color:#f6c15b;font-size:11px">&#9679;</span>' : '') + '</span>';
     var soldStyle = (p.sold || p.qty === 0) ? 'font-style:italic;opacity:0.5' : '';
     rows += '<tr style="' + soldStyle + '">'
       + '<td style="white-space:nowrap">' + tickerCell + '</td>'
@@ -4685,7 +4715,7 @@ function render() {
         + '<button class="btn" style="padding:6px 16px;color:var(--dim)" onclick="cancelEdit()">CANCEL</button>'
         + '</div>'
         + '</td></tr>'
-        : (isExpanded ? '<tr><td colspan="8" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>'
+        : (isExpanded ? '<tr><td colspan="8" style="padding:4px 8px 8px;background:var(--bg2)">' + (isAgg ? buildExpandedInnerAgg(p, aggGroup) : buildExpandedInner(p)) + '</td></tr>'
         : ''));
   });
 
