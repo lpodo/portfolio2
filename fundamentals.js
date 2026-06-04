@@ -52,7 +52,7 @@ var FUND_HIST_DFLT  = 30;
     '.fh-scroll{overflow-x:auto}' +
     '.fh-tbl{border-collapse:collapse;font-variant-numeric:tabular-nums}' +
     '.fh-tbl th{font-weight:normal;color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--border);padding:6px 16px 6px 0;text-align:left;white-space:nowrap}' +
-    '.fh-tbl td{padding:5px 16px 5px 0;white-space:nowrap}' +
+    '.fh-tbl td{padding:5px 16px 5px 0;white-space:nowrap;text-align:left}' +
     '.fh-tbl th:last-child,.fh-tbl td:last-child{padding-right:0}' +
     '.fh-tbl th.n,.fh-tbl td.n{text-align:right}' +
     '.fh-tbl td.d{color:var(--dim)}';
@@ -253,11 +253,12 @@ function buildFundamentalsRows(ticker) {
     var votes = ['strongBuy','buy','hold','sell','strongSell'].map(function(k) {
       var v = trend[k];
       return (v != null)
-        ? '<span style="' + DIM + '">' + fundEsc(k) + '</span>&nbsp;<span style="' + BRT + '">' + fundEsc(String(v)) + '</span>'
+        ? '<span><span style="' + DIM + '">' + fundEsc(k) + '</span> <span style="' + BRT + '">' + fundEsc(String(v)) + '</span></span>'
         : null;
     }).filter(Boolean);
     if (votes.length) {
-      html += '<div style="' + ROW + '">' + votes.join('&nbsp;&nbsp;') + '</div>';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:3px 10px;margin-top:5px;font-size:10px;letter-spacing:1px">'
+        + votes.join('') + '</div>';
     }
   }
 
@@ -386,12 +387,13 @@ function fundBidAskRow(data) {
   if (askSizeRaw === null) askSizeRaw = fundRawNum(fundGetVal(data, 'price.askSize'));
   if (bidRaw === null && askRaw === null) return null;
   var fmt = function(n) { return (n === null || n === 0) ? '—' : (fundFmtPrim(n) || '—'); };
+  var SM = 'color:var(--dim);font-size:11px';
   return '<div class="ff-comp">'
     + '<span class="lbl">bid</span> <span>' + fundEsc(fmt(bidRaw)) + '</span>'
-    + ' <span style="color:var(--dim);margin:0 3px">\xd7</span> <span>' + fundEsc(fmt(bidSizeRaw)) + '</span>'
+    + ' <span style="' + SM + ';margin:0 3px">\xd7</span> <span style="' + SM + '">' + fundEsc(fmt(bidSizeRaw)) + '</span>'
     + '&nbsp;&nbsp;&nbsp;&nbsp;'
     + '<span class="lbl">ask</span> <span>' + fundEsc(fmt(askRaw)) + '</span>'
-    + ' <span style="color:var(--dim);margin:0 3px">\xd7</span> <span>' + fundEsc(fmt(askSizeRaw)) + '</span>'
+    + ' <span style="' + SM + ';margin:0 3px">\xd7</span> <span style="' + SM + '">' + fundEsc(fmt(askSizeRaw)) + '</span>'
     + '</div>';
 }
 
@@ -518,7 +520,7 @@ function fundRenderQuarterly(data, container) {
   var quarters = Object.keys(byDate).map(function(k) { return byDate[k]; })
     .sort(function(a, b) { return fundParseQDate(a.date) - fundParseQDate(b.date); });
 
-  var html = '<table class="fq-tbl"><thead><tr>'
+  var html = '<div style="overflow-x:auto"><table class="fq-tbl"><thead><tr>'
     + '<th>Quarter</th><th>Revenue</th><th>Earnings</th><th>Net Margin</th><th>EPS</th>'
     + '</tr></thead><tbody>';
   for (var k = 0; k < quarters.length; k++) {
@@ -529,7 +531,7 @@ function fundRenderQuarterly(data, container) {
       + '<td>' + fundEsc(fundComputeMargin(q2.earnings, q2.revenue)) + '</td>'
       + '<td>' + fundEsc(fundFmtOrRaw(q2.eps)) + '</td></tr>';
   }
-  html += '</tbody></table>';
+  html += '</tbody></table></div>';
   container.innerHTML = html;
 }
 
