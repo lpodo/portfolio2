@@ -6,7 +6,8 @@
 
 /* ── Constants ──────────────────────────────────────────────────────────── */
 var FUND_CACHE_TTL  = 4 * 60 * 60 * 1000;
-var FUND_ROW_MODS   = 'financialData,defaultKeyStatistics,recommendationTrend';
+var FUND_CACHE_VER  = 1;
+var FUND_ROW_MODS   = 'financialData,defaultKeyStatistics,recommendationTrend,upgradeDowngradeHistory';
 var FUND_ACCENT     = '#5b9cf6';
 var FUND_HIST_DAYS  = 100;
 var FUND_HIST_DFLT  = 30;
@@ -17,9 +18,6 @@ var FUND_HIST_DFLT  = 30;
   if (!s) { s = document.createElement('style'); s.id = 'fund-css'; document.head.appendChild(s); }
   s.textContent =
     '#fund-overlay{position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;flex-direction:column;overflow:hidden}' +
-    '#fund-overlay table{min-width:0}' +
-    '#fund-overlay td{font-weight:normal;letter-spacing:0}' +
-    '#fund-overlay tr:hover td{background:none}' +
     '#fund-hdr{display:flex;align-items:center;gap:6px;padding:6px 12px;border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}' +
     '.ftab{background:none;border:none;border-bottom:2px solid transparent;color:var(--dim);font-family:var(--font);font-size:11px;letter-spacing:1px;padding:4px 8px;cursor:pointer}' +
     '.ftab.on{color:' + FUND_ACCENT + ';border-bottom-color:' + FUND_ACCENT + '}' +
@@ -164,6 +162,7 @@ function fundCacheGet(ticker) {
     if (!raw) return null;
     var entry = JSON.parse(raw);
     if (!entry || !entry.ts) return null;
+    if (entry.v !== FUND_CACHE_VER) return null;
     if (Date.now() - entry.ts > FUND_CACHE_TTL) return null;
     return entry;
   } catch(e) { return null; }
@@ -171,7 +170,7 @@ function fundCacheGet(ticker) {
 
 function fundCacheSet(ticker, data) {
   try {
-    var obj = { ts: Date.now() };
+    var obj = { v: FUND_CACHE_VER, ts: Date.now() };
     var keys = Object.keys(data);
     for (var i = 0; i < keys.length; i++) obj[keys[i]] = data[keys[i]];
     localStorage.setItem(fundCacheKey(ticker), JSON.stringify(obj));
@@ -196,11 +195,42 @@ function fundFetchRow(ticker) {
       var result = (!data._error && data.quoteSummary)
         ? (data.quoteSummary.result && data.quoteSummary.result[0])
         : null;
-      // Always cache (including nulls for ETFs) to avoid repeated fetches
+      var fd     = (result && result.financialData)         || null;
+      var dks    = (result && result.defaultKeyStatistics)  || null;
+      var rt     = (result && result.recommendationTrend)   || null;
+      var udh    = (result && result.upgradeDowngradeHistory) || null;
+      var trend0 = (rt && rt.trend && rt.trend[0])          || null;
+
+      // Filter upgrade/downgrade history to last FUND_HIST_DAYS days,
+      // keep only {date, target} for entries with a valid target price.
+      var targets = [];
+      var hist = udh && udh.history;
+      if (Array.isArray(hist)) {
+        var cutoff = Math.floor(Date.now() / 1000) - FUND_HIST_DAYS * 86400;
+        for (var i = 0; i < hist.length; i++) {
+          var h = hist[i];
+          var hd = h && h.epochGradeDate;
+          var ht = h && fundRawNum(h.currentPriceTarget);
+          if (hd && hd >= cutoff && ht !== null && ht > 0) {
+            targets.push({ date: hd, target: ht });
+          }
+        }
+      }
+
+      // Always cache (including nulls for ETFs) to avoid repeated fetches.
+      // Schema is flat — raw Yahoo modules are extracted into individual
+      // parameters and the modules themselves are discarded.
       fundCacheSet(ticker, {
-        financialData:        (result && result.financialData)        || null,
-        defaultKeyStatistics: (result && result.defaultKeyStatistics) || null,
-        recommendationTrend:  (result && result.recommendationTrend)  || null
+        strongBuy:       trend0 ? fundRawNum(trend0.strongBuy)  : null,
+        buy:             trend0 ? fundRawNum(trend0.buy)        : null,
+        hold:            trend0 ? fundRawNum(trend0.hold)       : null,
+        sell:            trend0 ? fundRawNum(trend0.sell)       : null,
+        strongSell:      trend0 ? fundRawNum(trend0.strongSell) : null,
+        targetMeanPrice: fd  ? fundRawNum(fd.targetMeanPrice)   : null,
+        currentPrice:    fd  ? fundRawNum(fd.currentPrice)      : null,
+        trailingEps:     dks ? fundRawNum(dks.trailingEps)      : null,
+        forwardPE:       dks ? fundRawNum(dks.forwardPE)        : null,
+        targets:         targets
       });
     })
     .catch(function() {}); // Network error: don't cache, allow retry next time
@@ -225,6 +255,19 @@ function fundFetchModules(ticker, modules) {
 }
 
 /* ── 4th-row builder ────────────────────────────────────────────────────── */
+function fundAvgInWindow(targets, cutoffSec) {
+  if (!Array.isArray(targets) || !targets.length) return null;
+  var sum = 0, n = 0;
+  for (var i = 0; i < targets.length; i++) {
+    var t = targets[i];
+    if (t && t.date >= cutoffSec && typeof t.target === 'number') {
+      sum += t.target;
+      n++;
+    }
+  }
+  return n > 0 ? sum / n : null;
+}
+
 function buildFundamentalsRows(ticker) {
   if (!fundWorkerBase() || !fundWorkerToken()) return '';
 
@@ -240,16 +283,13 @@ function buildFundamentalsRows(ticker) {
     return '';
   }
 
-  var fd  = cached.financialData;
-  var dks = cached.defaultKeyStatistics;
-  var rt  = cached.recommendationTrend;
   var ROW = 'display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:5px;font-size:10px;letter-spacing:1px';
   var DIM = 'color:var(--dim)';
   var BRT = 'color:var(--bright)';
   var html = '';
 
   // Line 1: analyst vote breakdown — label dim, count bright
-  var trend = rt && rt.trend && rt.trend[0];
+  var trend = cached;
   if (trend) {
     var votes = ['strongBuy','buy','hold','sell','strongSell'].map(function(k) {
       var v = trend[k];
@@ -264,17 +304,38 @@ function buildFundamentalsRows(ticker) {
   }
 
   // Line 2: Avg target (if available)
-  if (fd) {
-    var targetMean   = fundRawNum(fd.targetMeanPrice);
-    var currentPrice = fundRawNum(fd.currentPrice);
+  {
+    var targetMean   = cached.targetMeanPrice;
+    var currentPrice = cached.currentPrice;
+    var line2 = '';
+
     if (targetMean !== null && currentPrice !== null && currentPrice > 0) {
       var pct = (targetMean - currentPrice) / currentPrice * 100;
       var pctStr = (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%';
-      html += '<div style="' + ROW + '">'
-        + '<span style="' + DIM + '">Avg&nbsp;target</span>'
+      line2 += '<span style="' + DIM + '">Avg&nbsp;tgt</span>'
         + '<span style="' + BRT + '">' + fundEsc(targetMean.toFixed(2)) + '</span>'
-        + '<span style="' + DIM + '">(' + fundEsc(pctStr) + ')</span>'
-        + '</div>';
+        + '<span style="' + DIM + '">(' + fundEsc(pctStr) + ')</span>';
+    }
+
+    if (currentPrice !== null && currentPrice > 0 && Array.isArray(cached.targets) && cached.targets.length) {
+      var nowSec = Math.floor(Date.now() / 1000);
+      var avg = fundAvgInWindow(cached.targets, nowSec - 30 * 86400);
+      var lbl = '30d';
+      if (avg === null) {
+        avg = fundAvgInWindow(cached.targets, nowSec - 100 * 86400);
+        lbl = '100d';
+      }
+      if (avg !== null) {
+        var hpct = (avg - currentPrice) / currentPrice * 100;
+        var hpctStr = (hpct >= 0 ? '+' : '') + hpct.toFixed(2) + '%';
+        line2 += '<span style="' + DIM + '">' + lbl + '&nbsp;tgt</span>'
+          + '<span style="' + BRT + '">' + fundEsc(avg.toFixed(2)) + '</span>'
+          + '<span style="' + DIM + '">(' + fundEsc(hpctStr) + ')</span>';
+      }
+    }
+
+    if (line2) {
+      html += '<div style="' + ROW + '">' + line2 + '</div>';
     }
   }
 
@@ -284,20 +345,20 @@ function buildFundamentalsRows(ticker) {
     + FUND_ACCENT + ';padding:1px 6px;font-family:var(--font);user-select:none">&#8250;</span>';
 
   var line3 = '<div style="' + ROW + '">';
-  if (fd && dks) {
-    var price = fundRawNum(fd.currentPrice);
-    var tEps  = fundRawNum(dks.trailingEps);
-    if (price !== null && tEps !== null && tEps !== 0) {
-      var pe = price / tEps;
-      if (pe > 0 && pe < 10000) {
-        line3 += '<span style="' + DIM + '">P/E</span>&nbsp;<span style="' + BRT + '">' + fundEsc(pe.toFixed(2)) + '</span>&nbsp;&nbsp;';
+  {
+    var price3 = cached.currentPrice;
+    var tEps3  = cached.trailingEps;
+    if (price3 !== null && tEps3 !== null && tEps3 !== 0) {
+      var pe3 = price3 / tEps3;
+      if (pe3 > 0 && pe3 < 10000) {
+        line3 += '<span style="' + DIM + '">P/E</span>&nbsp;<span style="' + BRT + '">' + fundEsc(pe3.toFixed(2)) + '</span>&nbsp;&nbsp;';
       }
     }
   }
-  if (dks) {
-    var fwPE = fundRawNum(dks.forwardPE);
-    if (fwPE !== null && fwPE > 0 && fwPE < 10000) {
-      line3 += '<span style="' + DIM + '">fw&nbsp;P/E</span>&nbsp;<span style="' + BRT + '">' + fundEsc(fwPE.toFixed(2)) + '</span>&nbsp;&nbsp;';
+  {
+    var fwPE3 = cached.forwardPE;
+    if (fwPE3 !== null && fwPE3 > 0 && fwPE3 < 10000) {
+      line3 += '<span style="' + DIM + '">fw&nbsp;P/E</span>&nbsp;<span style="' + BRT + '">' + fundEsc(fwPE3.toFixed(2)) + '</span>&nbsp;&nbsp;';
     }
   }
   line3 += moreBtn + '</div>';
