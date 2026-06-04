@@ -30,9 +30,9 @@ var FUND_HIST_DFLT  = 30;
     '.ff-comp{padding:3px 0;white-space:nowrap;overflow-x:auto}' +
     '.ff-comp .lbl{color:var(--dim)}' +
     '.fq-tbl{border-collapse:collapse;font-variant-numeric:tabular-nums}' +
-    '.fq-tbl th{text-align:right;padding:6px 18px 6px 0;font-weight:normal;color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--border);white-space:nowrap}' +
+    '.fq-tbl th{text-align:right;padding:6px 10px 6px 0;font-weight:normal;color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--border);white-space:nowrap}' +
     '.fq-tbl th:first-child{text-align:left}' +
-    '.fq-tbl td{padding:5px 18px 5px 0;text-align:right;white-space:nowrap}' +
+    '.fq-tbl td{padding:5px 10px 5px 0;text-align:right;white-space:nowrap}' +
     '.fq-tbl td:first-child{text-align:left;color:var(--dim)}' +
     '.fq-tbl th:last-child,.fq-tbl td:last-child{padding-right:0}' +
     '.fa-top{display:flex;align-items:flex-start;gap:16px}' +
@@ -353,11 +353,11 @@ var FUND_FIELDS = {
 };
 
 // Sentinel objects for composite rows in MARKET_GROUPS
-var _EXT   = { ext: true };
-var _BASK  = { bidask: true };
+var _PRICES = { prices: true };
+var _BASK   = { bidask: true };
 
 var FUND_MARKET_GROUPS = [
-  ['regularMarketPrice', _EXT, _BASK],
+  [_PRICES, _BASK],
   ['dayLow','dayHigh','52WeekLow','52WeekHigh','50DayAverage','200DayAverage','allTimeHigh'],
   ['volume','averageVolume10days','averageVolume'],
   ['beta'],
@@ -397,10 +397,16 @@ function fundBidAskRow(data) {
     + '</div>';
 }
 
-function fundExtHoursRow(data) {
-  var regTime  = fundRawNum(fundGetVal(data, 'price.regularMarketTime'));
-  var postTime = fundRawNum(fundGetVal(data, 'price.postMarketTime'));
-  var preTime  = fundRawNum(fundGetVal(data, 'price.preMarketTime'));
+// Renders regularMarketPrice + optional pre/postMarketPrice as a
+// 3-column grid so label, value, and change columns align across rows.
+function fundPriceBlock(data) {
+  var regPriceFmt = fundFormatField(fundGetVal(data, 'price.regularMarketPrice'));
+  if (!regPriceFmt) return null;
+
+  // Detect which extended-hours session (if any) is most recent
+  var regTime   = fundRawNum(fundGetVal(data, 'price.regularMarketTime'));
+  var postTime  = fundRawNum(fundGetVal(data, 'price.postMarketTime'));
+  var preTime   = fundRawNum(fundGetVal(data, 'price.preMarketTime'));
   var postPrice = fundGetVal(data, 'price.postMarketPrice');
   var prePrice  = fundGetVal(data, 'price.preMarketPrice');
 
@@ -413,31 +419,43 @@ function fundExtHoursRow(data) {
   var useSession = null;
   if (candidates.length) {
     candidates.sort(function(a, b) { return b.t - a.t; });
-    if (candidates[0].kind === 'regular') return null;
-    useSession = candidates[0].kind;
+    var winner = candidates[0].kind;
+    if (winner !== 'regular') useSession = winner;
   } else {
     if (fundUseful(postPrice)) useSession = 'post';
     else if (fundUseful(prePrice)) useSession = 'pre';
-    else return null;
   }
 
-  var label    = useSession === 'post' ? 'postMarketPrice' : 'preMarketPrice';
-  var priceVal = useSession === 'post' ? postPrice : prePrice;
-  var changeVal = fundGetVal(data, useSession === 'post'
-    ? 'price.postMarketChange'        : 'price.preMarketChange');
-  var pctVal    = fundGetVal(data, useSession === 'post'
-    ? 'price.postMarketChangePercent' : 'price.preMarketChangePercent');
+  var DIM3 = 'color:var(--dim);font-size:11px;white-space:nowrap';
+  var html = '<div style="display:grid;grid-template-columns:auto auto auto;column-gap:8px;row-gap:4px;align-items:baseline">';
 
-  var priceFmt = fundFormatField(priceVal);
-  if (priceFmt === null) return null;
+  // Row 1: regularMarketPrice | value | (empty change column)
+  html += '<span class="ff-lbl">regularMarketPrice</span>'
+    + '<span class="ff-val">' + fundEsc(regPriceFmt) + '</span>'
+    + '<span></span>';
 
-  var html = '<div class="ff-row"><span class="ff-lbl">' + fundEsc(label) + '</span>'
-    + '<span class="ff-val">' + fundEsc(priceFmt);
-  var changeFmt = fundUseful(changeVal) ? fundFormatField(changeVal) : null;
-  var pctFmt    = fundUseful(pctVal)    ? fundFormatField(pctVal)    : null;
-  if (changeFmt) html += ' <span style="color:var(--dim);font-size:11px">' + fundEsc(changeFmt) + '</span>';
-  if (pctFmt)    html += ' <span style="color:var(--dim);font-size:11px">(' + fundEsc(pctFmt) + ')</span>';
-  html += '</span></div>';
+  // Row 2 (optional): pre/postMarketPrice | value | change pct
+  if (useSession) {
+    var label    = useSession === 'post' ? 'postMarketPrice' : 'preMarketPrice';
+    var priceVal = useSession === 'post' ? postPrice : prePrice;
+    var changeVal = fundGetVal(data, useSession === 'post'
+      ? 'price.postMarketChange' : 'price.preMarketChange');
+    var pctVal    = fundGetVal(data, useSession === 'post'
+      ? 'price.postMarketChangePercent' : 'price.preMarketChangePercent');
+    var priceFmt = fundFormatField(priceVal);
+    if (priceFmt) {
+      var changeFmt = fundUseful(changeVal) ? fundFormatField(changeVal) : null;
+      var pctFmt    = fundUseful(pctVal)    ? fundFormatField(pctVal)    : null;
+      var changePart = '';
+      if (changeFmt) changePart += fundEsc(changeFmt);
+      if (pctFmt)    changePart += (changePart ? ' ' : '') + '(' + fundEsc(pctFmt) + ')';
+      html += '<span class="ff-lbl">' + fundEsc(label) + '</span>'
+        + '<span class="ff-val">' + fundEsc(priceFmt) + '</span>'
+        + '<span style="' + DIM3 + '">' + changePart + '</span>';
+    }
+  }
+
+  html += '</div>';
   return html;
 }
 
@@ -461,8 +479,8 @@ function fundRenderFieldGroups(groups, data, container) {
         if (formatted === null) continue;
         rowHtml = '<div class="ff-row"><span class="ff-lbl">' + fundEsc(item) + '</span>'
           + '<span class="ff-val">' + fundEsc(formatted) + '</span></div>';
-      } else if (item === _EXT) {
-        rowHtml = fundExtHoursRow(data);
+      } else if (item === _PRICES) {
+        rowHtml = fundPriceBlock(data);
       } else if (item === _BASK) {
         rowHtml = fundBidAskRow(data);
       }
@@ -520,7 +538,7 @@ function fundRenderQuarterly(data, container) {
   var quarters = Object.keys(byDate).map(function(k) { return byDate[k]; })
     .sort(function(a, b) { return fundParseQDate(a.date) - fundParseQDate(b.date); });
 
-  var html = '<div style="overflow-x:auto"><table class="fq-tbl"><thead><tr>'
+  var html = '<table class="fq-tbl"><thead><tr>'
     + '<th>Quarter</th><th>Revenue</th><th>Earnings</th><th>Net Margin</th><th>EPS</th>'
     + '</tr></thead><tbody>';
   for (var k = 0; k < quarters.length; k++) {
@@ -531,7 +549,7 @@ function fundRenderQuarterly(data, container) {
       + '<td>' + fundEsc(fundComputeMargin(q2.earnings, q2.revenue)) + '</td>'
       + '<td>' + fundEsc(fundFmtOrRaw(q2.eps)) + '</td></tr>';
   }
-  html += '</tbody></table></div>';
+  html += '</tbody></table>';
   container.innerHTML = html;
 }
 
@@ -617,7 +635,7 @@ function fundRenderAnalyst(data, container) {
 
   var html = '';
   if (hasTop) {
-    html += '<div class="fa-top">';
+    html += '<div style="overflow-x:auto"><div class="fa-top">';
     if (targetItems.length) {
       html += '<div class="fa-left">';
       for (var ti = 0; ti < targetItems.length; ti++) {
@@ -636,7 +654,7 @@ function fundRenderAnalyst(data, container) {
       }
       html += '</div>';
     }
-    html += '</div>';
+    html += '</div></div>';
   }
   if (hasSummary) {
     html += '<div class="fa-sum">';
