@@ -30,9 +30,9 @@ var FUND_HIST_DFLT  = 30;
     '.ff-comp{padding:3px 0;white-space:nowrap;overflow-x:auto}' +
     '.ff-comp .lbl{color:var(--dim)}' +
     '.fq-tbl{border-collapse:collapse;font-variant-numeric:tabular-nums;width:100%}' +
-    '.fq-tbl th{text-align:right;padding:6px 4px 6px 0;font-weight:normal;color:var(--dim);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);white-space:nowrap}' +
+    '.fq-tbl th{text-align:right;padding:6px 2px 6px 0;font-weight:normal;color:var(--dim);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);white-space:nowrap}' +
     '.fq-tbl th:first-child{text-align:left}' +
-    '.fq-tbl td{padding:5px 4px 5px 0;text-align:right;white-space:nowrap}' +
+    '.fq-tbl td{padding:5px 2px 5px 0;text-align:right;white-space:nowrap}' +
     '.fq-tbl td:first-child{text-align:left;color:var(--dim)}' +
     '.fq-tbl th:last-child,.fq-tbl td:last-child{padding-right:0}' +
     '.fa-top{display:flex;align-items:flex-start;gap:16px}' +
@@ -543,7 +543,8 @@ function fundRenderQuarterly(data, container) {
     + '</tr></thead><tbody>';
   for (var k = 0; k < quarters.length; k++) {
     var q2 = quarters[k];
-    html += '<tr><td>' + fundEsc(q2.date) + '</td>'
+    var qlbl = q2.date ? q2.date.replace(/20(\d\d)/, "'$1") : '—';
+    html += '<tr><td>' + fundEsc(qlbl) + '</td>'
       + '<td>' + fundEsc(fundFmtOrRaw(q2.revenue)) + '</td>'
       + '<td>' + fundEsc(fundFmtOrRaw(q2.earnings)) + '</td>'
       + '<td>' + fundEsc(fundComputeMargin(q2.earnings, q2.revenue)) + '</td>'
