@@ -1,4 +1,9 @@
 // Portfolio Terminal 2 — Cloudflare Worker
+
+// Crumb cache (in-memory, per isolate, shared across requests)
+let crumbCache = { crumb: null, cookie: null, expires: 0 };
+const CRUMB_TTL_MS = 30 * 60 * 1000;
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -169,6 +174,19 @@ export default {
       }
     }
 
+    // quoteSummary endpoint: /api/quotesummary?ticker=AAPL&modules=financialData,defaultKeyStatistics
+    if (url.pathname === '/api/quotesummary') {
+      const t = url.searchParams.get('ticker');
+      const modules = url.searchParams.get('modules');
+      if (!t || !modules) return json({ error: 'Missing ticker or modules' }, 400);
+      try {
+        const data = await fetchQuoteSummary(t, modules);
+        return json(data);
+      } catch (e) {
+        return json({ error: String(e?.message || e) }, 500);
+      }
+    }
+
     if (url.pathname !== '/api/quote') {
       return json({ error: 'Not found' }, 404);
     }
@@ -307,4 +325,101 @@ function json(data, status = 200) {
     status,
     headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
   });
+}
+
+async function ensureCrumb(force = false) {
+  const now = Date.now();
+  if (!force && crumbCache.crumb && crumbCache.cookie && now < crumbCache.expires) {
+    return crumbCache;
+  }
+
+  const cookieRes = await fetch('https://fc.yahoo.com', {
+    headers: yahooHeaders(),
+    redirect: 'manual',
+  });
+
+  const setCookies =
+    typeof cookieRes.headers.getSetCookie === 'function'
+      ? cookieRes.headers.getSetCookie()
+      : (cookieRes.headers.get('set-cookie')
+          ? [cookieRes.headers.get('set-cookie')]
+          : []);
+
+  if (!setCookies.length) {
+    throw new Error(`No Set-Cookie from fc.yahoo.com (status ${cookieRes.status})`);
+  }
+
+  const cookie = setCookies
+    .map(c => c.split(';')[0].trim())
+    .filter(Boolean)
+    .join('; ');
+
+  const crumbRes = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
+    headers: { ...yahooHeaders(), Cookie: cookie },
+  });
+
+  if (!crumbRes.ok) {
+    const body = await crumbRes.text().catch(() => '');
+    throw new Error(`getcrumb failed: HTTP ${crumbRes.status} ${body.slice(0, 200)}`);
+  }
+
+  const crumb = (await crumbRes.text()).trim();
+  if (!crumb || crumb.length > 64) {
+    throw new Error(`Suspicious crumb: "${crumb.slice(0, 80)}"`);
+  }
+
+  crumbCache = { crumb, cookie, expires: now + CRUMB_TTL_MS };
+  return crumbCache;
+}
+
+async function fetchQuoteSummaryRaw(ticker, modules) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const { crumb, cookie } = await ensureCrumb(attempt > 0);
+    const url =
+      `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}` +
+      `?modules=${encodeURIComponent(modules)}&crumb=${encodeURIComponent(crumb)}`;
+
+    const res = await fetch(url, { headers: { ...yahooHeaders(), Cookie: cookie } });
+
+    if ((res.status === 401 || res.status === 403) && attempt === 0) continue;
+
+    const body = await res.text();
+    let parsed;
+    try { parsed = JSON.parse(body); }
+    catch { return { _error: 'Yahoo returned non-JSON', _status: res.status, _body: body.slice(0, 500) }; }
+
+    if (!res.ok) return { _error: `Yahoo HTTP ${res.status}`, _status: res.status, _yahoo: parsed };
+
+    return parsed;
+  }
+  return { _error: 'Auth failed after retry' };
+}
+
+// On 404, Yahoo rejects the whole request if ANY module is unsupported for the ticker.
+// Fall back to per-module parallel fetches and merge what works.
+async function fetchQuoteSummary(ticker, modules) {
+  const combined = await fetchQuoteSummaryRaw(ticker, modules);
+
+  if (!combined._error || combined._status !== 404) return combined;
+
+  const moduleList = modules.split(',').map(m => m.trim()).filter(Boolean);
+  if (moduleList.length <= 1) return combined;
+
+  const settled = await Promise.allSettled(
+    moduleList.map(m => fetchQuoteSummaryRaw(ticker, m))
+  );
+
+  const merged = {};
+  let anySuccess = false;
+  for (let i = 0; i < settled.length; i++) {
+    const m = moduleList[i];
+    const s = settled[i];
+    if (s.status !== 'fulfilled' || s.value._error) continue;
+    const moduleData = s.value?.quoteSummary?.result?.[0]?.[m];
+    if (moduleData !== undefined) { merged[m] = moduleData; anySuccess = true; }
+  }
+
+  return anySuccess
+    ? { quoteSummary: { result: [merged], error: null } }
+    : combined;
 }
