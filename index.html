@@ -434,6 +434,7 @@
   <button class="btn btn-green" onclick="toggleSettings()" style="font-size:11px;padding:6px 14px">&#9881; SETTINGS</button>
 </div>
 
+<script src="fundamentals.js"></script>
 <script>
 // --- Multi-portfolio ---
 var portfolios = {};  // { id: { name, positions } }
@@ -2645,7 +2646,8 @@ function buildExpandedInner(p) {
     + '<span onclick="toggleAlertCondQuick(this)" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;min-width:20px;background:var(--bg);border:1px solid var(--border);color:var(--dim);font-family:var(--font);font-size:11px;padding:1px 5px;user-select:none">' + _alertCondQuick + '</span>'
     + '<input type="number" id="quickAlertVal" placeholder="price" step="any" min="0" style="width:65px;font-size:11px;padding:2px 4px;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font)">'
     + '<span onclick="quickAddAlert(' + p.id + ')" style="cursor:pointer;font-size:11px;color:var(--green);border:1px solid var(--green);padding:1px 5px">+</span>'
-    + '</div>';
+    + '</div>'
+    + buildFundamentalsRows(p.ticker);
 }
 
 function buildExpandedInnerAgg(p, group) {
@@ -2676,7 +2678,7 @@ function buildExpandedInnerAgg(p, group) {
     + '<input type="number" id="quickAlertVal" placeholder="price" step="any" min="0" style="width:65px;font-size:11px;padding:2px 4px;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font)">'
     + '<span onclick="quickAddAlert(' + first.id + ')" style="cursor:pointer;font-size:11px;color:var(--green);border:1px solid var(--green);padding:1px 5px">+</span>'
     + '</div>';
-  return html;
+  return html + buildFundamentalsRows(p.ticker);
 }
 
 function quickAddAlert(posId) {

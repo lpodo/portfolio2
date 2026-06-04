@@ -1,9 +1,9 @@
-var CACHE = 'portfolio-v350';
+var CACHE = 'portfolio-v351';
 
 self.addEventListener('install', function(e) {
   e.waitUntil(
     caches.open(CACHE).then(function(c) {
-      return c.addAll(['./index.html', './manifest.json', './icon-192.png']);
+      return c.addAll(['./index.html', './manifest.json', './icon-192.png', './fundamentals.js']);
     })
   );
   self.skipWaiting();
