@@ -29,7 +29,7 @@ var FUND_HIST_DFLT  = 30;
     '.ff-div{border-top:1px solid var(--border);margin:8px 0}' +
     '.ff-comp{padding:3px 0;white-space:nowrap;overflow-x:auto}' +
     '.ff-comp .lbl{color:var(--dim)}' +
-    '.fq-tbl{border-collapse:collapse;font-variant-numeric:tabular-nums;width:100%}' +
+    '.fq-tbl{border-collapse:collapse;font-variant-numeric:tabular-nums}' +
     '.fq-tbl th{text-align:right;padding:6px 2px 6px 0;font-weight:normal;color:var(--dim);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);white-space:nowrap}' +
     '.fq-tbl th:first-child{text-align:left}' +
     '.fq-tbl td{padding:5px 2px 5px 0;text-align:right;white-space:nowrap}' +
