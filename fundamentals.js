@@ -13,9 +13,8 @@ var FUND_HIST_DFLT  = 30;
 
 /* ── CSS ────────────────────────────────────────────────────────────────── */
 (function injectCss() {
-  if (document.getElementById('fund-css')) return;
-  var s = document.createElement('style');
-  s.id = 'fund-css';
+  var s = document.getElementById('fund-css');
+  if (!s) { s = document.createElement('style'); s.id = 'fund-css'; document.head.appendChild(s); }
   s.textContent =
     '#fund-overlay{position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;flex-direction:column;overflow:hidden}' +
     '#fund-hdr{display:flex;align-items:center;gap:6px;padding:6px 12px;border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}' +
@@ -29,12 +28,11 @@ var FUND_HIST_DFLT  = 30;
     '.ff-div{border-top:1px solid var(--border);margin:8px 0}' +
     '.ff-comp{padding:3px 0;white-space:nowrap;overflow-x:auto}' +
     '.ff-comp .lbl{color:var(--dim)}' +
-    '.fq-tbl{border-collapse:collapse;font-variant-numeric:tabular-nums}' +
-    '.fq-tbl th{text-align:right;padding:6px 2px 6px 0;font-weight:normal;color:var(--dim);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);white-space:nowrap}' +
+    '.fq-tbl{border-collapse:collapse;font-variant-numeric:tabular-nums;table-layout:fixed;width:100%}' +
+    '.fq-tbl th{text-align:right;padding:6px 0;font-weight:normal;color:var(--dim);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border)}' +
     '.fq-tbl th:first-child{text-align:left}' +
-    '.fq-tbl td{padding:5px 2px 5px 0;text-align:right;white-space:nowrap}' +
+    '.fq-tbl td{padding:5px 0;text-align:right}' +
     '.fq-tbl td:first-child{text-align:left;color:var(--dim)}' +
-    '.fq-tbl th:last-child,.fq-tbl td:last-child{padding-right:0}' +
     '.fa-top{display:flex;align-items:flex-start;gap:16px}' +
     '.fa-left{display:grid;grid-template-columns:auto auto auto;column-gap:8px;row-gap:4px;align-items:baseline}' +
     '.fa-right{display:grid;grid-template-columns:auto auto;column-gap:4px;row-gap:4px;align-items:baseline}' +
@@ -539,11 +537,11 @@ function fundRenderQuarterly(data, container) {
     .sort(function(a, b) { return fundParseQDate(a.date) - fundParseQDate(b.date); });
 
   var html = '<table class="fq-tbl"><thead><tr>'
-    + '<th>Quarter</th><th>Revenue</th><th>Earnings</th><th>Margin</th><th>EPS</th>'
+    + '<th>Quarter</th><th>Revenue</th><th>Earnings</th><th>Net Margin</th><th>EPS</th>'
     + '</tr></thead><tbody>';
   for (var k = 0; k < quarters.length; k++) {
     var q2 = quarters[k];
-    var qlbl = q2.date ? q2.date.replace(/20(\d\d)/, "'$1") : '—';
+    var qlbl = q2.date ? q2.date.replace(/(Q)(20\d\d)/, "$1'$2") : '—';
     html += '<tr><td>' + fundEsc(qlbl) + '</td>'
       + '<td>' + fundEsc(fundFmtOrRaw(q2.revenue)) + '</td>'
       + '<td>' + fundEsc(fundFmtOrRaw(q2.earnings)) + '</td>'
