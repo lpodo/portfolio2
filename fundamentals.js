@@ -18,6 +18,9 @@ var FUND_HIST_DFLT  = 30;
   if (!s) { s = document.createElement('style'); s.id = 'fund-css'; document.head.appendChild(s); }
   s.textContent =
     '#fund-overlay{position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;flex-direction:column;overflow:hidden}' +
+    '#fund-overlay table{min-width:0}' +
+    '#fund-overlay td{font-weight:normal;letter-spacing:0}' +
+    '#fund-overlay tr:hover td{background:none}' +
     '#fund-hdr{display:flex;align-items:center;gap:6px;padding:6px 12px;border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}' +
     '.ftab{background:none;border:none;border-bottom:2px solid transparent;color:var(--dim);font-family:var(--font);font-size:11px;letter-spacing:1px;padding:4px 8px;cursor:pointer}' +
     '.ftab.on{color:' + FUND_ACCENT + ';border-bottom-color:' + FUND_ACCENT + '}' +
