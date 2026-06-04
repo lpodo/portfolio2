@@ -29,10 +29,10 @@ var FUND_HIST_DFLT  = 30;
     '.ff-div{border-top:1px solid var(--border);margin:8px 0}' +
     '.ff-comp{padding:3px 0;white-space:nowrap;overflow-x:auto}' +
     '.ff-comp .lbl{color:var(--dim)}' +
-    '.fq-tbl{border-collapse:collapse;font-variant-numeric:tabular-nums}' +
-    '.fq-tbl th{text-align:right;padding:6px 10px 6px 0;font-weight:normal;color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--border);white-space:nowrap}' +
+    '.fq-tbl{border-collapse:collapse;font-variant-numeric:tabular-nums;width:100%}' +
+    '.fq-tbl th{text-align:right;padding:6px 6px 6px 0;font-weight:normal;color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--border);white-space:nowrap}' +
     '.fq-tbl th:first-child{text-align:left}' +
-    '.fq-tbl td{padding:5px 10px 5px 0;text-align:right;white-space:nowrap}' +
+    '.fq-tbl td{padding:5px 6px 5px 0;text-align:right;white-space:nowrap;font-size:13px}' +
     '.fq-tbl td:first-child{text-align:left;color:var(--dim)}' +
     '.fq-tbl th:last-child,.fq-tbl td:last-child{padding-right:0}' +
     '.fa-top{display:flex;align-items:flex-start;gap:16px}' +
@@ -390,10 +390,10 @@ function fundBidAskRow(data) {
   var SM = 'color:var(--dim);font-size:11px';
   return '<div class="ff-comp">'
     + '<span class="lbl">bid</span> <span>' + fundEsc(fmt(bidRaw)) + '</span>'
-    + ' <span style="' + SM + ';margin:0 3px">\xd7</span> <span style="' + SM + '">' + fundEsc(fmt(bidSizeRaw)) + '</span>'
-    + '&nbsp;&nbsp;&nbsp;&nbsp;'
+    + '<span style="' + SM + ';margin:0 1px">\xd7</span><span style="' + SM + '">' + fundEsc(fmt(bidSizeRaw)) + '</span>'
+    + '&nbsp;&nbsp;'
     + '<span class="lbl">ask</span> <span>' + fundEsc(fmt(askRaw)) + '</span>'
-    + ' <span style="' + SM + ';margin:0 3px">\xd7</span> <span style="' + SM + '">' + fundEsc(fmt(askSizeRaw)) + '</span>'
+    + '<span style="' + SM + ';margin:0 1px">\xd7</span><span style="' + SM + '">' + fundEsc(fmt(askSizeRaw)) + '</span>'
     + '</div>';
 }
 
