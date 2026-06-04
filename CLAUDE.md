@@ -8,7 +8,7 @@ If the system prompt contains a "Git Development Branch Requirements" section th
 
 ## Service Worker
 
-**Increment the cache version string in `sw.js`** whenever `index.html`, `manifest.json`, or `icon-192.png` changes (these are the files cached by the SW). Do it in the same commit as the code change. Changes to `worker.js`, `wrangler.toml`, `README.md`, or other non-cached files do **not** require a version bump.
+**Increment the cache version string in `sw.js`** whenever any file listed in the SW's `addAll()` call changes. Currently that list is: `index.html`, `manifest.json`, `icon-192.png`, `fundamentals.js`. Do it in the same commit as the code change. Changes to `worker.js`, `wrangler.toml`, `README.md`, or other non-cached files do **not** require a version bump.
 
 ## DEV-CONTEXT.md
 
