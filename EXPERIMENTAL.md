@@ -400,21 +400,27 @@ The architectural insight: Yahoo modules split cleanly into two categories.
 
 Contain real-time data (current price, bid/ask, volume, day range, extended-hours fields).
 
-**Research modules — cached locally per ticker (4th row only):**
+**Research modules — sources for the 4th-row parameter cache:**
 
 - `financialData`
 - `defaultKeyStatistics`
 - `recommendationTrend`
+- `upgradeDowngradeHistory`
 
-Only these three are persisted in localStorage. The other research modules (`calendarEvents`, `earnings`, `upgradeDowngradeHistory`) are not cached — they're only needed inside More, where memory-session caching is sufficient.
+These are fetched on 4th-row cache miss, **extracted into parameters, then discarded**. Nothing module-shaped persists in localStorage. See the schema and flow further below. The remaining research modules (`calendarEvents`, `earnings`) are More-only — fetched lazily into in-memory session cache when their tab is opened.
 
 ### Two independent caching mechanisms
 
-1. **4th-row cache (localStorage):** Per-ticker entry with 4-hour TTL. Powers the always-visible compact rows on the main portfolio view. Caches only the three modules listed above.
+1. **4th-row cache (localStorage):** Per-ticker entry with 4-hour TTL. Stores **extracted parameters**, not Yahoo modules. The cached object is a flat snapshot of just the values needed for the 4th row, plus raw components used for computed values, plus the last 100 days of price targets. See "4th-row cache schema" below.
 
-2. **More-session cache (in-memory):** Lives for the duration of a single open "More" screen. Refetches everything on next open. No TTL, no persistence.
+2. **More-session cache (in-memory):** Lives for the duration of a single open "More" screen. Caches **full Yahoo modules** (not extracted parameters) because the More tabs display many fields and per-field extraction would be wasteful. Refetches everything on next More open. No TTL, no persistence.
 
-These mechanisms do **not** share data. Opening More always fetches fresh, even if 4th-row cache has overlapping modules. Simplicity over micro-optimization.
+These mechanisms do **not** share data. Opening More always fetches modules fresh, even when 4th-row cache has overlapping data — there's nothing to share in principle since the two caches store different shapes (parameters vs modules).
+
+**Why parameter-caching for the 4th row:**
+- `upgradeDowngradeHistory` is very large (analyst actions over years; mega-caps run 100-200 KB raw JSON). Storing it per-ticker in localStorage was unattractive.
+- Storage drops by roughly 50x (modules ~5-10 KB vs parameters ~300 bytes per ticker).
+- Cache schema is decoupled from Yahoo's module structure — clean and explicit.
 
 ### More-screen header (layout)
 
@@ -469,14 +475,27 @@ strongBuy 4  buy 11  hold 5  sell 0  strongSell 0
 
 **Line 2 — valuation summary + More button:**
 ```
-Avg target: 1,417.25 (+10.67%)  P/E: 18.37  fw P/E: 29.26  [More]
+Avg tgt: 1,417.25 (+10.67%)  30d tgt: 1,395.00 (+8.97%)  P/E: 18.37  fw P/E: 29.26  [More]
 ```
 
+The historical target average (after `Avg tgt`) follows a fallback rule:
+- If `targets[]` has ≥1 entry within the last **30 days** → show `30d tgt: X (+Y%)` averaged over that window
+- Else if `targets[]` has ≥1 entry within the last **100 days** → show `100d tgt: X (+Y%)`
+- Else omit the historical target entirely
+
+The 30→100→nothing fallback handles tickers with sparse analyst coverage gracefully. The cache schema stores the last 100 days of targets, so both windows are computable without re-fetching.
+
 Field sources:
-- `Avg target` → `financialData.targetMeanPrice`
-- Upside `%` → computed as `(targetMeanPrice − currentPrice) / currentPrice × 100`, using `financialData.currentPrice`
-- `P/E` (trailing) → **computed client-side** as `financialData.currentPrice / defaultKeyStatistics.trailingEps`. Yahoo's `summaryDetail.trailingPE` is the only direct source for this, and `summaryDetail` is not cached. The computed value will be slightly less fresh than Yahoo's but accurate within the 4-hour cache window.
+- `Avg tgt` → `financialData.targetMeanPrice`
+- Upside `%` (after `Avg tgt`) → computed as `(targetMeanPrice − currentPrice) / currentPrice × 100`, using `financialData.currentPrice`
+- `30d tgt` / `100d tgt` → average of `target` values from cached `targets[]`, filtered by the corresponding date window
+- Upside `%` (after `30d`/`100d`) → computed as `(avg − currentPrice) / currentPrice × 100`, using the same `currentPrice`
+- `P/E` (trailing) → **computed client-side** as `financialData.currentPrice / defaultKeyStatistics.trailingEps`. Yahoo's `summaryDetail.trailingPE` is the only direct source for this, and `summaryDetail` is not cached. The computed value is accurate within the 4-hour cache window.
 - `fw P/E` → `defaultKeyStatistics.forwardPE`
+
+**Word abbreviation:** `target` shortened to `tgt` consistently throughout the row (`Avg tgt`, `30d tgt`, `100d tgt`).
+
+If the line ever overflows on narrow viewports — the abbreviations can shrink further (drop `tgt` keeping just `Avg / 30d / 100d`, or drop the colons), but not yet.
 
 Color coding deferred. Upside % will likely become green/red for consistency with the change% in the header row — but that's a follow-up.
 
@@ -491,35 +510,93 @@ For tickers without analyst coverage (most ETFs):
 
 Nothing displayed during a cache-miss fetch. When data arrives, rows populate. No spinners, no placeholders.
 
-### What is NOT cached and NOT computed
+### 4th-row cache schema
 
-Decisions about Yahoo data we explicitly **don't** bring into the main app's cache or computation pipeline:
+Per-ticker entry stored under key `research-{ticker}` in localStorage:
 
-- `marketCap` — only in Market view (live), no separate compute pipeline
-- `priceToSalesTrailing12Months` — only in Market/Statistics view (live), not in 4th row
-- `52WeekLow/High`, `50DayAverage`, `200DayAverage`, `beta`, `volume`, `averageVolume*` — Market-only
-- `bid/ask`, day ranges, extended hours — Market-only
-- `earnings` quarterly history, `upgradeDowngradeHistory` records, `calendarEvents` (other than what 4th row uses) — More-only
+```js
+{
+  v: 1,                        // schema version
+  fetchedAt: 1730000000,       // unix seconds, for TTL comparison
 
-This keeps the 4th-row cache narrow: three modules per ticker, minimal storage, low complexity.
+  // Analyst votes — recommendationTrend.trend[0]
+  strongBuy: 4,
+  buy: 11,
+  hold: 5,
+  sell: 0,
+  strongSell: 0,
+
+  // financialData (raw components)
+  targetMeanPrice: 325.0,
+  currentPrice: 308.5,         // also used for upside % and trailing P/E
+
+  // defaultKeyStatistics (raw component + ready value)
+  trailingEps: 12.5,           // used for trailing P/E = currentPrice / trailingEps
+  forwardPE: 28.4,
+
+  // Filtered from upgradeDowngradeHistory.history — last 100 days only.
+  // Each entry: { date: <unix seconds>, target: <number> }.
+  // Allows any sub-period (1-100 days) to be averaged or otherwise reduced
+  // without re-fetching the original module.
+  targets: [
+    { date: 1729900000, target: 320.0 },
+    { date: 1729600000, target: 325.0 }
+  ]
+}
+```
+
+**Storing raw components rather than precomputed values** keeps the schema flexible. If we later want to display upside against a different reference price, or expose `trailingEps` directly, we don't need to refetch.
+
+**Why no `currency`:** The 4th row uses values directly, formatted without currency prefix. Currency is shown in the More header (fetched fresh per session from `price.currency` or `summaryDetail.currency`).
+
+### Schema versioning
+
+The `v` field is checked on every read. When the schema changes (new field added, field renamed, field semantics changed):
+- Bump `v` in code
+- Old cache entries fail the version check
+- Treated identically to missing entries — refetch and re-extract on next access
+- No migrations, no fallbacks. Silent overwrite.
+
+This avoids accumulating migration logic over time and is correct by construction.
+
+### Fetch and extract flow
+
+On cache miss or stale (`now - fetchedAt > 4h` or version mismatch):
+1. Request from worker: `financialData,defaultKeyStatistics,recommendationTrend,upgradeDowngradeHistory`
+2. Extract parameters into the schema above
+3. Filter `upgradeDowngradeHistory.history` to last 100 days, map to `{date, target}`, drop entries without `currentPriceTarget`
+4. Write to localStorage with current timestamp and current schema version
+5. Discard the raw modules — they're not stored anywhere
+
+Typical sizes: modules fetched per request can total 50-250 KB (the `upgradeDowngradeHistory` dominates for mega-caps). After extraction, ~200-300 bytes per ticker is retained.
+
+### What lives where
+
+- **4th-row cache (localStorage):** the parameter schema above. Only those fields. No raw modules.
+- **More-session (in-memory):** full Yahoo modules per tab visited. Discarded on close.
+- **Never cached anywhere:**
+  - `price` and `summaryDetail` (live data — fetched fresh per More session)
+  - All Market-tab-only fields they contain (52WeekLow/High, 50/200DayAverage, beta, volume, averages, bid/ask, day ranges, extended hours, marketCap, priceToSalesTrailing12Months)
+
+If a value isn't in the 4th-row schema and the user wants to see it, they open More.
 
 ### Fetch strategy summary
 
-| Trigger                                    | Source                  | Modules                              |
-|--------------------------------------------|-------------------------|--------------------------------------|
-| Position expanded (4th row)                | localStorage cache, fetch if stale | financialData, DKS, recommendationTrend |
-| More opened                                | network (always)        | price, summaryDetail                 |
-| More tab switched (not previously loaded)  | network                 | tab-specific modules                 |
-| All other navigation                       | no fetch                | —                                    |
+| Trigger                                    | Source                                                        | What's fetched                                                                              |
+|--------------------------------------------|---------------------------------------------------------------|---------------------------------------------------------------------------------------------|
+| Position expanded (4th row)                | localStorage cache, fetch if stale (>4h) or `v` mismatch       | `financialData`, `defaultKeyStatistics`, `recommendationTrend`, `upgradeDowngradeHistory` — extracted to parameter schema, modules discarded |
+| More opened                                | network (always)                                              | `price`, `summaryDetail`                                                                    |
+| More tab switched (modules not in session) | network                                                       | tab-specific modules (kept in memory)                                                       |
+| All other navigation                       | no fetch                                                      | —                                                                                           |
 
-No bulk endpoint. Per-ticker fetches keep architecture simple. Crumb cache in the worker amortizes Yahoo auth cost across requests.
+No bulk endpoint. Per-ticker fetches keep the architecture simple. Crumb cache in the worker amortizes Yahoo auth cost across requests.
 
 ### Storage choice
 
 `localStorage` over `IndexedDB`:
 - Synchronous API is simpler
-- For current scale (≤100 positions × 3 modules × ~5 KB each = ~1.5 MB), well under the 5 MB limit
-- IndexedDB migration remains viable if portfolios grow significantly
+- 4th-row cache size: ~200-300 bytes per ticker × 100 positions ≈ 30 KB total. Far below the 5 MB localStorage limit.
+- IndexedDB migration is not justifiable at this scale and unlikely to ever be.
 
 ### Resolved design decisions
 
