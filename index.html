@@ -2623,6 +2623,32 @@ function addAlert(posId) {
   save(); render();
 }
 
+// Color for a triggered alert based on its condition direction.
+// '>' (price crossed above) → warm yellow.
+// '<' (price crossed below) → sky blue.
+function alertColorForCond(cond) {
+  return cond === '<' ? '#5bd1f6' : '#f6c15b';
+}
+
+// Returns HTML for 0/1/2 colored dots next to a ticker, based on which
+// directions have triggered alerts in the given flat list of alerts.
+// Sky-blue dot (down trigger) is rendered first if present.
+function getAlertDotsHtml(alerts) {
+  if (!alerts || !alerts.length) return '';
+  var hasDown = false, hasUp = false;
+  for (var i = 0; i < alerts.length; i++) {
+    var a = alerts[i];
+    if (!a || !a.triggered) continue;
+    if (a.condition === '<') hasDown = true;
+    else if (a.condition === '>') hasUp = true;
+    if (hasDown && hasUp) break;
+  }
+  var html = '';
+  if (hasDown) html += ' <span style="color:#5bd1f6;font-size:11px">&#9679;</span>';
+  if (hasUp)   html += ' <span style="color:#f6c15b;font-size:11px">&#9679;</span>';
+  return html;
+}
+
 function buildExpandedInner(p) {
   return '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px">'
     + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (p.category || '—') + '</span></span>'
@@ -2639,7 +2665,7 @@ function buildExpandedInner(p) {
     + '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
     + '<span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
     + ((p.alerts && p.alerts.length) ? p.alerts.map(function(a, i) {
-        var color = a.triggered ? '#f6c15b' : 'var(--bright)';
+        var color = a.triggered ? alertColorForCond(a.condition) : 'var(--bright)';
         return '<span style="font-size:10px;color:' + color + '">' + (a.triggered ? '&#9679; ' : '') + a.condition + ' ' + a.value + '</span>'
           + '<span onclick="deleteAlert(' + p.id + ',' + i + ')" style="cursor:pointer;font-size:11px;color:var(--dim);margin-left:-6px">&#10005;</span>';
       }).join('') : '')
@@ -2670,7 +2696,7 @@ function buildExpandedInnerAgg(p, group) {
     + '<span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
     + allAlerts.map(function(item) {
         var a = item.alert;
-        var color = a.triggered ? '#f6c15b' : 'var(--bright)';
+        var color = a.triggered ? alertColorForCond(a.condition) : 'var(--bright)';
         return '<span style="font-size:10px;color:' + color + '">' + (a.triggered ? '&#9679; ' : '') + a.condition + ' ' + a.value + '</span>'
           + '<span onclick="deleteAlert(' + item.posId + ',' + item.alertIdx + ')" style="cursor:pointer;font-size:11px;color:var(--dim);margin-left:-6px">&#10005;</span>';
       }).join('')
@@ -3307,8 +3333,7 @@ function buildMoversView(area) {
     var cls = x.delta >= 0 ? 'pos' : 'neg';
     var dimStyle = p.qty === 0 ? 'font-style:italic;opacity:0.5' : '';
     var isExpanded = expandedId === p.id;
-    var hasActiveAlert = p.alerts && p.alerts.some(function(a) { return a.triggered; });
-    var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + (hasActiveAlert ? ' <span style="color:#f6c15b;font-size:11px">&#9679;</span>' : '') + '</span>';
+    var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtml(p.alerts) + '</span>';
     return '<tr style="' + dimStyle + '">'
       + '<td style="text-align:left;white-space:nowrap">' + tickerCell + '</td>'
       + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.close ? ('' + x.close.toFixed(2)) : '—') + '</td>'
@@ -3357,8 +3382,7 @@ function renderAlertsTable(posArr, area) {
     var cls = x.delta !== null ? (x.delta >= 0 ? 'pos' : 'neg') : '';
     var dimStyle = p.qty === 0 ? 'font-style:italic;opacity:0.5' : '';
     var isExpanded = expandedId === p.id;
-    var hasActiveAlert = p.alerts && p.alerts.some(function(a) { return a.triggered; });
-    var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + (hasActiveAlert ? ' <span style="color:#f6c15b;font-size:11px">&#9679;</span>' : '') + '</span>';
+    var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtml(p.alerts) + '</span>';
     return '<tr style="' + dimStyle + '">'
       + '<td style="text-align:left;white-space:nowrap">' + tickerCell + '</td>'
       + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.close ? x.close.toFixed(2) : '—') + '</td>'
@@ -4519,8 +4543,7 @@ function render() {
       var cls = x.delta >= 0 ? 'pos' : 'neg';
       var dimStyle = p.qty === 0 ? 'font-style:italic;opacity:0.5' : '';
       var isExpanded = expandedId === p.id;
-      var hasActiveAlert = p.alerts && p.alerts.some(function(a) { return a.triggered; });
-      var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + (hasActiveAlert ? ' <span style="color:#f6c15b;font-size:11px">&#9679;</span>' : '') + '</span>';
+      var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtml(p.alerts) + '</span>';
       return '<tr style="' + dimStyle + '">'
         + '<td style="text-align:left;white-space:nowrap">' + tickerCell + '</td>'
         + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.close ? x.close.toFixed(2) : '—') + '</td>'
@@ -4673,12 +4696,12 @@ function render() {
     }
 
     var isExpanded = expandedId === p.id;
-    var hasActiveAlert = !isEdit && (isAgg
-      ? (aggGroup || []).some(function(gp) { return gp.alerts && gp.alerts.some(function(a) { return a.triggered; }); })
-      : p.alerts && p.alerts.some(function(a) { return a.triggered; }));
+    var alertSrc = isEdit ? [] : (isAgg
+      ? (aggGroup || []).reduce(function(acc, gp) { return acc.concat(gp.alerts || []); }, [])
+      : (p.alerts || []));
     var tickerCell = isEdit
       ? '<input class="edit-input" id="editTicker" type="text" value="' + p.ticker + '" style="width:60px;text-transform:uppercase">'
-      : '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + (hasActiveAlert ? ' <span style="color:#f6c15b;font-size:11px">&#9679;</span>' : '') + '</span>';
+      : '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtml(alertSrc) + '</span>';
     var soldStyle = (p.sold || p.qty === 0) ? 'font-style:italic;opacity:0.5' : '';
     rows += '<tr style="' + soldStyle + '">'
       + '<td style="white-space:nowrap">' + tickerCell + '</td>'
@@ -4702,7 +4725,7 @@ function render() {
         + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:6px">ALERTS</div>'
         + ((p.alerts && p.alerts.length) ? p.alerts.map(function(a, i) {
             return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'
-              + '<span style="font-size:12px;color:' + (a.triggered ? '#f6c15b' : 'var(--bright)') + '">' + a.condition + ' ' + a.value + '</span>'
+              + '<span style="font-size:12px;color:' + (a.triggered ? alertColorForCond(a.condition) : 'var(--bright)') + '">' + a.condition + ' ' + a.value + '</span>'
               + '<button onclick="deleteAlert(' + p.id + ',' + i + ')" class="btn" style="padding:2px 6px;font-size:10px">&#10005;</button>'
               + '</div>';
           }).join('') : '')
@@ -5460,8 +5483,7 @@ function render() {
       var delta = (close && price) ? (price - close) / close * 100 : null;
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
       var isExpanded = expandedId === p.id;
-      var hasActiveAlert = p.alerts && p.alerts.some(function(a) { return a.triggered; });
-      var wlTickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + (hasActiveAlert ? ' <span style="color:#f6c15b;font-size:11px">&#9679;</span>' : '') + '</span>';
+      var wlTickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtml(p.alerts) + '</span>';
       wlRows += '<tr>'
         + '<td style="text-align:left;white-space:nowrap">' + wlTickerCell + '</td>'
         + '<td style="white-space:nowrap">' + (close ? getPositionCurrencySymbol(p) + f2(close) : '&mdash;') + '</td>'
@@ -5514,8 +5536,9 @@ function render() {
       var p = entry.pos;
       var allWatchlist = !entry.hasActive;
       var isExpanded = expandedId === p.id;
-      var hasActiveAlert = entry.group.some(function(gp) { return gp.alerts && gp.alerts.some(function(a) { return a.triggered; }); });
-      var mktTickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + (hasActiveAlert ? ' <span style="color:#f6c15b;font-size:11px">&#9679;</span>' : '') + '</span>';
+      var groupAlerts = [];
+      entry.group.forEach(function(gp) { if (gp.alerts) Array.prototype.push.apply(groupAlerts, gp.alerts); });
+      var mktTickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtml(groupAlerts) + '</span>';
       var mktExpandedRow = isExpanded
         ? '<tr><td colspan="6" style="padding:4px 8px 8px;background:var(--bg2)">' + (entry.group.length > 1 ? buildExpandedInnerAgg(p, entry.group) : buildExpandedInner(p)) + '</td></tr>'
         : '';
