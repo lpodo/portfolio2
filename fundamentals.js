@@ -1019,7 +1019,9 @@ function buildFundamentalsRatingsTable(tickers) {
   }
 
   // All columns same fixed width — matches the widest header ("STRONG SELL").
-  var COL_W = '100px';
+  var COL_W_PX = 85;
+  var COL_W = COL_W_PX + 'px';
+  var TBL_W = (COL_W_PX * 6) + 'px';
   var TH_DIM = 'text-align:right;padding:6px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap;width:' + COL_W;
   var TH_TICKER = 'text-align:left;padding:6px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap;width:' + COL_W;
   var TD     = 'text-align:right;padding:6px 8px;font-size:11px;color:var(--bright);white-space:nowrap;width:' + COL_W;
@@ -1063,7 +1065,7 @@ function buildFundamentalsRatingsTable(tickers) {
       + '</tr>';
   }
 
-  return '<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;table-layout:fixed">'
+  return '<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;table-layout:fixed;width:' + TBL_W + ';min-width:0">'
     + head
     + '<tbody>' + rows + '</tbody>'
     + '</table></div>';
