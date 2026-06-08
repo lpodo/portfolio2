@@ -1018,11 +1018,15 @@ function buildFundamentalsRatingsTable(tickers) {
     return '<div style="padding:36px 0;text-align:center;color:var(--dim);font-size:11px;letter-spacing:2px">CONFIGURE WORKER URL/TOKEN TO LOAD FUNDAMENTALS</div>';
   }
 
-  var TH_DIM = 'text-align:right;padding:6px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap';
-  var TD     = 'text-align:right;padding:6px 8px;font-size:11px;color:var(--bright);white-space:nowrap';
+  // All columns same fixed width — matches the widest header ("STRONG SELL").
+  var COL_W = '100px';
+  var TH_DIM = 'text-align:right;padding:6px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap;width:' + COL_W;
+  var TH_TICKER = 'text-align:left;padding:6px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap;width:' + COL_W;
+  var TD     = 'text-align:right;padding:6px 8px;font-size:11px;color:var(--bright);white-space:nowrap;width:' + COL_W;
+  var TD_TICKER = 'text-align:left;padding:6px 8px;font-size:11px;color:var(--bright);white-space:nowrap;width:' + COL_W;
 
   var head = '<thead><tr>'
-    + '<th style="text-align:left;padding:6px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">TICKER</th>'
+    + '<th style="' + TH_TICKER + '">TICKER</th>'
     + '<th style="' + TH_DIM + '">STRONG BUY</th>'
     + '<th style="' + TH_DIM + '">BUY</th>'
     + '<th style="' + TH_DIM + '">HOLD</th>'
@@ -1043,14 +1047,14 @@ function buildFundamentalsRatingsTable(tickers) {
         });
       }
       rows += '<tr>'
-        + '<td style="text-align:left;padding:6px 8px;font-size:11px;color:var(--bright)">' + fundEsc(ticker) + '</td>'
+        + '<td style="' + TD_TICKER + '">' + fundEsc(ticker) + '</td>'
         + '<td colspan="5" style="text-align:center;padding:6px 8px;font-size:11px;color:var(--dim)">&hellip;</td>'
         + '</tr>';
       continue;
     }
 
     rows += '<tr>'
-      + '<td style="text-align:left;padding:6px 8px;font-size:11px;color:var(--bright)">' + fundEsc(ticker) + '</td>'
+      + '<td style="' + TD_TICKER + '">' + fundEsc(ticker) + '</td>'
       + '<td style="' + TD + '">' + fundFmtCount(cached.strongBuy) + '</td>'
       + '<td style="' + TD + '">' + fundFmtCount(cached.buy) + '</td>'
       + '<td style="' + TD + '">' + fundFmtCount(cached.hold) + '</td>'
@@ -1059,7 +1063,7 @@ function buildFundamentalsRatingsTable(tickers) {
       + '</tr>';
   }
 
-  return '<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;width:100%">'
+  return '<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;table-layout:fixed">'
     + head
     + '<tbody>' + rows + '</tbody>'
     + '</table></div>';
