@@ -3160,6 +3160,8 @@ function toggleViewMenu() {
   }
 }
 function setView(mode) {
+  // Reset fundamentals view state on entry (no persistence per spec)
+  if (mode === 'fundamentals') resetFundamentalsState();
   // In summary context, market → summary-market, main → summary
   var isSummaryContext = ['summary','summary-market','summary-chart','summary-analytics','summary-movers','summary-alerts','global-weight'].indexOf(viewMode) !== -1;
   if (isSummaryContext) {
@@ -3512,9 +3514,82 @@ function setFundamentalsSubView(name) {
   render();
 }
 
-// Default state — resets each time the view is opened (no persistence per spec)
-window.fundamentalsSubView = 'targets';
-window.fundamentalsSelectionOpen = false;
+// Reset fundamentals state to defaults (called on view entry).
+function resetFundamentalsState() {
+  window.fundamentalsSubView = 'targets';
+  window.fundamentalsCurrentMode = 'cur';    // 'cur' | 'reg'
+  window.fundamentalsTargetWindow = 30;       // 30 | 100
+  window.fundamentalsSelectionOpen = false;
+}
+
+function setFundamentalsCurrentMode(m) {
+  window.fundamentalsCurrentMode = m;
+  document.getElementById('fundCurrentMenu') && document.getElementById('fundCurrentMenu').remove();
+  render();
+}
+
+function setFundamentalsTargetWindow(n) {
+  window.fundamentalsTargetWindow = n;
+  document.getElementById('fundWindowMenu') && document.getElementById('fundWindowMenu').remove();
+  render();
+}
+
+function toggleFundCurrentMenu(el) {
+  var existing = document.getElementById('fundCurrentMenu');
+  if (existing) { existing.remove(); return; }
+  document.getElementById('fundWindowMenu') && document.getElementById('fundWindowMenu').remove();
+  var menu = document.createElement('div');
+  menu.id = 'fundCurrentMenu';
+  var rect = el.getBoundingClientRect();
+  menu.style.cssText = 'position:fixed;z-index:300;background:var(--bg2);border:1px solid var(--border);padding:4px 0;min-width:110px;top:' + rect.bottom + 'px;left:' + rect.left + 'px';
+  var cur = window.fundamentalsCurrentMode || 'cur';
+  [['Current','cur'], ['Reg.Price','reg']].forEach(function(it) {
+    var d = document.createElement('div');
+    d.style.cssText = 'padding:6px 12px;cursor:pointer;font-size:11px;white-space:nowrap;color:' + (cur === it[1] ? 'var(--green)' : 'var(--bright)');
+    d.textContent = it[0];
+    d.onclick = function() { setFundamentalsCurrentMode(it[1]); };
+    menu.appendChild(d);
+  });
+  document.body.appendChild(menu);
+  setTimeout(function() {
+    function outsideClick(e) {
+      var m = document.getElementById('fundCurrentMenu');
+      if (!m) { document.removeEventListener('click', outsideClick, true); return; }
+      if (!m.contains(e.target)) { m.remove(); document.removeEventListener('click', outsideClick, true); }
+    }
+    document.addEventListener('click', outsideClick, true);
+  }, 0);
+}
+
+function toggleFundWindowMenu(el) {
+  var existing = document.getElementById('fundWindowMenu');
+  if (existing) { existing.remove(); return; }
+  document.getElementById('fundCurrentMenu') && document.getElementById('fundCurrentMenu').remove();
+  var menu = document.createElement('div');
+  menu.id = 'fundWindowMenu';
+  var rect = el.getBoundingClientRect();
+  menu.style.cssText = 'position:fixed;z-index:300;background:var(--bg2);border:1px solid var(--border);padding:4px 0;min-width:110px;top:' + rect.bottom + 'px;left:' + rect.left + 'px';
+  var cur = window.fundamentalsTargetWindow || 30;
+  [['30d Tgt', 30], ['100d Tgt', 100]].forEach(function(it) {
+    var d = document.createElement('div');
+    d.style.cssText = 'padding:6px 12px;cursor:pointer;font-size:11px;white-space:nowrap;color:' + (cur === it[1] ? 'var(--green)' : 'var(--bright)');
+    d.textContent = it[0];
+    d.onclick = function() { setFundamentalsTargetWindow(it[1]); };
+    menu.appendChild(d);
+  });
+  document.body.appendChild(menu);
+  setTimeout(function() {
+    function outsideClick(e) {
+      var m = document.getElementById('fundWindowMenu');
+      if (!m) { document.removeEventListener('click', outsideClick, true); return; }
+      if (!m.contains(e.target)) { m.remove(); document.removeEventListener('click', outsideClick, true); }
+    }
+    document.addEventListener('click', outsideClick, true);
+  }, 0);
+}
+
+// Default state on page load
+resetFundamentalsState();
 
 
 window.analyticsBreakdown = 'category';
@@ -5960,13 +6035,19 @@ function render() {
         + '</div>';
     }
 
-    // Main content: empty state or sub-view placeholder
+    // Main content: empty state or sub-view content
     var fContent;
     if (!fSelected.length) {
       fContent = '<div style="text-align:center;color:var(--dim);padding:36px 0;font-size:11px;letter-spacing:2px">SELECT POSITIONS TO COMPARE</div>';
+    } else if (fSubView === 'targets') {
+      var fCurMode = window.fundamentalsCurrentMode || 'cur';
+      var fWin     = window.fundamentalsTargetWindow || 30;
+      fContent = (typeof buildFundamentalsTargetsTable === 'function')
+        ? buildFundamentalsTargetsTable(fSelected, fCurMode, fWin)
+        : '<div style="padding:36px 0;text-align:center;color:var(--dim)">TARGETS module not loaded</div>';
     } else {
-      // Placeholders for sub-views (filled in later stages)
-      var labels = { targets: 'TARGETS', ratings: 'RATINGS', earnings: 'EARNINGS', eps: 'EPS' };
+      // Placeholders for Ratings/Earnings/EPS (coming in next stages)
+      var labels = { ratings: 'RATINGS', earnings: 'EARNINGS', eps: 'EPS' };
       fContent = '<div id="fundamentalsArea" style="padding:12px 0;color:var(--dim);font-size:11px;letter-spacing:1px">'
         + labels[fSubView] + ' &mdash; ' + fSelected.length + ' position' + (fSelected.length === 1 ? '' : 's') + ' selected'
         + '<div style="margin-top:8px;font-size:10px;opacity:0.7">(sub-view content coming in next stage)</div>'

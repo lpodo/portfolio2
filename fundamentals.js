@@ -910,6 +910,104 @@ function moreSwitchTab(tab) {
 
 /* ── Public API ─────────────────────────────────────────────────────────── */
 window.buildFundamentalsRows = buildFundamentalsRows;
+/* ── Side-by-side Fundamentals view: Targets sub-view ──────────────────── */
+function fundFmtPrice(v) {
+  if (v == null || isNaN(v)) return '<span style="color:var(--dim)">&mdash;</span>';
+  return Number(v).toFixed(2);
+}
+
+function fundFmtPct(v) {
+  if (v == null || isNaN(v)) return '<span style="color:var(--dim)">&mdash;</span>';
+  var sign = v >= 0 ? '+' : '';
+  var cls  = v >= 0 ? 'var(--green)' : 'var(--red)';
+  return '<span style="color:' + cls + '">' + sign + Number(v).toFixed(2) + '%</span>';
+}
+
+function fundFmtPE(v) {
+  if (v == null || isNaN(v) || v <= 0) return '<span style="color:var(--dim)">&mdash;</span>';
+  return Number(v).toFixed(2);
+}
+
+function buildFundamentalsTargetsTable(tickers, currentMode, targetWindow) {
+  if (!fundWorkerBase() || !fundWorkerToken()) {
+    return '<div style="padding:36px 0;text-align:center;color:var(--dim);font-size:11px;letter-spacing:2px">CONFIGURE WORKER URL/TOKEN TO LOAD FUNDAMENTALS</div>';
+  }
+
+  var nowSec    = Math.floor(Date.now() / 1000);
+  var cutoffSec = nowSec - targetWindow * 86400;
+
+  var TH_DIM = 'text-align:right;padding:6px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap';
+  var TH_GRN = 'text-align:right;padding:6px 8px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;color:var(--green)';
+  var TD     = 'text-align:right;padding:6px 8px;font-size:11px;color:var(--bright);white-space:nowrap';
+
+  var curLabel = currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT';
+  var winLabel = targetWindow + 'D TGT';
+
+  var head = '<thead><tr>'
+    + '<th style="text-align:left;padding:6px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">TICKER</th>'
+    + '<th style="' + TH_GRN + '" onclick="toggleFundCurrentMenu(this)">' + curLabel + '</th>'
+    + '<th style="' + TH_DIM + '">AVG TGT</th>'
+    + '<th style="' + TH_DIM + '">%</th>'
+    + '<th style="' + TH_GRN + '" onclick="toggleFundWindowMenu(this)">' + winLabel + '</th>'
+    + '<th style="' + TH_DIM + '">%</th>'
+    + '<th style="' + TH_DIM + '">P/E</th>'
+    + '<th style="' + TH_DIM + '">FW P/E</th>'
+    + '</tr></thead>';
+
+  var rows = '';
+  for (var i = 0; i < tickers.length; i++) {
+    var ticker = tickers[i];
+    var pos = (typeof positions !== 'undefined' && positions)
+      ? positions.find(function(p) { return p.ticker === ticker; })
+      : null;
+    var live = pos ? (currentMode === 'reg' ? pos.regularMarketPrice : pos.current) : null;
+    if (live == null && pos) live = pos.current;
+
+    var cached = fundCacheGet(ticker);
+    if (!cached) {
+      if (!fundInflight[ticker]) {
+        fundInflight[ticker] = fundFetchRow(ticker).then(function() {
+          delete fundInflight[ticker];
+          if (typeof render === 'function') render();
+        });
+      }
+      rows += '<tr>'
+        + '<td style="text-align:left;padding:6px 8px;font-size:11px;color:var(--bright)">' + fundEsc(ticker) + '</td>'
+        + '<td style="' + TD + '">' + fundFmtPrice(live) + '</td>'
+        + '<td colspan="6" style="text-align:center;padding:6px 8px;font-size:11px;color:var(--dim)">&hellip;</td>'
+        + '</tr>';
+      continue;
+    }
+
+    var avgTgt   = cached.targetMeanPrice;
+    var winTgt   = fundAvgInWindow(cached.targets, cutoffSec);
+    var trailEps = cached.trailingEps;
+    var trailPE  = (live != null && trailEps != null && trailEps > 0) ? (live / trailEps) : null;
+    var fwdPE    = cached.forwardPE;
+
+    var avgPct = (live != null && avgTgt != null && live > 0) ? ((avgTgt / live - 1) * 100) : null;
+    var winPct = (live != null && winTgt != null && live > 0) ? ((winTgt / live - 1) * 100) : null;
+
+    rows += '<tr>'
+      + '<td style="text-align:left;padding:6px 8px;font-size:11px;color:var(--bright)">' + fundEsc(ticker) + '</td>'
+      + '<td style="' + TD + '">' + fundFmtPrice(live) + '</td>'
+      + '<td style="' + TD + '">' + fundFmtPrice(avgTgt) + '</td>'
+      + '<td style="' + TD + '">' + fundFmtPct(avgPct) + '</td>'
+      + '<td style="' + TD + '">' + fundFmtPrice(winTgt) + '</td>'
+      + '<td style="' + TD + '">' + fundFmtPct(winPct) + '</td>'
+      + '<td style="' + TD + '">' + fundFmtPE(trailPE) + '</td>'
+      + '<td style="' + TD + '">' + fundFmtPE(fwdPE) + '</td>'
+      + '</tr>';
+  }
+
+  return '<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;width:100%">'
+    + head
+    + '<tbody>' + rows + '</tbody>'
+    + '</table></div>';
+}
+
+window.buildFundamentalsTargetsTable = buildFundamentalsTargetsTable;
+
 window.openMore              = openMore;
 window.closeMore             = closeMore;
 window.moreSwitchTab         = moreSwitchTab;
