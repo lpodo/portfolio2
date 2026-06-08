@@ -1008,6 +1008,65 @@ function buildFundamentalsTargetsTable(tickers, currentMode, targetWindow) {
 
 window.buildFundamentalsTargetsTable = buildFundamentalsTargetsTable;
 
+function fundFmtCount(v) {
+  if (v == null || isNaN(v)) return '<span style="color:var(--dim)">&mdash;</span>';
+  return String(Math.round(v));
+}
+
+function buildFundamentalsRatingsTable(tickers) {
+  if (!fundWorkerBase() || !fundWorkerToken()) {
+    return '<div style="padding:36px 0;text-align:center;color:var(--dim);font-size:11px;letter-spacing:2px">CONFIGURE WORKER URL/TOKEN TO LOAD FUNDAMENTALS</div>';
+  }
+
+  var TH_DIM = 'text-align:right;padding:6px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap';
+  var TD     = 'text-align:right;padding:6px 8px;font-size:11px;color:var(--bright);white-space:nowrap';
+
+  var head = '<thead><tr>'
+    + '<th style="text-align:left;padding:6px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">TICKER</th>'
+    + '<th style="' + TH_DIM + '">STRONG BUY</th>'
+    + '<th style="' + TH_DIM + '">BUY</th>'
+    + '<th style="' + TH_DIM + '">HOLD</th>'
+    + '<th style="' + TH_DIM + '">SELL</th>'
+    + '<th style="' + TH_DIM + '">STRONG SELL</th>'
+    + '</tr></thead>';
+
+  var rows = '';
+  for (var i = 0; i < tickers.length; i++) {
+    var ticker = tickers[i];
+    var cached = fundCacheGet(ticker);
+
+    if (!cached) {
+      if (!fundInflight[ticker]) {
+        fundInflight[ticker] = fundFetchRow(ticker).then(function() {
+          delete fundInflight[ticker];
+          if (typeof render === 'function') render();
+        });
+      }
+      rows += '<tr>'
+        + '<td style="text-align:left;padding:6px 8px;font-size:11px;color:var(--bright)">' + fundEsc(ticker) + '</td>'
+        + '<td colspan="5" style="text-align:center;padding:6px 8px;font-size:11px;color:var(--dim)">&hellip;</td>'
+        + '</tr>';
+      continue;
+    }
+
+    rows += '<tr>'
+      + '<td style="text-align:left;padding:6px 8px;font-size:11px;color:var(--bright)">' + fundEsc(ticker) + '</td>'
+      + '<td style="' + TD + '">' + fundFmtCount(cached.strongBuy) + '</td>'
+      + '<td style="' + TD + '">' + fundFmtCount(cached.buy) + '</td>'
+      + '<td style="' + TD + '">' + fundFmtCount(cached.hold) + '</td>'
+      + '<td style="' + TD + '">' + fundFmtCount(cached.sell) + '</td>'
+      + '<td style="' + TD + '">' + fundFmtCount(cached.strongSell) + '</td>'
+      + '</tr>';
+  }
+
+  return '<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;width:100%">'
+    + head
+    + '<tbody>' + rows + '</tbody>'
+    + '</table></div>';
+}
+
+window.buildFundamentalsRatingsTable = buildFundamentalsRatingsTable;
+
 window.openMore              = openMore;
 window.closeMore             = closeMore;
 window.moreSwitchTab         = moreSwitchTab;
