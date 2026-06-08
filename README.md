@@ -132,6 +132,8 @@ The ⇨ button moves any position to another active portfolio, preserving all fi
 - 🌙 — pre or post market (PRE / POST)
 - ✦ — market closed (CLOSED)
 
+Market state icons can be changed via Settings.
+
 ## View Modes
 
 Selected via the dropdown menu (sometimes referred to as the ⋮ menu).
