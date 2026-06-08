@@ -1018,14 +1018,16 @@ function buildFundamentalsRatingsTable(tickers) {
     return '<div style="padding:36px 0;text-align:center;color:var(--dim);font-size:11px;letter-spacing:2px">CONFIGURE WORKER URL/TOKEN TO LOAD FUNDAMENTALS</div>';
   }
 
-  // All columns same fixed width — matches the widest header ("STRONG SELL").
-  var COL_W_PX = 85;
+  // All columns same fixed width — narrow; long headers wrap onto multiple lines.
+  var COL_W_PX = 50;
   var COL_W = COL_W_PX + 'px';
   var TBL_W = (COL_W_PX * 6) + 'px';
-  var TH_DIM = 'text-align:right;padding:6px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap;width:' + COL_W;
-  var TH_TICKER = 'text-align:left;padding:6px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap;width:' + COL_W;
-  var TD     = 'text-align:right;padding:6px 8px;font-size:11px;color:var(--bright);white-space:nowrap;width:' + COL_W;
-  var TD_TICKER = 'text-align:left;padding:6px 8px;font-size:11px;color:var(--bright);white-space:nowrap;width:' + COL_W;
+  // Header styles: allow wrap, vertical-align center for visual balance with single-word headers.
+  var TH_DIM = 'text-align:right;padding:6px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);vertical-align:middle;width:' + COL_W;
+  var TH_TICKER = 'text-align:left;padding:6px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);vertical-align:middle;width:' + COL_W;
+  // Body cells: numbers never wrap, stay on one line.
+  var TD     = 'text-align:right;padding:6px 4px;font-size:11px;color:var(--bright);white-space:nowrap;width:' + COL_W;
+  var TD_TICKER = 'text-align:left;padding:6px 4px;font-size:11px;color:var(--bright);white-space:nowrap;width:' + COL_W;
 
   var head = '<thead><tr>'
     + '<th style="' + TH_TICKER + '">TICKER</th>'
@@ -1050,7 +1052,7 @@ function buildFundamentalsRatingsTable(tickers) {
       }
       rows += '<tr>'
         + '<td style="' + TD_TICKER + '">' + fundEsc(ticker) + '</td>'
-        + '<td colspan="5" style="text-align:center;padding:6px 8px;font-size:11px;color:var(--dim)">&hellip;</td>'
+        + '<td colspan="5" style="text-align:center;padding:6px 4px;font-size:11px;color:var(--dim)">&hellip;</td>'
         + '</tr>';
       continue;
     }
