@@ -6049,12 +6049,18 @@ function render() {
       fContent = (typeof buildFundamentalsRatingsTable === 'function')
         ? buildFundamentalsRatingsTable(fSelected)
         : '<div style="padding:36px 0;text-align:center;color:var(--dim)">RATINGS module not loaded</div>';
+    } else if (fSubView === 'earnings') {
+      fContent = (typeof buildFundamentalsEarningsTable === 'function')
+        ? buildFundamentalsEarningsTable(fSelected)
+        : '<div style="padding:36px 0;text-align:center;color:var(--dim)">EARNINGS module not loaded</div>';
+    } else if (fSubView === 'eps') {
+      fContent = (typeof buildFundamentalsEpsTable === 'function')
+        ? buildFundamentalsEpsTable(fSelected)
+        : '<div style="padding:36px 0;text-align:center;color:var(--dim)">EPS module not loaded</div>';
     } else {
-      // Placeholders for Earnings/EPS (coming in next stages)
-      var labels = { earnings: 'EARNINGS', eps: 'EPS' };
+      // Should not happen — all 4 sub-views handled above
       fContent = '<div id="fundamentalsArea" style="padding:12px 0;color:var(--dim);font-size:11px;letter-spacing:1px">'
-        + labels[fSubView] + ' &mdash; ' + fSelected.length + ' position' + (fSelected.length === 1 ? '' : 's') + ' selected'
-        + '<div style="margin-top:8px;font-size:10px;opacity:0.7">(sub-view content coming in next stage)</div>'
+        + fSubView.toUpperCase() + ' &mdash; ' + fSelected.length + ' position' + (fSelected.length === 1 ? '' : 's') + ' selected'
         + '</div>';
     }
 

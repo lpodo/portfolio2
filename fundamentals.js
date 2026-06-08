@@ -811,6 +811,16 @@ function moreFetchAndRender(tab) {
 
   var missing = tabCfg.mods.filter(function(m) { return !(m in state.modules); });
 
+  // Persistent earnings cache (12h TTL) — read-through: if cached, skip refetch.
+  // Shared with the Fundamentals side-by-side view.
+  if (missing.indexOf('earnings') !== -1) {
+    var ye = yearnCacheGet(ticker);
+    if (ye) {
+      state.modules.earnings = ye.data;
+      missing = missing.filter(function(m) { return m !== 'earnings'; });
+    }
+  }
+
   function doRender() {
     if (!moreState || moreState.tab !== tab) return;
     var ct = document.getElementById('fund-body');
@@ -841,6 +851,10 @@ function moreFetchAndRender(tab) {
       if (!moreState || moreState.ticker !== ticker) return;
       for (var i = 0; i < missing.length; i++) {
         state.modules[missing[i]] = (missing[i] in result) ? result[missing[i]] : null;
+      }
+      // Persistent earnings cache: write-through if earnings was just fetched
+      if (missing.indexOf('earnings') !== -1) {
+        yearnCacheSet(ticker, result.earnings || null);
       }
       if (result.price) {
         var currency2 = result.price.currency;
@@ -1074,6 +1088,268 @@ function buildFundamentalsRatingsTable(tickers) {
 }
 
 window.buildFundamentalsRatingsTable = buildFundamentalsRatingsTable;
+
+/* ── Earnings cache (yearn_<TICKER>) ────────────────────────────────────
+   Stores the raw `earnings` module from Yahoo, 12h TTL, schema-versioned.
+   Used by Fundamentals view (Earnings/EPS sub-views) and by More (Quarterly).
+   The same cache entry is read/written from both call sites. */
+var YEARN_CACHE_TTL = 12 * 60 * 60 * 1000;
+var YEARN_CACHE_VER = 1;
+var yearnInflight = {};
+
+function yearnCacheKey(ticker) { return 'yearn_' + ticker.toUpperCase(); }
+
+function yearnCacheGet(ticker) {
+  try {
+    var raw = localStorage.getItem(yearnCacheKey(ticker));
+    if (!raw) return null;
+    var entry = JSON.parse(raw);
+    if (!entry || !entry.ts) return null;
+    if (entry.v !== YEARN_CACHE_VER) return null;
+    if (Date.now() - entry.ts > YEARN_CACHE_TTL) return null;
+    return entry; // caller reads entry.data (may be null for ETFs with no earnings)
+  } catch(e) { return null; }
+}
+
+function yearnCacheSet(ticker, earningsModule) {
+  try {
+    var obj = { v: YEARN_CACHE_VER, ts: Date.now(), data: earningsModule || null };
+    localStorage.setItem(yearnCacheKey(ticker), JSON.stringify(obj));
+  } catch(e) {}
+}
+
+// Standalone fetch with normalized error handling — caches null for ETFs / no-data,
+// skips cache write only on network/parse errors (so next attempt can retry).
+function yearnFetch(ticker) {
+  var base  = fundWorkerBase();
+  var token = fundWorkerToken();
+  if (!base || !token) return Promise.resolve();
+  var url = base + '/api/quotesummary?ticker=' + encodeURIComponent(ticker) + '&modules=earnings';
+  return fetch(url, { headers: { 'X-API-Token': token } })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      var result = (!data._error && data.quoteSummary && !data.quoteSummary.error)
+        ? (data.quoteSummary.result && data.quoteSummary.result[0])
+        : null;
+      var earnings = result && result.earnings ? result.earnings : null;
+      yearnCacheSet(ticker, earnings);
+    })
+    .catch(function() {}); // network error: don't cache, allow retry next time
+}
+
+/* ── Side-by-side Fundamentals view: Earnings + EPS sub-views ─────────── */
+
+// "1Q2024" → "Q1-24"
+function fundFormatQuarter(dateStr) {
+  if (!dateStr) return '';
+  var m = String(dateStr).match(/^(\d)Q(\d{4})$/);
+  if (!m) return String(dateStr);
+  return 'Q' + m[1] + '-' + m[2].slice(2);
+}
+
+// Growth percentage with abs-denominator (works correctly across negative bases).
+function fundFmtGrowthPct(curr, prev) {
+  if (curr == null || prev == null || isNaN(curr) || isNaN(prev) || prev === 0) {
+    return '<span style="color:var(--dim)">&mdash;</span>';
+  }
+  var pct = (curr - prev) / Math.abs(prev) * 100;
+  var sign = pct >= 0 ? '+' : '';
+  var cls  = pct >= 0 ? 'var(--green)' : 'var(--red)';
+  return '<span style="color:' + cls + '">' + sign + pct.toFixed(1) + '%</span>';
+}
+
+function fundFmtEps(v) {
+  if (v == null || isNaN(v)) return '<span style="color:var(--dim)">&mdash;</span>';
+  return Number(v).toFixed(2);
+}
+
+// Helper: trigger fetch + render-on-arrival pattern for a ticker.
+function yearnEnsure(ticker) {
+  if (yearnInflight[ticker]) return;
+  yearnInflight[ticker] = yearnFetch(ticker).then(function() {
+    delete yearnInflight[ticker];
+    if (typeof render === 'function') render();
+  });
+}
+
+function buildFundamentalsEarningsTable(tickers) {
+  if (!fundWorkerBase() || !fundWorkerToken()) {
+    return '<div style="padding:36px 0;text-align:center;color:var(--dim);font-size:11px;letter-spacing:2px">CONFIGURE WORKER URL/TOKEN TO LOAD FUNDAMENTALS</div>';
+  }
+
+  // Collect data and pick quarter labels from the first ticker that has ≥3 quarters.
+  var rowData = [];
+  var quarterLabels = null;
+
+  for (var i = 0; i < tickers.length; i++) {
+    var ticker = tickers[i];
+    var entry  = yearnCacheGet(ticker);
+    if (!entry) {
+      yearnEnsure(ticker);
+      rowData.push({ ticker: ticker, fin: null, loading: true });
+      continue;
+    }
+    var fin = entry.data && entry.data.financialsChart && entry.data.financialsChart.quarterly;
+    fin = Array.isArray(fin) ? fin : null;
+    rowData.push({ ticker: ticker, fin: fin, loading: false });
+    if (!quarterLabels && fin && fin.length >= 3) {
+      quarterLabels = fin.slice(-3).map(function(q) { return fundFormatQuarter(q.date); });
+    }
+  }
+  if (!quarterLabels) quarterLabels = ['—', '—', '—'];
+
+  var COL_W_PX = 50;
+  var COL_W = COL_W_PX + 'px';
+  var TBL_W = (COL_W_PX * 7) + 'px'; // 1 ticker + 3 quarters × 2 sub-cols
+  var TH_TICKER = 'text-align:left;padding:6px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);vertical-align:middle;width:' + COL_W;
+  var TH_Q  = 'text-align:center;padding:6px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);vertical-align:middle';
+  var TH_SUB = 'text-align:right;padding:4px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);vertical-align:middle;width:' + COL_W;
+  var TD     = 'text-align:right;padding:6px 4px;font-size:11px;color:var(--bright);white-space:nowrap;width:' + COL_W;
+  var TD_TICKER = 'text-align:left;padding:6px 4px;font-size:11px;color:var(--bright);white-space:nowrap;width:' + COL_W;
+  var TD_DASH = '<span style="color:var(--dim)">&mdash;</span>';
+
+  var head = '<thead>'
+    + '<tr>'
+    + '<th rowspan="2" style="' + TH_TICKER + '">TICKER</th>'
+    + '<th colspan="2" style="' + TH_Q + '">' + fundEsc(quarterLabels[0]) + '</th>'
+    + '<th colspan="2" style="' + TH_Q + '">' + fundEsc(quarterLabels[1]) + '</th>'
+    + '<th colspan="2" style="' + TH_Q + '">' + fundEsc(quarterLabels[2]) + '</th>'
+    + '</tr>'
+    + '<tr>'
+    + '<th style="' + TH_SUB + '">REV</th><th style="' + TH_SUB + '">EARN</th>'
+    + '<th style="' + TH_SUB + '">REV</th><th style="' + TH_SUB + '">EARN</th>'
+    + '<th style="' + TH_SUB + '">REV</th><th style="' + TH_SUB + '">EARN</th>'
+    + '</tr>'
+    + '</thead>';
+
+  function qVal(q, field) { return q ? fundRawNum(q[field]) : null; }
+  function pairCells(prev, curr) {
+    return '<td style="' + TD + '">' + fundFmtGrowthPct(qVal(curr, 'revenue'), qVal(prev, 'revenue')) + '</td>'
+         + '<td style="' + TD + '">' + fundFmtGrowthPct(qVal(curr, 'earnings'), qVal(prev, 'earnings')) + '</td>';
+  }
+
+  var rows = '';
+  rowData.forEach(function(rd) {
+    if (rd.loading) {
+      rows += '<tr>'
+        + '<td style="' + TD_TICKER + '">' + fundEsc(rd.ticker) + '</td>'
+        + '<td colspan="6" style="text-align:center;padding:6px 4px;font-size:11px;color:var(--dim)">&hellip;</td>'
+        + '</tr>';
+      return;
+    }
+    var fin = rd.fin;
+    if (!fin || fin.length < 2) {
+      rows += '<tr>'
+        + '<td style="' + TD_TICKER + '">' + fundEsc(rd.ticker) + '</td>'
+        + '<td style="' + TD + '">' + TD_DASH + '</td><td style="' + TD + '">' + TD_DASH + '</td>'
+        + '<td style="' + TD + '">' + TD_DASH + '</td><td style="' + TD + '">' + TD_DASH + '</td>'
+        + '<td style="' + TD + '">' + TD_DASH + '</td><td style="' + TD + '">' + TD_DASH + '</td>'
+        + '</tr>';
+      return;
+    }
+    var n = fin.length;
+    // Column 0 = growth at fin[n-3] (needs fin[n-4])
+    // Column 1 = growth at fin[n-2] (needs fin[n-3])
+    // Column 2 = growth at fin[n-1] (needs fin[n-2])
+    var prev0 = n >= 4 ? fin[n-4] : null, curr0 = n >= 3 ? fin[n-3] : null;
+    var prev1 = n >= 3 ? fin[n-3] : null, curr1 = n >= 2 ? fin[n-2] : null;
+    var prev2 = n >= 2 ? fin[n-2] : null, curr2 = n >= 1 ? fin[n-1] : null;
+
+    rows += '<tr>'
+      + '<td style="' + TD_TICKER + '">' + fundEsc(rd.ticker) + '</td>'
+      + pairCells(prev0, curr0)
+      + pairCells(prev1, curr1)
+      + pairCells(prev2, curr2)
+      + '</tr>';
+  });
+
+  return '<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;table-layout:fixed;width:' + TBL_W + ';min-width:0">'
+    + head
+    + '<tbody>' + rows + '</tbody>'
+    + '</table></div>';
+}
+
+function buildFundamentalsEpsTable(tickers) {
+  if (!fundWorkerBase() || !fundWorkerToken()) {
+    return '<div style="padding:36px 0;text-align:center;color:var(--dim);font-size:11px;letter-spacing:2px">CONFIGURE WORKER URL/TOKEN TO LOAD FUNDAMENTALS</div>';
+  }
+
+  var rowData = [];
+  var quarterLabels = null;
+
+  for (var i = 0; i < tickers.length; i++) {
+    var ticker = tickers[i];
+    var entry  = yearnCacheGet(ticker);
+    if (!entry) {
+      yearnEnsure(ticker);
+      rowData.push({ ticker: ticker, eps: null, loading: true });
+      continue;
+    }
+    var eps = entry.data && entry.data.earningsChart && entry.data.earningsChart.quarterly;
+    eps = Array.isArray(eps) ? eps : null;
+    rowData.push({ ticker: ticker, eps: eps, loading: false });
+    if (!quarterLabels && eps && eps.length >= 1) {
+      var lastFour = eps.slice(-4);
+      while (lastFour.length < 4) lastFour.unshift(null);
+      quarterLabels = lastFour.map(function(q) { return q ? fundFormatQuarter(q.date) : '—'; });
+    }
+  }
+  if (!quarterLabels) quarterLabels = ['—','—','—','—'];
+
+  var COL_W_PX = 50;
+  var COL_W = COL_W_PX + 'px';
+  var TBL_W = (COL_W_PX * 5) + 'px';
+  var TH_DIM = 'text-align:right;padding:6px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);vertical-align:middle;width:' + COL_W;
+  var TH_TICKER = 'text-align:left;padding:6px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);vertical-align:middle;width:' + COL_W;
+  var TD     = 'text-align:right;padding:6px 4px;font-size:11px;color:var(--bright);white-space:nowrap;width:' + COL_W;
+  var TD_TICKER = 'text-align:left;padding:6px 4px;font-size:11px;color:var(--bright);white-space:nowrap;width:' + COL_W;
+  var TD_DASH = '<span style="color:var(--dim)">&mdash;</span>';
+
+  var head = '<thead><tr>'
+    + '<th style="' + TH_TICKER + '">TICKER</th>'
+    + quarterLabels.map(function(q) { return '<th style="' + TH_DIM + '">' + fundEsc(q) + '</th>'; }).join('')
+    + '</tr></thead>';
+
+  var rows = '';
+  rowData.forEach(function(rd) {
+    if (rd.loading) {
+      rows += '<tr>'
+        + '<td style="' + TD_TICKER + '">' + fundEsc(rd.ticker) + '</td>'
+        + '<td colspan="4" style="text-align:center;padding:6px 4px;font-size:11px;color:var(--dim)">&hellip;</td>'
+        + '</tr>';
+      return;
+    }
+    var eps = rd.eps;
+    if (!eps || !eps.length) {
+      rows += '<tr>'
+        + '<td style="' + TD_TICKER + '">' + fundEsc(rd.ticker) + '</td>'
+        + '<td style="' + TD + '">' + TD_DASH + '</td>'
+        + '<td style="' + TD + '">' + TD_DASH + '</td>'
+        + '<td style="' + TD + '">' + TD_DASH + '</td>'
+        + '<td style="' + TD + '">' + TD_DASH + '</td>'
+        + '</tr>';
+      return;
+    }
+    var last4 = eps.slice(-4);
+    while (last4.length < 4) last4.unshift(null);
+
+    rows += '<tr>'
+      + '<td style="' + TD_TICKER + '">' + fundEsc(rd.ticker) + '</td>'
+      + last4.map(function(q) {
+          var v = q && q.actual ? fundRawNum(q.actual) : null;
+          return '<td style="' + TD + '">' + fundFmtEps(v) + '</td>';
+        }).join('')
+      + '</tr>';
+  });
+
+  return '<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;table-layout:fixed;width:' + TBL_W + ';min-width:0">'
+    + head
+    + '<tbody>' + rows + '</tbody>'
+    + '</table></div>';
+}
+
+window.buildFundamentalsEarningsTable = buildFundamentalsEarningsTable;
+window.buildFundamentalsEpsTable      = buildFundamentalsEpsTable;
 
 window.openMore              = openMore;
 window.closeMore             = closeMore;
