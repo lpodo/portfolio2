@@ -223,6 +223,7 @@
       <div onclick="setView('main')" id="vmMain" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">P&amp;L</div>
       <div onclick="setView('market')" id="vmMarket" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">MARKET</div>
       <div onclick="setView('chart')" id="vmChart" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">CHART</div>
+      <div onclick="setView('fundamentals')" id="vmFundamentals" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">FUNDAMENTALS</div>
       <div onclick="setView('market-total')" id="vmMarketTotal" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">&#931; MARKET</div>
       <div onclick="setView('weight')" id="vmWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">WEIGHTS</div>
       <div onclick="setView('global-weight')" id="vmGlobalWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">&#931; WEIGHTS</div>
@@ -3150,6 +3151,7 @@ function toggleViewMenu() {
     document.getElementById('vmAlerts').style.display = isArchive ? 'none' : '';
     document.getElementById('vmAlerts').textContent = isSummaryMode ? 'Σ ALERTS' : 'ALERTS';
     document.getElementById('vmChart').style.display = isArchive ? 'none' : '';
+    document.getElementById('vmFundamentals').style.display = isArchive ? 'none' : '';
     document.getElementById('vmAnalytics').style.display = isWL ? 'none' : '';
     document.getElementById('vmAnalytics').textContent = isSummaryMode ? 'Σ ANALYTICS' : 'ANALYTICS';
     menu.style.display = 'block';
@@ -3169,10 +3171,10 @@ function setView(mode) {
     if (mode === 'weight' || mode === 'global-weight') weightSort = { key: 'weight', dir: -1 };
     if (mode === 'market') marketSort = { key: null, dir: -1 };
   }
-  ['vmMain','vmMarket','vmMarketTotal','vmWeight','vmGlobalWeight','vmChart','vmAnalytics','vmAlerts'].forEach(function(id) {
+  ['vmMain','vmMarket','vmMarketTotal','vmWeight','vmGlobalWeight','vmChart','vmFundamentals','vmAnalytics','vmAlerts'].forEach(function(id) {
     document.getElementById(id).style.color = '';
   });
-  var activeId = viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMarketTotal' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'summary-alerts' ? 'vmAlerts' : viewMode === 'summary' ? 'vmMain' : viewMode === 'global-weight' ? 'vmGlobalWeight' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMarket' : viewMode === 'alerts' ? 'vmAlerts' : 'vmMarket';
+  var activeId = viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMarketTotal' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'summary-alerts' ? 'vmAlerts' : viewMode === 'summary' ? 'vmMain' : viewMode === 'global-weight' ? 'vmGlobalWeight' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'fundamentals' ? 'vmFundamentals' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMarket' : viewMode === 'alerts' ? 'vmAlerts' : 'vmMarket';
   document.getElementById(activeId).style.color = 'var(--green)';
   document.getElementById('viewMenu').style.display = 'none';
   // Refresh prices when entering chart view (updates today's point)
@@ -3443,6 +3445,76 @@ function chartSelectNone() {
 }
 
 window.chartRange = '1mo';
+
+// --- Fundamentals view: selection helpers + sub-view state ---
+function getFundamentalsSelKey() {
+  return 'pt_fund_sel_' + currentPortfolioId;
+}
+
+function getFundamentalsSelection() {
+  var saved = localStorage.getItem(getFundamentalsSelKey());
+  if (saved) {
+    try {
+      var arr = JSON.parse(saved);
+      var allTickers = getFundamentalsUniqueTickers();
+      return arr.filter(function(t) { return allTickers.indexOf(t) !== -1; });
+    } catch(e) {}
+  }
+  return []; // default: none
+}
+
+function getFundamentalsUniqueTickers() {
+  // Same shape as chart: unique tickers from current portfolio
+  var seen = {};
+  var result = [];
+  (positions || []).forEach(function(p) {
+    if (!seen[p.ticker]) { seen[p.ticker] = true; result.push(p.ticker); }
+  });
+  return result;
+}
+
+function saveFundamentalsSelection(tickers) {
+  try { localStorage.setItem(getFundamentalsSelKey(), JSON.stringify(tickers)); } catch(e) {}
+}
+
+function toggleFundamentalsSelection() {
+  window.fundamentalsSelectionOpen = !window.fundamentalsSelectionOpen;
+  render();
+}
+
+function applyFundamentalsSelection() {
+  var allTickers = getFundamentalsUniqueTickers();
+  var selected = allTickers.filter(function(t) {
+    var cb = document.getElementById('fundcb_' + t);
+    return cb && cb.checked;
+  });
+  saveFundamentalsSelection(selected);
+  window.fundamentalsSelectionOpen = false;
+  render();
+}
+
+function fundamentalsSelectAll() {
+  getFundamentalsUniqueTickers().forEach(function(t) {
+    var cb = document.getElementById('fundcb_' + t);
+    if (cb) cb.checked = true;
+  });
+}
+
+function fundamentalsSelectNone() {
+  getFundamentalsUniqueTickers().forEach(function(t) {
+    var cb = document.getElementById('fundcb_' + t);
+    if (cb) cb.checked = false;
+  });
+}
+
+function setFundamentalsSubView(name) {
+  window.fundamentalsSubView = name;
+  render();
+}
+
+// Default state — resets each time the view is opened (no persistence per spec)
+window.fundamentalsSubView = 'targets';
+window.fundamentalsSelectionOpen = false;
 
 
 window.analyticsBreakdown = 'category';
@@ -4516,7 +4588,7 @@ function renderMultiChart(lines) {
 function updateViewMenuBtn() {
   var btn = document.getElementById('viewMenuBtn');
   if (!btn) return;
-  var labels = { 'main': 'P&L', 'weight': 'WEIGHTS', 'global-weight': 'Σ WEIGHTS', 'market': 'MARKET', 'movers': 'MARKET', 'chart': 'CHART', 'analytics': 'ANALYTICS', 'alerts': 'ALERTS',
+  var labels = { 'main': 'P&L', 'weight': 'WEIGHTS', 'global-weight': 'Σ WEIGHTS', 'market': 'MARKET', 'movers': 'MARKET', 'chart': 'CHART', 'fundamentals': 'FUNDAMENTALS', 'analytics': 'ANALYTICS', 'alerts': 'ALERTS',
     'summary': 'P&L', 'summary-market': 'MARKET', 'summary-chart': 'CHART', 'summary-analytics': 'Σ ANALYTICS', 'summary-movers': 'Σ MARKET', 'summary-alerts': 'Σ ALERTS' };
   var label = labels[viewMode] || 'P&L';
   if (viewMode === 'main' && currentPortfolio() && currentPortfolio().watchlist) label = 'MARKET';
@@ -5838,6 +5910,76 @@ function render() {
     } else {
       loadPositionsChartData(chartRange, selectedTickers);
     }
+    return;
+  }
+
+  // Fundamentals view
+  if (viewMode === 'fundamentals') {
+    var fSubView = window.fundamentalsSubView || 'targets';
+    var fSelOpen = window.fundamentalsSelectionOpen || false;
+    var fAllTickers = getFundamentalsUniqueTickers();
+    var fSelected = getFundamentalsSelection();
+
+    var subViews = [
+      { key: 'targets',  label: 'TARGETS'  },
+      { key: 'ratings',  label: 'RATINGS'  },
+      { key: 'earnings', label: 'EARNINGS' },
+      { key: 'eps',      label: 'EPS'      }
+    ];
+
+    // Sub-view tabs row
+    var tabsHtml = subViews.map(function(sv) {
+      var active = fSubView === sv.key;
+      return '<button onclick="setFundamentalsSubView(&apos;' + sv.key + '&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 8px;border:1px solid '
+        + (active ? 'var(--green)' : 'var(--border)') + ';background:'
+        + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:'
+        + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">' + sv.label + '</button>';
+    }).join('');
+
+    // Selection panel
+    var fSelPanel = '';
+    if (fSelOpen) {
+      fSelPanel = '<div style="background:var(--bg2);border:1px solid var(--border);padding:10px;margin-bottom:8px">'
+        + '<div style="display:flex;gap:8px;margin-bottom:8px">'
+        + '<button onclick="fundamentalsSelectAll()" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);background:var(--bg);color:var(--dim);cursor:pointer;font-family:var(--font)">ALL</button>'
+        + '<button onclick="fundamentalsSelectNone()" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);background:var(--bg);color:var(--dim);cursor:pointer;font-family:var(--font)">NONE</button>'
+        + '</div>'
+        + '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">'
+        + fAllTickers.map(function(t) {
+            var pos = positions.find(function(p) { return p.ticker === t; });
+            var name = pos && pos.shortName ? pos.shortName : '';
+            var checked = fSelected.indexOf(t) !== -1 ? 'checked' : '';
+            return '<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">'
+              + '<input type="checkbox" id="fundcb_' + t + '" ' + checked + ' style="cursor:pointer">'
+              + '<span>' + t + '</span>'
+              + (name ? '<span style="color:var(--dim);font-size:10px">' + name + '</span>' : '')
+              + '</label>';
+          }).join('')
+        + '</div>'
+        + '<button onclick="applyFundamentalsSelection()" class="btn btn-green" style="font-size:10px;padding:5px 14px">APPLY</button>'
+        + '</div>';
+    }
+
+    // Main content: empty state or sub-view placeholder
+    var fContent;
+    if (!fSelected.length) {
+      fContent = '<div style="text-align:center;color:var(--dim);padding:36px 0;font-size:11px;letter-spacing:2px">SELECT POSITIONS TO COMPARE</div>';
+    } else {
+      // Placeholders for sub-views (filled in later stages)
+      var labels = { targets: 'TARGETS', ratings: 'RATINGS', earnings: 'EARNINGS', eps: 'EPS' };
+      fContent = '<div id="fundamentalsArea" style="padding:12px 0;color:var(--dim);font-size:11px;letter-spacing:1px">'
+        + labels[fSubView] + ' &mdash; ' + fSelected.length + ' position' + (fSelected.length === 1 ? '' : 's') + ' selected'
+        + '<div style="margin-top:8px;font-size:10px;opacity:0.7">(sub-view content coming in next stage)</div>'
+        + '</div>';
+    }
+
+    area.innerHTML = '<div style="padding:8px 0 4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
+      + tabsHtml
+      + '<div style="flex:1"></div>'
+      + '<a href="#" onclick="toggleFundamentalsSelection();return false" style="font-size:10px;color:var(--dim)">&#9998; Edit selection (' + fSelected.length + '/' + fAllTickers.length + ')</a>'
+      + '</div>'
+      + fSelPanel
+      + fContent;
     return;
   }
 
