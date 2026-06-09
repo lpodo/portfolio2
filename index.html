@@ -2717,7 +2717,7 @@ function buildExpandedInnerAgg(p, group) {
     + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (first.region || '—') + '</span></span>'
     + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (first.sector || '—') + '</span></span>'
     + '</div>';
-  var notes = group.map(function(g) { return g.note || ''; }).filter(Boolean).join('\n');
+  var notes = group.map(function(g) { return g.note || ''; }).filter(Boolean).join(' • ');
   html += '<div style="margin-top:8px;font-size:10px;color:var(--dim);letter-spacing:1px">'
     + '<span style="opacity:0.6">NOTE</span> '
     + '<span style="color:var(--bright);white-space:pre-line">' + (notes || '—') + '</span>'
@@ -2751,7 +2751,7 @@ function buildExpandedInnerLite(p, group) {
     + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (first.region || '—') + '</span></span>'
     + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (first.sector || '—') + '</span></span>'
     + '</div>';
-  var notes = group.map(function(g) { return g.note || ''; }).filter(Boolean).join('\n');
+  var notes = group.map(function(g) { return g.note || ''; }).filter(Boolean).join(' • ');
   html += '<div style="margin-top:8px;font-size:10px;color:var(--dim);letter-spacing:1px">'
     + '<span style="opacity:0.6">NOTE</span> '
     + '<span style="color:var(--bright);white-space:pre-line">' + (notes || '—') + '</span>'
@@ -2772,9 +2772,9 @@ function buildExpandedInnerLite(p, group) {
     + '<input type="number" id="quickAlertVal" placeholder="price" step="any" min="0" style="width:65px;font-size:11px;padding:2px 4px;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font)">'
     + '<span onclick="quickAddAlert(' + first.id + ')" style="cursor:pointer;font-size:11px;color:var(--green);border:1px solid var(--green);padding:1px 5px">+</span>'
     + '</div>';
-  // 4th row: just the [›] More button, right-aligned
+  // 4th row: just the [›] More button, left-aligned
   var t = p.ticker.replace(/'/g, "\\'");
-  html += '<div style="margin-top:8px;display:flex;justify-content:flex-end">'
+  html += '<div style="margin-top:8px;display:flex;justify-content:flex-start">'
     + '<span onclick="openMore(\'' + t + '\')" style="cursor:pointer;font-size:10px;color:#5b9cf6;border:1px solid #5b9cf6;padding:1px 6px;font-family:var(--font);user-select:none">&#8250;</span>'
     + '</div>';
   return html;

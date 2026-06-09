@@ -580,6 +580,143 @@ function fundComputeMargin(earnings, revenue) {
   return (e / r * 100).toFixed(2) + '%';
 }
 
+// Pick "nice" tick values within [min, max], roughly `count` of them.
+function fundNiceTicks(min, max, count) {
+  if (min === max) return [min];
+  var range = max - min;
+  var rawStep = range / Math.max(1, count - 1);
+  var pow = Math.pow(10, Math.floor(Math.log(rawStep) / Math.LN10));
+  var rel = rawStep / pow;
+  var niceStep;
+  if (rel < 1.5)      niceStep = 1 * pow;
+  else if (rel < 3)   niceStep = 2 * pow;
+  else if (rel < 7)   niceStep = 5 * pow;
+  else                niceStep = 10 * pow;
+  var ticks = [];
+  var t = Math.floor(min / niceStep) * niceStep;
+  while (t <= max + niceStep * 0.0001) {
+    if (t >= min - niceStep * 0.0001) ticks.push(Number(t.toFixed(10)));
+    t += niceStep;
+  }
+  return ticks;
+}
+
+// Compact dollar amount: 12500000000 → "12.5B", -250000 → "-250K", 0 → "0".
+function fundFmtDollarShort(v) {
+  if (v === 0) return '0';
+  var abs = Math.abs(v);
+  var sign = v < 0 ? '-' : '';
+  if (abs >= 1e9)  return sign + (abs / 1e9).toFixed(abs >= 1e10 ? 0 : 1) + 'B';
+  if (abs >= 1e6)  return sign + (abs / 1e6).toFixed(abs >= 1e7 ? 0 : 1) + 'M';
+  if (abs >= 1e3)  return sign + (abs / 1e3).toFixed(0) + 'K';
+  return sign + abs.toFixed(0);
+}
+
+// Build SVG chart: revenue + earnings bars (left $ axis) + net margin line (right % axis).
+// Bars and line use the same X positions; auto-ranged on both axes.
+function fundBuildQuarterlyChart(quarters, width) {
+  if (!quarters || !quarters.length) return '';
+
+  var data = quarters.map(function(q) {
+    var rev = fundRawNum(q.revenue);
+    var ern = fundRawNum(q.earnings);
+    var mgn = (ern != null && rev != null && rev !== 0) ? (ern / rev * 100) : null;
+    return { date: q.date, rev: rev, ern: ern, mgn: mgn };
+  });
+
+  var dollarVals = [], marginVals = [];
+  for (var i = 0; i < data.length; i++) {
+    if (data[i].rev != null) dollarVals.push(data[i].rev);
+    if (data[i].ern != null) dollarVals.push(data[i].ern);
+    if (data[i].mgn != null) marginVals.push(data[i].mgn);
+  }
+  if (!dollarVals.length) return '';
+
+  var dMin = Math.min.apply(null, dollarVals);
+  var dMax = Math.max.apply(null, dollarVals);
+  if (dMin > 0) dMin = 0;
+  if (dMax < 0) dMax = 0;
+
+  var mMin = marginVals.length ? Math.min.apply(null, marginVals) : 0;
+  var mMax = marginVals.length ? Math.max.apply(null, marginVals) : 100;
+  if (mMin > 0) mMin = 0;
+  if (mMax < 0) mMax = 0;
+  if (mMin === mMax) { mMin -= 5; mMax += 5; }
+
+  var W = width || 340, H = 180;
+  var padL = 42, padR = 38, padT = 8, padB = 22;
+  var innerW = W - padL - padR;
+  var innerH = H - padT - padB;
+
+  function xCenter(i) { return padL + (i + 0.5) * (innerW / data.length); }
+  function yLeft(v) {
+    var range = dMax - dMin;
+    if (range === 0) return padT + innerH / 2;
+    return padT + (1 - (v - dMin) / range) * innerH;
+  }
+  function yRight(v) {
+    var range = mMax - mMin;
+    if (range === 0) return padT + innerH / 2;
+    return padT + (1 - (v - mMin) / range) * innerH;
+  }
+
+  var colW = innerW / data.length;
+  var barW = Math.max(4, colW * 0.32);
+  var barGap = 1;
+
+  var C_REV = '#5b9cf6', C_ERN = '#5bf6e4', C_MGN = '#c4a000';
+  var s = '';
+
+  // Zero / baseline line on left axis
+  var zeroYL = yLeft(0);
+  s += '<line x1="' + padL + '" y1="' + zeroYL.toFixed(1) + '" x2="' + (padL + innerW) + '" y2="' + zeroYL.toFixed(1) + '" stroke="var(--border)" stroke-width="' + (dMin < 0 && dMax > 0 ? 1 : 0.5) + '"/>';
+
+  // Bars
+  for (var bi = 0; bi < data.length; bi++) {
+    var d = data[bi], cx = xCenter(bi);
+    if (d.rev != null) {
+      var rTop = yLeft(Math.max(0, d.rev)), rBot = yLeft(Math.min(0, d.rev));
+      s += '<rect x="' + (cx - barW - barGap/2).toFixed(1) + '" y="' + rTop.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + Math.max(1, rBot - rTop).toFixed(1) + '" fill="' + C_REV + '"/>';
+    }
+    if (d.ern != null) {
+      var eTop = yLeft(Math.max(0, d.ern)), eBot = yLeft(Math.min(0, d.ern));
+      s += '<rect x="' + (cx + barGap/2).toFixed(1) + '" y="' + eTop.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + Math.max(1, eBot - eTop).toFixed(1) + '" fill="' + C_ERN + '"/>';
+    }
+  }
+
+  // Net margin line + markers
+  var pts = [];
+  for (var pi = 0; pi < data.length; pi++) {
+    if (data[pi].mgn != null) pts.push({ x: xCenter(pi), y: yRight(data[pi].mgn) });
+  }
+  if (pts.length >= 2) {
+    s += '<path d="M ' + pts.map(function(p) { return p.x.toFixed(1) + ' ' + p.y.toFixed(1); }).join(' L ') + '" stroke="' + C_MGN + '" stroke-width="1.5" fill="none"/>';
+  }
+  for (var pj = 0; pj < pts.length; pj++) {
+    s += '<circle cx="' + pts[pj].x.toFixed(1) + '" cy="' + pts[pj].y.toFixed(1) + '" r="3" fill="' + C_MGN + '"/>';
+  }
+
+  // X-axis quarter labels
+  for (var xi = 0; xi < data.length; xi++) {
+    var lbl = data[xi].date ? data[xi].date.replace(/(\d)Q(20)(\d\d)/, "Q$1'$3") : '';
+    s += '<text x="' + xCenter(xi).toFixed(1) + '" y="' + (H - 6) + '" fill="var(--dim)" font-size="9" text-anchor="middle">' + fundEsc(lbl) + '</text>';
+  }
+
+  // Left Y-axis ($)
+  var lt = fundNiceTicks(dMin, dMax, 4);
+  for (var lti = 0; lti < lt.length; lti++) {
+    s += '<text x="' + (padL - 4) + '" y="' + (yLeft(lt[lti]) + 3).toFixed(1) + '" fill="var(--dim)" font-size="8" text-anchor="end">' + fundFmtDollarShort(lt[lti]) + '</text>';
+  }
+
+  // Right Y-axis (%)
+  var rt = fundNiceTicks(mMin, mMax, 4);
+  for (var rti = 0; rti < rt.length; rti++) {
+    s += '<text x="' + (padL + innerW + 4) + '" y="' + (yRight(rt[rti]) + 3).toFixed(1) + '" fill="var(--dim)" font-size="8" text-anchor="start">' + rt[rti].toFixed(0) + '%</text>';
+  }
+
+  return '<svg width="' + W + '" height="' + H + '" style="display:block;margin-top:6px">' + s + '</svg>';
+}
+
 function fundRenderQuarterly(data, container) {
   var fin = data.earnings && data.earnings.financialsChart && data.earnings.financialsChart.quarterly;
   var eps = data.earnings && data.earnings.earningsChart   && data.earnings.earningsChart.quarterly;
@@ -616,6 +753,17 @@ function fundRenderQuarterly(data, container) {
       + '<td>' + fundEsc(fundFmtOrRaw(q2.eps)) + '</td></tr>';
   }
   html += '</tbody></table>';
+
+  // Quarterly trend chart (future: header will become Quarterly/Annual toggle)
+  var chartW = Math.max(280, container.clientWidth || 340);
+  html += '<div style="font-size:10px;color:var(--dim);letter-spacing:2px;margin-top:18px">QUARTERLY TREND</div>'
+    + '<div style="font-size:9px;color:var(--dim);display:flex;gap:14px;flex-wrap:wrap;margin-top:6px">'
+    + '<span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:10px;background:#5b9cf6"></span>Revenue</span>'
+    + '<span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:10px;background:#5bf6e4"></span>Earnings</span>'
+    + '<span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:12px;height:2px;background:#c4a000"></span>Net Margin</span>'
+    + '</div>'
+    + fundBuildQuarterlyChart(quarters, chartW);
+
   container.innerHTML = html;
 }
 

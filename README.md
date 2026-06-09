@@ -272,6 +272,17 @@ Click **Edit selection** in the upper right corner to open a checkbox list of al
 
 Selection is saved to localStorage per portfolio (`pt_fund_sel_{portfolioId}`) and persists across reloads. Tickers removed from the portfolio drop out of the selection automatically.
 
+### Expanded row
+
+Tap a ticker in any of the four tabs to toggle a compact "lite" sub-row beneath it. Four lines:
+
+1. **CAT / REG / SEC** — classification fields (show `—` if empty).
+2. **NOTE** — free-text annotation.
+3. **ALERTS** — existing alerts with ✕ delete buttons, plus the same inline quick-add controls as in the main Expanded Row.
+4. The `[›]` button — opens the full **More** overlay (the same overlay reached from the main [Expanded Row](#expanded-row)).
+
+Unlike the main Expanded Row, the lite version doesn't repeat the analyst votes / Avg tgt / P/E lines — that data is already visible in the comparative table above, so it would be redundant.
+
 ### Rendering behavior
 
 When valid cached data exists for the selected tickers, tables render instantly. For any ticker without cache, the corresponding row shows `…` and a single fetch to the worker is triggered asynchronously; the view repaints itself when data arrives. Requests are deduplicated — two parallel fetches for the same ticker cannot start. ETFs and other instruments without earnings/targets are cached as `null`, so they aren't refetched on every open.
@@ -363,7 +374,7 @@ P/E  18.37   fw P/E  29.26                                  [›]
 Expanded rows are enabled for aggregated entries, with the following behavior on the first three lines:
 
 - **Attributes (CAT / REG / SEC):** the app enforces identical attributes across all instances of the same ticker, so the values are read from any one position in the aggregated group (the first one).
-- **Notes:** non-empty notes from all positions in the group are joined with line breaks into a single read-only block. Editing is not available in aggregation mode — switch to a non-aggregated view to edit individual notes.
+- **Notes:** non-empty notes from all positions in the group are joined into a single read-only block. Editing is not available in aggregation mode — switch to a non-aggregated view to edit individual notes.
 - **Alerts:** alerts from all positions in the group are merged into a single list. Delete and add controls work as in normal mode; a newly added alert is attached to one position in the group (the first one) — but since all positions of the same ticker resolve to the same price, it doesn't matter which one carries the alert.
 
 The dot indicators (yellow / sky-blue) appear if any position in the aggregated group has a triggered alert of the corresponding direction, following the same rules as for individual positions. The Yahoo fundamentals lines and the **More** button appear in aggregated rows just as in regular ones.
