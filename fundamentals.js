@@ -953,6 +953,10 @@ function buildFundamentalsTargetsTable(tickers, currentMode, targetWindow) {
   var TH_DIM = 'text-align:right;padding:6px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap';
   var TH_GRN = 'text-align:right;padding:6px 8px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;color:var(--green)';
   var TD     = 'text-align:right;padding:6px 8px;font-size:11px;color:var(--bright);white-space:nowrap';
+  // Group-edge borders: BL = left edge of a group, BR = right edge of a group.
+  // With border-collapse:collapse, adjacent BR+BL merge into a single line.
+  var BL = ';border-left:1px solid var(--border)';
+  var BR = ';border-right:1px solid var(--border)';
 
   var curLabel = currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT';
   var winLabel = targetWindow + 'D TGT';
@@ -960,10 +964,10 @@ function buildFundamentalsTargetsTable(tickers, currentMode, targetWindow) {
   var head = '<thead><tr>'
     + '<th style="text-align:left;padding:6px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">TICKER</th>'
     + '<th style="' + TH_GRN + '" onclick="toggleFundCurrentMenu(this)">' + curLabel + '</th>'
-    + '<th style="' + TH_DIM + '">AVG TGT</th>'
-    + '<th style="' + TH_DIM + '">%</th>'
-    + '<th style="' + TH_GRN + '" onclick="toggleFundWindowMenu(this)">' + winLabel + '</th>'
-    + '<th style="' + TH_DIM + '">%</th>'
+    + '<th style="' + TH_DIM + BL + '">AVG TGT</th>'
+    + '<th style="' + TH_DIM + BR + '">%</th>'
+    + '<th style="' + TH_GRN + BL + '" onclick="toggleFundWindowMenu(this)">' + winLabel + '</th>'
+    + '<th style="' + TH_DIM + BR + '">%</th>'
     + '<th style="' + TH_DIM + '">P/E</th>'
     + '<th style="' + TH_DIM + '">FW P/E</th>'
     + '</tr></thead>';
@@ -1005,10 +1009,10 @@ function buildFundamentalsTargetsTable(tickers, currentMode, targetWindow) {
     rows += '<tr>'
       + '<td style="text-align:left;padding:6px 8px;font-size:11px;color:var(--bright)">' + fundEsc(ticker) + '</td>'
       + '<td style="' + TD + '">' + fundFmtPrice(live) + '</td>'
-      + '<td style="' + TD + '">' + fundFmtPrice(avgTgt) + '</td>'
-      + '<td style="' + TD + '">' + fundFmtPct(avgPct) + '</td>'
-      + '<td style="' + TD + '">' + fundFmtPrice(winTgt) + '</td>'
-      + '<td style="' + TD + '">' + fundFmtPct(winPct) + '</td>'
+      + '<td style="' + TD + BL + '">' + fundFmtPrice(avgTgt) + '</td>'
+      + '<td style="' + TD + BR + '">' + fundFmtPct(avgPct) + '</td>'
+      + '<td style="' + TD + BL + '">' + fundFmtPrice(winTgt) + '</td>'
+      + '<td style="' + TD + BR + '">' + fundFmtPct(winPct) + '</td>'
       + '<td style="' + TD + '">' + fundFmtPE(trailPE) + '</td>'
       + '<td style="' + TD + '">' + fundFmtPE(fwdPE) + '</td>'
       + '</tr>';
@@ -1207,25 +1211,28 @@ function buildFundamentalsEarningsTable(tickers) {
   var TD     = 'text-align:right;padding:6px 4px;font-size:11px;color:var(--bright);white-space:nowrap;width:' + COL_W;
   var TD_TICKER = 'text-align:left;padding:6px 4px;font-size:11px;color:var(--bright);white-space:nowrap;width:' + COL_W;
   var TD_DASH = '<span style="color:var(--dim)">&mdash;</span>';
+  // Group-edge borders for quarter blocks: BL = left edge, BR = right edge.
+  var BL = ';border-left:1px solid var(--border)';
+  var BR = ';border-right:1px solid var(--border)';
 
   var head = '<thead>'
     + '<tr>'
     + '<th rowspan="2" style="' + TH_TICKER + '">TICKER</th>'
-    + '<th colspan="2" style="' + TH_Q + '">' + fundEsc(quarterLabels[0]) + '</th>'
-    + '<th colspan="2" style="' + TH_Q + '">' + fundEsc(quarterLabels[1]) + '</th>'
-    + '<th colspan="2" style="' + TH_Q + '">' + fundEsc(quarterLabels[2]) + '</th>'
+    + '<th colspan="2" style="' + TH_Q + BL + BR + '">' + fundEsc(quarterLabels[0]) + '</th>'
+    + '<th colspan="2" style="' + TH_Q + BL + BR + '">' + fundEsc(quarterLabels[1]) + '</th>'
+    + '<th colspan="2" style="' + TH_Q + BL + BR + '">' + fundEsc(quarterLabels[2]) + '</th>'
     + '</tr>'
     + '<tr>'
-    + '<th style="' + TH_SUB + '">REV</th><th style="' + TH_SUB + '">EARN</th>'
-    + '<th style="' + TH_SUB + '">REV</th><th style="' + TH_SUB + '">EARN</th>'
-    + '<th style="' + TH_SUB + '">REV</th><th style="' + TH_SUB + '">EARN</th>'
+    + '<th style="' + TH_SUB + BL + '">REV</th><th style="' + TH_SUB + BR + '">EARN</th>'
+    + '<th style="' + TH_SUB + BL + '">REV</th><th style="' + TH_SUB + BR + '">EARN</th>'
+    + '<th style="' + TH_SUB + BL + '">REV</th><th style="' + TH_SUB + BR + '">EARN</th>'
     + '</tr>'
     + '</thead>';
 
   function qVal(q, field) { return q ? fundRawNum(q[field]) : null; }
   function pairCells(prev, curr) {
-    return '<td style="' + TD + '">' + fundFmtGrowthPct(qVal(curr, 'revenue'), qVal(prev, 'revenue')) + '</td>'
-         + '<td style="' + TD + '">' + fundFmtGrowthPct(qVal(curr, 'earnings'), qVal(prev, 'earnings')) + '</td>';
+    return '<td style="' + TD + BL + '">' + fundFmtGrowthPct(qVal(curr, 'revenue'), qVal(prev, 'revenue')) + '</td>'
+         + '<td style="' + TD + BR + '">' + fundFmtGrowthPct(qVal(curr, 'earnings'), qVal(prev, 'earnings')) + '</td>';
   }
 
   var rows = '';
@@ -1241,9 +1248,9 @@ function buildFundamentalsEarningsTable(tickers) {
     if (!fin || fin.length < 2) {
       rows += '<tr>'
         + '<td style="' + TD_TICKER + '">' + fundEsc(rd.ticker) + '</td>'
-        + '<td style="' + TD + '">' + TD_DASH + '</td><td style="' + TD + '">' + TD_DASH + '</td>'
-        + '<td style="' + TD + '">' + TD_DASH + '</td><td style="' + TD + '">' + TD_DASH + '</td>'
-        + '<td style="' + TD + '">' + TD_DASH + '</td><td style="' + TD + '">' + TD_DASH + '</td>'
+        + '<td style="' + TD + BL + '">' + TD_DASH + '</td><td style="' + TD + BR + '">' + TD_DASH + '</td>'
+        + '<td style="' + TD + BL + '">' + TD_DASH + '</td><td style="' + TD + BR + '">' + TD_DASH + '</td>'
+        + '<td style="' + TD + BL + '">' + TD_DASH + '</td><td style="' + TD + BR + '">' + TD_DASH + '</td>'
         + '</tr>';
       return;
     }
