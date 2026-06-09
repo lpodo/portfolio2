@@ -924,6 +924,29 @@ function moreSwitchTab(tab) {
 
 /* ── Public API ─────────────────────────────────────────────────────────── */
 window.buildFundamentalsRows = buildFundamentalsRows;
+/* ── Side-by-side Fundamentals view: shared helpers ────────────────────── */
+
+// Returns { tdCell, expandedRow } for a ticker.
+// - tdCell: a <td> containing the ticker name, clickable to toggle expand
+// - expandedRow: a full <tr><td colspan>...</td></tr> with the lite-expanded inner,
+//   or '' if the row is not currently expanded
+function fundTickerCellAndExpanded(ticker, cellStyle, colspan) {
+  var hasPositions = (typeof positions !== 'undefined' && positions);
+  var pos = hasPositions ? positions.find(function(p) { return p.ticker === ticker; }) : null;
+  if (!pos) {
+    return { tdCell: '<td style="' + cellStyle + '">' + fundEsc(ticker) + '</td>', expandedRow: '' };
+  }
+  var tdCell = '<td style="' + cellStyle + ';cursor:pointer" onclick="toggleExpand(' + pos.id + ')">' + fundEsc(ticker) + '</td>';
+  var expandedRow = '';
+  if (typeof expandedId !== 'undefined' && expandedId === pos.id && typeof buildExpandedInnerLite === 'function') {
+    var group = positions.filter(function(p) { return p.ticker === ticker; });
+    expandedRow = '<tr><td colspan="' + colspan + '" style="padding:10px 8px;background:var(--bg2);border-bottom:1px solid var(--border)">'
+      + buildExpandedInnerLite(pos, group)
+      + '</td></tr>';
+  }
+  return { tdCell: tdCell, expandedRow: expandedRow };
+}
+
 /* ── Side-by-side Fundamentals view: Targets sub-view ──────────────────── */
 function fundFmtPrice(v) {
   if (v == null || isNaN(v)) return '<span style="color:var(--dim)">&mdash;</span>';
@@ -972,6 +995,7 @@ function buildFundamentalsTargetsTable(tickers, currentMode, targetWindow) {
     + '<th style="' + TH_DIM + '">FW P/E</th>'
     + '</tr></thead>';
 
+  var TD_TICKER = 'text-align:left;padding:6px 8px;font-size:11px;color:var(--bright);white-space:nowrap';
   var rows = '';
   for (var i = 0; i < tickers.length; i++) {
     var ticker = tickers[i];
@@ -980,6 +1004,8 @@ function buildFundamentalsTargetsTable(tickers, currentMode, targetWindow) {
       : null;
     var live = pos ? (currentMode === 'reg' ? pos.regularMarketPrice : pos.current) : null;
     if (live == null && pos) live = pos.current;
+
+    var cellInfo = fundTickerCellAndExpanded(ticker, TD_TICKER, 8);
 
     var cached = fundCacheGet(ticker);
     if (!cached) {
@@ -990,10 +1016,11 @@ function buildFundamentalsTargetsTable(tickers, currentMode, targetWindow) {
         });
       }
       rows += '<tr>'
-        + '<td style="text-align:left;padding:6px 8px;font-size:11px;color:var(--bright)">' + fundEsc(ticker) + '</td>'
+        + cellInfo.tdCell
         + '<td style="' + TD + '">' + fundFmtPrice(live) + '</td>'
         + '<td colspan="6" style="text-align:center;padding:6px 8px;font-size:11px;color:var(--dim)">&hellip;</td>'
-        + '</tr>';
+        + '</tr>'
+        + cellInfo.expandedRow;
       continue;
     }
 
@@ -1007,7 +1034,7 @@ function buildFundamentalsTargetsTable(tickers, currentMode, targetWindow) {
     var winPct = (live != null && winTgt != null && live > 0) ? ((winTgt / live - 1) * 100) : null;
 
     rows += '<tr>'
-      + '<td style="text-align:left;padding:6px 8px;font-size:11px;color:var(--bright)">' + fundEsc(ticker) + '</td>'
+      + cellInfo.tdCell
       + '<td style="' + TD + '">' + fundFmtPrice(live) + '</td>'
       + '<td style="' + TD + BL + '">' + fundFmtPrice(avgTgt) + '</td>'
       + '<td style="' + TD + BR + '">' + fundFmtPct(avgPct) + '</td>'
@@ -1015,7 +1042,8 @@ function buildFundamentalsTargetsTable(tickers, currentMode, targetWindow) {
       + '<td style="' + TD + BR + '">' + fundFmtPct(winPct) + '</td>'
       + '<td style="' + TD + '">' + fundFmtPE(trailPE) + '</td>'
       + '<td style="' + TD + '">' + fundFmtPE(fwdPE) + '</td>'
-      + '</tr>';
+      + '</tr>'
+      + cellInfo.expandedRow;
   }
 
   return '<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;width:100%">'
@@ -1059,6 +1087,7 @@ function buildFundamentalsRatingsTable(tickers) {
   var rows = '';
   for (var i = 0; i < tickers.length; i++) {
     var ticker = tickers[i];
+    var cellInfo = fundTickerCellAndExpanded(ticker, TD_TICKER, 6);
     var cached = fundCacheGet(ticker);
 
     if (!cached) {
@@ -1069,20 +1098,22 @@ function buildFundamentalsRatingsTable(tickers) {
         });
       }
       rows += '<tr>'
-        + '<td style="' + TD_TICKER + '">' + fundEsc(ticker) + '</td>'
+        + cellInfo.tdCell
         + '<td colspan="5" style="text-align:center;padding:6px 4px;font-size:11px;color:var(--dim)">&hellip;</td>'
-        + '</tr>';
+        + '</tr>'
+        + cellInfo.expandedRow;
       continue;
     }
 
     rows += '<tr>'
-      + '<td style="' + TD_TICKER + '">' + fundEsc(ticker) + '</td>'
+      + cellInfo.tdCell
       + '<td style="' + TD + '">' + fundFmtCount(cached.strongBuy) + '</td>'
       + '<td style="' + TD + '">' + fundFmtCount(cached.buy) + '</td>'
       + '<td style="' + TD + '">' + fundFmtCount(cached.hold) + '</td>'
       + '<td style="' + TD + '">' + fundFmtCount(cached.sell) + '</td>'
       + '<td style="' + TD + '">' + fundFmtCount(cached.strongSell) + '</td>'
-      + '</tr>';
+      + '</tr>'
+      + cellInfo.expandedRow;
   }
 
   return '<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;table-layout:fixed;width:' + TBL_W + ';min-width:0">'
@@ -1237,21 +1268,24 @@ function buildFundamentalsEarningsTable(tickers) {
 
   var rows = '';
   rowData.forEach(function(rd) {
+    var cellInfo = fundTickerCellAndExpanded(rd.ticker, TD_TICKER, 7);
     if (rd.loading) {
       rows += '<tr>'
-        + '<td style="' + TD_TICKER + '">' + fundEsc(rd.ticker) + '</td>'
+        + cellInfo.tdCell
         + '<td colspan="6" style="text-align:center;padding:6px 4px;font-size:11px;color:var(--dim)">&hellip;</td>'
-        + '</tr>';
+        + '</tr>'
+        + cellInfo.expandedRow;
       return;
     }
     var fin = rd.fin;
     if (!fin || fin.length < 2) {
       rows += '<tr>'
-        + '<td style="' + TD_TICKER + '">' + fundEsc(rd.ticker) + '</td>'
+        + cellInfo.tdCell
         + '<td style="' + TD + BL + '">' + TD_DASH + '</td><td style="' + TD + BR + '">' + TD_DASH + '</td>'
         + '<td style="' + TD + BL + '">' + TD_DASH + '</td><td style="' + TD + BR + '">' + TD_DASH + '</td>'
         + '<td style="' + TD + BL + '">' + TD_DASH + '</td><td style="' + TD + BR + '">' + TD_DASH + '</td>'
-        + '</tr>';
+        + '</tr>'
+        + cellInfo.expandedRow;
       return;
     }
     var n = fin.length;
@@ -1263,11 +1297,12 @@ function buildFundamentalsEarningsTable(tickers) {
     var prev2 = n >= 2 ? fin[n-2] : null, curr2 = n >= 1 ? fin[n-1] : null;
 
     rows += '<tr>'
-      + '<td style="' + TD_TICKER + '">' + fundEsc(rd.ticker) + '</td>'
+      + cellInfo.tdCell
       + pairCells(prev0, curr0)
       + pairCells(prev1, curr1)
       + pairCells(prev2, curr2)
-      + '</tr>';
+      + '</tr>'
+      + cellInfo.expandedRow;
   });
 
   return '<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;table-layout:fixed;width:' + TBL_W + ';min-width:0">'
@@ -1319,34 +1354,38 @@ function buildFundamentalsEpsTable(tickers) {
 
   var rows = '';
   rowData.forEach(function(rd) {
+    var cellInfo = fundTickerCellAndExpanded(rd.ticker, TD_TICKER, 5);
     if (rd.loading) {
       rows += '<tr>'
-        + '<td style="' + TD_TICKER + '">' + fundEsc(rd.ticker) + '</td>'
+        + cellInfo.tdCell
         + '<td colspan="4" style="text-align:center;padding:6px 4px;font-size:11px;color:var(--dim)">&hellip;</td>'
-        + '</tr>';
+        + '</tr>'
+        + cellInfo.expandedRow;
       return;
     }
     var eps = rd.eps;
     if (!eps || !eps.length) {
       rows += '<tr>'
-        + '<td style="' + TD_TICKER + '">' + fundEsc(rd.ticker) + '</td>'
+        + cellInfo.tdCell
         + '<td style="' + TD + '">' + TD_DASH + '</td>'
         + '<td style="' + TD + '">' + TD_DASH + '</td>'
         + '<td style="' + TD + '">' + TD_DASH + '</td>'
         + '<td style="' + TD + '">' + TD_DASH + '</td>'
-        + '</tr>';
+        + '</tr>'
+        + cellInfo.expandedRow;
       return;
     }
     var last4 = eps.slice(-4);
     while (last4.length < 4) last4.unshift(null);
 
     rows += '<tr>'
-      + '<td style="' + TD_TICKER + '">' + fundEsc(rd.ticker) + '</td>'
+      + cellInfo.tdCell
       + last4.map(function(q) {
           var v = q && q.actual ? fundRawNum(q.actual) : null;
           return '<td style="' + TD + '">' + fundFmtEps(v) + '</td>';
         }).join('')
-      + '</tr>';
+      + '</tr>'
+      + cellInfo.expandedRow;
   });
 
   return '<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;table-layout:fixed;width:' + TBL_W + ';min-width:0">'
