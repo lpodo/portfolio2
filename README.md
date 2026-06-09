@@ -21,6 +21,7 @@ A PWA stock portfolio tracker with a Cloudflare Worker backend. Supports all maj
   - [Summary (Cross-Portfolio)](#summary-cross-portfolio)
   - [Price Alerts](#price-alerts)
   - [Charts](#charts)
+  - [Fundamentals](#fundamentals)
   - [Analytics](#analytics)
   - [Expanded Row](#expanded-row)
   - [Bonds & Deposits](#bonds--deposits)
@@ -60,7 +61,7 @@ Selected via the **WATCHLIST** radio button at creation. Designed for tracking i
 
 - Add form hides qty/entry fields.
 - View shows CLOSE / PRICE / Δ% / market state icon / NAME — sortable by TICKER and Δ%.
-- ⋮ menu shows MARKET, ALERTS, and CHART only (P&L, WEIGHTS, ANALYTICS hidden).
+- ⋮ menu shows MARKET, ALERTS, CHART, and FUNDAMENTALS only (P&L, WEIGHTS, ANALYTICS hidden).
 - CHART mode: positions-only (no portfolio value line); ticker selection works the same as regular portfolios.
 - Appears at the top of the active portfolio list, separated by a divider.
 - Excluded from Summary, Summary Market, Summary Chart, and Analytics.
@@ -251,6 +252,29 @@ In Summary, the dropdown menu → CHART shows two modes selectable via a green d
 
 - **TOTAL** — single line showing the combined value of all active portfolios in USD with FX conversion.
 - **BY PORTFOLIO** — one normalized line per portfolio starting at 0%, each calculated in its own base currency (no USD conversion, so FX effects don't distort relative stock performance). Color-coded with a legend showing the final % change.
+
+## Fundamentals
+
+Available via dropdown menu → FUNDAMENTALS for individual portfolios and watchlists. Not available for Archive portfolios.
+
+A comparative table across selected tickers with four subviews switchable via tabs:
+
+- **Targets** — current price, analyst price targets (mean and rolling average over a 30d/100d window) with upside %, and P/E. The current-price column and the target window are switchable via dropdowns in the column headers.
+- **Ratings** — analyst recommendation breakdown (strong buy / buy / hold / sell / strong sell).
+- **Earnings** — quarter-over-quarter growth of revenue and net income over the last 3 quarters, sign-colored.
+- **EPS** — actual EPS per quarter.
+
+On entering the view, state is always reset to defaults: **Targets** tab, **Current** price, **30d** window.
+
+### Position selection
+
+Click **Edit selection** in the upper right corner to open a checkbox list of all tickers in the portfolio, with **ALL** / **NONE** shortcuts for bulk toggling and **APPLY** to confirm. Default on first open: empty — the view shows the placeholder `SELECT POSITIONS TO COMPARE`.
+
+Selection is saved to localStorage per portfolio (`pt_fund_sel_{portfolioId}`) and persists across reloads. Tickers removed from the portfolio drop out of the selection automatically.
+
+### Rendering behavior
+
+When valid cached data exists for the selected tickers, tables render instantly. For any ticker without cache, the corresponding row shows `…` and a single fetch to the worker is triggered asynchronously; the view repaints itself when data arrives. Requests are deduplicated — two parallel fetches for the same ticker cannot start. ETFs and other instruments without earnings/targets are cached as `null`, so they aren't refetched on every open.
 
 ## Analytics
 
@@ -651,7 +675,10 @@ Primary on-device storage:
 - `pt_close_mode` — close column mode: `prev` (Prev.Close), `reg` (Reg.Price), or a historical period (`5d`, `1mo`, `3mo`, `6mo`, `1y`, `5y`); default `prev`
 - `pt_current_mode` — current column mode: `cur` (Current) or `reg` (Reg.Price); default `cur`
 - `pt_chart_sel_{portfolioId}` — per-portfolio ticker selection for the POSITIONS chart
+- `pt_fund_sel_{portfolioId}` — per-portfolio ticker selection for the Fundamentals view
 - `chart_hist_{ticker}_{range}` — historical price cache (daily TTL)
+- `yfund_{ticker}` — fundamentals cache for Targets and Ratings (4-hour TTL)
+- `yearn_{ticker}` — earnings cache for Earnings and EPS (12-hour TTL)
 
 ## Cloud Storage
 
@@ -706,7 +733,14 @@ Caches the app shell for offline use. API requests are **never cached**:
 
 ## Fundamentals Caching
 
-Fundamentals are fetched via `/api/quotesummary` and cached in `localStorage` per ticker. The cache stores only the extracted parameters needed for display (not raw Yahoo modules — they can be hundreds of KB for large stocks) and expires after 4 hours. The schema is versioned: if the cache format changes, old entries are silently invalidated and refetched on next access.
+Two persistent caches in `localStorage` back the Expanded Row fundamentals lines, the **More** overlay, and the **Fundamentals** view:
+
+- **`yfund_{ticker}`** — analyst data: `targetMeanPrice`, current P/E, target history, analyst votes. Fetched via `/api/quotesummary` with the modules `financialData,defaultKeyStatistics,recommendationTrend,upgradeDowngradeHistory`. Stores only extracted parameters (not raw Yahoo modules — they can be hundreds of KB for large stocks). TTL **4 hours**. Used by the Expanded Row lines, the **More** overlay's Analyst tab, and the Fundamentals view's **Targets** and **Ratings** tabs.
+- **`yearn_{ticker}`** — raw Yahoo `earnings` module for quarterly revenue, net income, and EPS. TTL **12 hours**. Used by the **More** overlay's Quarterly tab and the Fundamentals view's **Earnings** and **EPS** tabs.
+
+Both caches are schema-versioned: if the format changes, old entries are silently invalidated and refetched on next access. The `yearn_` cache is integrated with the **More** overlay in both directions — opening the Quarterly tab in **More** warms the cache for the Fundamentals view, and vice versa. The same applies to `yfund_` between the row/overlay and the Targets/Ratings tabs. Data is fetched exactly once per TTL regardless of which UI surfaces it.
+
+In-flight fetches are tracked per ticker so two parallel requests for the same ticker cannot start. ETFs and other instruments without applicable data are cached as `null` rather than refetched.
 
 Derived display values:
 
