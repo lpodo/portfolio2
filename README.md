@@ -747,9 +747,9 @@ Caches the app shell for offline use. API requests are **never cached**:
 Two persistent caches in `localStorage` back the Expanded Row fundamentals lines, the **More** overlay, and the **Fundamentals** view:
 
 - **`yfund_{ticker}`** — analyst data: `targetMeanPrice`, current P/E, target history, analyst votes. Fetched via `/api/quotesummary` with the modules `financialData,defaultKeyStatistics,recommendationTrend,upgradeDowngradeHistory`. Stores only extracted parameters (not raw Yahoo modules — they can be hundreds of KB for large stocks). TTL **4 hours**. Used by the Expanded Row lines, the **More** overlay's Analyst tab, and the Fundamentals view's **Targets** and **Ratings** tabs.
-- **`yearn_{ticker}`** — raw Yahoo `earnings` module for quarterly revenue, net income, and EPS. TTL **12 hours**. Used by the **More** overlay's Quarterly tab and the Fundamentals view's **Earnings** and **EPS** tabs.
+- **`yearn_{ticker}`** — raw Yahoo `earnings` module for revenue, net income, and EPS. TTL **12 hours**. Used by the **More** overlay's Earnings tab and the Fundamentals view's **Earnings** and **EPS** tabs.
 
-Both caches are schema-versioned: if the format changes, old entries are silently invalidated and refetched on next access. The `yearn_` cache is integrated with the **More** overlay in both directions — opening the Quarterly tab in **More** warms the cache for the Fundamentals view, and vice versa. The same applies to `yfund_` between the row/overlay and the Targets/Ratings tabs. Data is fetched exactly once per TTL regardless of which UI surfaces it.
+Both caches are schema-versioned: if the format changes, old entries are silently invalidated and refetched on next access. The `yearn_` cache is integrated with the **More** overlay in both directions — opening the Earnings tab in **More** warms the cache for the Fundamentals view, and vice versa. The same applies to `yfund_` between the row/overlay and the Targets/Ratings tabs. Data is fetched exactly once per TTL regardless of which UI surfaces it.
 
 In-flight fetches are tracked per ticker so two parallel requests for the same ticker cannot start. ETFs and other instruments without applicable data are cached as `null` rather than refetched.
 

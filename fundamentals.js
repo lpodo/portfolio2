@@ -718,10 +718,59 @@ function fundBuildQuarterlyChart(quarters, width) {
 }
 
 function fundRenderQuarterly(data, container) {
+  var sub = window.earningsSubView || 'quarterly';
+
+  // Toggle buttons (Quarterly | Yearly)
+  function tBtn(key, label) {
+    var active = sub === key;
+    return '<button onclick="setEarningsSubView(\'' + key + '\')" style="font-size:9px;letter-spacing:1px;padding:4px 10px;border:1px solid '
+      + (active ? 'var(--green)' : 'var(--border)') + ';background:'
+      + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:'
+      + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">' + label + '</button>';
+  }
+  var toggleHtml = '<div style="display:flex;gap:6px;margin-bottom:12px">' + tBtn('quarterly', 'QUARTERLY') + tBtn('yearly', 'YEARLY') + '</div>';
+
+  // Legend (rendered below the chart)
+  var legendHtml = '<div style="font-size:9px;color:var(--dim);display:flex;gap:14px;flex-wrap:wrap;margin-top:12px">'
+    + '<span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:10px;background:#5b9cf6"></span>Revenue</span>'
+    + '<span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:10px;background:#5bf6e4"></span>Earnings</span>'
+    + '<span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:12px;height:2px;background:#c4a000"></span>Net Margin</span>'
+    + '</div>';
+
+  var chartW = Math.max(280, container.clientWidth || 340);
+
+  if (sub === 'yearly') {
+    var yearly = data.earnings && data.earnings.financialsChart && data.earnings.financialsChart.yearly;
+    if (!yearly || !yearly.length) {
+      container.innerHTML = toggleHtml + '<div style="color:var(--dim)">No yearly data available.</div>';
+      return;
+    }
+    var years = yearly.slice().sort(function(a, b) { return (Number(a.date) || 0) - (Number(b.date) || 0); });
+
+    var tbl = '<table class="fq-tbl"><thead><tr>'
+      + '<th>Year</th><th>Revenue</th><th>Earnings</th><th>Net Margin</th>'
+      + '</tr></thead><tbody>';
+    for (var yk = 0; yk < years.length; yk++) {
+      var y2 = years[yk];
+      tbl += '<tr><td>' + fundEsc(y2.date || '—') + '</td>'
+        + '<td>' + fundEsc(fundFmtOrRaw(y2.revenue)) + '</td>'
+        + '<td>' + fundEsc(fundFmtOrRaw(y2.earnings)) + '</td>'
+        + '<td>' + fundEsc(fundComputeMargin(y2.earnings, y2.revenue)) + '</td></tr>';
+    }
+    tbl += '</tbody></table>';
+
+    container.innerHTML = toggleHtml
+      + tbl
+      + '<div style="margin-top:18px">' + fundBuildQuarterlyChart(years, chartW) + '</div>'
+      + legendHtml;
+    return;
+  }
+
+  // Quarterly (default)
   var fin = data.earnings && data.earnings.financialsChart && data.earnings.financialsChart.quarterly;
   var eps = data.earnings && data.earnings.earningsChart   && data.earnings.earningsChart.quarterly;
   if (!fin || !fin.length) {
-    container.innerHTML = '<div style="color:var(--dim)">No quarterly data available.</div>';
+    container.innerHTML = toggleHtml + '<div style="color:var(--dim)">No quarterly data available.</div>';
     return;
   }
   var byDate = {};
@@ -754,17 +803,19 @@ function fundRenderQuarterly(data, container) {
   }
   html += '</tbody></table>';
 
-  // Quarterly trend chart (future: header will become Quarterly/Annual toggle)
-  var chartW = Math.max(280, container.clientWidth || 340);
-  html += '<div style="font-size:10px;color:var(--dim);letter-spacing:2px;margin-top:18px">QUARTERLY TREND</div>'
-    + '<div style="font-size:9px;color:var(--dim);display:flex;gap:14px;flex-wrap:wrap;margin-top:6px">'
-    + '<span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:10px;background:#5b9cf6"></span>Revenue</span>'
-    + '<span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:10px;background:#5bf6e4"></span>Earnings</span>'
-    + '<span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:12px;height:2px;background:#c4a000"></span>Net Margin</span>'
-    + '</div>'
-    + fundBuildQuarterlyChart(quarters, chartW);
+  container.innerHTML = toggleHtml
+    + html
+    + '<div style="margin-top:18px">' + fundBuildQuarterlyChart(quarters, chartW) + '</div>'
+    + legendHtml;
+}
 
-  container.innerHTML = html;
+// Switch between Quarterly and Yearly within the Earnings tab. State lives in
+// window.earningsSubView (resets to 'quarterly' on page reload, persists within session).
+function setEarningsSubView(view) {
+  window.earningsSubView = view;
+  if (moreState && moreState.tab === 'quarterly') {
+    moreFetchAndRender('quarterly');
+  }
 }
 
 /* ── Analyst renderer ───────────────────────────────────────────────────── */
@@ -942,7 +993,7 @@ function fundRenderAnalyst(data, container) {
 var MORE_TABS = {
   market:     { label: 'MARKET',    mods: ['price', 'summaryDetail'] },
   statistics: { label: 'KEY STATS', mods: ['defaultKeyStatistics', 'financialData', 'calendarEvents'] },
-  quarterly:  { label: 'QUARTERLY', mods: ['earnings'] },
+  quarterly:  { label: 'EARNINGS',  mods: ['earnings'] },
   analyst:    { label: 'ANALYSTS',  mods: ['financialData', 'recommendationTrend', 'upgradeDowngradeHistory'] },
   sentiment:  { label: 'SENTIMENT', mods: ['defaultKeyStatistics'] },
 };
@@ -1548,5 +1599,6 @@ window.buildFundamentalsEpsTable      = buildFundamentalsEpsTable;
 window.openMore              = openMore;
 window.closeMore             = closeMore;
 window.moreSwitchTab         = moreSwitchTab;
+window.setEarningsSubView    = setEarningsSubView;
 
 })();
