@@ -367,7 +367,7 @@ P/E  18.37   fw P/E  29.26                                  [›]
 - **Analyst vote breakdown** (line 1) sourced from `recommendationTrend`.
 - **Avg tgt** is the current mean analyst price target with upside %; **30d tgt** / **100d tgt** is the rolling average over the corresponding window. The app prefers 30d, falls back to 100d if there are no entries in the last 30 days, or omits the line if there are no entries in the last 100 days.
 - **Trailing P/E** is computed client-side as `currentPrice / trailingEps`; **forward P/E** is read directly from Yahoo.
-- The blue `[›]` button opens **More** — a full-screen overlay with additional information from Yahoo Finance (Market, Key Stats, Earnings, Analysts and Sentiment).
+- The blue `[›]` button opens **More** — a full-screen overlay with additional information from Yahoo Finance (Chart, Market, Key Stats, Earnings, Analysts and Sentiment).
 
 ### Behavior in aggregation mode
 

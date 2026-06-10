@@ -698,7 +698,7 @@ function fundBuildQuarterlyChart(quarters, width) {
 
   // X-axis quarter labels
   for (var xi = 0; xi < data.length; xi++) {
-    var lbl = data[xi].date ? data[xi].date.replace(/(\d)Q(20)(\d\d)/, "Q$1'$3") : '';
+    var lbl = data[xi].date != null ? String(data[xi].date).replace(/(\d)Q(20)(\d\d)/, "Q$1'$3") : '';
     s += '<text x="' + xCenter(xi).toFixed(1) + '" y="' + (H - 6) + '" fill="var(--dim)" font-size="9" text-anchor="middle">' + fundEsc(lbl) + '</text>';
   }
 
@@ -813,9 +813,175 @@ function fundRenderQuarterly(data, container) {
 // window.earningsSubView (resets to 'quarterly' on page reload, persists within session).
 function setEarningsSubView(view) {
   window.earningsSubView = view;
-  if (moreState && moreState.tab === 'quarterly') {
-    moreFetchAndRender('quarterly');
+  if (!moreState || moreState.tab !== 'quarterly') return;
+  var ct = document.getElementById('fund-body');
+  if (!ct) return;
+  fundRenderQuarterly(moreState.modules, ct);
+}
+
+/* ── More overlay: Chart tab ──────────────────────────────────────────── */
+
+var FUND_CHART_RANGES = ['1d', '5d', '1mo', '3mo', '6mo', '1y', '5y'];
+var FUND_CHART_LABELS = { '1d':'1D', '5d':'5D', '1mo':'1M', '3mo':'3M', '6mo':'6M', '1y':'1Y', '5y':'5Y' };
+
+// Stock-price-aware short formatter: keeps precision for typical price ranges
+// (sub-$100 with 1-2 decimals, abbreviated for big magnitudes).
+function fundFmtChartPrice(v) {
+  if (v == null || !isFinite(v)) return '';
+  if (v === 0) return '0';
+  var abs = Math.abs(v), sign = v < 0 ? '-' : '';
+  if (abs >= 1e6) return sign + (abs / 1e6).toFixed(abs >= 1e7 ? 0 : 1) + 'M';
+  if (abs >= 1e3) return sign + (abs / 1e3).toFixed(abs >= 1e4 ? 0 : 1) + 'K';
+  if (abs >= 100) return sign + abs.toFixed(0);
+  if (abs >= 10)  return sign + abs.toFixed(1);
+  return sign + abs.toFixed(2);
+}
+
+// Format X-axis tick by range: HH:MM for intraday, year for 5Y, DD/MM otherwise.
+function fundFmtChartXLabel(ts, range) {
+  var d = new Date(ts * 1000);
+  if (range === '1d') {
+    var h = d.getHours(), m = d.getMinutes();
+    return (h < 10 ? '0' + h : h) + ':' + (m < 10 ? '0' + m : m);
   }
+  if (range === '5y') return d.getUTCFullYear();
+  var dd = d.getUTCDate(), mm = d.getUTCMonth() + 1;
+  return (dd < 10 ? '0' + dd : dd) + '/' + (mm < 10 ? '0' + mm : mm);
+}
+
+// Append today's live point to the series (using position.current). Only used
+// for non-1d ranges where API data may end at previous trading day's close.
+function fundAppendChartTodayPoint(points, livePrice) {
+  if (!points || !points.length || livePrice == null) return points;
+  var nowSec = Math.floor(Date.now() / 1000);
+  var lastDay = new Date(points[points.length - 1].t * 1000).toISOString().slice(0, 10);
+  var todayDay = new Date(nowSec * 1000).toISOString().slice(0, 10);
+  if (lastDay === todayDay) return points;
+  return points.concat([{ t: nowSec, c: livePrice }]);
+}
+
+// Fetch history (cache-first for non-1d). Calls cb(points) on success/failure.
+function fundFetchChartData(ticker, range, cb) {
+  if (range !== '1d' && typeof chartCacheGet === 'function') {
+    var cached = chartCacheGet(ticker, range);
+    if (cached) { cb(cached); return; }
+  }
+  var baseUrl = (typeof getApiKey === 'function' && getApiKey()) ? getApiKey().replace(/\/+$/, '') : '';
+  if (!baseUrl) { cb(null); return; }
+  var token = (typeof getToken === 'function') ? getToken() : '';
+  var opts = token ? { headers: { 'X-API-Token': token } } : {};
+  var url = baseUrl + '/api/history?ticker=' + encodeURIComponent(ticker) + '&range=' + encodeURIComponent(range);
+  var fetchFn = (typeof fetchWithTimeout === 'function')
+    ? function() { return fetchWithTimeout(url, opts, 12000); }
+    : function() { return fetch(url, opts).then(function(r) { return r.json(); }); };
+  fetchFn()
+    .then(function(d) {
+      var pts = d && d.points;
+      if (pts && range !== '1d' && typeof chartCacheSet === 'function') chartCacheSet(ticker, range, pts);
+      cb(pts || null);
+    })
+    .catch(function() { cb(null); });
+}
+
+// Build SVG: single-ticker absolute-price line chart with auto-ranged Y-axis.
+function fundBuildAbsoluteChart(points, width, range) {
+  if (!points || points.length < 2) return '';
+  var W = width || 340, H = 200;
+  var padL = 44, padR = 12, padT = 8, padB = 22;
+  var innerW = W - padL - padR, innerH = H - padT - padB;
+
+  var prices = points.map(function(p) { return p.c; });
+  var minV = Math.min.apply(null, prices), maxV = Math.max.apply(null, prices);
+  if (minV === maxV) { minV -= 1; maxV += 1; }
+  // 5% breathing room on top/bottom
+  var pad = (maxV - minV) * 0.05;
+  minV -= pad; maxV += pad;
+
+  var n = points.length;
+  function xp(i) { return padL + (i / (n - 1)) * innerW; }
+  function yp(v) { return padT + (1 - (v - minV) / (maxV - minV)) * innerH; }
+
+  var first = prices[0], last = prices[n - 1];
+  var color = last >= first ? 'var(--green)' : 'var(--red)';
+
+  // Y-axis ticks + faint grid lines
+  var yticks = fundNiceTicks(minV, maxV, 5);
+  var ygrid = '';
+  for (var ti = 0; ti < yticks.length; ti++) {
+    var v = yticks[ti], y = yp(v);
+    ygrid += '<line x1="' + padL + '" y1="' + y.toFixed(1) + '" x2="' + (padL + innerW) + '" y2="' + y.toFixed(1) + '" stroke="var(--border)" stroke-width="0.3"/>'
+      + '<text x="' + (padL - 4) + '" y="' + (y + 3).toFixed(1) + '" fill="var(--dim)" font-size="9" text-anchor="end">' + fundFmtChartPrice(v) + '</text>';
+  }
+
+  // Polyline (the actual chart line)
+  var pts = points.map(function(p, i) { return xp(i).toFixed(1) + ',' + yp(p.c).toFixed(1); }).join(' ');
+  var line = '<polyline points="' + pts + '" fill="none" stroke="' + color + '" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>';
+
+  // X-axis: 4 evenly-spaced ticks
+  var xTickCount = Math.min(4, n);
+  var xticks = '';
+  for (var i2 = 0; i2 < xTickCount; i2++) {
+    var idx = xTickCount === 1 ? 0 : Math.floor(i2 * (n - 1) / (xTickCount - 1));
+    xticks += '<text x="' + xp(idx).toFixed(1) + '" y="' + (H - 6) + '" fill="var(--dim)" font-size="9" text-anchor="middle">' + fundFmtChartXLabel(points[idx].t, range) + '</text>';
+  }
+
+  return '<svg width="' + W + '" height="' + H + '" style="display:block">' + ygrid + line + xticks + '</svg>';
+}
+
+function fundRenderChart(_, container) {
+  if (!moreState) return;
+  var ticker = moreState.ticker;
+  var range = window.moreChartRange || '1mo';
+
+  // Range button row
+  var rangesHtml = '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px">';
+  for (var i = 0; i < FUND_CHART_RANGES.length; i++) {
+    var r = FUND_CHART_RANGES[i], active = r === range;
+    rangesHtml += '<button onclick="setMoreChartRange(\'' + r + '\')" style="font-size:9px;letter-spacing:1px;padding:4px 8px;border:1px solid '
+      + (active ? 'var(--green)' : 'var(--border)') + ';background:'
+      + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:'
+      + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">' + FUND_CHART_LABELS[r] + '</button>';
+  }
+  rangesHtml += '</div>';
+
+  container.innerHTML = rangesHtml + '<div id="more-chart-area" style="color:var(--dim);font-size:11px">Loading…</div>';
+
+  fundFetchChartData(ticker, range, function(points) {
+    // Stale-guard: user might have switched tab/ticker/range while fetch was in-flight
+    if (!moreState || moreState.tab !== 'chart' || moreState.ticker !== ticker) return;
+    if ((window.moreChartRange || '1mo') !== range) return;
+    var area = document.getElementById('more-chart-area');
+    if (!area) return;
+    if (!points || !points.length) {
+      area.innerHTML = '<span style="color:var(--dim)">No chart data available.</span>';
+      return;
+    }
+    // Add today's live point (only for non-1d) using position.current
+    var pos = (typeof positions !== 'undefined' && positions) ? positions.find(function(p) { return p.ticker === ticker; }) : null;
+    var live = (pos && pos.current != null) ? pos.current : null;
+    var allPts = (range !== '1d' && live != null) ? fundAppendChartTodayPoint(points, live) : points;
+
+    // Period Δ badge
+    var first = allPts[0].c, last = allPts[allPts.length - 1].c;
+    var abs = last - first;
+    var pct = first !== 0 ? (last / first - 1) * 100 : 0;
+    var sgn = abs >= 0 ? '+' : '';
+    var dColor = abs >= 0 ? 'var(--green)' : 'var(--red)';
+    var delta = '<div style="font-size:11px;color:' + dColor + ';margin-bottom:4px;font-family:var(--font)">'
+      + 'Δ ' + sgn + fundFmtChartPrice(abs) + '  (' + sgn + pct.toFixed(2) + '%)'
+      + '</div>';
+
+    var chartW = Math.max(280, container.clientWidth || 340);
+    area.innerHTML = delta + fundBuildAbsoluteChart(allPts, chartW, range);
+  });
+}
+
+function setMoreChartRange(r) {
+  window.moreChartRange = r;
+  if (!moreState || moreState.tab !== 'chart') return;
+  var ct = document.getElementById('fund-body');
+  if (!ct) return;
+  fundRenderChart(null, ct);
 }
 
 /* ── Analyst renderer ───────────────────────────────────────────────────── */
@@ -991,6 +1157,7 @@ function fundRenderAnalyst(data, container) {
 
 /* ── More screen ────────────────────────────────────────────────────────── */
 var MORE_TABS = {
+  chart:      { label: 'CHART',     mods: [] },
   market:     { label: 'MARKET',    mods: ['price', 'summaryDetail'] },
   statistics: { label: 'KEY STATS', mods: ['defaultKeyStatistics', 'financialData', 'calendarEvents'] },
   quarterly:  { label: 'EARNINGS',  mods: ['earnings'] },
@@ -1025,7 +1192,9 @@ function moreFetchAndRender(tab) {
     var ct = document.getElementById('fund-body');
     if (!ct) return;
     var d = state.modules;
-    if (tab === 'market') {
+    if (tab === 'chart') {
+      fundRenderChart(d, ct);
+    } else if (tab === 'market') {
       fundRenderFieldGroups(FUND_MARKET_GROUPS, d, ct);
       var currency = (d.price && d.price.currency) || (d.summaryDetail && d.summaryDetail.currency);
       var currEl = document.getElementById('fund-currency');
@@ -1075,10 +1244,10 @@ function openMore(ticker) {
   var existing = document.getElementById('fund-overlay');
   if (existing) existing.parentNode.removeChild(existing);
 
-  moreState = { ticker: ticker, modules: {}, tab: 'market' };
+  moreState = { ticker: ticker, modules: {}, tab: 'chart' };
 
   var tabBtns = Object.keys(MORE_TABS).map(function(tab) {
-    return '<button class="ftab' + (tab === 'market' ? ' on' : '')
+    return '<button class="ftab' + (tab === 'chart' ? ' on' : '')
       + '" data-tab="' + tab + '" onclick="moreSwitchTab(\'' + tab + '\')">'
       + MORE_TABS[tab].label + '</button>';
   }).join('');
@@ -1098,7 +1267,7 @@ function openMore(ticker) {
   document.addEventListener('keydown', overlay._escHandler);
   document.body.appendChild(overlay);
 
-  moreFetchAndRender('market');
+  moreFetchAndRender('chart');
 }
 
 function closeMore() {
@@ -1600,5 +1769,6 @@ window.openMore              = openMore;
 window.closeMore             = closeMore;
 window.moreSwitchTab         = moreSwitchTab;
 window.setEarningsSubView    = setEarningsSubView;
+window.setMoreChartRange     = setMoreChartRange;
 
 })();
