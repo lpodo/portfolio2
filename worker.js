@@ -142,8 +142,10 @@ export default {
       if (!t) return json({ error: 'ticker is required' }, 400);
       if (!['1d', '5d', '1mo', '3mo', '6mo', '1y', '5y'].includes(range)) return json({ error: 'invalid range' }, 400);
       try {
+        const interval = range === '1d' ? '5m' : '1d';
+        const extra = range === '1d' ? '&includePrePost=true' : '';
         const r = await fetch(
-          `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?interval=${range === '1d' ? '5m' : '1d'}&range=${range}`,
+          `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?interval=${interval}&range=${range}${extra}`,
           { headers: yahooHeaders() }
         );
         if (!r.ok) return json({ error: `Yahoo HTTP ${r.status}` }, 502);
