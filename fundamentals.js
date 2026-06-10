@@ -824,17 +824,28 @@ function setEarningsSubView(view) {
 var FUND_CHART_RANGES = ['1d', '5d', '1mo', '3mo', '6mo', '1y', '5y'];
 var FUND_CHART_LABELS = { '1d':'1D', '5d':'5D', '1mo':'1M', '3mo':'3M', '6mo':'6M', '1y':'1Y', '5y':'5Y' };
 
-// Stock-price-aware short formatter: keeps precision for typical price ranges
-// (sub-$100 with 1-2 decimals, abbreviated for big magnitudes).
-function fundFmtChartPrice(v) {
+// Stock-price-aware short formatter. If `step` is provided (e.g. distance between
+// adjacent axis ticks), precision is derived from it so adjacent labels are visually
+// distinct. Without step, defaults to 2 decimals for sub-$1000 (preserves cents).
+function fundFmtChartPrice(v, step) {
   if (v == null || !isFinite(v)) return '';
   if (v === 0) return '0';
   var abs = Math.abs(v), sign = v < 0 ? '-' : '';
-  if (abs >= 1e6) return sign + (abs / 1e6).toFixed(abs >= 1e7 ? 0 : 1) + 'M';
-  if (abs >= 1e3) return sign + (abs / 1e3).toFixed(abs >= 1e4 ? 0 : 1) + 'K';
-  if (abs >= 100) return sign + abs.toFixed(0);
-  if (abs >= 10)  return sign + abs.toFixed(1);
-  return sign + abs.toFixed(2);
+  if (abs >= 1e6) {
+    var d6 = (step != null && step >= 1e5) ? 0 : 1;
+    return sign + (abs / 1e6).toFixed(d6) + 'M';
+  }
+  if (abs >= 1e3) {
+    var d3 = (step != null && step >= 100) ? 0 : 1;
+    return sign + (abs / 1e3).toFixed(d3) + 'K';
+  }
+  var d;
+  if (step != null) {
+    d = step >= 1 ? 0 : step >= 0.1 ? 1 : step >= 0.01 ? 2 : step >= 0.001 ? 3 : 4;
+  } else {
+    d = 2;
+  }
+  return sign + abs.toFixed(d);
 }
 
 // Format X-axis tick by range: HH:MM for intraday, year for 5Y, DD/MM otherwise.
@@ -904,13 +915,14 @@ function fundBuildAbsoluteChart(points, width, range) {
   var first = prices[0], last = prices[n - 1];
   var color = last >= first ? 'var(--green)' : 'var(--red)';
 
-  // Y-axis ticks + faint grid lines
+  // Y-axis ticks + faint grid lines (step-aware precision so adjacent labels stay distinct)
   var yticks = fundNiceTicks(minV, maxV, 5);
+  var yStep = yticks.length >= 2 ? Math.abs(yticks[1] - yticks[0]) : Math.abs(maxV - minV);
   var ygrid = '';
   for (var ti = 0; ti < yticks.length; ti++) {
     var v = yticks[ti], y = yp(v);
     ygrid += '<line x1="' + padL + '" y1="' + y.toFixed(1) + '" x2="' + (padL + innerW) + '" y2="' + y.toFixed(1) + '" stroke="var(--border)" stroke-width="0.3"/>'
-      + '<text x="' + (padL - 4) + '" y="' + (y + 3).toFixed(1) + '" fill="var(--dim)" font-size="9" text-anchor="end">' + fundFmtChartPrice(v) + '</text>';
+      + '<text x="' + (padL - 4) + '" y="' + (y + 3).toFixed(1) + '" fill="var(--dim)" font-size="9" text-anchor="end">' + fundFmtChartPrice(v, yStep) + '</text>';
   }
 
   // Polyline (the actual chart line)
@@ -961,18 +973,19 @@ function fundRenderChart(_, container) {
     var live = (pos && pos.current != null) ? pos.current : null;
     var allPts = (range !== '1d' && live != null) ? fundAppendChartTodayPoint(points, live) : points;
 
-    // Period Δ badge
+    // Period summary: first → last absolute values, plus Δ
     var first = allPts[0].c, last = allPts[allPts.length - 1].c;
     var abs = last - first;
     var pct = first !== 0 ? (last / first - 1) * 100 : 0;
     var sgn = abs >= 0 ? '+' : '';
     var dColor = abs >= 0 ? 'var(--green)' : 'var(--red)';
-    var delta = '<div style="font-size:11px;color:' + dColor + ';margin-bottom:4px;font-family:var(--font)">'
-      + 'Δ ' + sgn + fundFmtChartPrice(abs) + '  (' + sgn + pct.toFixed(2) + '%)'
+    var summary = '<div style="font-size:11px;margin-bottom:4px;font-family:var(--font);display:flex;flex-wrap:wrap;gap:10px;align-items:baseline">'
+      + '<span style="color:var(--bright)">' + fundFmtChartPrice(first) + ' &#8594; ' + fundFmtChartPrice(last) + '</span>'
+      + '<span style="color:' + dColor + '">&Delta; ' + sgn + fundFmtChartPrice(abs) + '  (' + sgn + pct.toFixed(2) + '%)</span>'
       + '</div>';
 
     var chartW = Math.max(280, container.clientWidth || 340);
-    area.innerHTML = delta + fundBuildAbsoluteChart(allPts, chartW, range);
+    area.innerHTML = summary + fundBuildAbsoluteChart(allPts, chartW, range);
   });
 }
 
