@@ -25,6 +25,7 @@
     --green: #00ff88;
     --red: #ff4466;
     --font: 'Courier New', 'Lucida Console', monospace;
+    --alert-blink-period: 1.2s;
   }
   body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; }
 
@@ -184,14 +185,14 @@
   .overlay { display: none; position: fixed; inset: 0; z-index: 150; }
   .overlay.open { display: block; }
 
-  .customize-icons-panel {
+  .appearance-panel {
     position: fixed; bottom: 0; left: 0; right: 0;
     background: var(--bg2); border-top: 1px solid var(--border);
     padding: 14px 18px 20px; z-index: 170;
     transform: translateY(100%); transition: transform 0.25s ease;
     max-height: 85vh; overflow-y: auto;
   }
-  .customize-icons-panel.open { transform: translateY(0); }
+  .appearance-panel.open { transform: translateY(0); }
   .ci-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
   .ci-row label { font-size: 9px; color: var(--dim); letter-spacing: 2px; min-width: 100px; }
   .ci-row .ci-sym { width: 50px; text-align: center; font-size: 14px; }
@@ -199,6 +200,12 @@
   .ci-row .ci-code.ci-invalid { border-color: var(--red); color: var(--red); }
   .ci-row .ci-arrow { color: var(--dim); font-size: 11px; }
   .ci-row .ci-preview { min-width: 24px; text-align: center; font-size: 14px; color: var(--bright); }
+
+  @keyframes alertBlink {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.25; }
+  }
+  .alert-blink { animation: alertBlink var(--alert-blink-period) ease-in-out infinite; }
 
   @media (max-width: 480px) {
     .header { padding: 11px 14px; }
@@ -442,9 +449,8 @@
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">DICTIONARIES</div>
   <div id="dictsPanel"></div>
 
-  <div style="margin-top:14px;text-align:right">
-    <a href="#" onclick="openCustomizeIcons(); return false" style="font-size:9px;color:var(--dim);letter-spacing:1px;text-decoration:underline;cursor:pointer">customize icons</a>
-  </div>
+  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">APPEARANCE</div>
+  <button onclick="openAppearance()" style="padding:6px 14px;border:1px solid var(--border);background:var(--bg);color:var(--bright);font-family:var(--font);font-size:11px;letter-spacing:1px;cursor:pointer">CUSTOMIZE</button>
 
   <div class="settings-note" id="settingsNote"></div>
 </div>
@@ -456,15 +462,22 @@
 </div>
 
 <!-- Customize icons overlay (z-index above settings) -->
-<div class="overlay" id="customizeIconsOverlay" onclick="closeCustomizeIcons()" style="z-index:160"></div>
-<div class="customize-icons-panel" id="customizeIconsPanel">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-    <div style="font-size:9px;color:var(--dim);letter-spacing:3px">MARKET STATE ICONS</div>
-    <span onclick="closeCustomizeIcons()" style="cursor:pointer;font-size:14px;color:var(--dim);padding:0 4px">&#10005;</span>
-  </div>
+<div class="overlay" id="appearanceOverlay" onclick="closeAppearance()" style="z-index:160"></div>
+<div class="appearance-panel" id="appearancePanel">
+  <div style="font-size:9px;color:var(--dim);letter-spacing:3px;margin-bottom:14px">APPEARANCE</div>
+
+  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:6px">CONTRAST</div>
+  <div id="contrastButtons" style="display:flex;gap:6px;margin-bottom:8px"></div>
+  <div style="font-size:11px;color:var(--dim);padding:6px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:14px">Preview: this is dim text between two borders</div>
+
+  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:6px">ALERT BLINK PERIOD</div>
+  <div id="blinkButtons" style="display:flex;gap:6px;margin-bottom:8px"></div>
+  <div style="font-size:11px;color:var(--dim);margin-bottom:14px">Preview: <span class="alert-blink" style="color:#5bd1f6;font-size:13px">&#9679;</span></div>
+
+  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">MARKET STATE ICONS</div>
   <div id="customizeIconsRows"></div>
-  <div style="margin-top:10px;text-align:right">
-    <a href="#" onclick="resetCustomizeIcons(); return false" style="font-size:9px;color:var(--dim);letter-spacing:1px;text-decoration:underline;cursor:pointer">reset to defaults</a>
+  <div style="margin-top:14px;text-align:right">
+    <a href="#" onclick="resetAppearance(); return false" style="font-size:9px;color:var(--dim);letter-spacing:1px;text-decoration:underline;cursor:pointer">reset all</a>
   </div>
 </div>
 
@@ -2666,20 +2679,24 @@ function alertColorForCond(cond) {
 
 // Returns HTML for 0/1/2 colored dots next to a ticker, based on which
 // directions have triggered alerts in the given flat list of alerts.
+// A direction with 2+ triggered alerts gets a blinking dot.
 // Sky-blue dot (down trigger) is rendered first if present.
 function getAlertDotsHtml(alerts) {
   if (!alerts || !alerts.length) return '';
-  var hasDown = false, hasUp = false;
+  var downCount = 0, upCount = 0;
   for (var i = 0; i < alerts.length; i++) {
     var a = alerts[i];
     if (!a || !a.triggered) continue;
-    if (a.condition === '<') hasDown = true;
-    else if (a.condition === '>') hasUp = true;
-    if (hasDown && hasUp) break;
+    if      (a.condition === '<') downCount++;
+    else if (a.condition === '>') upCount++;
+  }
+  function dot(color, blink) {
+    return ' <span' + (blink ? ' class="alert-blink"' : '')
+      + ' style="color:' + color + ';font-size:11px">&#9679;</span>';
   }
   var html = '';
-  if (hasDown) html += ' <span style="color:#5bd1f6;font-size:11px">&#9679;</span>';
-  if (hasUp)   html += ' <span style="color:#f6c15b;font-size:11px">&#9679;</span>';
+  if (downCount > 0) html += dot('#5bd1f6', downCount >= 2);
+  if (upCount > 0)   html += dot('#f6c15b', upCount >= 2);
   return html;
 }
 
@@ -3290,15 +3307,81 @@ function marketIcon(state) {
 }
 
 // --- Customize icons overlay ---
-function openCustomizeIcons() {
-  document.getElementById('customizeIconsOverlay').classList.add('open');
-  document.getElementById('customizeIconsPanel').classList.add('open');
+// ── Appearance preferences ────────────────────────────────────────────────
+// CONTRAST: maps to --dim and --border colors. low = current default.
+var CONTRAST_PRESETS = {
+  low:  { dim: '#4a5568', border: '#1e2736' },
+  med:  { dim: '#6b7889', border: '#2c3a4d' },
+  high: { dim: '#8a99ab', border: '#3a4a60' },
+  max:  { dim: '#a8b6c7', border: '#4a5d75' },
+};
+// BLINK: maps to --alert-blink-period. med = current default (1.2s).
+var BLINK_PRESETS = { slow: '1.8s', med: '1.2s', fast: '0.7s' };
+
+function getContrastPref()   { try { return localStorage.getItem('pt_contrast')     || 'low'; } catch(e) { return 'low'; } }
+function getBlinkPref()      { try { return localStorage.getItem('pt_blink_period') || 'med'; } catch(e) { return 'med'; } }
+
+function setContrastPref(level) {
+  if (!CONTRAST_PRESETS[level]) return;
+  try { localStorage.setItem('pt_contrast', level); } catch(e) {}
+  var p = CONTRAST_PRESETS[level];
+  document.documentElement.style.setProperty('--dim',    p.dim);
+  document.documentElement.style.setProperty('--border', p.border);
+  renderContrastButtons();
+}
+
+function setBlinkPref(level) {
+  if (!BLINK_PRESETS[level]) return;
+  try { localStorage.setItem('pt_blink_period', level); } catch(e) {}
+  document.documentElement.style.setProperty('--alert-blink-period', BLINK_PRESETS[level]);
+  renderBlinkButtons();
+}
+
+function _renderPresetButtons(elId, levels, current, fnName) {
+  var el = document.getElementById(elId);
+  if (!el) return;
+  el.innerHTML = levels.map(function(level) {
+    var active = level === current;
+    var label = level.charAt(0).toUpperCase() + level.slice(1);
+    return '<button onclick="' + fnName + '(\'' + level + '\')" style="font-size:9px;letter-spacing:1px;padding:4px 10px;border:1px solid '
+      + (active ? 'var(--green)' : 'var(--border)') + ';background:'
+      + (active ? 'var(--bg)' : 'var(--bg2)') + ';color:'
+      + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">' + label + '</button>';
+  }).join('');
+}
+function renderContrastButtons() { _renderPresetButtons('contrastButtons', ['low','med','high','max'],  getContrastPref(), 'setContrastPref'); }
+function renderBlinkButtons()    { _renderPresetButtons('blinkButtons',    ['slow','med','fast'],       getBlinkPref(),    'setBlinkPref'); }
+
+function openAppearance() {
+  document.getElementById('appearanceOverlay').classList.add('open');
+  document.getElementById('appearancePanel').classList.add('open');
+  renderContrastButtons();
+  renderBlinkButtons();
   renderCustomizeIconsRows();
 }
 
-function closeCustomizeIcons() {
-  document.getElementById('customizeIconsOverlay').classList.remove('open');
-  document.getElementById('customizeIconsPanel').classList.remove('open');
+function closeAppearance() {
+  document.getElementById('appearanceOverlay').classList.remove('open');
+  document.getElementById('appearancePanel').classList.remove('open');
+}
+
+function resetAppearance() {
+  setContrastPref('low');
+  setBlinkPref('med');
+  resetCustomizeIcons();
+}
+
+// Apply on page load (idempotent — safe to call multiple times)
+function applyAppearancePrefs() {
+  var c = getContrastPref();
+  if (CONTRAST_PRESETS[c]) {
+    document.documentElement.style.setProperty('--dim',    CONTRAST_PRESETS[c].dim);
+    document.documentElement.style.setProperty('--border', CONTRAST_PRESETS[c].border);
+  }
+  var b = getBlinkPref();
+  if (BLINK_PRESETS[b]) {
+    document.documentElement.style.setProperty('--alert-blink-period', BLINK_PRESETS[b]);
+  }
 }
 
 function escapeCustomizeIconsAttr(s) {
@@ -6308,6 +6391,7 @@ function render() {
 }
 
 initPortfolios();
+applyAppearancePrefs();
 loadLocal();
 loadDicts();
 migrateDicts();
