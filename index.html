@@ -25,7 +25,6 @@
     --green: #00ff88;
     --red: #ff4466;
     --font: 'Courier New', 'Lucida Console', monospace;
-    --alert-blink-period: 1.2s;
   }
   body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; }
 
@@ -205,7 +204,9 @@
     0%, 100% { opacity: 1; }
     50%      { opacity: 0.25; }
   }
-  .alert-blink { animation: alertBlink var(--alert-blink-period) ease-in-out infinite; }
+  .alert-blink-slow { animation: alertBlink 1.8s ease-in-out infinite; }
+  .alert-blink-med  { animation: alertBlink 1.2s ease-in-out infinite; }
+  .alert-blink-fast { animation: alertBlink 0.7s ease-in-out infinite; }
 
   @media (max-width: 480px) {
     .header { padding: 11px 14px; }
@@ -450,7 +451,7 @@
   <div id="dictsPanel"></div>
 
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">APPEARANCE</div>
-  <button onclick="openAppearance()" style="padding:6px 14px;border:1px solid var(--border);background:var(--bg);color:var(--bright);font-family:var(--font);font-size:11px;letter-spacing:1px;cursor:pointer">CUSTOMIZE</button>
+  <button class="btn" onclick="openAppearance()">CUSTOMIZE</button>
 
   <div class="settings-note" id="settingsNote"></div>
 </div>
@@ -470,9 +471,9 @@
   <div id="contrastButtons" style="display:flex;gap:6px;margin-bottom:8px"></div>
   <div style="font-size:11px;color:var(--dim);padding:6px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:14px">Preview: this is dim text between two borders</div>
 
-  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:6px">ALERT BLINK PERIOD</div>
+  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:6px">BASE BLINK PERIOD</div>
   <div id="blinkButtons" style="display:flex;gap:6px;margin-bottom:8px"></div>
-  <div style="font-size:11px;color:var(--dim);margin-bottom:14px">Preview: <span class="alert-blink" style="color:#5bd1f6;font-size:13px">&#9679;</span></div>
+  <div style="font-size:11px;color:var(--dim);margin-bottom:14px">Preview: <span id="blinkPreview" style="color:#5bd1f6;font-size:13px">&#9679;</span></div>
 
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">MARKET STATE ICONS</div>
   <div id="customizeIconsRows"></div>
@@ -2679,7 +2680,8 @@ function alertColorForCond(cond) {
 
 // Returns HTML for 0/1/2 colored dots next to a ticker, based on which
 // directions have triggered alerts in the given flat list of alerts.
-// A direction with 2+ triggered alerts gets a blinking dot.
+// Solid for 1 alert; blinks for 2+ with progressive speed (starts at user's
+// BASE BLINK PERIOD setting, steps faster per extra alert, clamps at 'fast').
 // Sky-blue dot (down trigger) is rendered first if present.
 function getAlertDotsHtml(alerts) {
   if (!alerts || !alerts.length) return '';
@@ -2690,13 +2692,14 @@ function getAlertDotsHtml(alerts) {
     if      (a.condition === '<') downCount++;
     else if (a.condition === '>') upCount++;
   }
-  function dot(color, blink) {
-    return ' <span' + (blink ? ' class="alert-blink"' : '')
+  function dot(color, count) {
+    var cls = blinkClassForCount(count);
+    return ' <span' + (cls ? ' class="' + cls + '"' : '')
       + ' style="color:' + color + ';font-size:11px">&#9679;</span>';
   }
   var html = '';
-  if (downCount > 0) html += dot('#5bd1f6', downCount >= 2);
-  if (upCount > 0)   html += dot('#f6c15b', upCount >= 2);
+  if (downCount > 0) html += dot('#5bd1f6', downCount);
+  if (upCount > 0)   html += dot('#f6c15b', upCount);
   return html;
 }
 
@@ -3308,15 +3311,15 @@ function marketIcon(state) {
 
 // --- Customize icons overlay ---
 // ── Appearance preferences ────────────────────────────────────────────────
-// CONTRAST: maps to --dim and --border colors. low = current default.
+// CONTRAST: maps to --dim and --border colors. low = brightened from raw default.
 var CONTRAST_PRESETS = {
-  low:  { dim: '#4a5568', border: '#1e2736' },
-  med:  { dim: '#6b7889', border: '#2c3a4d' },
-  high: { dim: '#8a99ab', border: '#3a4a60' },
-  max:  { dim: '#a8b6c7', border: '#4a5d75' },
+  low:  { dim: '#6b7889', border: '#2c3a4d' },
+  med:  { dim: '#8a99ab', border: '#3a4a60' },
+  high: { dim: '#a8b6c7', border: '#4a5d75' },
 };
-// BLINK: maps to --alert-blink-period. med = current default (1.2s).
-var BLINK_PRESETS = { slow: '1.8s', med: '1.2s', fast: '0.7s' };
+// BLINK: levels are mapped to fixed CSS classes (alert-blink-slow/med/fast).
+// User's setting is the BASE for 2-alert case; 3+ alerts step faster, clamped to 'fast'.
+var BLINK_LEVELS = ['slow', 'med', 'fast'];
 
 function getContrastPref()   { try { return localStorage.getItem('pt_contrast')     || 'low'; } catch(e) { return 'low'; } }
 function getBlinkPref()      { try { return localStorage.getItem('pt_blink_period') || 'med'; } catch(e) { return 'med'; } }
@@ -3331,10 +3334,27 @@ function setContrastPref(level) {
 }
 
 function setBlinkPref(level) {
-  if (!BLINK_PRESETS[level]) return;
+  if (BLINK_LEVELS.indexOf(level) < 0) return;
   try { localStorage.setItem('pt_blink_period', level); } catch(e) {}
-  document.documentElement.style.setProperty('--alert-blink-period', BLINK_PRESETS[level]);
   renderBlinkButtons();
+  updateBlinkPreview();
+  if (typeof render === 'function') render(); // re-render so dots in tables pick up new base
+}
+
+function updateBlinkPreview() {
+  var el = document.getElementById('blinkPreview');
+  if (el) el.className = 'alert-blink-' + getBlinkPref();
+}
+
+// Map (alert count, user's base) → CSS class. Returns null if n < 2 (no blink).
+// Progression: starts at user's base level, advances one level per extra alert, clamps at 'fast'.
+function blinkClassForCount(n) {
+  if (n < 2) return null;
+  var base = getBlinkPref();
+  var startIdx = BLINK_LEVELS.indexOf(base);
+  if (startIdx < 0) startIdx = 1;
+  var idx = Math.min(BLINK_LEVELS.length - 1, startIdx + (n - 2));
+  return 'alert-blink-' + BLINK_LEVELS[idx];
 }
 
 function _renderPresetButtons(elId, levels, current, fnName) {
@@ -3349,7 +3369,7 @@ function _renderPresetButtons(elId, levels, current, fnName) {
       + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">' + label + '</button>';
   }).join('');
 }
-function renderContrastButtons() { _renderPresetButtons('contrastButtons', ['low','med','high','max'],  getContrastPref(), 'setContrastPref'); }
+function renderContrastButtons() { _renderPresetButtons('contrastButtons', ['low','med','high'], getContrastPref(), 'setContrastPref'); }
 function renderBlinkButtons()    { _renderPresetButtons('blinkButtons',    ['slow','med','fast'],       getBlinkPref(),    'setBlinkPref'); }
 
 function openAppearance() {
@@ -3357,6 +3377,7 @@ function openAppearance() {
   document.getElementById('appearancePanel').classList.add('open');
   renderContrastButtons();
   renderBlinkButtons();
+  updateBlinkPreview();
   renderCustomizeIconsRows();
 }
 
@@ -3378,10 +3399,8 @@ function applyAppearancePrefs() {
     document.documentElement.style.setProperty('--dim',    CONTRAST_PRESETS[c].dim);
     document.documentElement.style.setProperty('--border', CONTRAST_PRESETS[c].border);
   }
-  var b = getBlinkPref();
-  if (BLINK_PRESETS[b]) {
-    document.documentElement.style.setProperty('--alert-blink-period', BLINK_PRESETS[b]);
-  }
+  // Blink: no global state to set — each dot gets its own class at render time
+  // via blinkClassForCount(n) in getAlertDotsHtml.
 }
 
 function escapeCustomizeIconsAttr(s) {
