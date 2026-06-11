@@ -6463,7 +6463,7 @@ function render() {
   }
 
   // Watchlist/Index view — but let chart mode and summary-context modes pass through
-  if (isWatchlist() && viewMode !== 'chart' && viewMode !== 'global-weight') {
+  if (isWatchlist() && viewMode !== 'chart' && viewMode !== 'global-weight' && viewMode !== 'fundamentals') {
     var wlRows = '';
     var wlTickerArrow = watchlistSort.key === 'ticker' ? (watchlistSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
     var wlDeltaArrow = watchlistSort.key === 'absdelta' ? ' &#177;&#9660;' : watchlistSort.key === 'delta' ? (watchlistSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
