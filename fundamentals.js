@@ -919,7 +919,8 @@ function fundBuildAbsoluteChart(points, width, range, tradingPeriod) {
   var first = prices[0], last = prices[n - 1];
   var color = last >= first ? 'var(--green)' : 'var(--red)';
 
-  // Regular session shade (1d only) — drawn first so grid/line render on top
+  // Pre/post-market shade (1d only) — drawn first so grid/line render on top.
+  // Regular session stays at normal background; off-hours get a subtle tint.
   var sessionShade = '';
   if (range === '1d' && tradingPeriod && tradingPeriod.regular) {
     // Yahoo's currentTradingPeriod refers to today's/upcoming session and may NOT
@@ -934,13 +935,13 @@ function fundBuildAbsoluteChart(points, width, range, tradingPeriod) {
     var firstTs = points[0].t;
     var lastTs  = points[n - 1].t;
     var dataDayLocal = Math.floor((firstTs + gmtOff) / SECS_DAY) * SECS_DAY;
-    var s = dataDayLocal + regStartSoD - gmtOff;
-    var e = dataDayLocal + regEndSoD   - gmtOff;
-    if (regEndSoD < regStartSoD) e += SECS_DAY; // session crosses midnight (rare)
-    // Clamp regular session to the visible data range
-    s = Math.max(s, firstTs);
-    e = Math.min(e, lastTs);
-    if (e > s) {
+    var regS = dataDayLocal + regStartSoD - gmtOff;
+    var regE = dataDayLocal + regEndSoD   - gmtOff;
+    if (regEndSoD < regStartSoD) regE += SECS_DAY; // session crosses midnight (rare)
+    // Clamp regular session to visible data range
+    var rs = Math.max(regS, firstTs);
+    var re = Math.min(regE, lastTs);
+    if (re > rs) {
       // Project timestamp to x via linear interpolation across points
       function tsToX(ts) {
         if (ts <= firstTs) return xp(0);
@@ -953,8 +954,17 @@ function fundBuildAbsoluteChart(points, width, range, tradingPeriod) {
         }
         return xp(n - 1);
       }
-      var x1 = tsToX(s), x2 = tsToX(e);
-      sessionShade = '<rect x="' + x1.toFixed(1) + '" y="' + padT + '" width="' + (x2 - x1).toFixed(1) + '" height="' + innerH + '" fill="var(--bright)" opacity="0.1"/>';
+      var xLeft = xp(0), xRight = xp(n - 1);
+      // Pre-market shade: from chart start to regular session start
+      if (rs > firstTs) {
+        var xPreEnd = tsToX(rs);
+        sessionShade += '<rect x="' + xLeft.toFixed(1) + '" y="' + padT + '" width="' + (xPreEnd - xLeft).toFixed(1) + '" height="' + innerH + '" fill="var(--bright)" opacity="0.07"/>';
+      }
+      // Post-market shade: from regular session end to chart end
+      if (re < lastTs) {
+        var xPostStart = tsToX(re);
+        sessionShade += '<rect x="' + xPostStart.toFixed(1) + '" y="' + padT + '" width="' + (xRight - xPostStart).toFixed(1) + '" height="' + innerH + '" fill="var(--bright)" opacity="0.07"/>';
+      }
     }
   }
 
