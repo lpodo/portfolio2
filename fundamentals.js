@@ -1039,6 +1039,83 @@ function fundRenderChart(_, container) {
 
     var chartW = Math.max(280, container.clientWidth || 340);
     area.innerHTML = summary + fundBuildAbsoluteChart(allPts, chartW, range, tradingPeriod);
+    fundAttachChartTap(area, allPts, chartW, first);
+  });
+}
+
+// Tap-to-inspect on the chart: tap a point → vertical dotted line + summary shows tapped price + Δ from first.
+// Tap outside the SVG → restore default (last point + full period Δ).
+function fundAttachChartTap(area, points, chartW, first) {
+  // Cleanup any handler from a previous chart render
+  if (window.fundChartTapCleanup) {
+    try { window.fundChartTapCleanup(); } catch(e) {}
+    window.fundChartTapCleanup = null;
+  }
+  var svg = area.querySelector('svg');
+  var summaryEl = area.firstElementChild; // the summary <div>
+  if (!svg || !summaryEl) return;
+
+  // Geometry constants must mirror fundBuildAbsoluteChart
+  var padL = 44, padR = 12, padT = 8, padB = 22, H = 200;
+  var innerW = chartW - padL - padR;
+  var innerH = H - padT - padB;
+  var n = points.length;
+  if (n < 2) return;
+  var lastIdx = n - 1;
+
+  function buildSummaryInnerHtml(val) {
+    var dabs = val - first;
+    var dpct = first !== 0 ? (val / first - 1) * 100 : 0;
+    var dsgn = dabs >= 0 ? '+' : '';
+    var dcol = dabs >= 0 ? 'var(--green)' : 'var(--red)';
+    return '<span style="color:var(--bright)">' + fundFmtChartPrice(first) + ' &#8594; ' + fundFmtChartPrice(val) + '</span>'
+      + '<span style="color:' + dcol + '">&Delta; ' + dsgn + fundFmtChartPrice(dabs) + '  (' + dsgn + dpct.toFixed(2) + '%)</span>';
+  }
+
+  function clearTap() {
+    summaryEl.innerHTML = buildSummaryInnerHtml(points[lastIdx].c);
+    var line = svg.querySelector('.tap-line');
+    if (line && line.parentNode) line.parentNode.removeChild(line);
+    document.removeEventListener('click', outsideHandler, true);
+    window.fundChartTapCleanup = null;
+  }
+
+  function outsideHandler(e) {
+    if (svg.contains(e.target)) return; // click inside chart — handled by svg handler
+    clearTap();
+  }
+
+  svg.style.cursor = 'crosshair';
+  svg.addEventListener('click', function(e) {
+    var rect = svg.getBoundingClientRect();
+    var clickX = e.clientX - rect.left;
+    // SVG may be CSS-scaled; scale clickX back to internal SVG coords
+    var scaleX = rect.width > 0 ? (chartW / rect.width) : 1;
+    var svgX = clickX * scaleX;
+    var i = Math.round(((svgX - padL) / innerW) * (n - 1));
+    i = Math.max(0, Math.min(n - 1, i));
+
+    summaryEl.innerHTML = buildSummaryInnerHtml(points[i].c);
+
+    var x = padL + (i / (n - 1)) * innerW;
+    var line = svg.querySelector('.tap-line');
+    if (!line) {
+      line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('class', 'tap-line');
+      line.setAttribute('stroke', 'var(--dim)');
+      line.setAttribute('stroke-width', '1');
+      line.setAttribute('stroke-dasharray', '3,3');
+      svg.appendChild(line);
+    }
+    line.setAttribute('x1', x.toFixed(1));
+    line.setAttribute('x2', x.toFixed(1));
+    line.setAttribute('y1', padT);
+    line.setAttribute('y2', padT + innerH);
+
+    if (!window.fundChartTapCleanup) {
+      document.addEventListener('click', outsideHandler, true);
+      window.fundChartTapCleanup = clearTap;
+    }
   });
 }
 
