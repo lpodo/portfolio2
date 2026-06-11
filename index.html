@@ -5699,9 +5699,13 @@ function render() {
       var cashTotalClass = cashTotalUSD >= 0 ? 'pos' : 'neg';
       var cashTotalSign = cashTotalUSD >= 0 ? '+' : '-';
 
+      // Wrap table + totals-bar in a container with padding-right that approximately
+      // matches the archive totals-bar's RETURN block + gap (~70px). This shifts NET
+      // column right edge AND NET TOTAL right edge to the same X position, ending
+      // approximately under the right edge of the P&L block in the archive totals-bar.
       var cashHtml = (cashStats.length > 0
-        ? '<div style="margin-top:18px">'
-          + '<div class="table-wrap"><table>'
+        ? '<div style="margin-top:18px;padding-right:70px">'
+          + '<div class="table-wrap"><table style="width:100%;min-width:0">'
           + '<thead><tr>'
           + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">CASH PORTFOLIO</th>'
           + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">NET</th>'
