@@ -922,13 +922,24 @@ function fundBuildAbsoluteChart(points, width, range, tradingPeriod) {
   // Regular session shade (1d only) — drawn first so grid/line render on top
   var sessionShade = '';
   if (range === '1d' && tradingPeriod && tradingPeriod.regular) {
-    var regStart = tradingPeriod.regular.start;
-    var regEnd   = tradingPeriod.regular.end;
-    var firstTs  = points[0].t;
-    var lastTs   = points[n - 1].t;
+    // Yahoo's currentTradingPeriod refers to today's/upcoming session and may NOT
+    // match the day of the returned 1d data (e.g. outside trading hours we get
+    // yesterday's data but tomorrow's tradingPeriod). Extract the session's
+    // time-of-day in the exchange tz, then map it onto the data's actual day.
+    var gmtOff = tradingPeriod.regular.gmtoffset || 0;
+    var SECS_DAY = 86400;
+    function _localSoD(ts) { return ((ts + gmtOff) % SECS_DAY + SECS_DAY) % SECS_DAY; }
+    var regStartSoD = _localSoD(tradingPeriod.regular.start);
+    var regEndSoD   = _localSoD(tradingPeriod.regular.end);
+    var firstTs = points[0].t;
+    var lastTs  = points[n - 1].t;
+    var dataDayLocal = Math.floor((firstTs + gmtOff) / SECS_DAY) * SECS_DAY;
+    var s = dataDayLocal + regStartSoD - gmtOff;
+    var e = dataDayLocal + regEndSoD   - gmtOff;
+    if (regEndSoD < regStartSoD) e += SECS_DAY; // session crosses midnight (rare)
     // Clamp regular session to the visible data range
-    var s = Math.max(regStart, firstTs);
-    var e = Math.min(regEnd,   lastTs);
+    s = Math.max(s, firstTs);
+    e = Math.min(e, lastTs);
     if (e > s) {
       // Project timestamp to x via linear interpolation across points
       function tsToX(ts) {
@@ -943,7 +954,7 @@ function fundBuildAbsoluteChart(points, width, range, tradingPeriod) {
         return xp(n - 1);
       }
       var x1 = tsToX(s), x2 = tsToX(e);
-      sessionShade = '<rect x="' + x1.toFixed(1) + '" y="' + padT + '" width="' + (x2 - x1).toFixed(1) + '" height="' + innerH + '" fill="var(--bright)" opacity="0.04"/>';
+      sessionShade = '<rect x="' + x1.toFixed(1) + '" y="' + padT + '" width="' + (x2 - x1).toFixed(1) + '" height="' + innerH + '" fill="var(--bright)" opacity="0.1"/>';
     }
   }
 
