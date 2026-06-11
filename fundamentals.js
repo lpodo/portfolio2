@@ -871,14 +871,15 @@ function fundAppendChartTodayPoint(points, livePrice) {
   return points.concat([{ t: nowSec, c: livePrice }]);
 }
 
-// Fetch history (cache-first for non-1d). Calls cb(points) on success/failure.
+// Fetch history (cache-first for non-1d). Calls cb(points, tradingPeriod) on success/failure.
+// tradingPeriod is only meaningful for 1d range (regular/pre/post session timestamps).
 function fundFetchChartData(ticker, range, cb) {
   if (range !== '1d' && typeof chartCacheGet === 'function') {
     var cached = chartCacheGet(ticker, range);
-    if (cached) { cb(cached); return; }
+    if (cached) { cb(cached, null); return; }
   }
   var baseUrl = (typeof getApiKey === 'function' && getApiKey()) ? getApiKey().replace(/\/+$/, '') : '';
-  if (!baseUrl) { cb(null); return; }
+  if (!baseUrl) { cb(null, null); return; }
   var token = (typeof getToken === 'function') ? getToken() : '';
   var opts = token ? { headers: { 'X-API-Token': token } } : {};
   var url = baseUrl + '/api/history?ticker=' + encodeURIComponent(ticker) + '&range=' + encodeURIComponent(range);
@@ -888,14 +889,17 @@ function fundFetchChartData(ticker, range, cb) {
   fetchFn()
     .then(function(d) {
       var pts = d && d.points;
+      var tp  = d && d.tradingPeriod;
       if (pts && range !== '1d' && typeof chartCacheSet === 'function') chartCacheSet(ticker, range, pts);
-      cb(pts || null);
+      cb(pts || null, tp || null);
     })
-    .catch(function() { cb(null); });
+    .catch(function() { cb(null, null); });
 }
 
 // Build SVG: single-ticker absolute-price line chart with auto-ranged Y-axis.
-function fundBuildAbsoluteChart(points, width, range) {
+// For 1d range with tradingPeriod, the regular session region is highlighted
+// with a subtle background shade (so pre/after-market are visually distinct).
+function fundBuildAbsoluteChart(points, width, range, tradingPeriod) {
   if (!points || points.length < 2) return '';
   var W = width || 340, H = 200;
   var padL = 44, padR = 12, padT = 8, padB = 22;
@@ -914,6 +918,34 @@ function fundBuildAbsoluteChart(points, width, range) {
 
   var first = prices[0], last = prices[n - 1];
   var color = last >= first ? 'var(--green)' : 'var(--red)';
+
+  // Regular session shade (1d only) — drawn first so grid/line render on top
+  var sessionShade = '';
+  if (range === '1d' && tradingPeriod && tradingPeriod.regular) {
+    var regStart = tradingPeriod.regular.start;
+    var regEnd   = tradingPeriod.regular.end;
+    var firstTs  = points[0].t;
+    var lastTs   = points[n - 1].t;
+    // Clamp regular session to the visible data range
+    var s = Math.max(regStart, firstTs);
+    var e = Math.min(regEnd,   lastTs);
+    if (e > s) {
+      // Project timestamp to x via linear interpolation across points
+      function tsToX(ts) {
+        if (ts <= firstTs) return xp(0);
+        if (ts >= lastTs)  return xp(n - 1);
+        for (var k = 0; k < n - 1; k++) {
+          if (points[k].t <= ts && ts <= points[k + 1].t) {
+            var frac = (ts - points[k].t) / (points[k + 1].t - points[k].t);
+            return xp(k) + frac * (xp(k + 1) - xp(k));
+          }
+        }
+        return xp(n - 1);
+      }
+      var x1 = tsToX(s), x2 = tsToX(e);
+      sessionShade = '<rect x="' + x1.toFixed(1) + '" y="' + padT + '" width="' + (x2 - x1).toFixed(1) + '" height="' + innerH + '" fill="var(--bright)" opacity="0.04"/>';
+    }
+  }
 
   // Y-axis ticks + faint grid lines (step-aware precision so adjacent labels stay distinct)
   var yticks = fundNiceTicks(minV, maxV, 5);
@@ -937,7 +969,7 @@ function fundBuildAbsoluteChart(points, width, range) {
     xticks += '<text x="' + xp(idx).toFixed(1) + '" y="' + (H - 6) + '" fill="var(--dim)" font-size="9" text-anchor="middle">' + fundFmtChartXLabel(points[idx].t, range) + '</text>';
   }
 
-  return '<svg width="' + W + '" height="' + H + '" style="display:block">' + ygrid + line + xticks + '</svg>';
+  return '<svg width="' + W + '" height="' + H + '" style="display:block">' + sessionShade + ygrid + line + xticks + '</svg>';
 }
 
 function fundRenderChart(_, container) {
@@ -958,7 +990,7 @@ function fundRenderChart(_, container) {
 
   container.innerHTML = rangesHtml + '<div id="more-chart-area" style="color:var(--dim);font-size:11px">Loading…</div>';
 
-  fundFetchChartData(ticker, range, function(points) {
+  fundFetchChartData(ticker, range, function(points, tradingPeriod) {
     // Stale-guard: user might have switched tab/ticker/range while fetch was in-flight
     if (!moreState || moreState.tab !== 'chart' || moreState.ticker !== ticker) return;
     if ((window.moreChartRange || '1mo') !== range) return;
@@ -985,7 +1017,7 @@ function fundRenderChart(_, container) {
       + '</div>';
 
     var chartW = Math.max(280, container.clientWidth || 340);
-    area.innerHTML = summary + fundBuildAbsoluteChart(allPts, chartW, range);
+    area.innerHTML = summary + fundBuildAbsoluteChart(allPts, chartW, range, tradingPeriod);
   });
 }
 

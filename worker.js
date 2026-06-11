@@ -169,6 +169,7 @@ export default {
         return json({
           ticker: meta.symbol || t,
           currency: isGBp ? 'GBP' : rawCurrency,
+          tradingPeriod: meta.currentTradingPeriod || null,
           points
         });
       } catch (err) {
