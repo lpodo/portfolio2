@@ -329,6 +329,10 @@
 <div id="archivePosMenu" style="display:none;position:fixed;z-index:400;background:var(--bg2);border:1px solid var(--border);min-width:160px;box-shadow:0 4px 12px rgba(0,0,0,0.4)">
   <div id="archivePosMenuList"></div>
 </div>
+<!-- Move cash entry menu -->
+<div id="moveCashEntryMenu" style="display:none;position:fixed;z-index:400;background:var(--bg2);border:1px solid var(--border);min-width:160px;box-shadow:0 4px 12px rgba(0,0,0,0.4)">
+  <div id="moveCashEntryMenuList"></div>
+</div>
 <!-- Portfolio Switcher -->
 <div id="cloudOverlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:500;align-items:center;justify-content:center" onclick="dismissCloudOverlay()">
   <div style="background:var(--bg2);border:1px solid var(--border);padding:20px 28px;min-width:260px;max-width:85vw;text-align:center" onclick="event.stopPropagation()">
@@ -340,8 +344,7 @@
     <div class="portfolio-dropdown-title" style="display:flex;align-items:center;justify-content:space-between;padding-right:8px">
       <span>Portfolios</span>
       <div style="display:flex;gap:0">
-        <button onclick="setSwitcherTab('active')" id="tabActive" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);background:var(--bg2);color:var(--green);cursor:pointer;font-family:var(--font)">ACTIVE</button>
-        <button onclick="setSwitcherTab('archive')" id="tabArchive" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);border-left:none;background:var(--bg);color:var(--dim);cursor:pointer;font-family:var(--font)">ARCHIVE</button><button onclick="setSwitcherTab('bonds')" id="tabBonds" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);border-left:none;background:var(--bg);color:var(--dim);cursor:pointer;font-family:var(--font)">BONDS</button>
+        <button onclick="setSwitcherTab('active')" id="tabActive" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);background:var(--bg2);color:var(--green);cursor:pointer;font-family:var(--font)">STOCKS</button><button onclick="setSwitcherTab('bonds')" id="tabBonds" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);border-left:none;background:var(--bg);color:var(--dim);cursor:pointer;font-family:var(--font)">BONDS</button><button onclick="setSwitcherTab('archive')" id="tabArchive" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);border-left:none;background:var(--bg);color:var(--dim);cursor:pointer;font-family:var(--font)">ARCHIVE</button>
       </div>
     </div>
     <div id="portfolioList"></div>
@@ -369,6 +372,14 @@
       </label>
       <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
         <input type="radio" name="portfolioType" value="index" class="radio-styled"> WATCHLIST
+      </label>
+    </div>
+    <div id="archivePortfolioTypeRow" style="padding:4px 0 6px;display:none;gap:16px">
+      <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
+        <input type="radio" name="archivePortfolioType" value="archive" checked class="radio-styled" onchange="updateArchiveAddPlaceholder()"> ARCHIVE
+      </label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
+        <input type="radio" name="archivePortfolioType" value="cash" class="radio-styled" onchange="updateArchiveAddPlaceholder()"> CASH
       </label>
     </div>
   </div>
@@ -549,7 +560,7 @@ function currentPortfolio() {
 var positions = [];
 var viewMode = 'main'; // main | weight
 var weightSort = { key: 'weight', dir: -1 };
-var switcherTab = 'active'; // 'active' or 'archive'
+var switcherTab = 'active'; // 'active' (stocks), 'bonds', or 'archive'
 var positionClipboard = null;
 var aggregatedModeActive = localStorage.getItem('pt_agg_active') === '1';
 var closeMode = localStorage.getItem('pt_close_mode') || 'prev';
@@ -587,6 +598,13 @@ function fetchFxRate(baseUrl, token, ticker) {
 var bondsDb = []; // bond database: { id, name, currency, parValue, nominalYield, couponFrequency, maturityDate }
 var bondPortfolios = {}; // bond portfolios: { id: { name, type:'bond'|'deposit', positions: [] } }
 var currentBondPortfolioId = null; // default: weight descending
+
+// Cash portfolios: { id: { name, currencyCode, entries: [{id, date, amount, currency, category}] } }
+var cashPortfolios = {};
+var currentCashPortfolioId = null;
+var cashCatDict = []; // cash category dictionary
+var editCashEntryId = null; // currently-being-edited entry id within current cash portfolio
+var moveCashEntryId = null; // entry currently being moved between cash portfolios
 var newBondPortfolioType = 'bond'; // type selector in add portfolio form
 var marketSort = { key: null, dir: -1 }; // null = portfolio order
 var watchlistSort = { key: null, dir: -1 };
@@ -625,11 +643,13 @@ function loadDicts() {
   try { catDict = JSON.parse(localStorage.getItem('pt_cat_dict')) || []; } catch(e) { catDict = []; }
   try { regDict = JSON.parse(localStorage.getItem('pt_reg_dict')) || []; } catch(e) { regDict = []; }
   try { secDict = JSON.parse(localStorage.getItem('pt_sec_dict')) || []; } catch(e) { secDict = []; }
+  try { cashCatDict = JSON.parse(localStorage.getItem('pt_cash_cat_dict')) || []; } catch(e) { cashCatDict = []; }
 }
 function saveDicts() {
   try { localStorage.setItem('pt_cat_dict', JSON.stringify(catDict)); } catch(e) {}
   try { localStorage.setItem('pt_reg_dict', JSON.stringify(regDict)); } catch(e) {}
   try { localStorage.setItem('pt_sec_dict', JSON.stringify(secDict)); } catch(e) {}
+  try { localStorage.setItem('pt_cash_cat_dict', JSON.stringify(cashCatDict)); } catch(e) {}
 }
 function addToDict(dict, value) {
   value = String(value).trim();
@@ -698,7 +718,7 @@ function toggleDictDropdown(field) {
   _openDictDrop = open ? null : field;
 }
 function pickDictVal(field, val) {
-  var id = field === 'cat' ? 'editCategory' : field === 'reg' ? 'editRegion' : 'editSector';
+  var id = field === 'cat' ? 'editCategory' : field === 'reg' ? 'editRegion' : field === 'sec' ? 'editSector' : field === 'ccat' ? 'editCashCategory' : '';
   var hidden = document.getElementById(id);
   if (hidden) hidden.value = val;
   var display = document.getElementById('dictDisplay_' + field);
@@ -722,7 +742,8 @@ function confirmDictNew(field) {
   var input = document.getElementById('dictNewVal_' + field);
   var val = input ? input.value.trim() : '';
   if (!val) { cancelDictNew(field); return; }
-  var dict = field === 'cat' ? catDict : field === 'reg' ? regDict : secDict;
+  var dict = field === 'cat' ? catDict : field === 'reg' ? regDict : field === 'sec' ? secDict : field === 'ccat' ? cashCatDict : null;
+  if (!dict) return;
   addToDict(dict, val);
   saveDicts();
   var drop = document.getElementById('dictDrop_' + field);
@@ -741,7 +762,8 @@ function cancelDictNew(field) {
   if (ns) ns.style.display = 'none';
 }
 function removeFromDict(field, value) {
-  var dict = field === 'cat' ? catDict : field === 'reg' ? regDict : secDict;
+  var dict = field === 'cat' ? catDict : field === 'reg' ? regDict : field === 'sec' ? secDict : field === 'ccat' ? cashCatDict : null;
+  if (!dict) return;
   var idx = dict.indexOf(value);
   if (idx !== -1) dict.splice(idx, 1);
   saveDicts();
@@ -754,14 +776,14 @@ function showDictPanel(field) {
 function renderDictsPanel() {
   var el = document.getElementById('dictsPanel');
   if (!el) return;
-  var btns = ['cat','reg','sec'].map(function(f) {
-    var label = f === 'cat' ? 'CATEGORIES' : f === 'reg' ? 'REGIONS' : 'SECTORS';
+  var btns = ['cat','reg','sec','ccat'].map(function(f) {
+    var label = f === 'cat' ? 'CATEGORIES' : f === 'reg' ? 'REGIONS' : f === 'sec' ? 'SECTORS' : 'CASH CAT';
     var active = _activeDictPanel === f;
     return '<button onclick="showDictPanel(\'' + f + '\')" class="btn' + (active ? ' btn-green' : '') + '" style="flex:1;padding:5px 2px;font-size:9px;letter-spacing:1px">' + label + '</button>';
   }).join('');
   var content = '';
   if (_activeDictPanel) {
-    var dict = _activeDictPanel === 'cat' ? catDict : _activeDictPanel === 'reg' ? regDict : secDict;
+    var dict = _activeDictPanel === 'cat' ? catDict : _activeDictPanel === 'reg' ? regDict : _activeDictPanel === 'sec' ? secDict : cashCatDict;
     var field = _activeDictPanel;
     content = '<div style="margin-top:8px;max-height:140px;overflow-y:auto">'
       + (dict.length ? dict.map(function(v) {
@@ -797,8 +819,22 @@ function updateAddFormForTab() {
   if (addRow) addRow.style.display = isBondsTab ? 'none' : '';
   var radioRow = document.getElementById('portfolioTypeRow');
   if (radioRow) radioRow.style.display = (isArchiveTab || isBondsTab) ? 'none' : 'flex';
+  var archRadioRow = document.getElementById('archivePortfolioTypeRow');
+  if (archRadioRow) archRadioRow.style.display = isArchiveTab ? 'flex' : 'none';
+  updateArchiveAddPlaceholder();
+}
+
+function updateArchiveAddPlaceholder() {
   var nameInput = document.getElementById('newPortfolioName');
-  if (nameInput) nameInput.placeholder = isArchiveTab ? 'ARCHIVE NAME' : 'NAME';
+  if (!nameInput) return;
+  var isArchiveTab = switcherTab === 'archive';
+  if (isArchiveTab) {
+    var sel = document.querySelector('input[name="archivePortfolioType"]:checked');
+    var isCash = sel && sel.value === 'cash';
+    nameInput.placeholder = isCash ? 'CASH NAME' : 'ARCHIVE NAME';
+  } else {
+    nameInput.placeholder = 'NAME';
+  }
 }
 
 function setSwitcherTab(tab) {
@@ -1545,6 +1581,255 @@ function openBondDetail(idx) {
   alert(b.name + '\nCurrency: ' + b.currency + '\nPar Value: ' + b.parValue + '\nNominal Yield: ' + (b.nominalYield*100).toFixed(2) + '%\nCoupon Frequency: ' + b.couponFrequency + 'x/year\nMaturity: ' + b.maturityDate);
 }
 
+// ── Cash portfolios ────────────────────────────────────────────────────────
+function getCashPortfolios() {
+  try { return JSON.parse(localStorage.getItem('pt_cash_portfolios') || '{}'); } catch(e) { return {}; }
+}
+function saveCashPortfolios() {
+  try { localStorage.setItem('pt_cash_portfolios', JSON.stringify(cashPortfolios)); } catch(e) {}
+  if (getCloudBackend() === 'kv') cloudSaveKV(); else cloudSave();
+}
+
+function addCashPortfolio() {
+  var name = document.getElementById('newPortfolioName').value.trim().toUpperCase();
+  if (!name) return;
+  var curCode = (document.getElementById('newPortfolioCurrencyCode').value.trim() || 'USD').toUpperCase();
+  validateCurrencyCode(curCode, function(valid) {
+    if (!valid) { alert('Invalid currency code: ' + curCode); return; }
+    var id = 'cp_' + Date.now();
+    cashPortfolios[id] = { name: name, currencyCode: curCode, entries: [] };
+    saveCashPortfolios();
+    document.getElementById('newPortfolioName').value = '';
+    document.getElementById('newPortfolioCurrencyCode').value = '';
+    showCashPortfolio(id);
+    renderSwitcher();
+  });
+}
+
+function showCashPortfolio(id) {
+  if (!cashPortfolios[id]) return;
+  currentCashPortfolioId = id;
+  viewMode = 'cash';
+  editCashEntryId = null;
+  document.getElementById('portfolioTitle').textContent = cashPortfolios[id].name;
+  document.getElementById('viewMenuBtn').style.display = 'none';
+  document.getElementById('refreshAllBtn').style.display = 'none';
+  closeSwitcher();
+  render();
+}
+
+function renameCashPortfolio(id) {
+  editingPortfolioId = editingPortfolioId === id ? null : id;
+  renderSwitcher();
+}
+function saveCashPortfolioEdit(id) {
+  var newName = (document.getElementById('pfName_' + id).value || '').trim().toUpperCase();
+  var newCur  = (document.getElementById('pfCur_' + id).value || 'USD').trim().toUpperCase();
+  if (!newName) { alert('Name cannot be empty'); return; }
+  validateCurrencyCode(newCur, function(valid) {
+    if (!valid) { alert('Invalid currency code: ' + newCur); return; }
+    cashPortfolios[id].name = newName;
+    cashPortfolios[id].currencyCode = newCur;
+    saveCashPortfolios();
+    editingPortfolioId = null;
+    if (id === currentCashPortfolioId) document.getElementById('portfolioTitle').textContent = newName;
+    renderSwitcher();
+    if (viewMode === 'cash') render();
+  });
+}
+function deleteCashPortfolio(id) {
+  if (!confirm('Delete cash portfolio "' + cashPortfolios[id].name + '"? All entries will be lost.')) return;
+  delete cashPortfolios[id];
+  saveCashPortfolios();
+  if (currentCashPortfolioId === id) {
+    currentCashPortfolioId = null;
+    viewMode = 'summary';
+    document.getElementById('portfolioTitle').textContent = 'PORTFOLIOS';
+  }
+  renderSwitcher();
+  render();
+}
+
+function cashPortfolioEditFormHtml(id, p) {
+  return '<div style="padding:8px 12px 10px;background:var(--bg2);border-top:1px solid var(--border)">'
+    + '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">'
+    + '<div class="field"><label>NAME</label><input type="search" id="pfName_' + id + '" value="' + p.name + '" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" oninput="this.value=this.value.toUpperCase()" style="width:140px;text-transform:uppercase"></div>'
+    + '<div class="field"><label>CURRENCY</label><input type="search" id="pfCur_' + id + '" value="' + (p.currencyCode || 'USD') + '" autocomplete="off" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()" maxlength="3" style="width:52px;text-align:center;text-transform:uppercase"></div>'
+    + '<div style="display:flex;gap:6px;align-self:flex-end">'
+    + '<button class="btn btn-green" style="padding:6px 12px" onclick="saveCashPortfolioEdit(\'' + id + '\')">SAVE</button>'
+    + '<button class="btn" style="padding:6px 12px;color:var(--dim)" onclick="editingPortfolioId=null;renderSwitcher()">CANCEL</button>'
+    + '</div></div></div>';
+}
+
+function renderCashSwitcher(list) {
+  cashPortfolios = getCashPortfolios();
+  var ids = Object.keys(cashPortfolios).sort(function(a,b) { return cashPortfolios[a].name.localeCompare(cashPortfolios[b].name); });
+  var html = '';
+  ids.forEach(function(id) {
+    var p = cashPortfolios[id];
+    var active = id === currentCashPortfolioId && viewMode === 'cash';
+    html += '<div class="portfolio-item' + (active ? ' active' : '') + '" style="display:flex;align-items:center">'
+      + '<div onclick="showCashPortfolio(\'' + id + '\')" style="flex:1;cursor:pointer;min-width:0">'
+      + '<span class="portfolio-item-name">' + p.name + '</span> <span style="color:var(--dim);font-size:10px">' + (p.currencyCode || 'USD') + '</span> '
+      + '<span class="portfolio-item-count">' + (p.entries || []).length + ' entries' + (active ? ' &#10003;' : '') + '</span>'
+      + '</div>'
+      + '<button class="btn-icon" onclick="renameCashPortfolio(\'' + id + '\')" style="font-size:13px;padding:4px 7px">&#9998;</button>'
+      + '<button class="btn-icon" onclick="deleteCashPortfolio(\'' + id + '\')" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
+      + '</div>'
+      + (editingPortfolioId === id ? cashPortfolioEditFormHtml(id, p) : '');
+  });
+  if (ids.length === 0) html += '<div style="padding:10px 14px;font-size:11px;color:var(--dim)">No cash portfolios</div>';
+  list.innerHTML = html;
+}
+
+// ── Cash entries CRUD ──────────────────────────────────────────────────────
+function _curCashP() { return cashPortfolios[currentCashPortfolioId]; }
+
+function clearCashEntryForm() {
+  var d = document.getElementById('ceDate'); if (d) d.value = '';
+  var a = document.getElementById('ceAmount'); if (a) a.value = '';
+  var c = document.getElementById('ceCurrency'); if (c) c.value = '';
+  var hc = document.getElementById('editCashCategory'); if (hc) hc.value = '';
+  var dd = document.getElementById('dictDisplay_ccat'); if (dd) dd.innerHTML = '<span style="color:var(--dim)">—</span>';
+  window._cashSign = '+';
+  var sb = document.getElementById('ceSignBtn'); if (sb) { sb.textContent = '+'; sb.style.color = 'var(--green)'; sb.style.borderColor = 'var(--green)'; }
+}
+
+function toggleCashSign() {
+  window._cashSign = window._cashSign === '-' ? '+' : '-';
+  var sb = document.getElementById('ceSignBtn');
+  if (sb) {
+    sb.textContent = window._cashSign;
+    sb.style.color = window._cashSign === '+' ? 'var(--green)' : 'var(--red)';
+    sb.style.borderColor = window._cashSign === '+' ? 'var(--green)' : 'var(--red)';
+  }
+}
+
+function addCashEntry() {
+  var bp = _curCashP();
+  if (!bp) return;
+  var date = (document.getElementById('ceDate').value || '').trim();
+  var amount = parseFloat(document.getElementById('ceAmount').value);
+  var currency = (document.getElementById('ceCurrency').value || bp.currencyCode || 'USD').trim().toUpperCase();
+  var category = (document.getElementById('editCashCategory').value || '').trim();
+  if (!date) { alert('Date is required'); return; }
+  if (!isFinite(amount) || amount <= 0) { alert('Amount must be a positive number (use +/- toggle for sign)'); return; }
+  // Future-dated entries not allowed
+  var today = new Date(); today.setHours(0,0,0,0);
+  var entryDate = new Date(date + 'T00:00:00');
+  if (entryDate > today) { alert('Future dates are not allowed'); return; }
+  if (!category) { alert('Category is required'); return; }
+  var sign = window._cashSign === '-' ? -1 : 1;
+  validateCurrencyCode(currency, function(valid) {
+    if (!valid) { alert('Invalid currency code: ' + currency); return; }
+    bp.entries = bp.entries || [];
+    bp.entries.push({ id: 'ce_' + Date.now(), date: date, amount: sign * amount, currency: currency, category: category });
+    saveCashPortfolios();
+    clearCashEntryForm();
+    render();
+  });
+}
+
+function editCashEntry(eid) {
+  editCashEntryId = editCashEntryId === eid ? null : eid;
+  render();
+}
+
+function saveCashEntryEdit(eid) {
+  var bp = _curCashP();
+  if (!bp) return;
+  var e = (bp.entries || []).find(function(x) { return x.id === eid; });
+  if (!e) return;
+  var date = (document.getElementById('ce_date_' + eid).value || '').trim();
+  var amount = parseFloat(document.getElementById('ce_amt_' + eid).value);
+  var currency = (document.getElementById('ce_cur_' + eid).value || '').trim().toUpperCase();
+  var category = (document.getElementById('ce_cat_' + eid).value || '').trim();
+  if (!date) { alert('Date is required'); return; }
+  if (!isFinite(amount) || amount === 0) { alert('Amount must be a non-zero number'); return; }
+  var today = new Date(); today.setHours(0,0,0,0);
+  var entryDate = new Date(date + 'T00:00:00');
+  if (entryDate > today) { alert('Future dates are not allowed'); return; }
+  if (!category) { alert('Category is required'); return; }
+  validateCurrencyCode(currency, function(valid) {
+    if (!valid) { alert('Invalid currency code: ' + currency); return; }
+    e.date = date;
+    e.amount = amount;
+    e.currency = currency;
+    e.category = category;
+    saveCashPortfolios();
+    editCashEntryId = null;
+    render();
+  });
+}
+
+function deleteCashEntry(eid) {
+  var bp = _curCashP();
+  if (!bp) return;
+  var e = (bp.entries || []).find(function(x) { return x.id === eid; });
+  if (!e) return;
+  if (!confirm('Delete this entry?\n' + e.date + '  ' + (e.amount > 0 ? '+' : '') + e.amount + ' ' + e.currency + '  (' + e.category + ')')) return;
+  bp.entries = bp.entries.filter(function(x) { return x.id !== eid; });
+  saveCashPortfolios();
+  if (editCashEntryId === eid) editCashEntryId = null;
+  render();
+}
+
+function showMoveCashEntryMenu(eid, btn) {
+  moveCashEntryId = eid;
+  var menu = document.getElementById('moveCashEntryMenu');
+  var list = document.getElementById('moveCashEntryMenuList');
+  cashPortfolios = getCashPortfolios();
+  // Target = all other cash portfolios
+  var targetIds = Object.keys(cashPortfolios).filter(function(cpid) {
+    return cpid !== currentCashPortfolioId;
+  }).sort(function(a,b) { return cashPortfolios[a].name.localeCompare(cashPortfolios[b].name); });
+  if (targetIds.length === 0) {
+    list.innerHTML = '<div style="padding:10px 12px;font-size:11px;color:var(--dim)">No other cash portfolios</div>';
+  } else {
+    list.innerHTML = targetIds.map(function(cpid) {
+      var p = cashPortfolios[cpid];
+      return '<div onclick="moveCashEntryTo(\'' + cpid + '\')" style="padding:9px 14px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--border);color:var(--bright)">'
+        + p.name + ' <span style="color:var(--dim);font-size:10px">' + (p.currencyCode || 'USD') + '</span>'
+        + '</div>';
+    }).join('');
+  }
+  var rect = btn.getBoundingClientRect();
+  menu.style.top = (rect.bottom + 4) + 'px';
+  menu.style.right = (window.innerWidth - rect.right) + 'px';
+  menu.style.left = 'auto';
+  menu.style.display = 'block';
+  setTimeout(function() {
+    document.addEventListener('click', closeMoveCashEntryMenuOutside);
+  }, 0);
+}
+
+function closeMoveCashEntryMenuOutside(e) {
+  var menu = document.getElementById('moveCashEntryMenu');
+  if (!menu.contains(e.target)) {
+    menu.style.display = 'none';
+    document.removeEventListener('click', closeMoveCashEntryMenuOutside);
+  }
+}
+
+function moveCashEntryTo(targetCpid) {
+  document.getElementById('moveCashEntryMenu').style.display = 'none';
+  document.removeEventListener('click', closeMoveCashEntryMenuOutside);
+  var src = _curCashP();
+  var target = cashPortfolios[targetCpid];
+  if (!src || !target || !moveCashEntryId) return;
+  var idx = (src.entries || []).findIndex(function(x) { return x.id === moveCashEntryId; });
+  if (idx === -1) return;
+  var entry = src.entries[idx];
+  src.entries.splice(idx, 1);
+  target.entries = target.entries || [];
+  // Preserve entry id (it's unique) — fine across portfolios
+  target.entries.push(entry);
+  saveCashPortfolios();
+  moveCashEntryId = null;
+  if (editCashEntryId === entry.id) editCashEntryId = null;
+  render();
+}
+
 function renderSwitcher() {
   var list = document.getElementById('portfolioList');
   var summaryActive = ['summary','summary-market','summary-chart','summary-analytics','summary-movers','summary-alerts','global-weight'].indexOf(viewMode) !== -1;
@@ -1557,11 +1842,11 @@ function renderSwitcher() {
   }
 
   if (switcherTab === 'archive') {
-    // Archive tab
+    // Archive tab — hosts both archived stock portfolios and cash portfolios
     var archiveIds = ids.filter(function(id) { return portfolios[id].archive; }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
     archiveIds.forEach(function(id) {
       var p = portfolios[id];
-      var active = id === currentPortfolioId;
+      var active = id === currentPortfolioId && viewMode !== 'cash';
       html += '<div class="portfolio-item' + (active ? ' active' : '') + '" style="display:flex;align-items:center">'
         + '<div onclick="switchPortfolio(&apos;' + id + '&apos;)" style="flex:1;cursor:pointer;min-width:0">'
         + '<span class="portfolio-item-name">' + p.name + '</span> <span style="color:var(--dim);font-size:10px">' + (p.currencyCode || 'USD') + '</span> '
@@ -1573,6 +1858,27 @@ function renderSwitcher() {
         + (editingPortfolioId === id ? portfolioEditFormHtml(id, p) : '');
     });
     if (archiveIds.length === 0) html += '<div style="padding:10px 14px;font-size:11px;color:var(--dim)">No archive portfolios</div>';
+
+    // Cash portfolios section (separated)
+    cashPortfolios = getCashPortfolios();
+    var cashIds = Object.keys(cashPortfolios).sort(function(a,b) { return cashPortfolios[a].name.localeCompare(cashPortfolios[b].name); });
+    if (cashIds.length > 0) {
+      html += '<div style="border-top:1px solid var(--border);margin-top:6px"></div>';
+      cashIds.forEach(function(id) {
+        var p = cashPortfolios[id];
+        var active = id === currentCashPortfolioId && viewMode === 'cash';
+        html += '<div class="portfolio-item' + (active ? ' active' : '') + '" style="display:flex;align-items:center">'
+          + '<div onclick="showCashPortfolio(\'' + id + '\')" style="flex:1;cursor:pointer;min-width:0">'
+          + '<span class="portfolio-item-name">' + p.name + '</span> <span style="color:var(--dim);font-size:10px">' + (p.currencyCode || 'USD') + '</span> '
+          + '<span class="portfolio-item-count">' + (p.entries || []).length + ' entries' + (active ? ' &#10003;' : '') + '</span>'
+          + '</div>'
+          + '<button class="btn-icon" onclick="renameCashPortfolio(\'' + id + '\')" title="Rename" style="font-size:13px;padding:4px 7px">&#9998;</button>'
+          + '<button class="btn-icon" onclick="deleteCashPortfolio(\'' + id + '\')" title="Delete" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
+          + '</div>'
+          + (editingPortfolioId === id ? cashPortfolioEditFormHtml(id, p) : '');
+      });
+    }
+
     // Archive summary
     html += '<div class="portfolio-item' + (viewMode === 'archive-summary' ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);margin-top:4px;padding-top:4px" onclick="switchToArchiveSummary()">'
       + '<div style="flex:1"><span class="portfolio-item-name">&#931; SUMMARY</span></div>'
@@ -1660,7 +1966,7 @@ function switchPortfolio(id) {
   loadingSet = {};
   // Reset view mode from any special modes
   var prevMode = viewMode;
-  if (['summary','archive-summary','summary-market','summary-chart','summary-analytics','bonds','bond-summary','global-weight'].indexOf(viewMode) !== -1) viewMode = 'main';
+  if (['summary','archive-summary','summary-market','summary-chart','summary-analytics','bonds','bond-summary','cash','global-weight'].indexOf(viewMode) !== -1) viewMode = 'main';
   else if (viewMode === 'summary-movers') viewMode = 'market';
   else if (viewMode === 'summary-alerts') viewMode = 'alerts';
   var btn = document.getElementById('viewMenuBtn');
@@ -1694,6 +2000,10 @@ function addPortfolio() {
   var isArchiveTab = switcherTab === 'archive';
   var isBondsTab = switcherTab === 'bonds';
   if (isBondsTab) { addBondPortfolio(); return; }
+  if (isArchiveTab) {
+    var archSel = document.querySelector('input[name="archivePortfolioType"]:checked');
+    if (archSel && archSel.value === 'cash') { addCashPortfolio(); return; }
+  }
   var isWatchlist = !isArchiveTab && document.querySelector('input[name="portfolioType"]:checked').value === 'index';
   function doCreate() {
     var id = 'p_' + Date.now();
@@ -1922,9 +2232,11 @@ function backupData() {
     portfolios: portfolios,
     bondsDb: getBondsDb(),
     bondPortfolios: getBondPortfolios(),
+    cashPortfolios: getCashPortfolios(),
     catDict: catDict,
     regDict: regDict,
-    secDict: secDict
+    secDict: secDict,
+    cashCatDict: cashCatDict
   };
   var json = JSON.stringify(data, null, 2);
   var blob = new Blob([json], { type: 'application/json' });
@@ -1957,9 +2269,14 @@ function restoreData(event) {
         bondPortfolios = data.bondPortfolios;
         localStorage.setItem('pt_bond_portfolios', JSON.stringify(bondPortfolios));
       }
+      if (data.cashPortfolios && typeof data.cashPortfolios === 'object') {
+        cashPortfolios = data.cashPortfolios;
+        localStorage.setItem('pt_cash_portfolios', JSON.stringify(cashPortfolios));
+      }
       if (data.catDict && Array.isArray(data.catDict)) { catDict = data.catDict; }
       if (data.regDict && Array.isArray(data.regDict)) { regDict = data.regDict; }
       if (data.secDict && Array.isArray(data.secDict)) { secDict = data.secDict; }
+      if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
       saveDicts();
       currentPortfolioId = Object.keys(portfolios)[0];
       localStorage.setItem('pt_current', currentPortfolioId);
@@ -2097,7 +2414,7 @@ function cloudSave() {
 }
 
 function _doCloudSave(key, binId) {
-  var plaintext = JSON.stringify({ portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict });
+  var plaintext = JSON.stringify({ portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict });
   var encKey = getEncKey();
 
   function doSend(body) {
@@ -2143,7 +2460,7 @@ function _doCloudSave(key, binId) {
       doSend(JSON.stringify({ encrypted: encrypted }));
     }).catch(function() { updateJbStatus('✗ Encryption error', 'var(--red)'); });
   } else {
-    doSend(JSON.stringify({ portfolios: portfolios, catDict: catDict, regDict: regDict, secDict: secDict }));
+    doSend(plaintext);
   }
 }
 
@@ -2182,9 +2499,11 @@ function cloudLoadKV(callback) {
           portfolios = data.portfolios;
           if (data.bondsDb) { bondsDb = data.bondsDb; localStorage.setItem('pt_bonds_db', JSON.stringify(bondsDb)); }
           if (data.bondPortfolios) { bondPortfolios = data.bondPortfolios; localStorage.setItem('pt_bond_portfolios', JSON.stringify(bondPortfolios)); }
+          if (data.cashPortfolios) { cashPortfolios = data.cashPortfolios; localStorage.setItem('pt_cash_portfolios', JSON.stringify(cashPortfolios)); }
           if (data.catDict && Array.isArray(data.catDict)) { catDict = data.catDict; }
           if (data.regDict && Array.isArray(data.regDict)) { regDict = data.regDict; }
           if (data.secDict && Array.isArray(data.secDict)) { secDict = data.secDict; }
+          if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
           saveDicts();
           savePortfolios();
           if (!portfolios[currentPortfolioId]) { currentPortfolioId = Object.keys(portfolios)[0]; localStorage.setItem('pt_current', currentPortfolioId); }
@@ -2221,7 +2540,7 @@ function cloudSaveKV() {
   var token = getToken();
   var kvKey = getKvKey();
   if (!baseUrl || !kvKey) return;
-  var payload = { portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict };
+  var payload = { portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict };
   var encKey = getEncKey();
   function doSave(body) {
     fetch(baseUrl + '/api/kv', {
@@ -2274,9 +2593,14 @@ function cloudLoad(callback) {
           bondPortfolios = data.bondPortfolios;
           localStorage.setItem('pt_bond_portfolios', JSON.stringify(bondPortfolios));
         }
+        if (data.cashPortfolios && typeof data.cashPortfolios === 'object') {
+          cashPortfolios = data.cashPortfolios;
+          localStorage.setItem('pt_cash_portfolios', JSON.stringify(cashPortfolios));
+        }
         if (data.catDict && Array.isArray(data.catDict)) { catDict = data.catDict; }
         if (data.regDict && Array.isArray(data.regDict)) { regDict = data.regDict; }
         if (data.secDict && Array.isArray(data.secDict)) { secDict = data.secDict; }
+        if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
         saveDicts();
         savePortfolios();
         if (!portfolios[currentPortfolioId]) {
@@ -4939,7 +5263,7 @@ function toggleCurrentModeMenu(el) {
 function render() {
   updateViewMenuBtn();
   var stockForm = document.getElementById('stockAddForm');
-  if (stockForm) stockForm.style.display = (['bonds','bond-summary','summary','summary-market','summary-chart','summary-analytics','archive-summary','global-weight'].indexOf(viewMode) !== -1) ? 'none' : '';
+  if (stockForm) stockForm.style.display = (['bonds','bond-summary','cash','summary','summary-market','summary-chart','summary-analytics','archive-summary','global-weight'].indexOf(viewMode) !== -1) ? 'none' : '';
   var area = document.getElementById('tableArea');
 
   // Analytics view (single portfolio)
@@ -5096,7 +5420,7 @@ function render() {
     return;
   }
 
-  if (positions.length === 0) {
+  if (positions.length === 0 && ['cash','bonds','bond-summary','archive-summary'].indexOf(viewMode) === -1) {
     area.innerHTML = '<div class="empty">NO POSITIONS &mdash; ADD ONE BELOW</div>';
     return;
   }
@@ -5250,6 +5574,18 @@ function render() {
         if (c !== 'USD' && archNonUSD.indexOf(c) === -1) archNonUSD.push(c);
       });
     });
+    // Cash portfolios — same FX pool
+    var archCashPortfolios = getCashPortfolios();
+    var archCashIds = Object.keys(archCashPortfolios).sort(function(a, b) { return archCashPortfolios[a].name.localeCompare(archCashPortfolios[b].name); });
+    archCashIds.forEach(function(cpid) {
+      var cp = archCashPortfolios[cpid];
+      var baseCur = (cp.currencyCode || 'USD').toUpperCase();
+      if (baseCur !== 'USD' && archNonUSD.indexOf(baseCur) === -1) archNonUSD.push(baseCur);
+      (cp.entries || []).forEach(function(e) {
+        var c = (e.currency || baseCur).toUpperCase();
+        if (c !== 'USD' && archNonUSD.indexOf(c) === -1) archNonUSD.push(c);
+      });
+    });
 
     function buildArchPortfolioStats() {
       return archPids.map(function(pid) {
@@ -5278,9 +5614,32 @@ function render() {
       });
     }
 
+    function buildArchCashStats() {
+      return archCashIds.map(function(cpid) {
+        var cp = archCashPortfolios[cpid];
+        var baseCur = (cp.currencyCode || 'USD').toUpperCase();
+        var netBase = 0, netUSD = 0;
+        var rateBaseToUSD = baseCur === 'USD' ? 1 : (archFxRates[baseCur] || 1);
+        (cp.entries || []).forEach(function(e) {
+          var entryCur = (e.currency || baseCur).toUpperCase();
+          var rateToUSD = entryCur === 'USD' ? 1 : (archFxRates[entryCur] || 1);
+          netUSD += e.amount * rateToUSD;
+          netBase += e.amount * rateToUSD / rateBaseToUSD;
+        });
+        return {
+          id: cpid, name: cp.name,
+          currencyCode: baseCur,
+          currency: CURRENCY_SYMBOLS[baseCur] || baseCur,
+          net: netBase, netUSD: netUSD,
+          entryCount: (cp.entries || []).length
+        };
+      });
+    }
+
     var archPortfolioStats = [];
 
     function renderArchiveSummary() {
+      // ── Archive (stock) table ─────────────────────────────────────────────
       var totalValUSD = 0, totalCostUSD = 0;
       archPortfolioStats.forEach(function(s) {
         if (s.valUSD !== null) { totalValUSD += s.valUSD; totalCostUSD += s.costUSD; }
@@ -5302,21 +5661,63 @@ function render() {
       var totPnL = totalValUSD - totalCostUSD;
       var totRet = totalCostUSD ? totPnL / totalCostUSD * 100 : null;
       var c = totPnL >= 0 ? 'pos' : 'neg';
-      area.innerHTML = '<div class="table-wrap"><table>'
-        + '<thead><tr>'
-        + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO</th>'
-        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">VALUE</th>'
-        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">P&amp;L</th>'
-        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">RETURN</th>'
-        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">WEIGHT</th>'
-        + '</tr></thead>'
-        + '<tbody>' + summaryRows + '</tbody>'
-        + '</table></div>'
-        + '<div class="totals-bar">'
-        + '<div class="total-block"><div class="total-label">TOTAL VALUE</div><div class="total-value" style="color:var(--bright)">$' + f2(totalValUSD) + '</div></div>'
-        + '<div class="total-block"><div class="total-label">P&amp;L</div><div class="total-value ' + c + '">' + fSign(totPnL) + '</div></div>'
-        + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + c + '">' + (totRet !== null ? fPct(totRet) : '&mdash;') + '</div></div>'
-        + '</div>';
+
+      var archiveHtml = (archPids.length > 0
+        ? '<div class="table-wrap"><table>'
+          + '<thead><tr>'
+          + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO</th>'
+          + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">VALUE</th>'
+          + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">P&amp;L</th>'
+          + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">RETURN</th>'
+          + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">WEIGHT</th>'
+          + '</tr></thead>'
+          + '<tbody>' + summaryRows + '</tbody>'
+          + '</table></div>'
+          + '<div class="totals-bar">'
+          + '<div class="total-block"><div class="total-label">TOTAL VALUE</div><div class="total-value" style="color:var(--bright)">$' + f2(totalValUSD) + '</div></div>'
+          + '<div class="total-block"><div class="total-label">P&amp;L</div><div class="total-value ' + c + '">' + fSign(totPnL) + '</div></div>'
+          + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + c + '">' + (totRet !== null ? fPct(totRet) : '&mdash;') + '</div></div>'
+          + '</div>'
+        : '');
+
+      // ── Cash table ────────────────────────────────────────────────────────
+      var cashStats = buildArchCashStats();
+      var cashRows = '';
+      var cashTotalUSD = 0;
+      cashStats.forEach(function(s) {
+        var sym = s.currency;
+        var sign = s.net >= 0 ? '+' : '-';
+        var sep = (sym.length === 1) ? '' : ' ';
+        var amtStr = sign + sym + sep + f2(Math.abs(s.net));
+        var cClass = s.net >= 0 ? 'pos' : 'neg';
+        cashTotalUSD += s.netUSD;
+        cashRows += '<tr>'
+          + '<td style="text-align:left;white-space:nowrap;cursor:pointer" onclick="showCashPortfolio(\'' + s.id + '\')">' + s.name + '</td>'
+          + '<td class="' + cClass + '">' + amtStr + '</td>'
+          + '</tr>';
+      });
+      var cashTotalClass = cashTotalUSD >= 0 ? 'pos' : 'neg';
+      var cashTotalSign = cashTotalUSD >= 0 ? '+' : '-';
+
+      var cashHtml = (cashStats.length > 0
+        ? '<div style="margin-top:18px">'
+          + '<div class="table-wrap"><table>'
+          + '<thead><tr>'
+          + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">CASH PORTFOLIO</th>'
+          + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">NET</th>'
+          + '</tr></thead>'
+          + '<tbody>' + cashRows + '</tbody>'
+          + '</table></div>'
+          + '<div class="totals-bar">'
+          + '<div class="total-block"><div class="total-label">NET TOTAL</div><div class="total-value ' + cashTotalClass + '">' + cashTotalSign + '$' + f2(Math.abs(cashTotalUSD)) + '</div></div>'
+          + '</div></div>'
+        : '');
+
+      var emptyMsg = (archPids.length === 0 && cashStats.length === 0)
+        ? '<div style="color:var(--dim);padding:20px;text-align:center">No archive or cash portfolios</div>'
+        : '';
+
+      area.innerHTML = archiveHtml + cashHtml + emptyMsg;
     }
 
     if (archNonUSD.length === 0) {
@@ -5334,6 +5735,140 @@ function render() {
         archPortfolioStats = buildArchPortfolioStats();
         renderArchiveSummary();
       });
+    }
+    return;
+  }
+
+  // Cash portfolio view
+  if (viewMode === 'cash') {
+    cashPortfolios = getCashPortfolios();
+    var cp = cashPortfolios[currentCashPortfolioId];
+    if (!cp) { area.innerHTML = '<div style="color:var(--dim);padding:20px">Select a cash portfolio</div>'; return; }
+
+    var pCur = (cp.currencyCode || 'USD').toUpperCase();
+    var pSym = CURRENCY_SYMBOLS[pCur] || pCur;
+    var entries = (cp.entries || []).slice().sort(function(a, b) {
+      // Newest first; secondary by id for stable ordering on same date
+      if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+      return (b.id || '').localeCompare(a.id || '');
+    });
+
+    // Collect non-portfolio-currency codes for FX
+    var cashNonUSD = [];
+    if (pCur !== 'USD') cashNonUSD.push(pCur);
+    entries.forEach(function(e) {
+      var c = (e.currency || pCur).toUpperCase();
+      if (c !== 'USD' && cashNonUSD.indexOf(c) === -1) cashNonUSD.push(c);
+    });
+
+    var cashFxRates = {};
+    function buildCashTable() {
+      var rows = '';
+      var totalInPortfolioCur = 0;
+      entries.forEach(function(e) {
+        var amtCur = (e.currency || pCur).toUpperCase();
+        var amtSym = CURRENCY_SYMBOLS[amtCur] || amtCur;
+        var sign = e.amount >= 0 ? '+' : '-';
+        var amtStr = sign + amtSym + (amtSym.length === 1 ? '' : ' ') + f2(Math.abs(e.amount));
+        var amtClass = e.amount >= 0 ? 'pos' : 'neg';
+        // Convert to portfolio currency
+        var rateAmtToUSD = amtCur === 'USD' ? 1 : (cashFxRates[amtCur] || 1);
+        var rateBaseToUSD = pCur === 'USD' ? 1 : (cashFxRates[pCur] || 1);
+        var converted = e.amount * rateAmtToUSD / rateBaseToUSD;
+        totalInPortfolioCur += converted;
+        if (editCashEntryId === e.id) {
+          rows += '<tr><td colspan="5" style="padding:8px 6px;background:var(--bg2)">'
+            + '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">'
+            + '<div class="field"><label>DATE</label><input type="date" id="ce_date_' + e.id + '" value="' + e.date + '" style="width:130px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none"></div>'
+            + '<div class="field"><label>AMOUNT</label><input type="number" step="any" id="ce_amt_' + e.id + '" value="' + e.amount + '" style="width:100px"></div>'
+            + '<div class="field"><label>CURRENCY</label><input type="search" id="ce_cur_' + e.id + '" value="' + amtCur + '" autocomplete="off" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()" maxlength="3" style="width:52px;text-align:center;text-transform:uppercase"></div>'
+            + '<div class="field"><label>CATEGORY</label><input type="search" id="ce_cat_' + e.id + '" value="' + (e.category || '').replace(/"/g,'&quot;') + '" list="cashCatList" autocomplete="off" style="width:140px"></div>'
+            + '<div style="display:flex;gap:6px;align-self:flex-end">'
+            + '<button class="btn btn-green" style="padding:6px 12px" onclick="saveCashEntryEdit(\'' + e.id + '\')">SAVE</button>'
+            + '<button class="btn" style="padding:6px 12px;color:var(--dim)" onclick="editCashEntryId=null;render()">CANCEL</button>'
+            + '</div>'
+            + '</div></td></tr>';
+        } else {
+          rows += '<tr>'
+            + '<td style="white-space:nowrap">' + e.date + '</td>'
+            + '<td style="text-align:left">' + (e.category || '').replace(/&/g,'&amp;') + '</td>'
+            + '<td class="' + amtClass + '" style="white-space:nowrap">' + amtStr + '</td>'
+            + '<td style="white-space:nowrap;text-align:right;padding:4px 6px">'
+              + '<button class="btn-icon" onclick="showMoveCashEntryMenu(\'' + e.id + '\', this)" title="Move to another cash portfolio" style="font-size:14px;padding:4px 6px;color:var(--dim)">&#8863;</button>'
+              + '<button class="btn-icon" onclick="editCashEntry(\'' + e.id + '\')" title="Edit" style="font-size:13px;padding:4px 7px">&#9998;</button>'
+              + '<button class="btn-icon" onclick="deleteCashEntry(\'' + e.id + '\')" title="Delete" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
+            + '</td>'
+            + '</tr>';
+        }
+      });
+      var totalClass = totalInPortfolioCur >= 0 ? 'pos' : 'neg';
+      var totalSign = totalInPortfolioCur >= 0 ? '+' : '-';
+      var totalStr = totalSign + pSym + (pSym.length === 1 ? '' : ' ') + f2(Math.abs(totalInPortfolioCur));
+      var totalRow = '<tr style="border-top:1px solid var(--border);font-weight:bold">'
+        + '<td style="padding:8px 6px" colspan="2">TOTAL</td>'
+        + '<td class="' + totalClass + '" style="white-space:nowrap;padding:8px 6px">' + totalStr + '</td>'
+        + '<td></td></tr>';
+      var datalist = '<datalist id="cashCatList">' + cashCatDict.map(function(c) { return '<option value="' + c.replace(/"/g,'&quot;') + '">'; }).join('') + '</datalist>';
+      return datalist
+        + '<table class="positions" style="width:100%"><thead><tr>'
+        + '<th style="text-align:left;width:110px">DATE</th>'
+        + '<th style="text-align:left">CATEGORY</th>'
+        + '<th style="text-align:left">AMOUNT</th>'
+        + '<th></th>'
+        + '</tr></thead><tbody>'
+        + (rows || '<tr><td colspan="4" style="text-align:center;color:var(--dim);padding:12px;font-style:italic">No entries yet</td></tr>')
+        + (entries.length ? totalRow : '')
+        + '</tbody></table>';
+    }
+
+    function buildCashAddForm() {
+      var sign = window._cashSign || '+';
+      var signColor = sign === '+' ? 'var(--green)' : 'var(--red)';
+      return '<div style="margin-top:14px;padding:10px;background:var(--bg2);border:1px solid var(--border)">'
+        + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">+ ADD ENTRY</div>'
+        + '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">'
+        + '<div class="field"><label>DATE</label><input type="date" id="ceDate" max="' + new Date().toISOString().slice(0,10) + '" value="' + new Date().toISOString().slice(0,10) + '" style="width:140px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none"></div>'
+        + '<div class="field"><label>AMOUNT</label>'
+          + '<div style="display:flex;gap:4px">'
+          + '<button id="ceSignBtn" onclick="toggleCashSign()" class="btn" style="padding:6px 10px;color:' + signColor + ';border:1px solid ' + signColor + ';font-family:var(--font);font-weight:bold">' + sign + '</button>'
+          + '<input type="number" step="any" min="0" id="ceAmount" placeholder="100.00" style="width:100px">'
+          + '</div></div>'
+        + '<div class="field"><label>CURRENCY</label><input type="search" id="ceCurrency" placeholder="' + pCur + '" autocomplete="off" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()" maxlength="3" style="width:60px;text-align:center;text-transform:uppercase"></div>'
+        + '<div class="field" style="position:relative">'
+          + '<label>CASH CATEGORY</label>'
+          + '<input type="hidden" id="editCashCategory" value="">'
+          + '<div id="dictTrigger_ccat" class="dict-trigger" style="width:160px" onclick="toggleDictDropdown(\'ccat\')">'
+            + '<span id="dictDisplay_ccat"><span style="color:var(--dim)">—</span></span>'
+            + '<span style="font-size:9px;color:var(--dim);margin-left:4px">&#9660;</span>'
+          + '</div>'
+          + '<div id="dictDrop_ccat" class="dict-drop" style="min-width:160px">'
+            + buildDictDropOptions('ccat', cashCatDict, '')
+          + '</div>'
+          + '<span id="dictNew_ccat" style="display:none;gap:4px;align-items:center">'
+            + '<input type="text" id="dictNewVal_ccat" style="width:160px;background:var(--bg);color:var(--bright);border:1px solid var(--border);font-family:var(--font);font-size:11px;padding:3px 4px" autocomplete="off">'
+            + '<button onclick="confirmDictNew(\'ccat\')" class="btn btn-green" style="padding:2px 6px;font-size:11px">&#10003;</button>'
+            + '<button onclick="cancelDictNew(\'ccat\')" class="btn" style="padding:2px 6px;font-size:11px">&#10005;</button>'
+          + '</span>'
+          + '</div>'
+        + '<button class="btn btn-green" onclick="addCashEntry()" style="padding:7px 14px">+ ADD</button>'
+        + '</div></div>';
+    }
+
+    function paint() {
+      area.innerHTML = '<div style="overflow-x:auto">' + buildCashTable() + '</div>' + buildCashAddForm();
+    }
+
+    if (cashNonUSD.length === 0) {
+      paint();
+    } else {
+      var cashBaseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
+      var cashToken = getToken();
+      var cashFxP = cashNonUSD.map(function(code) {
+        return fetchFxRate(cashBaseUrl, cashToken, code + 'USD=X').then(function(rate) {
+          if (rate) cashFxRates[code] = rate;
+        });
+      });
+      Promise.all(cashFxP).then(paint);
     }
     return;
   }
@@ -6414,6 +6949,7 @@ applyAppearancePrefs();
 loadLocal();
 loadDicts();
 migrateDicts();
+cashPortfolios = getCashPortfolios();
 document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
 showKeyStatus();
 render();
