@@ -831,21 +831,13 @@ function fundFmtChartPrice(v, step) {
   if (v == null || !isFinite(v)) return '';
   if (v === 0) return '0';
   var abs = Math.abs(v), sign = v < 0 ? '-' : '';
-  if (abs >= 1e6) {
-    var d6 = (step != null && step >= 1e5) ? 0 : 1;
-    return sign + (abs / 1e6).toFixed(d6) + 'M';
-  }
-  if (abs >= 1e3) {
-    var d3 = (step != null && step >= 100) ? 0 : 1;
-    return sign + (abs / 1e3).toFixed(d3) + 'K';
-  }
   var d;
   if (step != null) {
     d = step >= 1 ? 0 : step >= 0.1 ? 1 : step >= 0.01 ? 2 : step >= 0.001 ? 3 : 4;
   } else {
     d = 2;
   }
-  return sign + abs.toFixed(d);
+  return sign + abs.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 }
 
 // Format X-axis tick by range: HH:MM for intraday, year for 5Y, DD/MM otherwise.
