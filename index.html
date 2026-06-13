@@ -2825,6 +2825,18 @@ function cls(n) {
   if (n === null || n === undefined || isNaN(n)) return 'muted';
   return n >= 0 ? 'pos' : 'neg';
 }
+// Bond decomposition formatting helpers. Used in expanded rows, totals bars, summary.
+// Zero values (|v| < 0.005) render as dim em-dash for visual cleanliness.
+function fmtBondBody(v, currSym) {
+  if (Math.abs(v) < 0.005) return '<span style="color:var(--dim)">&mdash;</span>';
+  var c = v >= 0 ? 'pos' : 'neg';
+  var s = v >= 0 ? '+' : '-';
+  return '<span class="' + c + '">' + s + currSym + f2(Math.abs(v)) + '</span>';
+}
+function fmtBondCoupon(v, currSym) {
+  if (Math.abs(v) < 0.005) return '<span style="color:var(--dim)">&mdash;</span>';
+  return '<span class="pos">+' + currSym + f2(v) + '</span>';
+}
 
 function addPosition() {
   document.getElementById('addErr').textContent = '';
@@ -6063,17 +6075,13 @@ function render() {
         + '</td>'
         + '</tr>';
       if (isExpanded) {
-        var bodySign = calc.bodyPL >= 0 ? '+' : '-';
-        var bodyClass = calc.bodyPL >= 0 ? 'pos' : 'neg';
-        var bodyStr = bodySign + calc.currSym + f2(Math.abs(calc.bodyPL));
-        var couponStr = '+' + calc.currSym + f2(calc.couponIncome);
         rows += '<tr><td colspan="10" style="padding:8px 8px 10px;background:var(--bg2)">'
-          + '<div style="display:flex;gap:24px;flex-wrap:wrap;font-size:11px;align-items:center">'
-          +   '<div><span style="color:var(--dim);letter-spacing:1px">MATURITY</span> <span style="color:var(--bright)">' + calc.bond.maturityDate + '</span></div>'
-          +   '<div><span style="color:var(--dim);letter-spacing:1px">COUPONS LEFT</span> <span style="color:var(--bright)">' + calc.couponsLeft + '</span></div>'
-          +   '<div><span style="color:var(--dim);letter-spacing:1px">BODY P&amp;L</span> <span class="' + bodyClass + '">' + bodyStr + '</span></div>'
-          +   '<div><span style="color:var(--dim);letter-spacing:1px">COUPON INC</span> <span class="pos">' + couponStr + '</span></div>'
-          +   '<div style="margin-left:auto"><button class="btn-icon" onclick="openBondPosDetail(&apos;' + pos.id + '&apos;)" style="font-size:16px;color:var(--dim);padding:0 6px" title="Full details">&rsaquo;</button></div>'
+          + '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:11px">'
+          +   '<div><span style="color:var(--dim);font-size:10px">MATURITY</span> <span style="color:var(--bright)">' + calc.bond.maturityDate + '</span></div>'
+          +   '<div><span style="color:var(--dim);font-size:10px">COUPONS LEFT</span> <span style="color:var(--bright)">' + calc.couponsLeft + '</span></div>'
+          +   '<div><span style="color:var(--dim);font-size:10px">BODY P&amp;L</span> ' + fmtBondBody(calc.bodyPL, calc.currSym) + '</div>'
+          +   '<div><span style="color:var(--dim);font-size:10px">COUPON INC</span> ' + fmtBondCoupon(calc.couponIncome, calc.currSym) + '</div>'
+          +   '<div><button class="btn-icon" onclick="openBondPosDetail(&apos;' + pos.id + '&apos;)" style="font-size:16px;color:var(--dim);padding:0 6px" title="Full details">&rsaquo;</button></div>'
           + '</div>'
           + '</td></tr>';
       }
@@ -6125,15 +6133,15 @@ function render() {
       + '</table></div>'
       + (totValueActive > 0 ? '<div class="totals-bar">'
       + '<div class="total-block"><div class="total-label">VALUE</div><div class="total-value" style="color:var(--bright)">' + currSym + f2(totValueActive) + '</div></div>'
-      + '<div class="total-block"><div class="total-label">BODY P&amp;L</div><div class="total-value ' + (totBodyActive >= 0 ? 'pos' : 'neg') + '">' + (totBodyActive >= 0 ? '+' : '-') + currSym + f2(Math.abs(totBodyActive)) + '</div></div>'
-      + '<div class="total-block"><div class="total-label">COUPON</div><div class="total-value pos">+' + currSym + f2(totCouponActive) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">BODY P&amp;L</div><div class="total-value">' + fmtBondBody(totBodyActive, currSym) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">COUPON INC</div><div class="total-value">' + fmtBondCoupon(totCouponActive, currSym) + '</div></div>'
       + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + pClassA + '">' + currSym + f2(totProfitActive) + '</div></div>'
       + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + pClassA + '">' + (totValueActive > 0 ? f2(totProfitActive/totValueActive*100) + '%' : '—') + '</div></div>'
       + '</div>' : '')
       + (totValueMatured > 0 ? '<div class="totals-bar" style="opacity:0.6">'
       + '<div class="total-block"><div class="total-label">MATURED VALUE</div><div class="total-value" style="color:var(--bright)">' + currSym + f2(totValueMatured) + '</div></div>'
-      + '<div class="total-block"><div class="total-label">BODY P&amp;L</div><div class="total-value ' + (totBodyMatured >= 0 ? 'pos' : 'neg') + '">' + (totBodyMatured >= 0 ? '+' : '-') + currSym + f2(Math.abs(totBodyMatured)) + '</div></div>'
-      + '<div class="total-block"><div class="total-label">COUPON</div><div class="total-value pos">+' + currSym + f2(totCouponMatured) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">BODY P&amp;L</div><div class="total-value">' + fmtBondBody(totBodyMatured, currSym) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">COUPON INC</div><div class="total-value">' + fmtBondCoupon(totCouponMatured, currSym) + '</div></div>'
       + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + pClassM + '">' + currSym + f2(totProfitMatured) + '</div></div>'
       + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + pClassM + '">' + (totValueMatured > 0 ? f2(totProfitMatured/totValueMatured*100) + '%' : '—') + '</div></div>'
       + '</div>' : '')
@@ -6253,14 +6261,12 @@ function render() {
           var ret = d.val ? d.profit / d.val * 100 : null;
           var weight = (totAValUSD > 0 && !isMatured) ? d.valUSD / totAValUSD * 100 : null;
           var c = d.profit >= 0 ? 'pos' : 'neg';
-          var bodyC = d.body >= 0 ? 'pos' : 'neg';
-          var bodySign = d.body >= 0 ? '+' : '-';
           var rowStyle = isMatured ? ' style="font-style:italic;opacity:0.6"' : '';
           return '<tr' + rowStyle + '>'
             + '<td style="text-align:left;white-space:nowrap;cursor:pointer" onclick="showBondPortfolio(&apos;' + s.id + '&apos;)">' + s.name + (isMatured ? ' <span style="font-size:10px;color:var(--dim)">(matured)</span>' : '') + '</td>'
             + '<td>' + s.currency + f2(d.val) + '</td>'
-            + '<td class="' + bodyC + '">' + bodySign + s.currency + f2(Math.abs(d.body)) + '</td>'
-            + '<td class="pos">+' + s.currency + f2(d.coupon) + '</td>'
+            + '<td>' + fmtBondBody(d.body, s.currency) + '</td>'
+            + '<td>' + fmtBondCoupon(d.coupon, s.currency) + '</td>'
             + '<td class="' + c + '">' + s.currency + f2(d.profit) + '</td>'
             + '<td class="' + c + '">' + (ret !== null ? fPct(ret) : '&mdash;') + '</td>'
             + '<td>' + (weight !== null ? fPctNoSign(weight) : '&mdash;') + '</td>'
@@ -6271,8 +6277,6 @@ function render() {
       });
       var cA = totAProfitUSD >= 0 ? 'pos' : 'neg';
       var cM = totMProfitUSD >= 0 ? 'pos' : 'neg';
-      var bcA = totABodyUSD >= 0 ? 'pos' : 'neg';
-      var bcM = totMBodyUSD >= 0 ? 'pos' : 'neg';
       var totAret = totAValUSD > 0 ? totAProfitUSD / totAValUSD * 100 : null;
       var totMret = totMValUSD > 0 ? totMProfitUSD / totMValUSD * 100 : null;
       area.innerHTML = '<div class="table-wrap">'
@@ -6281,7 +6285,7 @@ function render() {
         + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO</th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">VALUE</th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">BODY P&amp;L</th>'
-        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">COUPON</th>'
+        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">COUPON INC</th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PROFIT</th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">RETURN</th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">WEIGHT</th>'
@@ -6290,15 +6294,15 @@ function render() {
         + '</table></div>'
         + (totAValUSD > 0 ? '<div class="totals-bar">'
         + '<div class="total-block"><div class="total-label">TOTAL VALUE</div><div class="total-value" style="color:var(--bright)">$' + f2(totAValUSD) + '</div></div>'
-        + '<div class="total-block"><div class="total-label">BODY P&amp;L</div><div class="total-value ' + bcA + '">' + (totABodyUSD >= 0 ? '+' : '-') + '$' + f2(Math.abs(totABodyUSD)) + '</div></div>'
-        + '<div class="total-block"><div class="total-label">COUPON</div><div class="total-value pos">+$' + f2(totACouponUSD) + '</div></div>'
+        + '<div class="total-block"><div class="total-label">BODY P&amp;L</div><div class="total-value">' + fmtBondBody(totABodyUSD, '$') + '</div></div>'
+        + '<div class="total-block"><div class="total-label">COUPON INC</div><div class="total-value">' + fmtBondCoupon(totACouponUSD, '$') + '</div></div>'
         + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + cA + '">$' + f2(totAProfitUSD) + '</div></div>'
         + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + cA + '">' + (totAret !== null ? fPct(totAret) : '&mdash;') + '</div></div>'
         + '</div>' : '')
         + (totMValUSD > 0 ? '<div class="totals-bar" style="opacity:0.6">'
         + '<div class="total-block"><div class="total-label">MATURED VALUE</div><div class="total-value" style="color:var(--bright)">$' + f2(totMValUSD) + '</div></div>'
-        + '<div class="total-block"><div class="total-label">BODY P&amp;L</div><div class="total-value ' + bcM + '">' + (totMBodyUSD >= 0 ? '+' : '-') + '$' + f2(Math.abs(totMBodyUSD)) + '</div></div>'
-        + '<div class="total-block"><div class="total-label">COUPON</div><div class="total-value pos">+$' + f2(totMCouponUSD) + '</div></div>'
+        + '<div class="total-block"><div class="total-label">BODY P&amp;L</div><div class="total-value">' + fmtBondBody(totMBodyUSD, '$') + '</div></div>'
+        + '<div class="total-block"><div class="total-label">COUPON INC</div><div class="total-value">' + fmtBondCoupon(totMCouponUSD, '$') + '</div></div>'
         + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + cM + '">$' + f2(totMProfitUSD) + '</div></div>'
         + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + cM + '">' + (totMret !== null ? fPct(totMret) : '&mdash;') + '</div></div>'
         + '</div>' : '');
