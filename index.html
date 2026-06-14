@@ -6197,147 +6197,192 @@ function render() {
       var dateB = bondB ? new Date(bondB.maturityDate) : new Date(0);
       return dateA - dateB;
     });
-    var rows = '';
-    var totValueActive = 0, totProfitActive = 0, totBodyActive = 0, totCouponActive = 0;
-    var totValueMatured = 0, totProfitMatured = 0, totBodyMatured = 0, totCouponMatured = 0;
+
+    // ── FX setup for multi-currency totals ──────────────────────────────────
+    // Per-position rows always display in each bond's own currency.
+    // Totals/aggregates display in the portfolio's currency (bp.currencyCode).
+    // Logic per position:
+    //   - bond's currency === portfolio's currency  → no conversion (skip FX)
+    //   - bond's currency !== portfolio's currency  → convert via USD as intermediate
+    //     (we have only X/USD rates available, so:  bond_amt × bondToUSD / portfolioToUSD)
+    var bondsViewFx = {};
+    var bpCurrency = (bp.currencyCode || 'USD').toUpperCase();
+    var portfolioCurrSym = CURRENCY_SYMBOLS[bpCurrency] || bpCurrency;
+    var bondsViewNonUSD = [];
     sortedPositions.forEach(function(pos) {
-      var calc = calcBondPosition(pos);
-      if (!calc) {
-        rows += '<tr><td style="text-align:left">' + (pos.bondName || '?') + '</td><td colspan="7" style="color:var(--red);font-size:10px">Bond not in DB</td></tr>';
-        return;
+      var b = bondsDb.find(function(x) { return x.id === pos.bondId; });
+      if (!b || b.currency === bpCurrency) return; // same currency as portfolio → no FX needed
+      // Different currencies → need rates against USD for both
+      if (b.currency !== 'USD' && bondsViewNonUSD.indexOf(b.currency) === -1) {
+        bondsViewNonUSD.push(b.currency);
       }
-      var isWatchlist = pos.qty === 0;
-      var isClosed = calc.isClosed;
-      if (!isWatchlist) {
-        if (isClosed) {
-          totValueMatured += calc.positionValue; totProfitMatured += calc.totalProfit;
-          totBodyMatured += calc.bodyPL; totCouponMatured += calc.couponIncome;
-        } else {
-          totValueActive += calc.positionValue; totProfitActive += calc.totalProfit;
-          totBodyActive += calc.bodyPL; totCouponActive += calc.couponIncome;
-        }
-      }
-      var rowStyle = (isClosed || isWatchlist) ? 'font-style:italic;opacity:0.5' : '';
-      var pClass = calc.profitPct !== null ? (calc.profitPct >= 0 ? 'pos' : 'neg') : '';
-      var isEditing = editingBondPosId === pos.id;
-      var isExpanded = expandedBondPosId === pos.id;
-      var actionBtn = '';
-      if (calc.isSold) {
-        actionBtn = '<button class="btn-icon" onclick="archiveBondPosition(&apos;' + pos.id + '&apos;)" title="Move to archive" style="font-size:14px;padding:0 4px;color:var(--dim)">&#8863;</button>';
-      } else if (!isWatchlist) {
-        actionBtn = '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--bright)" onclick="sellBondPosition(&apos;' + pos.id + '&apos;)">SELL</button>';
-      }
-      rows += '<tr style="' + rowStyle + '">'
-        + '<td style="text-align:left;cursor:pointer;white-space:nowrap" onclick="toggleExpandedBondPos(&apos;' + pos.id + '&apos;)">' + calc.bond.name + '</td>'
-        + '<td style="white-space:nowrap">' + pos.purchaseDate + '</td>'
-        + '<td>' + (isWatchlist ? '<span style="color:var(--dim)">—</span>' : pos.qty) + '</td>'
-        + '<td>' + f2(pos.cleanPrice) + '%</td>'
-        + '<td>' + calc.currSym + f2(pos.accruedInterest) + '</td>'
-        + '<td>' + (isWatchlist ? '<span style="color:var(--dim)">—</span>' : calc.currSym + f2(calc.positionValue)) + '</td>'
-        + '<td>' + (isWatchlist ? '<span style="color:var(--dim)">—</span>' : '<span class="' + pClass + '">' + calc.currSym + f2(calc.totalProfit) + '</span>') + '</td>'
-        + '<td class="' + pClass + '">' + (calc.profitPct !== null ? f2(calc.profitPct) + '%' : '—') + '</td>'
-        + '<td class="' + pClass + '">' + (calc.annualYield !== null ? f2(calc.annualYield) + '%' : '—') + '</td>'
-        + '<td style="white-space:nowrap">'
-          + actionBtn
-          + '<button class="btn-icon" onclick="editBondPosition(&apos;' + pos.id + '&apos;)" style="' + (isEditing ? 'color:var(--green)' : '') + '">&#9998;</button>'
-          + '<button class="btn-icon" onclick="deleteBondPosition(&apos;' + pos.id + '&apos;)" style="color:var(--red)">&#10005;</button>'
-        + '</td>'
-        + '</tr>';
-      if (isExpanded) {
-        var leftLabel, leftDate;
-        if (calc.isSold) {
-          leftLabel = 'SOLD'; leftDate = pos.sellDate;
-        } else if (calc.isAutoMatured) {
-          leftLabel = 'MATURED'; leftDate = calc.bond.maturityDate;
-        } else {
-          leftLabel = 'MATURITY'; leftDate = calc.bond.maturityDate;
-        }
-        var sellExtras = '';
-        if (calc.isSold) {
-          sellExtras = '<div><span style="color:var(--dim)">SELL PRICE</span> <span style="color:var(--bright)">' + f2(pos.sellCleanPrice) + '%</span></div>'
-            + '<div><span style="color:var(--dim)">SELL ACCRUED</span> <span style="color:var(--bright)">' + calc.currSym + f2(pos.sellAccruedInterest) + '</span></div>';
-        }
-        rows += '<tr><td colspan="10" style="padding:8px 8px 10px;background:var(--bg2)">'
-          + '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:10px">'
-          +   '<div><span style="color:var(--dim)">' + leftLabel + '</span> <span style="color:var(--bright)">' + leftDate + '</span></div>'
-          +   sellExtras
-          +   '<div><span style="color:var(--dim)">BODY P&amp;L</span> ' + fmtBondBody(calc.bodyPL, calc.currSym) + '</div>'
-          +   '<div><span style="color:var(--dim)">COUPON INC</span> ' + fmtBondCoupon(calc.couponIncome, calc.currSym) + '</div>'
-          +   '<button onclick="openBondPosDetail(&apos;' + pos.id + '&apos;)" style="background:transparent;color:var(--bright);font-family:var(--font);font-size:14px;padding:4px 12px;border:1px solid var(--border);border-radius:3px;cursor:pointer;line-height:1" title="Full details">&rsaquo;</button>'
-          + '</div>'
-          + '</td></tr>';
-      }
-      if (isEditing) {
-        var editInputs;
-        if (calc.isSold) {
-          // Sold bonds: only sell-side params are editable (buy params and qty are locked)
-          editInputs = '<div class="field"><label>SELL DATE</label><input type="date" id="editBpSellDate" value="' + pos.sellDate + '" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none"></div>'
-            + '<div class="field"><label>SELL CLEAN PRICE %</label><input type="number" id="editBpSellPrice" value="' + pos.sellCleanPrice + '" min="0" step="0.01" style="width:90px"></div>'
-            + '<div class="field"><label>SELL ACCRUED</label><input type="number" id="editBpSellAccrued" value="' + pos.sellAccruedInterest + '" min="0" step="0.01" style="width:90px"></div>';
-        } else {
-          // Active bonds: buy params editable
-          editInputs = '<div class="field"><label>PURCHASE DATE</label><input type="date" id="editBpDate" value="' + pos.purchaseDate + '" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none"></div>'
-            + '<div class="field"><label>QTY</label><input type="number" id="editBpQty" value="' + pos.qty + '" min="0" step="1" style="width:70px"></div>'
-            + '<div class="field"><label>CLEAN PRICE %</label><input type="number" id="editBpClean" value="' + pos.cleanPrice + '" min="0" step="0.01" style="width:90px"></div>'
-            + '<div class="field"><label>ACC.INT.</label><input type="number" id="editBpNkd" value="' + pos.accruedInterest + '" min="0" step="0.01" style="width:90px"></div>';
-        }
-        rows += '<tr><td colspan="10" style="padding:8px 4px 10px;background:var(--bg2)">'
-          + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">'
-          + editInputs
-          + '<div style="display:flex;gap:6px;align-self:flex-end">'
-          + '<button class="btn btn-green" onclick="saveBondPosEdit(&apos;' + pos.id + '&apos;)" style="padding:6px 12px">SAVE</button>'
-          + '<button class="btn" onclick="editingBondPosId=null;render()" style="padding:6px 12px;color:var(--dim)">CANCEL</button>'
-          + '</div></div>'
-          + '</td></tr>';
+      if (bpCurrency !== 'USD' && bondsViewNonUSD.indexOf(bpCurrency) === -1) {
+        bondsViewNonUSD.push(bpCurrency);
       }
     });
 
-    var totValue = totValueActive + totValueMatured;
-    var totProfit = totProfitActive + totProfitMatured;
-    var getBondCurrSym = function() {
-      for (var i = 0; i < sortedPositions.length; i++) {
-        var b = bondsDb.find(function(x) { return x.id === sortedPositions[i].bondId; });
-        if (b) return CURRENCY_SYMBOLS[b.currency] || b.currency;
-      }
-      return '$';
-    };
-    var currSym = getBondCurrSym();
-    var pClassA = totProfitActive >= 0 ? 'pos' : 'neg';
-    var pClassM = totProfitMatured >= 0 ? 'pos' : 'neg';
-    var pClass = totProfit >= 0 ? 'pos' : 'neg';
-    var totProfitPct = totValue > 0 ? totProfit / totValue * 100 : null;
+    function renderBondsViewWithRates() {
+      var bpRateToUSD = bpCurrency === 'USD' ? 1 : (bondsViewFx[bpCurrency] || 1);
+      var rows = '';
+      var totValueActive = 0, totProfitActive = 0, totBodyActive = 0, totCouponActive = 0;
+      var totValueMatured = 0, totProfitMatured = 0, totBodyMatured = 0, totCouponMatured = 0;
+      sortedPositions.forEach(function(pos) {
+        var calc = calcBondPosition(pos);
+        if (!calc) {
+          rows += '<tr><td style="text-align:left">' + (pos.bondName || '?') + '</td><td colspan="7" style="color:var(--red);font-size:10px">Bond not in DB</td></tr>';
+          return;
+        }
+        var isWatchlist = pos.qty === 0;
+        var isClosed = calc.isClosed;
+        // Convert bond's contribution to portfolio currency
+        var bondCurr = calc.bond.currency;
+        var valBp, profitBp, bodyBp, couponBp;
+        if (bondCurr === bpCurrency) {
+          // Same currency, no conversion
+          valBp = calc.positionValue;
+          profitBp = calc.totalProfit;
+          bodyBp = calc.bodyPL;
+          couponBp = calc.couponIncome;
+        } else {
+          // Different currency → convert via USD: amount × bondToUSD / portfolioToUSD
+          var bondRateToUSD = bondCurr === 'USD' ? 1 : (bondsViewFx[bondCurr] || 1);
+          var conv = bondRateToUSD / bpRateToUSD;
+          valBp = calc.positionValue * conv;
+          profitBp = calc.totalProfit * conv;
+          bodyBp = calc.bodyPL * conv;
+          couponBp = calc.couponIncome * conv;
+        }
+        if (!isWatchlist) {
+          if (isClosed) {
+            totValueMatured += valBp; totProfitMatured += profitBp;
+            totBodyMatured += bodyBp; totCouponMatured += couponBp;
+          } else {
+            totValueActive += valBp; totProfitActive += profitBp;
+            totBodyActive += bodyBp; totCouponActive += couponBp;
+          }
+        }
+        var rowStyle = (isClosed || isWatchlist) ? 'font-style:italic;opacity:0.5' : '';
+        var pClass = calc.profitPct !== null ? (calc.profitPct >= 0 ? 'pos' : 'neg') : '';
+        var isEditing = editingBondPosId === pos.id;
+        var isExpanded = expandedBondPosId === pos.id;
+        var actionBtn = '';
+        if (calc.isSold) {
+          actionBtn = '<button class="btn-icon" onclick="archiveBondPosition(&apos;' + pos.id + '&apos;)" title="Move to archive" style="font-size:14px;padding:0 4px;color:var(--dim)">&#8863;</button>';
+        } else if (!isWatchlist) {
+          actionBtn = '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--bright)" onclick="sellBondPosition(&apos;' + pos.id + '&apos;)">SELL</button>';
+        }
+        rows += '<tr style="' + rowStyle + '">'
+          + '<td style="text-align:left;cursor:pointer;white-space:nowrap" onclick="toggleExpandedBondPos(&apos;' + pos.id + '&apos;)">' + calc.bond.name + '</td>'
+          + '<td style="white-space:nowrap">' + pos.purchaseDate + '</td>'
+          + '<td>' + (isWatchlist ? '<span style="color:var(--dim)">—</span>' : pos.qty) + '</td>'
+          + '<td>' + f2(pos.cleanPrice) + '%</td>'
+          + '<td>' + calc.currSym + f2(pos.accruedInterest) + '</td>'
+          + '<td>' + (isWatchlist ? '<span style="color:var(--dim)">—</span>' : calc.currSym + f2(calc.positionValue)) + '</td>'
+          + '<td>' + (isWatchlist ? '<span style="color:var(--dim)">—</span>' : '<span class="' + pClass + '">' + calc.currSym + f2(calc.totalProfit) + '</span>') + '</td>'
+          + '<td class="' + pClass + '">' + (calc.profitPct !== null ? f2(calc.profitPct) + '%' : '—') + '</td>'
+          + '<td class="' + pClass + '">' + (calc.annualYield !== null ? f2(calc.annualYield) + '%' : '—') + '</td>'
+          + '<td style="white-space:nowrap">'
+            + actionBtn
+            + '<button class="btn-icon" onclick="editBondPosition(&apos;' + pos.id + '&apos;)" style="' + (isEditing ? 'color:var(--green)' : '') + '">&#9998;</button>'
+            + '<button class="btn-icon" onclick="deleteBondPosition(&apos;' + pos.id + '&apos;)" style="color:var(--red)">&#10005;</button>'
+          + '</td>'
+          + '</tr>';
+        if (isExpanded) {
+          var leftLabel, leftDate;
+          if (calc.isSold) {
+            leftLabel = 'SOLD'; leftDate = pos.sellDate;
+          } else if (calc.isAutoMatured) {
+            leftLabel = 'MATURED'; leftDate = calc.bond.maturityDate;
+          } else {
+            leftLabel = 'MATURITY'; leftDate = calc.bond.maturityDate;
+          }
+          var sellExtras = '';
+          if (calc.isSold) {
+            sellExtras = '<div><span style="color:var(--dim)">SELL PRICE</span> <span style="color:var(--bright)">' + f2(pos.sellCleanPrice) + '%</span></div>'
+              + '<div><span style="color:var(--dim)">SELL ACCRUED</span> <span style="color:var(--bright)">' + calc.currSym + f2(pos.sellAccruedInterest) + '</span></div>';
+          }
+          rows += '<tr><td colspan="10" style="padding:8px 8px 10px;background:var(--bg2)">'
+            + '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:10px">'
+            +   '<div><span style="color:var(--dim)">' + leftLabel + '</span> <span style="color:var(--bright)">' + leftDate + '</span></div>'
+            +   sellExtras
+            +   '<div><span style="color:var(--dim)">BODY P&amp;L</span> ' + fmtBondBody(calc.bodyPL, calc.currSym) + '</div>'
+            +   '<div><span style="color:var(--dim)">COUPON INC</span> ' + fmtBondCoupon(calc.couponIncome, calc.currSym) + '</div>'
+            +   '<button onclick="openBondPosDetail(&apos;' + pos.id + '&apos;)" style="background:transparent;color:var(--bright);font-family:var(--font);font-size:14px;padding:4px 12px;border:1px solid var(--border);border-radius:3px;cursor:pointer;line-height:1" title="Full details">&rsaquo;</button>'
+            + '</div>'
+            + '</td></tr>';
+        }
+        if (isEditing) {
+          var editInputs;
+          if (calc.isSold) {
+            // Sold bonds: only sell-side params are editable (buy params and qty are locked)
+            editInputs = '<div class="field"><label>SELL DATE</label><input type="date" id="editBpSellDate" value="' + pos.sellDate + '" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none"></div>'
+              + '<div class="field"><label>SELL CLEAN PRICE %</label><input type="number" id="editBpSellPrice" value="' + pos.sellCleanPrice + '" min="0" step="0.01" style="width:90px"></div>'
+              + '<div class="field"><label>SELL ACCRUED</label><input type="number" id="editBpSellAccrued" value="' + pos.sellAccruedInterest + '" min="0" step="0.01" style="width:90px"></div>';
+          } else {
+            // Active bonds: buy params editable
+            editInputs = '<div class="field"><label>PURCHASE DATE</label><input type="date" id="editBpDate" value="' + pos.purchaseDate + '" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none"></div>'
+              + '<div class="field"><label>QTY</label><input type="number" id="editBpQty" value="' + pos.qty + '" min="0" step="1" style="width:70px"></div>'
+              + '<div class="field"><label>CLEAN PRICE %</label><input type="number" id="editBpClean" value="' + pos.cleanPrice + '" min="0" step="0.01" style="width:90px"></div>'
+              + '<div class="field"><label>ACC.INT.</label><input type="number" id="editBpNkd" value="' + pos.accruedInterest + '" min="0" step="0.01" style="width:90px"></div>';
+          }
+          rows += '<tr><td colspan="10" style="padding:8px 4px 10px;background:var(--bg2)">'
+            + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">'
+            + editInputs
+            + '<div style="display:flex;gap:6px;align-self:flex-end">'
+            + '<button class="btn btn-green" onclick="saveBondPosEdit(&apos;' + pos.id + '&apos;)" style="padding:6px 12px">SAVE</button>'
+            + '<button class="btn" onclick="editingBondPosId=null;render()" style="padding:6px 12px;color:var(--dim)">CANCEL</button>'
+            + '</div></div>'
+            + '</td></tr>';
+        }
+      });
 
-    area.innerHTML = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
-      + '<table style="border-collapse:collapse;font-size:13px">'
-      + '<thead><tr>'
-      + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">BOND</th>'
-      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">PURCHASE DATE</th>'
-      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">QTY</th>'
-      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">CLEAN %</th>'
-      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">ACC.INT.</th>'
-      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">VALUE</th>'
-      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PROFIT</th>'
-      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">RETURN</th>'
-      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">ANN.YIELD</th>'
-      + '<th style="border-bottom:1px solid var(--border)"></th>'
-      + '</tr></thead>'
-      + '<tbody>' + rows + '</tbody>'
-      + '</table></div>'
-      + (totValueActive > 0 ? '<div class="totals-bar">'
-      + '<div class="total-block"><div class="total-label">VALUE</div><div class="total-value" style="color:var(--bright)">' + currSym + f2(totValueActive) + '</div></div>'
-      + '<div class="total-block"><div class="total-label">BODY P&amp;L</div><div class="total-value">' + fmtBondBody(totBodyActive, currSym) + '</div></div>'
-      + '<div class="total-block"><div class="total-label">COUPON INC</div><div class="total-value">' + fmtBondCoupon(totCouponActive, currSym) + '</div></div>'
-      + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + pClassA + '">' + currSym + f2(totProfitActive) + '</div></div>'
-      + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + pClassA + '">' + (totValueActive > 0 ? f2(totProfitActive/totValueActive*100) + '%' : '—') + '</div></div>'
-      + '</div>' : '')
-      + (totValueMatured > 0 ? '<div class="totals-bar" style="opacity:0.6">'
-      + '<div class="total-block"><div class="total-label">CLOSED VALUE</div><div class="total-value" style="color:var(--bright)">' + currSym + f2(totValueMatured) + '</div></div>'
-      + '<div class="total-block"><div class="total-label">BODY P&amp;L</div><div class="total-value">' + fmtBondBody(totBodyMatured, currSym) + '</div></div>'
-      + '<div class="total-block"><div class="total-label">COUPON INC</div><div class="total-value">' + fmtBondCoupon(totCouponMatured, currSym) + '</div></div>'
-      + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + pClassM + '">' + currSym + f2(totProfitMatured) + '</div></div>'
-      + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + pClassM + '">' + (totValueMatured > 0 ? f2(totProfitMatured/totValueMatured*100) + '%' : '—') + '</div></div>'
-      + '</div>' : '')
-      + renderBondAddForm(currentBondPortfolioId);
+      var pClassA = totProfitActive >= 0 ? 'pos' : 'neg';
+      var pClassM = totProfitMatured >= 0 ? 'pos' : 'neg';
+
+      area.innerHTML = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
+        + '<table style="border-collapse:collapse;font-size:13px">'
+        + '<thead><tr>'
+        + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">BOND</th>'
+        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">PURCHASE DATE</th>'
+        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">QTY</th>'
+        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">CLEAN %</th>'
+        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">ACC.INT.</th>'
+        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">VALUE</th>'
+        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PROFIT</th>'
+        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">RETURN</th>'
+        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">ANN.YIELD</th>'
+        + '<th style="border-bottom:1px solid var(--border)"></th>'
+        + '</tr></thead>'
+        + '<tbody>' + rows + '</tbody>'
+        + '</table></div>'
+        + (totValueActive > 0 ? '<div class="totals-bar">'
+        + '<div class="total-block"><div class="total-label">VALUE</div><div class="total-value" style="color:var(--bright)">' + portfolioCurrSym + f2(totValueActive) + '</div></div>'
+        + '<div class="total-block"><div class="total-label">BODY P&amp;L</div><div class="total-value">' + fmtBondBody(totBodyActive, portfolioCurrSym) + '</div></div>'
+        + '<div class="total-block"><div class="total-label">COUPON INC</div><div class="total-value">' + fmtBondCoupon(totCouponActive, portfolioCurrSym) + '</div></div>'
+        + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + pClassA + '">' + portfolioCurrSym + f2(totProfitActive) + '</div></div>'
+        + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + pClassA + '">' + (totValueActive > 0 ? f2(totProfitActive/totValueActive*100) + '%' : '—') + '</div></div>'
+        + '</div>' : '')
+        + (totValueMatured > 0 ? '<div class="totals-bar" style="opacity:0.6">'
+        + '<div class="total-block"><div class="total-label">CLOSED VALUE</div><div class="total-value" style="color:var(--bright)">' + portfolioCurrSym + f2(totValueMatured) + '</div></div>'
+        + '<div class="total-block"><div class="total-label">BODY P&amp;L</div><div class="total-value">' + fmtBondBody(totBodyMatured, portfolioCurrSym) + '</div></div>'
+        + '<div class="total-block"><div class="total-label">COUPON INC</div><div class="total-value">' + fmtBondCoupon(totCouponMatured, portfolioCurrSym) + '</div></div>'
+        + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + pClassM + '">' + portfolioCurrSym + f2(totProfitMatured) + '</div></div>'
+        + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + pClassM + '">' + (totValueMatured > 0 ? f2(totProfitMatured/totValueMatured*100) + '%' : '—') + '</div></div>'
+        + '</div>' : '')
+        + renderBondAddForm(currentBondPortfolioId);
+    }
+
+    if (bondsViewNonUSD.length === 0) {
+      renderBondsViewWithRates();
+    } else {
+      var bvBaseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
+      var bvToken = getToken();
+      Promise.all(bondsViewNonUSD.map(function(code) {
+        return fetchFxRate(bvBaseUrl, bvToken, code + 'USD=X').then(function(rate) {
+          if (rate) bondsViewFx[code] = rate;
+        });
+      })).then(function() { renderBondsViewWithRates(); });
+    }
     return;
   }
 
