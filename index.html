@@ -944,6 +944,95 @@ function toggleExpandedBondPos(posId) {
   expandedBondPosId = expandedBondPosId === posId ? null : posId;
   render();
 }
+
+function sellBondPosition(posId) {
+  var bp = bondPortfolios[currentBondPortfolioId];
+  if (!bp) return;
+  var pos = (bp.positions || []).find(function(p) { return p.id === posId; });
+  if (!pos || pos.sold || pos.qty === 0) return;
+  var bond = bondsDb.find(function(b) { return b.id === pos.bondId; });
+  if (!bond) return;
+  // Defaults: today's date, par price, zero accrued (matches maturity)
+  var today = new Date();
+  var yyyy = today.getFullYear();
+  var mm = String(today.getMonth() + 1).padStart(2, '0');
+  var dd = String(today.getDate()).padStart(2, '0');
+  var defaultDate = yyyy + '-' + mm + '-' + dd;
+  // If bond is already past maturity, default sell date to maturity date
+  if (new Date(bond.maturityDate) <= today) {
+    defaultDate = bond.maturityDate;
+  }
+  var overlay = document.createElement('div');
+  overlay.id = 'sellBondOverlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:500;display:flex;align-items:flex-start;justify-content:center;padding-top:60px';
+  overlay.innerHTML =
+    '<div style="background:var(--bg2);border:1px solid var(--border);padding:20px 24px;min-width:280px;max-width:90vw" onclick="event.stopPropagation()">'
+    + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:14px">SELL ' + bond.name + '</div>'
+    + '<div style="display:flex;flex-direction:column;gap:10px">'
+    + '<div class="field"><label>QTY (max ' + pos.qty + ')</label><input type="number" id="sellBondQty" value="' + pos.qty + '" min="1" max="' + pos.qty + '" step="1" style="width:100%;box-sizing:border-box"></div>'
+    + '<div class="field"><label>SELL DATE</label><input type="date" id="sellBondDate" value="' + defaultDate + '" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);padding:4px 6px"></div>'
+    + '<div class="field"><label>CLEAN PRICE (%)</label><input type="number" id="sellBondPrice" value="100" min="0" step="any" style="width:100%;box-sizing:border-box"></div>'
+    + '<div class="field"><label>ACCRUED INTEREST</label><input type="number" id="sellBondAccrued" value="0" min="0" step="any" style="width:100%;box-sizing:border-box"></div>'
+    + '</div>'
+    + '<div style="display:flex;gap:8px;margin-top:16px">'
+    + '<button class="btn-primary" onclick="confirmBondSell(&apos;' + posId + '&apos;)" style="flex:1">SELL</button>'
+    + '<button class="btn" onclick="document.getElementById(\'sellBondOverlay\').remove()" style="flex:1">CANCEL</button>'
+    + '</div>'
+    + '<div id="sellBondErr" style="color:var(--red);font-size:11px;margin-top:6px"></div>'
+    + '</div>';
+  overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+  document.body.appendChild(overlay);
+  setTimeout(function() { var el = document.getElementById('sellBondPrice'); if (el) el.focus(); }, 50);
+}
+
+function confirmBondSell(posId) {
+  var bp = bondPortfolios[currentBondPortfolioId];
+  if (!bp) return;
+  var pos = (bp.positions || []).find(function(p) { return p.id === posId; });
+  if (!pos) return;
+  var errEl = document.getElementById('sellBondErr');
+  var sellQty = parseInt(document.getElementById('sellBondQty').value, 10);
+  var sellDate = document.getElementById('sellBondDate').value;
+  var sellPrice = parseFloat(document.getElementById('sellBondPrice').value);
+  var sellAccrued = parseFloat(document.getElementById('sellBondAccrued').value);
+  if (isNaN(sellQty) || sellQty <= 0) { errEl.textContent = 'Invalid quantity'; return; }
+  if (sellQty > pos.qty) { errEl.textContent = 'Quantity exceeds position (' + pos.qty + ')'; return; }
+  if (!sellDate) { errEl.textContent = 'Invalid sell date'; return; }
+  if (isNaN(sellPrice) || sellPrice < 0) { errEl.textContent = 'Invalid clean price'; return; }
+  if (isNaN(sellAccrued) || sellAccrued < 0) { errEl.textContent = 'Invalid accrued interest'; return; }
+  document.getElementById('sellBondOverlay').remove();
+  if (sellQty === pos.qty) {
+    // Full sale: mark this record sold
+    bp.positions = bp.positions.map(function(p) {
+      return p.id === posId
+        ? Object.assign({}, p, { sold: true, sellDate: sellDate, sellCleanPrice: sellPrice, sellAccruedInterest: sellAccrued })
+        : p;
+    });
+  } else {
+    // Partial sale: split into sold record + remaining record
+    var soldRec = Object.assign({}, pos, {
+      id: 'b' + Date.now(),
+      qty: sellQty,
+      sold: true, sellDate: sellDate, sellCleanPrice: sellPrice, sellAccruedInterest: sellAccrued
+    });
+    var remainingRec = Object.assign({}, pos, {
+      id: 'b' + (Date.now() + 1),
+      qty: pos.qty - sellQty
+    });
+    bp.positions = bp.positions.reduce(function(acc, p) {
+      if (p.id === posId) { acc.push(soldRec); acc.push(remainingRec); }
+      else acc.push(p);
+      return acc;
+    }, []);
+  }
+  saveBondPortfolios();
+  render();
+}
+
+function archiveBondPosition(posId) {
+  // Placeholder for Stage 3 (bond archives). Currently no-op.
+  // Will move sold/matured bonds into archive bond portfolios.
+}
 function saveBondPosEdit(posId) {
   var bp = bondPortfolios[currentBondPortfolioId];
   if (!bp) return;
@@ -5988,43 +6077,71 @@ function render() {
     }
     // ────────────────────────────────────────────────────────────────────────
 
-    // Calculations
-    function calcCouponsRemaining(purchaseDate, maturityDate, couponFrequency) {
-      var maturity = new Date(maturityDate);
+    // Count coupons received in (purchaseDate, endDate], stepping back from maturityDate.
+    // For HtM (active): pass maturityDate as endDate → counts all remaining coupons.
+    // For sold: pass sellDate as endDate → counts only coupons actually received.
+    function calcCouponsReceived(purchaseDate, endDate, maturityDate, couponFrequency) {
       var purchase = new Date(purchaseDate);
-      var count = 0;
-      // Step back from maturity by coupon interval
+      var end = new Date(endDate);
       var intervalMonths = Math.round(12 / couponFrequency);
-      var d = new Date(maturity);
+      var d = new Date(maturityDate);
+      var count = 0;
       while (d > purchase) {
-        count++;
+        if (d <= end) count++;
         d.setMonth(d.getMonth() - intervalMonths);
       }
       return count;
+    }
+    // Back-compat shim: counts all coupons between purchase and maturity (active HtM case)
+    function calcCouponsRemaining(purchaseDate, maturityDate, couponFrequency) {
+      return calcCouponsReceived(purchaseDate, maturityDate, maturityDate, couponFrequency);
     }
 
     function calcBondPosition(pos) {
       var bond = bondsDb.find(function(b) { return b.id === pos.bondId; });
       if (!bond) return null;
+      var today = new Date(); today.setHours(0,0,0,0);
+      var isSold = !!pos.sold;
+      var isAutoMatured = !isSold && new Date(bond.maturityDate) <= today;
+      var isClosed = isSold || isAutoMatured;
+      // Buy side (dirty price = clean% × par + accrued interest per bond)
       var dirtyPrice = pos.cleanPrice / 100 * bond.parValue + pos.accruedInterest;
       var positionValue = pos.qty * dirtyPrice;
+      // End side: explicit sale params if sold, otherwise project to maturity (par, 0 accrued, maturity date)
+      var endCleanPrice, endAccruedInterest, endDate;
+      if (isSold) {
+        endCleanPrice = pos.sellCleanPrice;
+        endAccruedInterest = pos.sellAccruedInterest;
+        endDate = pos.sellDate;
+      } else {
+        endCleanPrice = 100;
+        endAccruedInterest = 0;
+        endDate = bond.maturityDate;
+      }
+      var dirtyEnd = endCleanPrice / 100 * bond.parValue + endAccruedInterest;
       var couponPrice = bond.parValue * bond.nominalYield / bond.couponFrequency;
-      var couponsLeft = calcCouponsRemaining(pos.purchaseDate, bond.maturityDate, bond.couponFrequency);
-      var totalCouponIncome = couponPrice * couponsLeft;
-      var profitPerBond = totalCouponIncome + bond.parValue - dirtyPrice;
-      var totalProfit = profitPerBond * pos.qty;
-      // Decomposition: bodyPL (face return − dirty cost) + couponIncome (pure coupons) = totalProfit.
-      // НКД paid at purchase is absorbed into bodyPL via dirtyPrice; couponIncome is purely coupons.
-      var bodyPL = (bond.parValue - dirtyPrice) * pos.qty;
-      var couponIncome = totalCouponIncome * pos.qty;
+      var couponsCount = calcCouponsReceived(pos.purchaseDate, endDate, bond.maturityDate, bond.couponFrequency);
+      // Decomposition: bodyPL = (sellDirty − buyDirty), couponIncome = pure coupons in (purchase, end]
+      var bodyPL = (dirtyEnd - dirtyPrice) * pos.qty;
+      var couponIncome = couponPrice * couponsCount * pos.qty;
+      var totalProfit = bodyPL + couponIncome;
+      var profitPerBond = pos.qty > 0 ? totalProfit / pos.qty : 0;
       var profitPct = dirtyPrice > 0 ? profitPerBond / dirtyPrice * 100 : null;
-      // Annual yield: days from purchase to maturity
+      // Annual yield: days from purchase to end (maturity for active/matured, sellDate for sold)
       var purchaseD = new Date(pos.purchaseDate);
-      var maturityD = new Date(bond.maturityDate);
-      var daysHeld = (maturityD - purchaseD) / (1000 * 60 * 60 * 24);
+      var endD = new Date(endDate);
+      var daysHeld = (endD - purchaseD) / (1000 * 60 * 60 * 24);
       var annualYield = (daysHeld > 0 && profitPct !== null) ? profitPct / daysHeld * 365 : null;
       var currSym = CURRENCY_SYMBOLS[bond.currency] || bond.currency;
-      return { bond: bond, dirtyPrice: dirtyPrice, positionValue: positionValue, totalProfit: totalProfit, bodyPL: bodyPL, couponIncome: couponIncome, profitPct: profitPct, annualYield: annualYield, couponsLeft: couponsLeft, currSym: currSym };
+      // couponsLeft preserved for backward-compat reads in expanded-row label
+      var couponsLeft = couponsCount;
+      return {
+        bond: bond, dirtyPrice: dirtyPrice, positionValue: positionValue,
+        totalProfit: totalProfit, bodyPL: bodyPL, couponIncome: couponIncome,
+        profitPct: profitPct, annualYield: annualYield, couponsLeft: couponsLeft,
+        currSym: currSym, isSold: isSold, isAutoMatured: isAutoMatured, isClosed: isClosed,
+        endDate: endDate
+      };
     }
 
     var today = new Date(); today.setHours(0,0,0,0);
@@ -6045,9 +6162,9 @@ function render() {
         return;
       }
       var isWatchlist = pos.qty === 0;
-      var isMatured = new Date(calc.bond.maturityDate) <= today;
+      var isClosed = calc.isClosed;
       if (!isWatchlist) {
-        if (isMatured) {
+        if (isClosed) {
           totValueMatured += calc.positionValue; totProfitMatured += calc.totalProfit;
           totBodyMatured += calc.bodyPL; totCouponMatured += calc.couponIncome;
         } else {
@@ -6055,10 +6172,16 @@ function render() {
           totBodyActive += calc.bodyPL; totCouponActive += calc.couponIncome;
         }
       }
-      var rowStyle = (isMatured || isWatchlist) ? 'font-style:italic;opacity:0.5' : '';
+      var rowStyle = (isClosed || isWatchlist) ? 'font-style:italic;opacity:0.5' : '';
       var pClass = calc.profitPct !== null ? (calc.profitPct >= 0 ? 'pos' : 'neg') : '';
       var isEditing = editingBondPosId === pos.id;
       var isExpanded = expandedBondPosId === pos.id;
+      var actionBtn = '';
+      if (calc.isSold) {
+        actionBtn = '<button class="btn-icon" onclick="archiveBondPosition(&apos;' + pos.id + '&apos;)" title="Archive" style="color:var(--dim)">&#8862;</button>';
+      } else if (!isWatchlist) {
+        actionBtn = '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--bright)" onclick="sellBondPosition(&apos;' + pos.id + '&apos;)">SELL</button>';
+      }
       rows += '<tr style="' + rowStyle + '">'
         + '<td style="text-align:left;cursor:pointer;white-space:nowrap" onclick="toggleExpandedBondPos(&apos;' + pos.id + '&apos;)">' + calc.bond.name + '</td>'
         + '<td style="white-space:nowrap">' + pos.purchaseDate + '</td>'
@@ -6071,14 +6194,26 @@ function render() {
         + '<td class="' + pClass + '">' + (calc.annualYield !== null ? f2(calc.annualYield) + '%' : '—') + '</td>'
         + '<td style="white-space:nowrap">'
           + '<button class="btn-icon" onclick="editBondPosition(&apos;' + pos.id + '&apos;)" style="' + (isEditing ? 'color:var(--green)' : '') + '">&#9998;</button>'
+          + actionBtn
           + '<button class="btn-icon" onclick="deleteBondPosition(&apos;' + pos.id + '&apos;)" style="color:var(--red)">&#10005;</button>'
         + '</td>'
         + '</tr>';
       if (isExpanded) {
+        var leftLabel, leftDate, midLabel, midValue;
+        if (calc.isSold) {
+          leftLabel = 'SOLD'; leftDate = pos.sellDate;
+          midLabel = 'COUPONS RCVD'; midValue = calc.couponsLeft;
+        } else if (calc.isAutoMatured) {
+          leftLabel = 'MATURED'; leftDate = calc.bond.maturityDate;
+          midLabel = 'COUPONS RCVD'; midValue = calc.couponsLeft;
+        } else {
+          leftLabel = 'MATURITY'; leftDate = calc.bond.maturityDate;
+          midLabel = 'COUPONS LEFT'; midValue = calc.couponsLeft;
+        }
         rows += '<tr><td colspan="10" style="padding:8px 8px 10px;background:var(--bg2)">'
           + '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:11px">'
-          +   '<div><span style="color:var(--dim);font-size:10px">MATURITY</span> <span style="color:var(--bright)">' + calc.bond.maturityDate + '</span></div>'
-          +   '<div><span style="color:var(--dim);font-size:10px">COUPONS LEFT</span> <span style="color:var(--bright)">' + calc.couponsLeft + '</span></div>'
+          +   '<div><span style="color:var(--dim);font-size:10px">' + leftLabel + '</span> <span style="color:var(--bright)">' + leftDate + '</span></div>'
+          +   '<div><span style="color:var(--dim);font-size:10px">' + midLabel + '</span> <span style="color:var(--bright)">' + midValue + '</span></div>'
           +   '<div><span style="color:var(--dim);font-size:10px">BODY P&amp;L</span> ' + fmtBondBody(calc.bodyPL, calc.currSym) + '</div>'
           +   '<div><span style="color:var(--dim);font-size:10px">COUPON INC</span> ' + fmtBondCoupon(calc.couponIncome, calc.currSym) + '</div>'
           +   '<div><button class="btn-icon" onclick="openBondPosDetail(&apos;' + pos.id + '&apos;)" style="font-size:16px;color:var(--dim);padding:0 6px" title="Full details">&rsaquo;</button></div>'
@@ -6139,7 +6274,7 @@ function render() {
       + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + pClassA + '">' + (totValueActive > 0 ? f2(totProfitActive/totValueActive*100) + '%' : '—') + '</div></div>'
       + '</div>' : '')
       + (totValueMatured > 0 ? '<div class="totals-bar" style="opacity:0.6">'
-      + '<div class="total-block"><div class="total-label">MATURED VALUE</div><div class="total-value" style="color:var(--bright)">' + currSym + f2(totValueMatured) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">CLOSED VALUE</div><div class="total-value" style="color:var(--bright)">' + currSym + f2(totValueMatured) + '</div></div>'
       + '<div class="total-block"><div class="total-label">BODY P&amp;L</div><div class="total-value">' + fmtBondBody(totBodyMatured, currSym) + '</div></div>'
       + '<div class="total-block"><div class="total-label">COUPON INC</div><div class="total-value">' + fmtBondCoupon(totCouponMatured, currSym) + '</div></div>'
       + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + pClassM + '">' + currSym + f2(totProfitMatured) + '</div></div>'
@@ -6174,19 +6309,33 @@ function render() {
       var bond = bondsDb.find(function(b) { return b.id === pos.bondId; });
       if (!bond) return null;
       var today = new Date(); today.setHours(0,0,0,0);
-      var isMatured = new Date(bond.maturityDate) <= today;
+      var isSold = !!pos.sold;
+      var isAutoMatured = !isSold && new Date(bond.maturityDate) <= today;
+      var isClosed = isSold || isAutoMatured;
       var dirtyPrice = pos.cleanPrice / 100 * bond.parValue + pos.accruedInterest;
       var positionValue = pos.qty * dirtyPrice;
+      var endCleanPrice, endAccruedInterest, endDate;
+      if (isSold) {
+        endCleanPrice = pos.sellCleanPrice;
+        endAccruedInterest = pos.sellAccruedInterest;
+        endDate = pos.sellDate;
+      } else {
+        endCleanPrice = 100;
+        endAccruedInterest = 0;
+        endDate = bond.maturityDate;
+      }
+      var dirtyEnd = endCleanPrice / 100 * bond.parValue + endAccruedInterest;
       var intervalMonths = Math.round(12 / bond.couponFrequency);
-      var d = new Date(bond.maturityDate);
       var purchase = new Date(pos.purchaseDate);
+      var endD = new Date(endDate);
+      var d = new Date(bond.maturityDate);
       var count = 0;
-      while (d > purchase) { count++; d.setMonth(d.getMonth() - intervalMonths); }
+      while (d > purchase) { if (d <= endD) count++; d.setMonth(d.getMonth() - intervalMonths); }
       var couponPrice = bond.parValue * bond.nominalYield / bond.couponFrequency;
       var couponIncome = couponPrice * count * pos.qty;
-      var bodyPL = (bond.parValue - dirtyPrice) * pos.qty;
+      var bodyPL = (dirtyEnd - dirtyPrice) * pos.qty;
       var totalProfit = couponIncome + bodyPL;
-      return { currency: bond.currency, positionValue: positionValue, totalProfit: totalProfit, bodyPL: bodyPL, couponIncome: couponIncome, isMatured: isMatured };
+      return { currency: bond.currency, positionValue: positionValue, totalProfit: totalProfit, bodyPL: bodyPL, couponIncome: couponIncome, isMatured: isClosed };
     }
 
     function buildBondSummaryStats() {
@@ -6263,7 +6412,7 @@ function render() {
           var c = d.profit >= 0 ? 'pos' : 'neg';
           var rowStyle = isMatured ? ' style="font-style:italic;opacity:0.6"' : '';
           return '<tr' + rowStyle + '>'
-            + '<td style="text-align:left;white-space:nowrap;cursor:pointer" onclick="showBondPortfolio(&apos;' + s.id + '&apos;)">' + s.name + (isMatured ? ' <span style="font-size:10px;color:var(--dim)">(matured)</span>' : '') + '</td>'
+            + '<td style="text-align:left;white-space:nowrap;cursor:pointer" onclick="showBondPortfolio(&apos;' + s.id + '&apos;)">' + s.name + (isMatured ? ' <span style="font-size:10px;color:var(--dim)">(closed)</span>' : '') + '</td>'
             + '<td>' + s.currency + f2(d.val) + '</td>'
             + '<td>' + fmtBondBody(d.body, s.currency) + '</td>'
             + '<td>' + fmtBondCoupon(d.coupon, s.currency) + '</td>'
@@ -6300,7 +6449,7 @@ function render() {
         + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + cA + '">' + (totAret !== null ? fPct(totAret) : '&mdash;') + '</div></div>'
         + '</div>' : '')
         + (totMValUSD > 0 ? '<div class="totals-bar" style="opacity:0.6">'
-        + '<div class="total-block"><div class="total-label">MATURED VALUE</div><div class="total-value" style="color:var(--bright)">$' + f2(totMValUSD) + '</div></div>'
+        + '<div class="total-block"><div class="total-label">CLOSED VALUE</div><div class="total-value" style="color:var(--bright)">$' + f2(totMValUSD) + '</div></div>'
         + '<div class="total-block"><div class="total-label">BODY P&amp;L</div><div class="total-value">' + fmtBondBody(totMBodyUSD, '$') + '</div></div>'
         + '<div class="total-block"><div class="total-label">COUPON INC</div><div class="total-value">' + fmtBondCoupon(totMCouponUSD, '$') + '</div></div>'
         + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + cM + '">$' + f2(totMProfitUSD) + '</div></div>'
