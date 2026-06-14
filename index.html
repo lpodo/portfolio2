@@ -1070,26 +1070,48 @@ function openBondPosDetail(posId) {
   bondsDb = getBondsDb();
   var b = bondsDb.find(function(x) { return x.id === pos.bondId; });
   if (!b) return;
-  var calc = calcBondPosition(pos);
-  if (!calc) return;
-  var currSym = calc.currSym;
+  var currSym = CURRENCY_SYMBOLS[b.currency] || b.currency;
+  var today = new Date(); today.setHours(0,0,0,0);
+  var isSold = !!pos.sold;
+  var isAutoMatured = !isSold && new Date(b.maturityDate) <= today;
+  var isClosed = isSold || isAutoMatured;
+  // Buy side
+  var dirtyPrice = pos.cleanPrice / 100 * b.parValue + pos.accruedInterest;
+  var positionValue = pos.qty * dirtyPrice;
+  // End side params
+  var endCleanPrice = isSold ? pos.sellCleanPrice : 100;
+  var endAccruedInterest = isSold ? pos.sellAccruedInterest : 0;
+  var endDate = isSold ? pos.sellDate : b.maturityDate;
+  var dirtyEnd = endCleanPrice / 100 * b.parValue + endAccruedInterest;
+  // Count coupons in (purchaseDate, endDate], stepping back from maturityDate
+  var intervalMonths = Math.round(12 / b.couponFrequency);
+  var purchase = new Date(pos.purchaseDate);
+  var endD = new Date(endDate);
+  var d = new Date(b.maturityDate);
+  var couponCount = 0;
+  while (d > purchase) { if (d <= endD) couponCount++; d.setMonth(d.getMonth() - intervalMonths); }
   var couponAmt = b.parValue * b.nominalYield / b.couponFrequency;
-  var pClass = calc.totalProfit >= 0 ? 'pos' : 'neg';
+  var bodyPL = (dirtyEnd - dirtyPrice) * pos.qty;
+  var couponIncome = couponAmt * couponCount * pos.qty;
+  var totalProfit = bodyPL + couponIncome;
+  var profitPerBond = pos.qty > 0 ? totalProfit / pos.qty : 0;
+  var profitPct = dirtyPrice > 0 ? profitPerBond / dirtyPrice * 100 : null;
+  var daysHeld = (endD - purchase) / 86400000;
+  var annYield = (daysHeld > 0 && profitPct !== null) ? profitPct / daysHeld * 365 : null;
+  var pClass = totalProfit >= 0 ? 'pos' : 'neg';
   // Status
   var statusText, statusColor;
-  if (calc.isSold) { statusText = 'Sold'; statusColor = 'dim'; }
-  else if (calc.isAutoMatured) { statusText = 'Matured'; statusColor = 'dim'; }
+  if (isSold) { statusText = 'Sold'; statusColor = 'dim'; }
+  else if (isAutoMatured) { statusText = 'Matured'; statusColor = 'dim'; }
   else { statusText = 'Active'; statusColor = 'green'; }
-  // Coupon label: active = total over holding period, closed = received
-  var couponLabel = calc.isClosed ? 'COUPONS RCVD' : 'COUPON TOTAL';
+  var couponLabel = isClosed ? 'COUPONS RCVD' : 'COUPON TOTAL';
   // Sale block (only for sold)
   var sellBlock = '';
-  if (calc.isSold) {
-    var sellDirty = pos.sellCleanPrice / 100 * b.parValue + pos.sellAccruedInterest;
+  if (isSold) {
     sellBlock = '<span style="color:var(--dim);border-top:1px solid var(--border);padding-top:6px;margin-top:2px">SELL DATE</span><span style="border-top:1px solid var(--border);padding-top:6px;margin-top:2px">' + pos.sellDate + '</span>'
       + '<span style="color:var(--dim)">SELL PRICE</span><span>' + f2(pos.sellCleanPrice) + '%</span>'
       + '<span style="color:var(--dim)">SELL ACCRUED</span><span>' + currSym + pos.sellAccruedInterest.toFixed(6) + '</span>'
-      + '<span style="color:var(--dim)">SELL DIRTY PRICE</span><span>' + currSym + f2(sellDirty) + '</span>';
+      + '<span style="color:var(--dim)">SELL DIRTY PRICE</span><span>' + currSym + f2(dirtyEnd) + '</span>';
   }
   var existing = document.getElementById('bondPosDetailModal');
   if (existing) existing.remove();
@@ -1111,17 +1133,17 @@ function openBondPosDetail(posId) {
     + '<span style="color:var(--dim)">QTY</span><span>' + pos.qty + '</span>'
     + '<span style="color:var(--dim)">CLEAN PRICE</span><span>' + f2(pos.cleanPrice) + '%</span>'
     + '<span style="color:var(--dim)">ACC.INT.</span><span>' + currSym + pos.accruedInterest.toFixed(6) + '</span>'
-    + '<span style="color:var(--dim)">DIRTY PRICE</span><span>' + currSym + f2(calc.dirtyPrice) + '</span>'
+    + '<span style="color:var(--dim)">DIRTY PRICE</span><span>' + currSym + f2(dirtyPrice) + '</span>'
     // Sale params (only for sold)
     + sellBlock
-    // Results: VALUE, COUPON TOTAL/RCVD, BODY P&L, COUPON INC, PROFIT, RETURN, ANN.YIELD
-    + '<span style="color:var(--dim);border-top:1px solid var(--border);padding-top:6px;margin-top:2px">VALUE</span><span style="border-top:1px solid var(--border);padding-top:6px;margin-top:2px">' + (pos.qty > 0 ? currSym + f2(calc.positionValue) : '&mdash;') + '</span>'
-    + '<span style="color:var(--dim)">' + couponLabel + '</span><span>' + calc.couponsLeft + '</span>'
-    + '<span style="color:var(--dim)">BODY P&amp;L</span><span>' + fmtBondBody(calc.bodyPL, currSym) + '</span>'
-    + '<span style="color:var(--dim)">COUPON INC</span><span>' + fmtBondCoupon(calc.couponIncome, currSym) + '</span>'
-    + '<span style="color:var(--dim)">PROFIT</span><span class="' + pClass + '">' + (pos.qty > 0 ? currSym + f2(calc.totalProfit) : '&mdash;') + '</span>'
-    + '<span style="color:var(--dim)">RETURN</span><span class="' + pClass + '">' + (calc.profitPct !== null ? f2(calc.profitPct) + '%' : '&mdash;') + '</span>'
-    + '<span style="color:var(--dim)">ANN.YIELD</span><span>' + (calc.annualYield !== null ? f2(calc.annualYield) + '%' : '&mdash;') + '</span>'
+    // Results
+    + '<span style="color:var(--dim);border-top:1px solid var(--border);padding-top:6px;margin-top:2px">VALUE</span><span style="border-top:1px solid var(--border);padding-top:6px;margin-top:2px">' + (pos.qty > 0 ? currSym + f2(positionValue) : '&mdash;') + '</span>'
+    + '<span style="color:var(--dim)">' + couponLabel + '</span><span>' + couponCount + '</span>'
+    + '<span style="color:var(--dim)">BODY P&amp;L</span><span>' + fmtBondBody(bodyPL, currSym) + '</span>'
+    + '<span style="color:var(--dim)">COUPON INC</span><span>' + fmtBondCoupon(couponIncome, currSym) + '</span>'
+    + '<span style="color:var(--dim)">PROFIT</span><span class="' + pClass + '">' + (pos.qty > 0 ? currSym + f2(totalProfit) : '&mdash;') + '</span>'
+    + '<span style="color:var(--dim)">RETURN</span><span class="' + pClass + '">' + (profitPct !== null ? f2(profitPct) + '%' : '&mdash;') + '</span>'
+    + '<span style="color:var(--dim)">ANN.YIELD</span><span>' + (annYield !== null ? f2(annYield) + '%' : '&mdash;') + '</span>'
     + '<span style="color:var(--dim)">STATUS</span><span style="color:var(--' + statusColor + ')">' + statusText + '</span>'
     + '</div></div>';
   document.body.appendChild(modal);
