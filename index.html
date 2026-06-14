@@ -974,13 +974,20 @@ function sellBondPosition(posId) {
     '<div style="background:var(--bg2);border:1px solid var(--border);padding:20px 24px;min-width:280px;max-width:90vw" onclick="event.stopPropagation()">'
     + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:14px">SELL ' + bond.name + '</div>'
     + '<div style="display:flex;flex-direction:column;gap:10px">'
-    + '<div class="field"><label>QTY (max ' + pos.qty + ')</label><input type="number" id="sellBondQty" value="' + pos.qty + '" min="1" max="' + pos.qty + '" step="1" style="width:100%;box-sizing:border-box"></div>'
-    + '<div class="field"><label>SELL DATE</label><input type="date" id="sellBondDate" value="' + defaultDate + '" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);padding:4px 6px"></div>'
-    + '<div class="field"><label>CLEAN PRICE (%)</label><input type="number" id="sellBondPrice" value="100" min="0" step="any" style="width:100%;box-sizing:border-box"></div>'
-    + '<div class="field"><label>ACCRUED INTEREST</label><input type="number" id="sellBondAccrued" value="0" min="0" step="any" style="width:100%;box-sizing:border-box"></div>'
+    + '<div class="field"><label>QTY (max ' + pos.qty + ')</label><input type="number" id="sellBondQty" value="' + pos.qty + '" min="1" max="' + pos.qty + '" step="1" oninput="invalidateBondSellPreview()" style="width:100%;box-sizing:border-box"></div>'
+    + '<div class="field"><label>SELL DATE</label><input type="date" id="sellBondDate" value="' + defaultDate + '" oninput="invalidateBondSellPreview()" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);padding:4px 6px"></div>'
+    + '<div class="field"><label>CLEAN PRICE (%)</label><input type="number" id="sellBondPrice" value="100" min="0" step="any" oninput="invalidateBondSellPreview()" style="width:100%;box-sizing:border-box"></div>'
+    + '<div class="field"><label>ACCRUED INTEREST</label><input type="number" id="sellBondAccrued" value="0" min="0" step="any" oninput="invalidateBondSellPreview()" style="width:100%;box-sizing:border-box"></div>'
+    + '</div>'
+    + '<div id="sellBondPreview" style="display:none;margin-top:14px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);font-size:11px">'
+    +   '<div style="display:grid;grid-template-columns:auto 1fr;gap:5px 24px">'
+    +     '<span style="color:var(--dim)">PROFIT</span><span id="sellBondPreviewProfit" style="text-align:right"></span>'
+    +     '<span style="color:var(--dim)">RETURN</span><span id="sellBondPreviewReturn" style="text-align:right"></span>'
+    +     '<span style="color:var(--dim)">ANN.YIELD</span><span id="sellBondPreviewYield" style="text-align:right"></span>'
+    +   '</div>'
     + '</div>'
     + '<div style="display:flex;gap:8px;margin-top:16px">'
-    + '<button class="btn-primary" onclick="confirmBondSell(&apos;' + posId + '&apos;)" style="flex:1">SELL</button>'
+    + '<button class="btn-primary" id="sellBondActionBtn" data-state="preview" onclick="bondSellBtnClick(&apos;' + posId + '&apos;)" style="flex:1">PREVIEW</button>'
     + '<button class="btn" onclick="document.getElementById(\'sellBondOverlay\').remove()" style="flex:1">CANCEL</button>'
     + '</div>'
     + '<div id="sellBondErr" style="color:var(--red);font-size:11px;margin-top:6px"></div>'
@@ -988,6 +995,89 @@ function sellBondPosition(posId) {
   overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
   document.body.appendChild(overlay);
   setTimeout(function() { var el = document.getElementById('sellBondPrice'); if (el) el.focus(); }, 50);
+}
+
+function bondSellBtnClick(posId) {
+  var btn = document.getElementById('sellBondActionBtn');
+  if (btn && btn.getAttribute('data-state') === 'confirm') {
+    confirmBondSell(posId);
+  } else {
+    previewBondSell(posId);
+  }
+}
+
+function invalidateBondSellPreview() {
+  var pv = document.getElementById('sellBondPreview');
+  if (pv) pv.style.display = 'none';
+  var btn = document.getElementById('sellBondActionBtn');
+  if (btn) {
+    btn.setAttribute('data-state', 'preview');
+    btn.textContent = 'PREVIEW';
+  }
+  var errEl = document.getElementById('sellBondErr');
+  if (errEl) errEl.textContent = '';
+}
+
+function previewBondSell(posId) {
+  var bp = bondPortfolios[currentBondPortfolioId];
+  if (!bp) return;
+  var pos = (bp.positions || []).find(function(p) { return p.id === posId; });
+  if (!pos) return;
+  var bond = bondsDb.find(function(b) { return b.id === pos.bondId; });
+  if (!bond) return;
+  var errEl = document.getElementById('sellBondErr');
+  // Validation (mirror confirmBondSell)
+  var sellQty = parseInt(document.getElementById('sellBondQty').value, 10);
+  var sellDate = document.getElementById('sellBondDate').value;
+  var sellPrice = parseFloat(document.getElementById('sellBondPrice').value);
+  var sellAccrued = parseFloat(document.getElementById('sellBondAccrued').value);
+  if (isNaN(sellQty) || sellQty <= 0) { errEl.textContent = 'Invalid quantity'; return; }
+  if (sellQty > pos.qty) { errEl.textContent = 'Quantity exceeds position (' + pos.qty + ')'; return; }
+  if (!sellDate) { errEl.textContent = 'Invalid sell date'; return; }
+  if (isNaN(sellPrice) || sellPrice < 0) { errEl.textContent = 'Invalid clean price'; return; }
+  if (isNaN(sellAccrued) || sellAccrued < 0) { errEl.textContent = 'Invalid accrued interest'; return; }
+  // Sell date must be on/after purchase date
+  if (new Date(sellDate) < new Date(pos.purchaseDate)) { errEl.textContent = 'Sell date is before purchase date'; return; }
+  errEl.textContent = '';
+  // Compute preview values (per-bond, then scale to sellQty for PROFIT)
+  var currSym = CURRENCY_SYMBOLS[bond.currency] || bond.currency;
+  var dirtyBuy = pos.cleanPrice / 100 * bond.parValue + pos.accruedInterest;
+  var dirtySell = sellPrice / 100 * bond.parValue + sellAccrued;
+  var bodyPLperBond = dirtySell - dirtyBuy;
+  // Count coupons in (purchaseDate, sellDate], stepping back from maturityDate
+  var purchase = new Date(pos.purchaseDate);
+  var endD = new Date(sellDate);
+  var intervalMonths = Math.round(12 / bond.couponFrequency);
+  var d = new Date(bond.maturityDate);
+  var count = 0;
+  while (d > purchase) { if (d <= endD) count++; d.setMonth(d.getMonth() - intervalMonths); }
+  var couponAmt = bond.parValue * bond.nominalYield / bond.couponFrequency;
+  var couponIncomePerBond = couponAmt * count;
+  var totalProfitPerBond = bodyPLperBond + couponIncomePerBond;
+  var totalProfit = totalProfitPerBond * sellQty;
+  var profitPct = dirtyBuy > 0 ? totalProfitPerBond / dirtyBuy * 100 : null;
+  var daysHeld = (endD - purchase) / 86400000;
+  var annYield = (daysHeld > 0 && profitPct !== null) ? profitPct / daysHeld * 365 : null;
+  // Format
+  var pCls = totalProfit >= 0 ? 'pos' : 'neg';
+  var profitStr = (totalProfit >= 0 ? '+' : '-') + currSym + f2(Math.abs(totalProfit));
+  var returnStr = profitPct !== null ? (profitPct >= 0 ? '+' : '') + f2(profitPct) + '%' : '—';
+  var yieldStr = annYield !== null ? (annYield >= 0 ? '+' : '') + f2(annYield) + '%' : '—';
+  // Render into preview area
+  var profitEl = document.getElementById('sellBondPreviewProfit');
+  var returnEl = document.getElementById('sellBondPreviewReturn');
+  var yieldEl = document.getElementById('sellBondPreviewYield');
+  profitEl.className = pCls; profitEl.style.textAlign = 'right';
+  profitEl.textContent = profitStr;
+  returnEl.className = pCls; returnEl.style.textAlign = 'right';
+  returnEl.textContent = returnStr;
+  yieldEl.className = pCls; yieldEl.style.textAlign = 'right';
+  yieldEl.textContent = yieldStr;
+  document.getElementById('sellBondPreview').style.display = 'block';
+  // Switch button to CONFIRM
+  var btn = document.getElementById('sellBondActionBtn');
+  btn.setAttribute('data-state', 'confirm');
+  btn.textContent = 'CONFIRM SELL';
 }
 
 function confirmBondSell(posId) {
