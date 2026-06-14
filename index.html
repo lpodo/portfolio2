@@ -6232,16 +6232,16 @@ function render() {
         }
         var sellExtras = '';
         if (calc.isSold) {
-          sellExtras = '<div><span style="color:var(--dim);font-size:10px">SELL PRICE</span> <span style="color:var(--bright)">' + f2(pos.sellCleanPrice) + '%</span></div>'
-            + '<div><span style="color:var(--dim);font-size:10px">SELL ACCRUED</span> <span style="color:var(--bright)">' + calc.currSym + f2(pos.sellAccruedInterest) + '</span></div>';
+          sellExtras = '<div><span style="color:var(--dim)">SELL PRICE</span> <span style="color:var(--bright)">' + f2(pos.sellCleanPrice) + '%</span></div>'
+            + '<div><span style="color:var(--dim)">SELL ACCRUED</span> <span style="color:var(--bright)">' + calc.currSym + f2(pos.sellAccruedInterest) + '</span></div>';
         }
         rows += '<tr><td colspan="10" style="padding:8px 8px 10px;background:var(--bg2)">'
-          + '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:11px">'
-          +   '<div><span style="color:var(--dim);font-size:10px">' + leftLabel + '</span> <span style="color:var(--bright)">' + leftDate + '</span></div>'
+          + '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:10px">'
+          +   '<div><span style="color:var(--dim)">' + leftLabel + '</span> <span style="color:var(--bright)">' + leftDate + '</span></div>'
           +   sellExtras
-          +   '<div><span style="color:var(--dim);font-size:10px">BODY P&amp;L</span> ' + fmtBondBody(calc.bodyPL, calc.currSym) + '</div>'
-          +   '<div><span style="color:var(--dim);font-size:10px">COUPON INC</span> ' + fmtBondCoupon(calc.couponIncome, calc.currSym) + '</div>'
-          +   '<div><button class="btn-icon" onclick="openBondPosDetail(&apos;' + pos.id + '&apos;)" style="font-size:16px;color:var(--bright);padding:2px 10px;border:1px solid var(--border);border-radius:3px;line-height:1" title="Full details">&rsaquo;</button></div>'
+          +   '<div><span style="color:var(--dim)">BODY P&amp;L</span> ' + fmtBondBody(calc.bodyPL, calc.currSym) + '</div>'
+          +   '<div><span style="color:var(--dim)">COUPON INC</span> ' + fmtBondCoupon(calc.couponIncome, calc.currSym) + '</div>'
+          +   '<button onclick="openBondPosDetail(&apos;' + pos.id + '&apos;)" style="background:transparent;color:var(--bright);font-family:var(--font);font-size:14px;padding:4px 12px;border:1px solid var(--border);border-radius:3px;cursor:pointer;line-height:1" title="Full details">&rsaquo;</button>'
           + '</div>'
           + '</td></tr>';
       }
