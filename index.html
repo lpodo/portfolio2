@@ -6083,11 +6083,35 @@ function render() {
           + '</div></div>'
         : '');
 
-      var emptyMsg = (archPids.length === 0 && bondStats.length === 0 && cashStats.length === 0)
+      // ── Grand Total section ──────────────────────────────────────────────
+      // Aggregates capital-gain-ish values across all three asset classes (in USD):
+      //   Stocks P&L         = realized gain on archived stocks
+      //   Bonds Body P&L     = capital gain on bond price (coupon income excluded)
+      //   Cash Net           = current net cash balance
+      // Sum is shown below. Empty categories show '—' instead of $0 for clarity.
+      var hasAnySection = archPids.length > 0 || bondStats.length > 0 || cashStats.length > 0;
+      var gStocks = archPids.length > 0 ? totPnL : null;
+      var gBonds  = bondStats.length > 0 ? bondTotBodyUSD : null;
+      var gCash   = cashStats.length > 0 ? cashTotalUSD : null;
+      var gSum    = (gStocks || 0) + (gBonds || 0) + (gCash || 0);
+      function gCls(v) { return v == null ? '' : (v >= 0 ? 'pos' : 'neg'); }
+      function gFmt(v) { return v == null ? '<span style="color:var(--dim)">&mdash;</span>' : fSign(v); }
+      var grandTotalHtml = hasAnySection
+        ? '<div style="margin-top:18px;padding:14px 16px;background:var(--bg2);border:1px solid var(--border)">'
+          + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:10px">GRAND TOTAL</div>'
+          + '<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 24px;font-size:12px">'
+          + '<span style="color:var(--dim)">STOCKS P&amp;L</span><span style="text-align:right" class="' + gCls(gStocks) + '">' + gFmt(gStocks) + '</span>'
+          + '<span style="color:var(--dim)">BONDS BODY P&amp;L</span><span style="text-align:right" class="' + gCls(gBonds) + '">' + gFmt(gBonds) + '</span>'
+          + '<span style="color:var(--dim)">CASH NET</span><span style="text-align:right" class="' + gCls(gCash) + '">' + gFmt(gCash) + '</span>'
+          + '<span style="color:var(--bright);border-top:1px solid var(--border);padding-top:8px;margin-top:4px">TOTAL</span><span style="text-align:right;border-top:1px solid var(--border);padding-top:8px;margin-top:4px" class="' + gCls(gSum) + '">' + fSign(gSum) + '</span>'
+          + '</div></div>'
+        : '';
+
+      var emptyMsg = !hasAnySection
         ? '<div style="color:var(--dim);padding:20px;text-align:center">No archived portfolios</div>'
         : '';
 
-      area.innerHTML = archiveHtml + bondHtml + cashHtml + emptyMsg;
+      area.innerHTML = archiveHtml + bondHtml + cashHtml + grandTotalHtml + emptyMsg;
     }
 
     if (archNonUSD.length === 0) {
