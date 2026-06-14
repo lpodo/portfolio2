@@ -6453,10 +6453,16 @@ function render() {
       var depCurrencyCode = bp.currencyCode || 'USD';
       var depCurrSym = CURRENCY_SYMBOLS[depCurrencyCode] || depCurrencyCode;
       var depToday = new Date(); depToday.setHours(0,0,0,0);
+      // Sort hierarchy (all ascending):
+      //   1. Name (A→Z)
+      //   2. Open date (oldest first)
+      //   3. Position id (smallest first)
       var sortedDeps = (bp.positions || []).slice().sort(function(a, b) {
-        var ma = new Date(a.openDate); ma.setMonth(ma.getMonth() + a.termMonths);
-        var mb = new Date(b.openDate); mb.setMonth(mb.getMonth() + b.termMonths);
-        return ma - mb;
+        var nA = a.name || '', nB = b.name || '';
+        if (nA !== nB) return nA.localeCompare(nB);
+        var odA = a.openDate || '', odB = b.openDate || '';
+        if (odA !== odB) return odA.localeCompare(odB);
+        return String(a.id).localeCompare(String(b.id));
       });
       var depRows = '';
       var depAmtActive = 0, depProfitActive = 0;
@@ -6603,12 +6609,26 @@ function render() {
     }
 
     var today = new Date(); today.setHours(0,0,0,0);
+    // Sort hierarchy (all ascending):
+    //   1. Bond name (A→Z)
+    //   2. Purchase date (oldest first)
+    //   3. Status: sold first; within sold, by sellDate (oldest first)
+    //   4. Position id (smallest first)
     var sortedPositions = (bp.positions || []).slice().sort(function(a, b) {
       var bondA = bondsDb.find(function(x) { return x.id === a.bondId; });
       var bondB = bondsDb.find(function(x) { return x.id === b.bondId; });
-      var dateA = bondA ? new Date(bondA.maturityDate) : new Date(0);
-      var dateB = bondB ? new Date(bondB.maturityDate) : new Date(0);
-      return dateA - dateB;
+      var nameA = bondA ? bondA.name : '';
+      var nameB = bondB ? bondB.name : '';
+      if (nameA !== nameB) return nameA.localeCompare(nameB);
+      var pdA = a.purchaseDate || '', pdB = b.purchaseDate || '';
+      if (pdA !== pdB) return pdA.localeCompare(pdB);
+      var sA = !!a.sold, sB = !!b.sold;
+      if (sA !== sB) return sA ? -1 : 1;  // sold first
+      if (sA && sB) {
+        var sdA = a.sellDate || '', sdB = b.sellDate || '';
+        if (sdA !== sdB) return sdA.localeCompare(sdB);
+      }
+      return String(a.id).localeCompare(String(b.id));
     });
 
     // ── FX setup for multi-currency totals ──────────────────────────────────
