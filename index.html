@@ -1628,6 +1628,59 @@ function addBondArchivePortfolio() {
   renderSwitcher();
 }
 
+// ── Bond move-between-portfolios menu (reuses movePosMenu DOM element) ────────
+var moveBondPosId = null;
+
+function showMoveBondMenu(posId, btn) {
+  moveBondPosId = posId;
+  bondPortfolios = getBondPortfolios();
+  var menu = document.getElementById('movePosMenu');
+  var list = document.getElementById('movePosMenuList');
+  // Only non-archive bond portfolios (not deposit, not current)
+  var targetPids = Object.keys(bondPortfolios).filter(function(pid) {
+    var bp = bondPortfolios[pid];
+    return !bp.archive && bp.type !== 'deposit' && pid !== currentBondPortfolioId;
+  }).sort(function(a,b) { return bondPortfolios[a].name.localeCompare(bondPortfolios[b].name); });
+
+  if (targetPids.length === 0) {
+    list.innerHTML = '<div style="padding:10px 12px;font-size:11px;color:var(--dim)">No bond portfolios to move to</div>';
+  } else {
+    list.innerHTML = targetPids.map(function(pid) {
+      return '<div onclick="moveToBondPortfolio(&apos;' + pid + '&apos;)" style="padding:9px 14px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--border);color:var(--bright)">' + bondPortfolios[pid].name + '</div>';
+    }).join('');
+  }
+
+  if (btn) {
+    var rect = btn.getBoundingClientRect();
+    menu.style.top = (rect.bottom + 4) + 'px';
+    menu.style.right = (window.innerWidth - rect.right) + 'px';
+    menu.style.left = 'auto';
+  }
+  menu.style.display = 'block';
+  setTimeout(function() {
+    document.addEventListener('click', closeMoveMenuOutside);
+  }, 0);
+}
+
+function moveToBondPortfolio(targetPid) {
+  document.getElementById('movePosMenu').style.display = 'none';
+  document.removeEventListener('click', closeMoveMenuOutside);
+  if (!moveBondPosId) return;
+  bondPortfolios = getBondPortfolios();
+  var sourceBp = bondPortfolios[currentBondPortfolioId];
+  if (!sourceBp) return;
+  var pos = (sourceBp.positions || []).find(function(p) { return p.id === moveBondPosId; });
+  if (!pos) return;
+  // Add to target (deep copy via JSON to avoid reference sharing)
+  if (!bondPortfolios[targetPid].positions) bondPortfolios[targetPid].positions = [];
+  bondPortfolios[targetPid].positions.push(JSON.parse(JSON.stringify(pos)));
+  // Remove from source
+  sourceBp.positions = sourceBp.positions.filter(function(p) { return p.id !== moveBondPosId; });
+  saveBondPortfolios();
+  moveBondPosId = null;
+  render();
+}
+
 function showBondPortfolio(id) {
   if (!bondPortfolios[id]) return;
   currentBondPortfolioId = id;
@@ -1656,6 +1709,30 @@ function renderBondsSwitcher(html, list, summaryActive) {
   var allIds = Object.keys(bondPortfolios).filter(function(id) { return !bondPortfolios[id].archive; }).sort(function(a,b) { return bondPortfolios[a].name.localeCompare(bondPortfolios[b].name); });
   var bondIds = allIds.filter(function(id) { return bondPortfolios[id].type !== 'deposit'; });
   var depIds  = allIds.filter(function(id) { return bondPortfolios[id].type === 'deposit'; });
+  var bsToday = new Date(); bsToday.setHours(0,0,0,0);
+
+  // True if position is "currently active" (not sold, not matured).
+  // Used for switcher counts — consistent with stocks (sold/closed don't count).
+  function isBpPositionActive(bp, pos) {
+    if (bp.type === 'deposit') {
+      if (!(pos.amount > 0)) return false;
+      if (pos.openDate && pos.termMonths) {
+        var maturity = new Date(pos.openDate);
+        maturity.setMonth(maturity.getMonth() + pos.termMonths);
+        if (maturity <= bsToday) return false;
+      }
+      return true;
+    }
+    // Bond
+    if (pos.sold) return false;
+    if (!(pos.qty > 0)) return false;
+    var bond = bondsDb.find(function(b) { return b.id === pos.bondId; });
+    if (bond) {
+      var maturityDate = new Date(bond.maturityDate);
+      if (maturityDate <= bsToday) return false;
+    }
+    return true;
+  }
 
   function renderBpItem(id) {
     var p = bondPortfolios[id];
@@ -1664,7 +1741,7 @@ function renderBondsSwitcher(html, list, summaryActive) {
     return '<div class="portfolio-item' + (active ? ' active' : '') + '" data-pfid="' + id + '" style="display:flex;align-items:center">'
       + '<div onclick="showBondPortfolio(&apos;' + id + '&apos;)" style="flex:1;cursor:pointer;min-width:0">'
       + '<span class="portfolio-item-name">' + p.name + '</span> <span style="color:var(--dim);font-size:10px">' + (p.currencyCode || 'USD') + '</span> '
-      + '<span class="portfolio-item-count">' + p.positions.filter(function(pos) { return pos.qty > 0; }).length + posLabel + (active ? ' &#10003;' : '') + '</span>'
+      + '<span class="portfolio-item-count">' + (p.positions || []).filter(function(pos) { return isBpPositionActive(p, pos); }).length + posLabel + (active ? ' &#10003;' : '') + '</span>'
       + '</div>'
       + '<button class="btn-icon" onclick="renameBondPortfolio(&apos;' + id + '&apos;)" style="font-size:13px;padding:4px 7px">&#9998;</button>'
       + '<button class="btn-icon" onclick="deleteBondPortfolio(&apos;' + id + '&apos;)" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
@@ -1681,7 +1758,10 @@ function renderBondsSwitcher(html, list, summaryActive) {
 
   // Σ SUMMARY
   var bondSummaryActive = viewMode === 'bond-summary';
-  var totalAllPos = allIds.reduce(function(n, id) { return n + (bondPortfolios[id].positions || []).filter(function(p) { return p.qty > 0; }).length; }, 0);
+  var totalAllPos = allIds.reduce(function(n, id) {
+    var bp = bondPortfolios[id];
+    return n + (bp.positions || []).filter(function(pos) { return isBpPositionActive(bp, pos); }).length;
+  }, 0);
   html += '<div class="portfolio-item' + (bondSummaryActive ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);margin-top:4px;padding-top:4px" onclick="switchToBondSummary()">'
     + '<div style="flex:1"><span class="portfolio-item-name">&#931; SUMMARY</span> <span class="portfolio-item-count">' + totalAllPos + ' items</span></div>'
     + '</div>';
@@ -6616,6 +6696,7 @@ function render() {
           + '<td class="' + pClass + '">' + (calc.annualYield !== null ? f2(calc.annualYield) + '%' : '—') + '</td>'
           + '<td style="white-space:nowrap">'
             + actionBtn
+            + (bp.archive ? '' : '<button class="btn-icon" onclick="showMoveBondMenu(&apos;' + pos.id + '&apos;, this)" title="Move to portfolio" style="font-size:17px;padding:0 4px;line-height:1">&#8680;</button>')
             + '<button class="btn-icon" onclick="editBondPosition(&apos;' + pos.id + '&apos;)" style="' + (isEditing ? 'color:var(--green)' : '') + '">&#9998;</button>'
             + '<button class="btn-icon" onclick="deleteBondPosition(&apos;' + pos.id + '&apos;)" style="color:var(--red)">&#10005;</button>'
           + '</td>'
