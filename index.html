@@ -374,9 +374,12 @@
         <input type="radio" name="portfolioType" value="index" class="radio-styled"> WATCHLIST
       </label>
     </div>
-    <div id="archivePortfolioTypeRow" style="padding:4px 0 6px;display:none;gap:16px">
+    <div id="archivePortfolioTypeRow" style="padding:4px 0 6px;display:none;gap:16px;flex-wrap:wrap">
       <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
-        <input type="radio" name="archivePortfolioType" value="archive" checked class="radio-styled" onchange="updateArchiveAddPlaceholder()"> ARCHIVE
+        <input type="radio" name="archivePortfolioType" value="archive" checked class="radio-styled" onchange="updateArchiveAddPlaceholder()"> STOCK ARCHIVE
+      </label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
+        <input type="radio" name="archivePortfolioType" value="bond-archive" class="radio-styled" onchange="updateArchiveAddPlaceholder()"> BOND ARCHIVE
       </label>
       <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
         <input type="radio" name="archivePortfolioType" value="cash" class="radio-styled" onchange="updateArchiveAddPlaceholder()"> CASH
@@ -831,8 +834,10 @@ function updateArchiveAddPlaceholder() {
   var isArchiveTab = switcherTab === 'archive';
   if (isArchiveTab) {
     var sel = document.querySelector('input[name="archivePortfolioType"]:checked');
-    var isCash = sel && sel.value === 'cash';
-    nameInput.placeholder = isCash ? 'CASH NAME' : 'ARCHIVE NAME';
+    var v = sel ? sel.value : 'archive';
+    if (v === 'cash') nameInput.placeholder = 'CASH NAME';
+    else if (v === 'bond-archive') nameInput.placeholder = 'BOND ARCHIVE NAME';
+    else nameInput.placeholder = 'STOCK ARCHIVE NAME';
   } else {
     nameInput.placeholder = 'NAME';
   }
@@ -1029,10 +1034,6 @@ function confirmBondSell(posId) {
   render();
 }
 
-function archiveBondPosition(posId) {
-  // Placeholder for Stage 3 (bond archives). Currently no-op.
-  // Will move sold/matured bonds into archive bond portfolios.
-}
 function saveBondPosEdit(posId) {
   var bp = bondPortfolios[currentBondPortfolioId];
   if (!bp) return;
@@ -1441,6 +1442,58 @@ function moveToArchive(archivePid) {
   render();
 }
 
+// ── Bond archive menu (uses same DOM element archivePosMenu) ──────────────────
+var bondArchiveMenuPosId = null;
+
+function archiveBondPosition(posId, btn) {
+  bondArchiveMenuPosId = posId;
+  bondPortfolios = getBondPortfolios();
+  var menu = document.getElementById('archivePosMenu');
+  var list = document.getElementById('archivePosMenuList');
+  var bondArchiveIds = Object.keys(bondPortfolios).filter(function(pid) { return bondPortfolios[pid].archive; }).sort(function(a,b) { return bondPortfolios[a].name.localeCompare(bondPortfolios[b].name); });
+
+  if (bondArchiveIds.length === 0) {
+    list.innerHTML = '<div style="padding:10px 12px;font-size:11px;color:var(--dim)">No bond archive portfolios</div>';
+  } else {
+    list.innerHTML = bondArchiveIds.map(function(pid) {
+      return '<div onclick="moveToBondArchive(&apos;' + pid + '&apos;)" style="padding:9px 14px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--border);color:var(--bright)">' + bondPortfolios[pid].name + '</div>';
+    }).join('');
+  }
+
+  if (btn) {
+    var rect = btn.getBoundingClientRect();
+    menu.style.top = (rect.bottom + 4) + 'px';
+    menu.style.right = (window.innerWidth - rect.right) + 'px';
+    menu.style.left = 'auto';
+  }
+  menu.style.display = 'block';
+  setTimeout(function() {
+    document.addEventListener('click', closeArchiveMenuOutside);
+  }, 0);
+}
+
+function moveToBondArchive(archivePid) {
+  document.getElementById('archivePosMenu').style.display = 'none';
+  document.removeEventListener('click', closeArchiveMenuOutside);
+  if (!bondArchiveMenuPosId) return;
+  bondPortfolios = getBondPortfolios();
+  // Find source portfolio (current) and the position
+  var sourceId = currentBondPortfolioId;
+  var sourceBp = bondPortfolios[sourceId];
+  if (!sourceBp) return;
+  var pos = (sourceBp.positions || []).find(function(p) { return p.id === bondArchiveMenuPosId; });
+  if (!pos) return;
+  // Add to archive (deep copy via JSON to avoid reference sharing)
+  if (!bondPortfolios[archivePid].positions) bondPortfolios[archivePid].positions = [];
+  bondPortfolios[archivePid].positions.push(JSON.parse(JSON.stringify(pos)));
+  // Remove from source
+  sourceBp.positions = sourceBp.positions.filter(function(p) { return p.id !== bondArchiveMenuPosId; });
+  bondPortfolios = bondPortfolios; // keep reference
+  saveBondPortfolios();
+  bondArchiveMenuPosId = null;
+  render();
+}
+
 function getBondsDb() {
   try { return JSON.parse(localStorage.getItem('pt_bonds_db') || '[]'); } catch(e) { return []; }
 }
@@ -1468,6 +1521,19 @@ function addBondPortfolio() {
   showBondPortfolio(id);
 }
 
+function addBondArchivePortfolio() {
+  var name = document.getElementById('newPortfolioName').value.trim().toUpperCase();
+  if (!name) return;
+  var curCode = (document.getElementById('newPortfolioCurrencyCode').value.trim() || 'USD').toUpperCase();
+  bondPortfolios = getBondPortfolios();
+  var id = 'bp_' + Date.now();
+  bondPortfolios[id] = { name: name, type: 'bonds', currencyCode: curCode, positions: [], archive: true };
+  saveBondPortfolios();
+  document.getElementById('newPortfolioName').value = '';
+  document.getElementById('newPortfolioCurrencyCode').value = '';
+  renderSwitcher();
+}
+
 function showBondPortfolio(id) {
   if (!bondPortfolios[id]) return;
   currentBondPortfolioId = id;
@@ -1493,7 +1559,7 @@ function bondPortfolioEditFormHtml(id, p) {
 function renderBondsSwitcher(html, list, summaryActive) {
   bondsDb = getBondsDb();
   bondPortfolios = getBondPortfolios();
-  var allIds = Object.keys(bondPortfolios).sort(function(a,b) { return bondPortfolios[a].name.localeCompare(bondPortfolios[b].name); });
+  var allIds = Object.keys(bondPortfolios).filter(function(id) { return !bondPortfolios[id].archive; }).sort(function(a,b) { return bondPortfolios[a].name.localeCompare(bondPortfolios[b].name); });
   var bondIds = allIds.filter(function(id) { return bondPortfolios[id].type !== 'deposit'; });
   var depIds  = allIds.filter(function(id) { return bondPortfolios[id].type === 'deposit'; });
 
@@ -1996,13 +2062,35 @@ function renderSwitcher() {
         + '</div>'
         + (editingPortfolioId === id ? portfolioEditFormHtml(id, p) : '');
     });
-    if (archiveIds.length === 0) html += '<div style="padding:10px 14px;font-size:11px;color:var(--dim)">No archive portfolios</div>';
+    if (archiveIds.length === 0) {
+      // Don't show "No archive portfolios" here — wait until we know if bond/cash also empty
+    }
+
+    // Bond archive portfolios section (separated)
+    bondPortfolios = getBondPortfolios();
+    var bondArchiveIds = Object.keys(bondPortfolios).filter(function(id) { return bondPortfolios[id].archive; }).sort(function(a,b) { return bondPortfolios[a].name.localeCompare(bondPortfolios[b].name); });
+    if (bondArchiveIds.length > 0) {
+      if (archiveIds.length > 0) html += '<div style="border-top:1px solid var(--border);margin-top:6px"></div>';
+      bondArchiveIds.forEach(function(id) {
+        var bp = bondPortfolios[id];
+        var active = id === currentBondPortfolioId && viewMode === 'bonds';
+        html += '<div class="portfolio-item' + (active ? ' active' : '') + '" style="display:flex;align-items:center">'
+          + '<div onclick="showBondPortfolio(&apos;' + id + '&apos;)" style="flex:1;cursor:pointer;min-width:0">'
+          + '<span class="portfolio-item-name">' + bp.name + '</span> <span style="color:var(--dim);font-size:10px">' + (bp.currencyCode || 'USD') + '</span> '
+          + '<span class="portfolio-item-count">' + (bp.positions || []).length + ' bonds' + (active ? ' &#10003;' : '') + '</span>'
+          + '</div>'
+          + '<button class="btn-icon" onclick="renameBondPortfolio(&apos;' + id + '&apos;)" title="Rename" style="font-size:13px;padding:4px 7px">&#9998;</button>'
+          + '<button class="btn-icon" onclick="deleteBondPortfolio(&apos;' + id + '&apos;)" title="Delete" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
+          + '</div>'
+          + (editingPortfolioId === id ? bondPortfolioEditFormHtml(id, bp) : '');
+      });
+    }
 
     // Cash portfolios section (separated)
     cashPortfolios = getCashPortfolios();
     var cashIds = Object.keys(cashPortfolios).sort(function(a,b) { return cashPortfolios[a].name.localeCompare(cashPortfolios[b].name); });
     if (cashIds.length > 0) {
-      html += '<div style="border-top:1px solid var(--border);margin-top:6px"></div>';
+      if (archiveIds.length > 0 || bondArchiveIds.length > 0) html += '<div style="border-top:1px solid var(--border);margin-top:6px"></div>';
       cashIds.forEach(function(id) {
         var p = cashPortfolios[id];
         var active = id === currentCashPortfolioId && viewMode === 'cash';
@@ -2016,6 +2104,11 @@ function renderSwitcher() {
           + '</div>'
           + (editingPortfolioId === id ? cashPortfolioEditFormHtml(id, p) : '');
       });
+    }
+
+    // Show fallback message only when all sections are empty
+    if (archiveIds.length === 0 && bondArchiveIds.length === 0 && cashIds.length === 0) {
+      html += '<div style="padding:10px 14px;font-size:11px;color:var(--dim)">No archive portfolios</div>';
     }
 
     // Archive summary
@@ -2142,6 +2235,7 @@ function addPortfolio() {
   if (isArchiveTab) {
     var archSel = document.querySelector('input[name="archivePortfolioType"]:checked');
     if (archSel && archSel.value === 'cash') { addCashPortfolio(); return; }
+    if (archSel && archSel.value === 'bond-archive') { addBondArchivePortfolio(); return; }
   }
   var isWatchlist = !isArchiveTab && document.querySelector('input[name="portfolioType"]:checked').value === 'index';
   function doCreate() {
@@ -5725,6 +5819,19 @@ function render() {
         if (c !== 'USD' && archNonUSD.indexOf(c) === -1) archNonUSD.push(c);
       });
     });
+    // Archived bond portfolios — same FX pool
+    bondPortfolios = getBondPortfolios();
+    bondsDb = getBondsDb();
+    var archBondIds = Object.keys(bondPortfolios).filter(function(id) { return bondPortfolios[id].archive; }).sort(function(a, b) { return bondPortfolios[a].name.localeCompare(bondPortfolios[b].name); });
+    archBondIds.forEach(function(bpId) {
+      var bp = bondPortfolios[bpId];
+      var bpCur = (bp.currencyCode || 'USD').toUpperCase();
+      if (bpCur !== 'USD' && archNonUSD.indexOf(bpCur) === -1) archNonUSD.push(bpCur);
+      (bp.positions || []).forEach(function(pos) {
+        var bond = bondsDb.find(function(b) { return b.id === pos.bondId; });
+        if (bond && bond.currency !== 'USD' && archNonUSD.indexOf(bond.currency) === -1) archNonUSD.push(bond.currency);
+      });
+    });
     // Cash portfolios — same FX pool
     var archCashPortfolios = getCashPortfolios();
     var archCashIds = Object.keys(archCashPortfolios).sort(function(a, b) { return archCashPortfolios[a].name.localeCompare(archCashPortfolios[b].name); });
@@ -5787,6 +5894,62 @@ function render() {
       });
     }
 
+    function buildArchBondStats() {
+      // For each archived bond portfolio: sum positions converted to portfolio currency
+      // (for in-portfolio display) and to USD (for cross-portfolio totals/weight).
+      // All positions in archived bond portfolios are closed (sold or auto-matured),
+      // so we don't split into active/closed — everything counted together.
+      var today = new Date(); today.setHours(0,0,0,0);
+      return archBondIds.map(function(bpId) {
+        var bp = bondPortfolios[bpId];
+        var bpCur = (bp.currencyCode || 'USD').toUpperCase();
+        var bpRateToUSD = bpCur === 'USD' ? 1 : (archFxRates[bpCur] || 1);
+        var valUSD = 0, profitUSD = 0, bodyUSD = 0, couponUSD = 0;
+        var valBase = 0, profitBase = 0, bodyBase = 0, couponBase = 0;
+        var hasAny = false;
+        (bp.positions || []).forEach(function(pos) {
+          if (pos.qty === 0) return;
+          var bond = bondsDb.find(function(b) { return b.id === pos.bondId; });
+          if (!bond) return;
+          var isSold = !!pos.sold;
+          var dirtyPrice = pos.cleanPrice / 100 * bond.parValue + pos.accruedInterest;
+          var positionValue = pos.qty * dirtyPrice;
+          var endCleanPrice = isSold ? pos.sellCleanPrice : 100;
+          var endAccruedInterest = isSold ? pos.sellAccruedInterest : 0;
+          var endDate = isSold ? pos.sellDate : bond.maturityDate;
+          var dirtyEnd = endCleanPrice / 100 * bond.parValue + endAccruedInterest;
+          var intervalMonths = Math.round(12 / bond.couponFrequency);
+          var purchase = new Date(pos.purchaseDate);
+          var endD = new Date(endDate);
+          var d = new Date(bond.maturityDate);
+          var count = 0;
+          while (d > purchase) { if (d <= endD) count++; d.setMonth(d.getMonth() - intervalMonths); }
+          var couponPrice = bond.parValue * bond.nominalYield / bond.couponFrequency;
+          var couponIncome = couponPrice * count * pos.qty;
+          var bodyPL = (dirtyEnd - dirtyPrice) * pos.qty;
+          var totalProfit = couponIncome + bodyPL;
+          var posRateToUSD = bond.currency === 'USD' ? 1 : (archFxRates[bond.currency] || 1);
+          var vUSD = positionValue * posRateToUSD;
+          var pUSD = totalProfit * posRateToUSD;
+          var bUSD = bodyPL * posRateToUSD;
+          var cUSD = couponIncome * posRateToUSD;
+          valUSD += vUSD; profitUSD += pUSD; bodyUSD += bUSD; couponUSD += cUSD;
+          valBase += vUSD / bpRateToUSD; profitBase += pUSD / bpRateToUSD;
+          bodyBase += bUSD / bpRateToUSD; couponBase += cUSD / bpRateToUSD;
+          hasAny = true;
+        });
+        return {
+          id: bpId, name: bp.name,
+          currencyCode: bpCur,
+          currency: CURRENCY_SYMBOLS[bpCur] || bpCur,
+          val: hasAny ? valBase : null, profit: hasAny ? profitBase : null,
+          body: hasAny ? bodyBase : null, coupon: hasAny ? couponBase : null,
+          valUSD: hasAny ? valUSD : null, profitUSD: hasAny ? profitUSD : null,
+          bodyUSD: hasAny ? bodyUSD : null, couponUSD: hasAny ? couponUSD : null
+        };
+      });
+    }
+
     var archPortfolioStats = [];
 
     function renderArchiveSummary() {
@@ -5831,6 +5994,58 @@ function render() {
           + '</div>'
         : '');
 
+      // ── Bond archive table ────────────────────────────────────────────────
+      var bondStats = buildArchBondStats();
+      var bondTotValUSD = 0, bondTotProfitUSD = 0, bondTotBodyUSD = 0, bondTotCouponUSD = 0;
+      bondStats.forEach(function(s) {
+        if (s.valUSD !== null) {
+          bondTotValUSD += s.valUSD; bondTotProfitUSD += s.profitUSD;
+          bondTotBodyUSD += s.bodyUSD; bondTotCouponUSD += s.couponUSD;
+        }
+      });
+      var bondRows = '';
+      bondStats.forEach(function(s) {
+        if (s.val === null) {
+          bondRows += '<tr><td style="text-align:left;white-space:nowrap;cursor:pointer" onclick="showBondPortfolio(&apos;' + s.id + '&apos;)">' + s.name + '</td><td colspan="6" style="color:var(--dim);font-size:10px">no positions</td></tr>';
+          return;
+        }
+        var ret = s.val ? s.profit / s.val * 100 : null;
+        var weight = bondTotValUSD > 0 ? s.valUSD / bondTotValUSD * 100 : null;
+        var c = s.profit >= 0 ? 'pos' : 'neg';
+        bondRows += '<tr>'
+          + '<td style="text-align:left;white-space:nowrap;cursor:pointer" onclick="showBondPortfolio(&apos;' + s.id + '&apos;)">' + s.name + '</td>'
+          + '<td>' + s.currency + f2(s.val) + '</td>'
+          + '<td>' + fmtBondBody(s.body, s.currency) + '</td>'
+          + '<td>' + fmtBondCoupon(s.coupon, s.currency) + '</td>'
+          + '<td class="' + c + '">' + s.currency + f2(s.profit) + '</td>'
+          + '<td class="' + c + '">' + (ret !== null ? fPct(ret) : '&mdash;') + '</td>'
+          + '<td>' + (weight !== null ? fPctNoSign(weight) : '&mdash;') + '</td>'
+          + '</tr>';
+      });
+      var bondTotPC = bondTotProfitUSD >= 0 ? 'pos' : 'neg';
+      var bondTotRet = bondTotValUSD > 0 ? bondTotProfitUSD / bondTotValUSD * 100 : null;
+      var bondHtml = (bondStats.length > 0
+        ? '<div style="margin-top:18px"><div class="table-wrap"><table>'
+          + '<thead><tr>'
+          + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">BOND PORTFOLIO</th>'
+          + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">VALUE</th>'
+          + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">BODY P&amp;L</th>'
+          + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">COUPON INC</th>'
+          + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PROFIT</th>'
+          + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">RETURN</th>'
+          + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">WEIGHT</th>'
+          + '</tr></thead>'
+          + '<tbody>' + bondRows + '</tbody>'
+          + '</table></div>'
+          + '<div class="totals-bar">'
+          + '<div class="total-block"><div class="total-label">TOTAL VALUE</div><div class="total-value" style="color:var(--bright)">$' + f2(bondTotValUSD) + '</div></div>'
+          + '<div class="total-block"><div class="total-label">BODY P&amp;L</div><div class="total-value">' + fmtBondBody(bondTotBodyUSD, '$') + '</div></div>'
+          + '<div class="total-block"><div class="total-label">COUPON INC</div><div class="total-value">' + fmtBondCoupon(bondTotCouponUSD, '$') + '</div></div>'
+          + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + bondTotPC + '">$' + f2(bondTotProfitUSD) + '</div></div>'
+          + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + bondTotPC + '">' + (bondTotRet !== null ? fPct(bondTotRet) : '&mdash;') + '</div></div>'
+          + '</div></div>'
+        : '');
+
       // ── Cash table ────────────────────────────────────────────────────────
       var cashStats = buildArchCashStats();
       var cashRows = '';
@@ -5868,11 +6083,11 @@ function render() {
           + '</div></div>'
         : '');
 
-      var emptyMsg = (archPids.length === 0 && cashStats.length === 0)
-        ? '<div style="color:var(--dim);padding:20px;text-align:center">No archive or cash portfolios</div>'
+      var emptyMsg = (archPids.length === 0 && bondStats.length === 0 && cashStats.length === 0)
+        ? '<div style="color:var(--dim);padding:20px;text-align:center">No archived portfolios</div>'
         : '';
 
-      area.innerHTML = archiveHtml + cashHtml + emptyMsg;
+      area.innerHTML = archiveHtml + bondHtml + cashHtml + emptyMsg;
     }
 
     if (archNonUSD.length === 0) {
@@ -6266,8 +6481,8 @@ function render() {
         var isEditing = editingBondPosId === pos.id;
         var isExpanded = expandedBondPosId === pos.id;
         var actionBtn = '';
-        if (calc.isSold) {
-          actionBtn = '<button class="btn-icon" onclick="archiveBondPosition(&apos;' + pos.id + '&apos;)" title="Move to archive" style="font-size:14px;padding:0 4px;color:var(--dim)">&#8863;</button>';
+        if (calc.isClosed) {
+          actionBtn = '<button class="btn-icon" onclick="archiveBondPosition(&apos;' + pos.id + '&apos;, this)" title="Move to archive" style="font-size:14px;padding:0 4px;color:var(--dim)">&#8863;</button>';
         } else if (!isWatchlist) {
           actionBtn = '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--bright)" onclick="sellBondPosition(&apos;' + pos.id + '&apos;)">SELL</button>';
         }
@@ -6369,7 +6584,7 @@ function render() {
         + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + pClassM + '">' + portfolioCurrSym + f2(totProfitMatured) + '</div></div>'
         + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + pClassM + '">' + (totValueMatured > 0 ? f2(totProfitMatured/totValueMatured*100) + '%' : '—') + '</div></div>'
         + '</div>' : '')
-        + renderBondAddForm(currentBondPortfolioId);
+        + (bp.archive ? '' : renderBondAddForm(currentBondPortfolioId));
     }
 
     if (bondsViewNonUSD.length === 0) {
@@ -6389,7 +6604,7 @@ function render() {
   if (viewMode === 'bond-summary') {
     bondPortfolios = getBondPortfolios();
     bondsDb = getBondsDb();
-    var bsBpIds = Object.keys(bondPortfolios).sort(function(a, b) {
+    var bsBpIds = Object.keys(bondPortfolios).filter(function(id) { return !bondPortfolios[id].archive; }).sort(function(a, b) {
       return bondPortfolios[a].name.localeCompare(bondPortfolios[b].name);
     });
     var bsFxRates = {};
