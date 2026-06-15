@@ -1582,7 +1582,9 @@ function showArchiveMenu(posId, btn) {
   archiveMenuPosId = posId;
   var menu = document.getElementById('archivePosMenu');
   var list = document.getElementById('archivePosMenuList');
-  var archivePids = Object.keys(portfolios).filter(function(pid) { return portfolios[pid].archive; }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+  var archivePids = Object.keys(portfolios).filter(function(pid) {
+    return portfolios[pid].archive && pid !== currentPortfolioId;
+  }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
 
   if (archivePids.length === 0) {
     list.innerHTML = '<div style="padding:10px 12px;font-size:11px;color:var(--dim)">No realized portfolios</div>';
@@ -1644,7 +1646,9 @@ function archiveBondPosition(posId, btn) {
   bondPortfolios = getBondPortfolios();
   var menu = document.getElementById('archivePosMenu');
   var list = document.getElementById('archivePosMenuList');
-  var bondArchiveIds = Object.keys(bondPortfolios).filter(function(pid) { return bondPortfolios[pid].archive; }).sort(function(a,b) { return bondPortfolios[a].name.localeCompare(bondPortfolios[b].name); });
+  var bondArchiveIds = Object.keys(bondPortfolios).filter(function(pid) {
+    return bondPortfolios[pid].archive && pid !== currentBondPortfolioId;
+  }).sort(function(a,b) { return bondPortfolios[a].name.localeCompare(bondPortfolios[b].name); });
 
   if (bondArchiveIds.length === 0) {
     list.innerHTML = '<div style="padding:10px 12px;font-size:11px;color:var(--dim)">No realized bond portfolios</div>';
@@ -3493,12 +3497,29 @@ function removePosition(id) {
   save(); render();
 }
 
+// Find the portfolio object that contains a given position id.
+// Used by alert/note operations that may run from summary views where
+// the global `positions` doesn't necessarily include the target.
+function findPortfolioForPosition(posId) {
+  for (var pid in portfolios) {
+    var port = portfolios[pid];
+    if (!port || !port.positions) continue;
+    for (var i = 0; i < port.positions.length; i++) {
+      if (port.positions[i].id === posId) return port;
+    }
+  }
+  return null;
+}
+
 function deleteAlert(posId, alertIdx) {
-  positions = positions.map(function(p) {
+  var port = findPortfolioForPosition(posId);
+  if (!port) return;
+  port.positions = port.positions.map(function(p) {
     if (p.id !== posId) return p;
     var alerts = (p.alerts || []).filter(function(_, i) { return i !== alertIdx; });
     return Object.assign({}, p, { alerts: alerts });
   });
+  if (port === portfolios[currentPortfolioId]) positions = port.positions;
   save(); render();
 }
 
@@ -3506,11 +3527,14 @@ function addAlert(posId) {
   var cond = _alertCondEdit;
   var val = parseFloat(document.getElementById('alertVal').value);
   if (isNaN(val) || val <= 0) return;
-  positions = positions.map(function(p) {
+  var port = findPortfolioForPosition(posId);
+  if (!port) return;
+  port.positions = port.positions.map(function(p) {
     if (p.id !== posId) return p;
     var alerts = (p.alerts || []).concat([{ condition: cond, value: val, triggered: false }]);
     return Object.assign({}, p, { alerts: alerts });
   });
+  if (port === portfolios[currentPortfolioId]) positions = port.positions;
   save(); render();
 }
 
@@ -3647,11 +3671,14 @@ function quickAddAlert(posId) {
   var cond = _alertCondQuick;
   var val = parseFloat(document.getElementById('quickAlertVal').value);
   if (isNaN(val) || val <= 0) return;
-  positions = positions.map(function(p) {
+  var port = findPortfolioForPosition(posId);
+  if (!port) return;
+  port.positions = port.positions.map(function(p) {
     if (p.id !== posId) return p;
     var alerts = (p.alerts || []).concat([{ condition: cond, value: val, triggered: false }]);
     return Object.assign({}, p, { alerts: alerts });
   });
+  if (port === portfolios[currentPortfolioId]) positions = port.positions;
   save(); render();
 }
 
@@ -3672,9 +3699,12 @@ function saveNoteInline(posId) {
   var el = document.getElementById('noteEditInput');
   if (!el) return;
   var note = el.value.trim();
-  positions = positions.map(function(p) {
+  var port = findPortfolioForPosition(posId);
+  if (!port) { editNoteId = null; return; }
+  port.positions = port.positions.map(function(p) {
     return p.id === posId ? Object.assign({}, p, { note: note }) : p;
   });
+  if (port === portfolios[currentPortfolioId]) positions = port.positions;
   editNoteId = null;
   save(); render();
 }
