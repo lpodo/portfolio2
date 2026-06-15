@@ -58,7 +58,7 @@ The portfolio switcher has three tabs:
 
 - **STOCKS** — regular equity portfolios, watchlists, and Σ SUMMARY.
 - **BONDS** — bond and deposit portfolios, plus their Σ SUMMARY (see [Bonds & Deposits](#bonds--deposits)).
-- **ARCHIVE** — archive portfolios for both stocks and bonds, listed together and separated by a divider. Cash portfolios appear at the bottom of the same tab.
+- **REALIZED** — realized portfolios for both stocks and bonds, listed together and separated by a divider. Cash portfolios appear at the bottom of the same tab.
 
 ### Multi-currency portfolios
 
@@ -75,30 +75,30 @@ Selected via the **WATCHLIST** radio button at creation. Designed for tracking i
 - Appears at the top of the active portfolio list, separated by a divider.
 - Excluded from Summary, Summary Market, Summary Chart, and Analytics.
 
-### Archive portfolios
+### Realized portfolios
 
-Archive portfolios store closed positions for historical tracking. Accessed via the **ARCHIVE** tab in the portfolio switcher. Two kinds — **stock archives** and **bond archives** — appear in the same tab, listed separately, then cash portfolios at the bottom.
+Portfolios in the **REALIZED** tab hold closed positions and show their actual realized totals — by contrast with the STOCKS and BONDS tabs, which show projected/unrealized values. Two kinds — **stock** and **bond** — appear in the tab, listed separately, then cash portfolios at the bottom.
 
 **Common properties:**
 
 - No Refresh button — all positions are static (closed).
 - Excluded from the main Σ SUMMARY and from Refresh All.
-- Have a dedicated Σ SUMMARY at the bottom of the ARCHIVE tab. Same calculation as the main Summary — values in native currency, totals in USD with live FX conversion.
+- Have a dedicated Σ SUMMARY at the bottom of the REALIZED tab. Same calculation as the main Summary — values in native currency, totals in USD with live FX conversion.
 
-**Stock archives:**
+**Stocks:**
 
 - Dropdown menu has P&L and WEIGHTS only (no MARKET, CHART, ANALYTICS, FUNDAMENTALS, ALERTS).
 - Positions are created in sold status; CURRENT (sell price) is required on add.
 - Populated either by adding sold positions directly, or by moving sold positions in via the ⊟ button.
 
-**Bond archives:**
+**Bonds:**
 
 - Show closed bond positions: sold bonds (with sell date, sell clean price, sell accrued interest) and matured bonds.
 - Populated by moving sold or matured bonds in via the ⊟ button — they don't accept direct position add.
 
-**Creating an archive portfolio:** switch to the ARCHIVE tab and use the add form. A **STOCK ARCHIVE / BOND ARCHIVE** radio selects the type.
+**Creating a realized portfolio:** switch to the REALIZED tab and use the add form. A **STOCKS / BONDS** radio selects the type.
 
-**Archiving an entire active portfolio (stocks only):** click ⊟ next to the portfolio name in the STOCKS tab. Only available when **all** positions are sold; the portfolio itself moves to the ARCHIVE tab.
+**Closing an entire active portfolio (stocks only):** click ⊟ next to the portfolio name in the STOCKS tab. Only available when **all** positions are sold; the portfolio itself moves to the REALIZED tab.
 
 ## Positions
 
@@ -130,11 +130,11 @@ Any position in a regular portfolio can be marked as sold via the **SELL** butto
 - The sell price can be corrected via the edit (✎) button.
 - Sorting by ticker: sold positions appear first among same-ticker entries.
 
-A portfolio can be archived (⊟ button) only when **all** its positions are sold.
+A portfolio can be closed (⊟ button) only when **all** its positions are sold; it then moves to REALIZED.
 
 ### Moving positions
 
-The ⇨ button moves any position to another active portfolio, preserving all fields including sold status. Available in both active and archive portfolios. Sold positions have an additional **⊟ button** that moves them directly to a chosen archive portfolio — available for sold positions in both active and archive portfolios.
+The ⇨ button moves any position to another active portfolio, preserving all fields including sold status. Available in both active and realized portfolios. Sold positions have an additional **⊟ button** that moves them directly to a chosen realized portfolio — available for sold positions in both active and realized portfolios.
 
 ## Prices & P&L
 
@@ -175,7 +175,7 @@ Columns TICKER / VALUE / WEIGHT %; sortable by any column.
 
 ### Aggregation mode
 
-The ≡ button in the P&L table header (above the action buttons) collapses duplicate tickers into single rows for a cleaner view. Active separately for regular and archive portfolios; state persists across sessions. The ≡ icon turns green when enabled. The Weight view inherits the same mode automatically.
+The ≡ button in the P&L table header (above the action buttons) collapses duplicate tickers into single rows for a cleaner view. Active separately for regular and realized portfolios; state persists across sessions. The ≡ icon turns green when enabled. The Weight view inherits the same mode automatically.
 
 Aggregation rules:
 
@@ -191,8 +191,8 @@ Selected from the portfolio switcher (Σ SUMMARY at the bottom). Shows all non-w
 
 In Summary, the ⋮ dropdown menu shows Summary-specific views (marked with the Σ prefix):
 
-- **Σ MARKET** — cross-portfolio market view. Collects all non-sold positions from all non-archive portfolios, deduplicates by ticker, and shows them in a single table. Same CLOSE/CURRENT menus and Δ% sort cycle as the regular MARKET view (including historical period comparison).
-- **Σ WEIGHTS** — cross-portfolio weights view. Aggregates all active positions from all non-archive portfolios by ticker. Columns: TICKER / VALUE (native currency, dimmed) / VALUE (\$) (USD-converted) / WEIGHT % / NAME. All non-USD values converted using live FX rates. Sortable by TICKER, VALUE (\$), or WEIGHT.
+- **Σ MARKET** — cross-portfolio market view. Collects all non-sold positions from all non-realized portfolios, deduplicates by ticker, and shows them in a single table. Same CLOSE/CURRENT menus and Δ% sort cycle as the regular MARKET view (including historical period comparison).
+- **Σ WEIGHTS** — cross-portfolio weights view. Aggregates all active positions from all non-realized portfolios by ticker. Columns: TICKER / VALUE (native currency, dimmed) / VALUE (\$) (USD-converted) / WEIGHT % / NAME. All non-USD values converted using live FX rates. Sortable by TICKER, VALUE (\$), or WEIGHT.
 - **Σ ALERTS** — alerts across all portfolios (see [Price Alerts](#price-alerts)).
 - **Σ ANALYTICS** — analytics across all portfolios (see [Analytics](#analytics)).
 
@@ -235,7 +235,7 @@ Each color is shown at most once per ticker, regardless of how many alerts in th
 
 ### ALERTS view
 
-Available via ⋮ menu → **ALERTS** for individual portfolios, watchlists, and Summary. Not available for Archive portfolios.
+Available via ⋮ menu → **ALERTS** for individual portfolios, watchlists, and Summary. Not available for realized portfolios.
 
 Shows all positions that have at least one alert set (sold positions excluded), sorted by Δ% descending (biggest gainers first, biggest losers last). Same columns as the MARKET view. Tap a ticker to expand.
 
@@ -274,7 +274,7 @@ In Summary, the dropdown menu → CHART shows two modes selectable via a green d
 
 ## Fundamentals
 
-Available via dropdown menu → FUNDAMENTALS for individual portfolios and watchlists. Not available for Archive portfolios.
+Available via dropdown menu → FUNDAMENTALS for individual portfolios and watchlists. Not available for realized portfolios.
 
 A comparative table across selected tickers with four subviews switchable via tabs:
 
@@ -326,9 +326,9 @@ Dictionaries are included in cloud sync and backup/restore. Grouping in Analytic
 
 ### Attribute inheritance & sync
 
-When a position is added (via the Add form or CSV import), the app automatically checks all existing portfolios (active, archive, and watchlist) for a position with the same ticker. If found and it has category/region/sector values, those are copied to the new position. This means you only need to classify a ticker once — subsequent additions inherit the values automatically.
+When a position is added (via the Add form or CSV import), the app automatically checks all existing portfolios (active, realized, and watchlist) for a position with the same ticker. If found and it has category/region/sector values, those are copied to the new position. This means you only need to classify a ticker once — subsequent additions inherit the values automatically.
 
-**Ticker-wide sync:** when attributes are edited via the ✎ edit form, the new values are immediately synced to all other positions with the same ticker across all portfolios (including archive). There is no prompt and no separate step — sync is silent, enforcing the rule that a ticker always has exactly one set of attributes everywhere.
+**Ticker-wide sync:** when attributes are edited via the ✎ edit form, the new values are immediately synced to all other positions with the same ticker across all portfolios (including realized). There is no prompt and no separate step — sync is silent, enforcing the rule that a ticker always has exactly one set of attributes everywhere.
 
 ### Note field
 
@@ -339,7 +339,7 @@ Each position also has a free-text **note** field, set via the ✎ edit row. Not
 In the Analytics view (portfolio level), three links appear: **↑ Import CSV**, **↓ Export CSV**, and **↓ Incomplete**.
 
 - **Export CSV** downloads `tickers.csv` — all unique tickers across all portfolios with their current category/region/sector values.
-- **Incomplete** downloads `incomplete_analytics.csv` — all unique tickers across all regular and archive portfolios (watchlist excluded) where at least one of category/region/sector is empty. Useful for identifying what still needs to be classified. Includes all positions regardless of sold/qty status.
+- **Incomplete** downloads `incomplete_analytics.csv` — all unique tickers across all regular and realized portfolios (watchlist excluded) where at least one of category/region/sector is empty. Useful for identifying what still needs to be classified. Includes all positions regardless of sold/qty status.
 - **Import** reads a CSV and updates matching positions across all portfolios. Supports comma (`,`) or semicolon (`;`) delimiter, auto-detected from the header row. Empty fields in the CSV do not overwrite existing values. All imported category/region/sector values are automatically added to their respective dictionaries.
 
 CSV format:
@@ -457,7 +457,7 @@ Bonds can be sold before maturity via the **SELL** button on a position row.
 
 **Partial sell:** if quantity < position qty, the position is split into two records — the sold portion (with sell-side params) and the remainder (active, unchanged buy-side params).
 
-**Sold bonds:** marked with `sold: true` and the sell-side fields. They are excluded from active totals and contribute to a separate **SOLD** totals bar in the bond portfolio view. The sell-side params can be corrected via ✎. Use the ⊟ button to move a sold or matured bond to a bond archive portfolio.
+**Sold bonds:** marked with `sold: true` and the sell-side fields. They are excluded from active totals and contribute to a separate **SOLD** totals bar in the bond portfolio view. The sell-side params can be corrected via ✎. Use the ⊟ button to move a sold or matured bond to a Bonds portfolio in REALIZED.
 
 For sold bonds, **Profit** uses the sell-side dirty price instead of par + total coupons, and **coupons received** counts only coupons in `(purchaseDate, sellDate]`.
 
@@ -510,7 +510,7 @@ Deposit portfolios appear in the bond **Σ SUMMARY** view alongside bond portfol
 
 Cash portfolios track free funds and cashflow events outside of any specific instrument — fees, dividends, coupons, and so on. Each portfolio is a flat list of dated **entries**, not positions.
 
-Cash portfolios live at the bottom of the **ARCHIVE** tab in the portfolio switcher, below stock and bond archives.
+Cash portfolios live at the bottom of the **REALIZED** tab in the portfolio switcher, below the stock and bond portfolios there.
 
 ### Entries
 
@@ -721,7 +721,7 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
 
 - `currencyCode` — ISO 4217 base currency. All position values are converted to this currency for VALUE and WEIGHTS. Validated against Yahoo Finance on creation/rename.
 - `watchlist: true` — watchlist portfolio (no qty/entry fields, simple price display, excluded from Summary).
-- `archive: true` — archive portfolio (all positions sold, no Refresh, excluded from the main Summary).
+- `archive: true` — realized portfolio (all positions sold, no Refresh, excluded from the main Summary).
 
 ## Local Storage
 
@@ -736,7 +736,7 @@ Primary on-device storage:
 - `pt_finnhub` — Cloudflare Worker URL
 - `pt_token` — API token for Cloudflare Worker
 - `pt_sort` — P&L sort state for active portfolios
-- `pt_sort_arc` — P&L sort state for archive portfolios
+- `pt_sort_arc` — P&L sort state for realized portfolios
 - `pt_wl_sort` — sort state for watchlist market view
 - `pt_cat_dict` — CATEGORY dictionary (sorted array of values)
 - `pt_reg_dict` — REGION dictionary
