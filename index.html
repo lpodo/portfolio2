@@ -344,7 +344,7 @@
     <div class="portfolio-dropdown-title" style="display:flex;align-items:center;justify-content:space-between;padding-right:8px">
       <span>Portfolios</span>
       <div style="display:flex;gap:0">
-        <button onclick="setSwitcherTab('active')" id="tabActive" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);background:var(--bg2);color:var(--green);cursor:pointer;font-family:var(--font)">STOCKS</button><button onclick="setSwitcherTab('bonds')" id="tabBonds" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);border-left:none;background:var(--bg);color:var(--dim);cursor:pointer;font-family:var(--font)">BONDS</button><button onclick="setSwitcherTab('archive')" id="tabArchive" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);border-left:none;background:var(--bg);color:var(--dim);cursor:pointer;font-family:var(--font)">ARCHIVE</button>
+        <button onclick="setSwitcherTab('active')" id="tabActive" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);background:var(--bg2);color:var(--green);cursor:pointer;font-family:var(--font)">STOCKS</button><button onclick="setSwitcherTab('bonds')" id="tabBonds" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);border-left:none;background:var(--bg);color:var(--dim);cursor:pointer;font-family:var(--font)">BONDS</button><button onclick="setSwitcherTab('archive')" id="tabArchive" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);border-left:none;background:var(--bg);color:var(--dim);cursor:pointer;font-family:var(--font)">REALIZED</button>
       </div>
     </div>
     <div id="portfolioList"></div>
@@ -376,10 +376,10 @@
     </div>
     <div id="archivePortfolioTypeRow" style="padding:4px 0 6px;display:none;gap:16px;flex-wrap:wrap">
       <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
-        <input type="radio" name="archivePortfolioType" value="archive" checked class="radio-styled" onchange="updateArchiveAddPlaceholder()"> STOCK ARCHIVE
+        <input type="radio" name="archivePortfolioType" value="archive" checked class="radio-styled" onchange="updateArchiveAddPlaceholder()"> REALIZED STOCKS
       </label>
       <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
-        <input type="radio" name="archivePortfolioType" value="bond-archive" class="radio-styled" onchange="updateArchiveAddPlaceholder()"> BOND ARCHIVE
+        <input type="radio" name="archivePortfolioType" value="bond-archive" class="radio-styled" onchange="updateArchiveAddPlaceholder()"> REALIZED BONDS
       </label>
       <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
         <input type="radio" name="archivePortfolioType" value="cash" class="radio-styled" onchange="updateArchiveAddPlaceholder()"> CASH
@@ -522,6 +522,103 @@ function initPortfolios() {
   currentPortfolioId = localStorage.getItem('pt_current');
   if (!currentPortfolioId || !portfolios[currentPortfolioId]) {
     currentPortfolioId = Object.keys(portfolios)[0];
+  }
+}
+
+// ── Last view persistence ───────────────────────────────────────────────────
+// Saves the user's last "place" — viewMode, current portfolio in each kind,
+// and switcher open/tab state. Restored on app reload so user lands where
+// they were last.
+function saveLastView() {
+  try {
+    var sw = document.getElementById('portfolioSwitcher');
+    var data = {
+      viewMode: viewMode,
+      portfolioId: currentPortfolioId,
+      bondPortfolioId: currentBondPortfolioId,
+      cashPortfolioId: currentCashPortfolioId,
+      switcherTab: switcherTab,
+      switcherOpen: !!(sw && sw.classList.contains('open'))
+    };
+    localStorage.setItem('pt_lastView', JSON.stringify(data));
+  } catch(e) {}
+}
+
+function restoreLastView() {
+  // Ensure all data is loaded so we can validate portfolio existence
+  bondPortfolios = getBondPortfolios();
+  cashPortfolios = getCashPortfolios();
+  var raw = null;
+  try { raw = localStorage.getItem('pt_lastView'); } catch(e) {}
+  if (!raw) return { switcherOpen: false };
+  var data;
+  try { data = JSON.parse(raw); } catch(e) { return { switcherOpen: false }; }
+  if (!data || !data.viewMode) return { switcherOpen: false };
+
+  // Collapse sub-views to their primary form (start "calm"):
+  //   stock sub-views → 'main'
+  //   summary sub-views → 'summary'
+  var stockSubs = ['chart','market','analytics','movers','alerts','weight','fundamentals'];
+  var summarySubs = ['summary-chart','summary-market','summary-analytics','summary-movers','summary-alerts'];
+  if (stockSubs.indexOf(data.viewMode) !== -1) data.viewMode = 'main';
+  else if (summarySubs.indexOf(data.viewMode) !== -1) data.viewMode = 'summary';
+
+  // Restore portfolio context (validate existence)
+  if (data.portfolioId && portfolios[data.portfolioId]) {
+    currentPortfolioId = data.portfolioId;
+  }
+  if (data.bondPortfolioId && bondPortfolios[data.bondPortfolioId]) {
+    currentBondPortfolioId = data.bondPortfolioId;
+  }
+  if (data.cashPortfolioId && cashPortfolios[data.cashPortfolioId]) {
+    currentCashPortfolioId = data.cashPortfolioId;
+  }
+
+  // Validate viewMode has the required context; fall back to switcher if missing
+  var forceSwitcher = false;
+  if (data.viewMode === 'main') {
+    if (!currentPortfolioId || !portfolios[currentPortfolioId]) {
+      var firstStock = Object.keys(portfolios).find(function(id) { return !portfolios[id].archive; });
+      if (firstStock) currentPortfolioId = firstStock;
+      else forceSwitcher = true;
+    }
+  } else if (data.viewMode === 'bonds') {
+    if (!currentBondPortfolioId || !bondPortfolios[currentBondPortfolioId]) {
+      var firstBond = Object.keys(bondPortfolios)[0];
+      if (firstBond) currentBondPortfolioId = firstBond;
+      else { data.viewMode = 'main'; forceSwitcher = true; }
+    }
+  } else if (data.viewMode === 'cash') {
+    if (!currentCashPortfolioId || !cashPortfolios[currentCashPortfolioId]) {
+      var firstCash = Object.keys(cashPortfolios)[0];
+      if (firstCash) currentCashPortfolioId = firstCash;
+      else { data.viewMode = 'main'; forceSwitcher = true; }
+    }
+  }
+
+  viewMode = data.viewMode;
+  if (data.switcherTab) switcherTab = data.switcherTab;
+
+  return { switcherOpen: !!data.switcherOpen || forceSwitcher };
+}
+
+function setTitleForCurrentView() {
+  var t = document.getElementById('portfolioTitle');
+  if (!t) return;
+  if (viewMode === 'bonds' && currentBondPortfolioId && bondPortfolios && bondPortfolios[currentBondPortfolioId]) {
+    t.textContent = bondPortfolios[currentBondPortfolioId].name;
+  } else if (viewMode === 'cash' && currentCashPortfolioId && cashPortfolios && cashPortfolios[currentCashPortfolioId]) {
+    t.textContent = cashPortfolios[currentCashPortfolioId].name;
+  } else if (viewMode === 'bond-summary') {
+    t.textContent = 'BOND SUMMARY';
+  } else if (viewMode === 'archive-summary') {
+    t.textContent = 'REALIZED SUMMARY';
+  } else if (viewMode === 'summary' || viewMode === 'global-weight') {
+    t.textContent = 'SUMMARY';
+  } else if (currentPortfolioId && portfolios[currentPortfolioId]) {
+    t.textContent = portfolios[currentPortfolioId].name;
+  } else {
+    t.textContent = 'PORTFOLIOS';
   }
 }
 var CURRENCY_SYMBOLS = {
@@ -807,9 +904,11 @@ function toggleSwitcher() {
   var el = document.getElementById('portfolioSwitcher');
   el.classList.toggle('open');
   if (el.classList.contains('open')) renderSwitcher();
+  saveLastView();
 }
 function closeSwitcher() {
   document.getElementById('portfolioSwitcher').classList.remove('open');
+  saveLastView();
 }
 function closeSwitcherOutside(e) {
   if (e.target === document.getElementById('portfolioSwitcher')) closeSwitcher();
@@ -836,8 +935,8 @@ function updateArchiveAddPlaceholder() {
     var sel = document.querySelector('input[name="archivePortfolioType"]:checked');
     var v = sel ? sel.value : 'archive';
     if (v === 'cash') nameInput.placeholder = 'CASH NAME';
-    else if (v === 'bond-archive') nameInput.placeholder = 'BOND ARCHIVE NAME';
-    else nameInput.placeholder = 'STOCK ARCHIVE NAME';
+    else if (v === 'bond-archive') nameInput.placeholder = 'REALIZED BONDS NAME';
+    else nameInput.placeholder = 'REALIZED STOCKS NAME';
   } else {
     nameInput.placeholder = 'NAME';
   }
@@ -851,6 +950,7 @@ function setSwitcherTab(tab) {
   });
   updateAddFormForTab();
   renderSwitcher();
+  saveLastView();
 }
 
 function isArchivePortfolio(p) {
@@ -861,8 +961,8 @@ function archivePortfolio(id) {
   var p = portfolios[id];
   if (!p) return;
   var allSold = p.positions && p.positions.length > 0 && p.positions.every(function(pos) { return pos.sold; });
-  if (!allSold) { alert('Can only archive when all positions are sold.'); return; }
-  if (!confirm('Archive portfolio "' + p.name + '"?')) return;
+  if (!allSold) { alert('Can only move to Realized when all positions are sold.'); return; }
+  if (!confirm('Move portfolio "' + p.name + '" to Realized?')) return;
   portfolios[id].archive = true;
   savePortfolios();
   save();
@@ -1485,7 +1585,7 @@ function showArchiveMenu(posId, btn) {
   var archivePids = Object.keys(portfolios).filter(function(pid) { return portfolios[pid].archive; }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
 
   if (archivePids.length === 0) {
-    list.innerHTML = '<div style="padding:10px 12px;font-size:11px;color:var(--dim)">No archive portfolios</div>';
+    list.innerHTML = '<div style="padding:10px 12px;font-size:11px;color:var(--dim)">No realized portfolios</div>';
   } else {
     list.innerHTML = archivePids.map(function(pid) {
       return '<div onclick="moveToArchive(&apos;' + pid + '&apos;)" style="padding:9px 14px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--border);color:var(--bright)">' + portfolios[pid].name + '</div>';
@@ -1547,7 +1647,7 @@ function archiveBondPosition(posId, btn) {
   var bondArchiveIds = Object.keys(bondPortfolios).filter(function(pid) { return bondPortfolios[pid].archive; }).sort(function(a,b) { return bondPortfolios[a].name.localeCompare(bondPortfolios[b].name); });
 
   if (bondArchiveIds.length === 0) {
-    list.innerHTML = '<div style="padding:10px 12px;font-size:11px;color:var(--dim)">No bond archive portfolios</div>';
+    list.innerHTML = '<div style="padding:10px 12px;font-size:11px;color:var(--dim)">No realized bond portfolios</div>';
   } else {
     list.innerHTML = bondArchiveIds.map(function(pid) {
       return '<div onclick="moveToBondArchive(&apos;' + pid + '&apos;)" style="padding:9px 14px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--border);color:var(--bright)">' + bondPortfolios[pid].name + '</div>';
@@ -2282,7 +2382,7 @@ function renderSwitcher() {
 
     // Show fallback message only when all sections are empty
     if (archiveIds.length === 0 && bondArchiveIds.length === 0 && cashIds.length === 0) {
-      html += '<div style="padding:10px 14px;font-size:11px;color:var(--dim)">No archive portfolios</div>';
+      html += '<div style="padding:10px 14px;font-size:11px;color:var(--dim)">No realized portfolios</div>';
     }
 
     // Archive summary
@@ -2311,7 +2411,7 @@ function renderSwitcher() {
       + '<span class="portfolio-item-name">' + p.name + '</span>' + (p.watchlist ? '' : ' <span style="color:var(--dim);font-size:10px">' + (p.currencyCode || 'USD') + '</span>') + ' '
       + '<span class="portfolio-item-count">' + activeTickerCount(p) + ' pos' + (active ? ' &#10003;' : '') + '</span>'
       + '</div>'
-      + (!p.watchlist ? '<button class="btn-icon" onclick="archivePortfolio(\'' + id + '\')" title="Archive" style="font-size:14px;padding:4px 6px;color:var(--dim)">&#8863;</button>' : '')
+      + (!p.watchlist ? '<button class="btn-icon" onclick="archivePortfolio(\'' + id + '\')" title="Move to Realized" style="font-size:14px;padding:4px 6px;color:var(--dim)">&#8863;</button>' : '')
       + '<button class="btn-icon" onclick="renamePortfolio(\'' + id + '\')" title="Rename" style="font-size:13px;padding:4px 7px">&#9998;</button>'
       + '<button class="btn-icon" onclick="deletePortfolio(\'' + id + '\')" title="Delete" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
       + '</div>'
@@ -2333,7 +2433,7 @@ function renderSwitcher() {
 }
 function switchToArchiveSummary() {
   viewMode = 'archive-summary';
-  document.getElementById('portfolioTitle').textContent = 'ARCHIVE SUMMARY';
+  document.getElementById('portfolioTitle').textContent = 'REALIZED SUMMARY';
   document.getElementById('viewMenuBtn').disabled = true;
   document.getElementById('viewMenuBtn').style.opacity = '0.3';
   var btn = document.getElementById('refreshAllBtn');
@@ -5680,6 +5780,7 @@ function toggleCurrentModeMenu(el) {
 }
 
 function render() {
+  saveLastView();
   updateViewMenuBtn();
   var stockForm = document.getElementById('stockAddForm');
   if (stockForm) stockForm.style.display = (['bonds','bond-summary','cash','summary','summary-market','summary-chart','summary-analytics','archive-summary','global-weight'].indexOf(viewMode) !== -1) ? 'none' : '';
@@ -5882,7 +5983,7 @@ function render() {
       editActions = '';
     } else {
       sellAction = p.sold
-        ? '<button class="btn-icon" onclick="showArchiveMenu(' + p.id + ', this)" title="Move to archive" style="font-size:14px;padding:0 4px">&#8863;</button>'
+        ? '<button class="btn-icon" onclick="showArchiveMenu(' + p.id + ', this)" title="Move to Realized" style="font-size:14px;padding:0 4px">&#8863;</button>'
         : (p.qty > 0 ? '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--bright)" onclick="sellPosition(' + p.id + ')">SELL</button>' : '');
       editActions = '<button class="btn-icon" onclick="showMoveMenu(' + p.id + ', this)" title="Move to portfolio" style="font-size:17px;padding:0 4px;line-height:1">&#8680;</button>'
         + '<button class="btn-icon" onclick="startEdit(' + p.id + ')">&#9998;</button>'
@@ -6282,7 +6383,7 @@ function render() {
         : '';
 
       var emptyMsg = !hasAnySection
-        ? '<div style="color:var(--dim);padding:20px;text-align:center">No archived portfolios</div>'
+        ? '<div style="color:var(--dim);padding:20px;text-align:center">No realized portfolios</div>'
         : '';
 
       area.innerHTML = archiveHtml + bondHtml + cashHtml + grandTotalHtml + emptyMsg;
@@ -6613,6 +6714,9 @@ function render() {
     //   1. Bond name (A→Z)
     //   2. Purchase date (oldest first)
     //   3. Status: sold first; within sold, by sellDate (oldest first)
+    //      Note: at this tier only partial-sale records can tie on name+purchaseDate,
+    //      and they differ only by sold flag (same bondId → same maturity), so a
+    //      two-way sold/not-sold split is enough — no need to distinguish matured.
     //   4. Position id (smallest first)
     var sortedPositions = (bp.positions || []).slice().sort(function(a, b) {
       var bondA = bondsDb.find(function(x) { return x.id === a.bondId; });
@@ -6700,7 +6804,7 @@ function render() {
         var isExpanded = expandedBondPosId === pos.id;
         var actionBtn = '';
         if (calc.isClosed) {
-          actionBtn = '<button class="btn-icon" onclick="archiveBondPosition(&apos;' + pos.id + '&apos;, this)" title="Move to archive" style="font-size:14px;padding:0 4px;color:var(--dim)">&#8863;</button>';
+          actionBtn = '<button class="btn-icon" onclick="archiveBondPosition(&apos;' + pos.id + '&apos;, this)" title="Move to Realized" style="font-size:14px;padding:0 4px;color:var(--dim)">&#8863;</button>';
         } else if (!isWatchlist) {
           actionBtn = '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--bright)" onclick="sellBondPosition(&apos;' + pos.id + '&apos;)">SELL</button>';
         }
@@ -7706,9 +7810,25 @@ loadLocal();
 loadDicts();
 migrateDicts();
 cashPortfolios = getCashPortfolios();
-document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
+var _restoredView = restoreLastView();
+setTitleForCurrentView();
 showKeyStatus();
 render();
+if (_restoredView && _restoredView.switcherOpen) {
+  setTimeout(function() {
+    var sw = document.getElementById('portfolioSwitcher');
+    if (sw) {
+      sw.classList.add('open');
+      renderSwitcher();
+      // Update tab buttons to reflect restored switcherTab
+      ['active','archive','bonds'].forEach(function(t) {
+        var el = document.getElementById('tab' + t.charAt(0).toUpperCase() + t.slice(1));
+        if (el) { el.style.background = switcherTab === t ? 'var(--bg2)' : 'var(--bg)'; el.style.color = switcherTab === t ? 'var(--green)' : 'var(--dim)'; }
+      });
+      updateAddFormForTab();
+    }
+  }, 0);
+}
 (function() { var b = getCloudBackend(); var configured = b === 'kv' ? (getApiKey() && getKvKey()) : (getJbKey() && getJbBin()); if (configured) showCloudOverlay('Loading from cloud...', 'var(--dim)'); })();
 autoCloudLoad(function(loaded) {
   if (loaded) render();
