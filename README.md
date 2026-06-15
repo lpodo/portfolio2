@@ -25,6 +25,7 @@ A PWA stock portfolio tracker with a Cloudflare Worker backend. Supports all maj
   - [Analytics](#analytics)
   - [Expanded Row](#expanded-row)
   - [Bonds & Deposits](#bonds--deposits)
+  - [Cash](#cash)
   - [CSV Position Import / Export](#csv-position-import--export)
   - [Backup & Restore](#backup--restore)
   - [Cloud Sync](#cloud-sync)
@@ -51,6 +52,14 @@ A PWA stock portfolio tracker with a Cloudflare Worker backend. Supports all maj
 - Currency symbol per portfolio — set at creation, editable via rename.
 - **Position counts** in the portfolio switcher show unique active tickers only (excluding sold and qty=0). The Σ SUMMARY count shows globally unique tickers across all non-watchlist portfolios — a ticker held in multiple portfolios is counted once.
 
+### Portfolio switcher tabs
+
+The portfolio switcher has three tabs:
+
+- **STOCKS** — regular equity portfolios, watchlists, and Σ SUMMARY.
+- **BONDS** — bond and deposit portfolios, plus their Σ SUMMARY (see [Bonds & Deposits](#bonds--deposits)).
+- **ARCHIVE** — archive portfolios for both stocks and bonds, listed together and separated by a divider. Cash portfolios appear at the bottom of the same tab.
+
 ### Multi-currency portfolios
 
 Each position carries its own currency (from Yahoo Finance). ENTRY/CURRENT show the position currency symbol. Totals and weights are converted to the portfolio base currency via live FX rates (`EURUSD=X` etc.).
@@ -68,20 +77,28 @@ Selected via the **WATCHLIST** radio button at creation. Designed for tracking i
 
 ### Archive portfolios
 
-Archive portfolios store closed positions for historical tracking. Accessed via the **ARCHIVE** tab in the portfolio switcher.
+Archive portfolios store closed positions for historical tracking. Accessed via the **ARCHIVE** tab in the portfolio switcher. Two kinds — **stock archives** and **bond archives** — appear in the same tab, listed separately, then cash portfolios at the bottom.
 
-**Key differences from regular portfolios:**
+**Common properties:**
 
-- No Refresh button — all positions are static (sold).
-- Dropdown menu has P&L and WEIGHTS only (no MARKET view).
-- All positions are created in sold status; CURRENT (sell price) is required on add.
-- Archive portfolios are excluded from the main Summary and from Refresh All.
+- No Refresh button — all positions are static (closed).
+- Excluded from the main Σ SUMMARY and from Refresh All.
+- Have a dedicated Σ SUMMARY at the bottom of the ARCHIVE tab. Same calculation as the main Summary — values in native currency, totals in USD with live FX conversion.
 
-**Creating an archive portfolio:** switch to the ARCHIVE tab and use the add form (no INDEX/REGULAR radio — always creates an archive portfolio).
+**Stock archives:**
 
-**Archiving a regular portfolio:** click ⊟ next to the portfolio name. Only available when **all** positions are sold.
+- Dropdown menu has P&L and WEIGHTS only (no MARKET, CHART, ANALYTICS, FUNDAMENTALS, ALERTS).
+- Positions are created in sold status; CURRENT (sell price) is required on add.
+- Populated either by adding sold positions directly, or by moving sold positions in via the ⊟ button.
 
-**Archive Summary:** Σ SUMMARY at the bottom of the ARCHIVE tab. Same calculation as the main Summary — values in native currency, totals in USD with live FX conversion.
+**Bond archives:**
+
+- Show closed bond positions: sold bonds (with sell date, sell clean price, sell accrued interest) and matured bonds.
+- Populated by moving sold or matured bonds in via the ⊟ button — they don't accept direct position add.
+
+**Creating an archive portfolio:** switch to the ARCHIVE tab and use the add form. A **STOCK ARCHIVE / BOND ARCHIVE** radio selects the type.
+
+**Archiving an entire active portfolio (stocks only):** click ⊟ next to the portfolio name in the STOCKS tab. Only available when **all** positions are sold; the portfolio itself moves to the ARCHIVE tab.
 
 ## Positions
 
@@ -211,6 +228,8 @@ A colored dot `●` appears after the ticker name when any alert on that positio
 - Yellow `●` — at least one `>` alert is triggered (price crossed above target).
 - Sky-blue `●` — at least one `<` alert is triggered (price crossed below target).
 - Both dots appear (sky-blue first, then yellow) when alerts of both directions are triggered.
+
+When **multiple** alerts in the same direction are triggered for a ticker, the corresponding dot **blinks** — a single triggered alert renders as a solid dot. The blink speed progresses with the number of triggered alerts: 2 alerts blink at the user's base period, 3+ alerts step one level faster per extra alert, clamped at the fastest level. The base period (slow / med / fast) is configurable in Settings → **APPEARANCE**.
 
 Each color is shown at most once per ticker, regardless of how many alerts in that direction have triggered. The dots are visible in all views that show tickers: P&L, MARKET, WEIGHTS, Σ MARKET, Σ WEIGHTS, ALERTS.
 
@@ -367,7 +386,18 @@ P/E  18.37   fw P/E  29.26                                  [›]
 - **Analyst vote breakdown** (line 1) sourced from `recommendationTrend`.
 - **Avg tgt** is the current mean analyst price target with upside %; **30d tgt** / **100d tgt** is the rolling average over the corresponding window. The app prefers 30d, falls back to 100d if there are no entries in the last 30 days, or omits the line if there are no entries in the last 100 days.
 - **Trailing P/E** is computed client-side as `currentPrice / trailingEps`; **forward P/E** is read directly from Yahoo.
-- The blue `[›]` button opens **More** — a full-screen overlay with additional information from Yahoo Finance (Chart, Market, Key Stats, Earnings, Analysts and Sentiment).
+- The blue `[›]` button opens the **More** overlay (see below).
+
+### More overlay
+
+A full-screen overlay with additional Yahoo Finance information, organized into six tabs. Opens on the **CHART** tab by default; other tabs fetch their data on first switch and are kept for the session. Escape or ✕ closes the overlay.
+
+- **CHART** — price chart for the single ticker across seven ranges (1D · 5D · 1M · 3M · 6M · 1Y · 5Y). Uses the existing history cache, so reopening within the same day is instant.
+- **MARKET** — current market data: regular and pre/post prices, bid/ask, day and 52-week ranges, 50d/200d/all-time averages, volume, beta.
+- **KEY STATS** — fundamentals: market cap, cash and debt, cash flows, revenue and earnings growth, valuation multiples (P/E, P/B, P/S, PEG), trailing/forward EPS, dividend info, next earnings date.
+- **EARNINGS** — quarterly and yearly toggle: a table of revenue, net income, EPS (quarterly only), and net margin, plus a stacked bar chart with a net-margin line overlay.
+- **ANALYSTS** — analyst price targets (high / low / mean / median with upside %), recommendation summary, vote breakdown, and a history table of recent upgrades/downgrades with a rolling-window average target tied to a configurable day count.
+- **SENTIMENT** — insider/institutional ownership and short interest (`sharesShort`, `shortPercentOfFloat`).
 
 ### Behavior in aggregation mode
 
@@ -400,8 +430,6 @@ Bonds can be edited (✎) or deleted (✕) from the database. The database is sh
 
 Each bond portfolio has a name and base currency. Positions are sorted by maturity date ascending.
 
-**Limitations:** Only the hold-to-maturity strategy is supported. Selling bonds before maturity is not currently implemented.
-
 **Position fields (entered manually):**
 
 - Bond name (selected from database)
@@ -420,6 +448,18 @@ Each bond portfolio has a name and base currency. Positions are sorted by maturi
 Remaining coupons are calculated by stepping back from the maturity date in coupon intervals and counting payments strictly after the purchase date (accrued interest already accounts for the current period).
 
 **Matured bonds** (maturity date ≤ today) are shown in italic with reduced opacity, with a separate MATURED VALUE totals bar. Active bonds have their own ACTIVE VALUE totals bar. If only one group exists, only that total is shown.
+
+### Selling bonds
+
+Bonds can be sold before maturity via the **SELL** button on a position row.
+
+**Sell dialog:** asks for sell quantity (default: full position), sell date (defaults to today, or to the maturity date if it has already passed), clean price as % of par (default 100), and accrued interest (default 0). A **PREVIEW** button computes and shows BODY P&L, COUPON INCOME, total PROFIT, RETURN, and ANN.YIELD before committing; the button then changes to **CONFIRM SELL** to apply the sale.
+
+**Partial sell:** if quantity < position qty, the position is split into two records — the sold portion (with sell-side params) and the remainder (active, unchanged buy-side params).
+
+**Sold bonds:** marked with `sold: true` and the sell-side fields. They are excluded from active totals and contribute to a separate **SOLD** totals bar in the bond portfolio view. The sell-side params can be corrected via ✎. Use the ⊟ button to move a sold or matured bond to a bond archive portfolio.
+
+For sold bonds, **Profit** uses the sell-side dirty price instead of par + total coupons, and **coupons received** counts only coupons in `(purchaseDate, sellDate]`.
 
 ### Deposit Portfolios
 
@@ -465,6 +505,29 @@ annYield = ((1 + rate/100 / freq) ^ freq − 1) × 100
 ### Bond & Deposit Σ SUMMARY
 
 Deposit portfolios appear in the bond **Σ SUMMARY** view alongside bond portfolios. Each deposit portfolio contributes one row (or two rows if it contains both active and matured deposits). Reported columns are identical to bonds: **VALUE · PROFIT · RETURN · WEIGHT**. Non-USD portfolios are converted using the same FX rate lookup as bonds.
+
+## Cash
+
+Cash portfolios track free funds and cashflow events outside of any specific instrument — fees, dividends, coupons, and so on. Each portfolio is a flat list of dated **entries**, not positions.
+
+Cash portfolios live at the bottom of the **ARCHIVE** tab in the portfolio switcher, below stock and bond archives.
+
+### Entries
+
+Each entry has:
+
+- **Date** — required; future dates are not allowed.
+- **Amount** — required; sign chosen via a `+` / `−` toggle next to the input.
+- **Currency** — defaults to the portfolio base currency; validated against Yahoo Finance.
+- **Category** — required; free text with autocompletion from a shared dictionary (`pt_cash_cat_dict`).
+
+Entries can be edited (✎) or deleted (✕) inline. The ⊟ button moves an entry to another cash portfolio.
+
+### Table view
+
+Columns: **DATE · CATEGORY · AMOUNT**, sorted newest first (secondary sort by id for stable ordering on the same date). Amounts are sign-colored (green for positive, red for negative).
+
+A **TOTAL** row at the bottom shows the net balance, converted to the portfolio base currency via live FX rates. Entries in other currencies are converted on the fly.
 
 ## CSV Position Import / Export
 
@@ -667,6 +730,8 @@ Primary on-device storage:
 - `pt_portfolios` — all equity portfolios and positions
 - `pt_bonds_db` — bond database (bond definitions)
 - `pt_bond_portfolios` — bond portfolios and positions (also used by deposit portfolios)
+- `pt_cash_portfolios` — cash portfolios and entries
+- `pt_cash_cat_dict` — shared dictionary of cash entry categories
 - `pt_current` — active portfolio ID
 - `pt_finnhub` — Cloudflare Worker URL
 - `pt_token` — API token for Cloudflare Worker
@@ -683,6 +748,8 @@ Primary on-device storage:
 - `pt_kv_key` — Cloudflare KV user key
 - `pt_cloud_ts` — cloud sync timestamp (conflict prevention)
 - `pt_enc_key` — AES-GCM encryption password
+- `pt_contrast` — APPEARANCE contrast preset (`low` / `med` / `high`); default `low`
+- `pt_blink_period` — APPEARANCE base blink period for triggered alerts (`slow` / `med` / `fast`); default `med`
 - `pt_close_mode` — close column mode: `prev` (Prev.Close), `reg` (Reg.Price), or a historical period (`5d`, `1mo`, `3mo`, `6mo`, `1y`, `5y`); default `prev`
 - `pt_current_mode` — current column mode: `cur` (Current) or `reg` (Reg.Price); default `cur`
 - `pt_chart_sel_{portfolioId}` — per-portfolio ticker selection for the POSITIONS chart
@@ -698,7 +765,7 @@ Cross-device sync via two supported backends (selected in Settings):
 - **JSONBin.io** — direct browser-to-API requests; requires a Master Key and Bin ID.
 - **Cloudflare KV** — routed through the Worker; requires only a user-defined KV Key. More reliable and no extra API keys needed.
 
-Bond and deposit data (`bondsDb`, `bondPortfolios`, stored in `pt_bonds_db` and `pt_bond_portfolios`) is included in cloud sync alongside equity portfolios, in the same cloud storage record, regardless of backend.
+Bond, deposit, and cash data (`bondsDb`, `bondPortfolios`, `cashPortfolios`, stored in `pt_bonds_db`, `pt_bond_portfolios`, and `pt_cash_portfolios`) is included in cloud sync alongside equity portfolios, in the same cloud storage record, regardless of backend.
 
 ### Structural data vs live prices
 
