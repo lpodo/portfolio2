@@ -4373,6 +4373,73 @@ function buildMarketTotals(fxMap, baseCode, baseSym) {
 window.chartViewType = 'portfolio'; // 'portfolio' or 'positions'
 window.chartSelectionOpen = false;
 
+// ── Position sets (per-portfolio named subsets of tickers) ──────────────────
+// Stored in portfolio JSON as positionSets: [{id, name, tickers: [...]}].
+// Each set identifies positions by ticker (not id) — durable across re-adds.
+// Used in chart and fundamentals views; menu shows sets in place of the
+// old "positions" item, with a MANAGE SETS button at the bottom.
+
+function getPositionSets(portfolioId) {
+  var p = portfolios[portfolioId || currentPortfolioId];
+  return (p && p.positionSets) ? p.positionSets : [];
+}
+
+function savePositionSets(portfolioId, sets) {
+  var p = portfolios[portfolioId || currentPortfolioId];
+  if (!p) return;
+  p.positionSets = sets;
+  save();
+}
+
+function createPositionSet(name, tickers) {
+  var sets = getPositionSets().slice();
+  var id = 'set_' + Date.now();
+  sets.push({ id: id, name: (name || '').trim() || 'NEW SET', tickers: tickers || [] });
+  savePositionSets(currentPortfolioId, sets);
+  return id;
+}
+
+function updatePositionSet(setId, updates) {
+  var sets = getPositionSets().map(function(s) {
+    return s.id === setId ? Object.assign({}, s, updates) : s;
+  });
+  savePositionSets(currentPortfolioId, sets);
+}
+
+function deletePositionSet(setId) {
+  var sets = getPositionSets().filter(function(s) { return s.id !== setId; });
+  savePositionSets(currentPortfolioId, sets);
+  // If this set was selected anywhere, fall back
+  if (getChartSelectedSet() === setId) setChartSelectedSet('portfolio');
+  if (getFundamentalsSelectedSet() === setId) setFundamentalsSelectedSet(null);
+}
+
+// ── Per-view current selection (which set is active in chart/fundamentals) ─
+function getChartSelectedSet() {
+  // Returns 'portfolio' | setId | null
+  try {
+    var v = localStorage.getItem('pt_chart_set_' + currentPortfolioId);
+    if (v) return v;
+  } catch(e) {}
+  return 'portfolio'; // default for chart
+}
+function setChartSelectedSet(v) {
+  try { localStorage.setItem('pt_chart_set_' + currentPortfolioId, v); } catch(e) {}
+}
+function getFundamentalsSelectedSet() {
+  try {
+    var v = localStorage.getItem('pt_fund_set_' + currentPortfolioId);
+    if (v) return v;
+  } catch(e) {}
+  return null; // default for fundamentals: no selection
+}
+function setFundamentalsSelectedSet(v) {
+  try {
+    if (v == null) localStorage.removeItem('pt_fund_set_' + currentPortfolioId);
+    else localStorage.setItem('pt_fund_set_' + currentPortfolioId, v);
+  } catch(e) {}
+}
+
 
 function activeTickerCount(p) {
   var seen = {};
@@ -4391,15 +4458,15 @@ function getChartSelKey() {
 }
 
 function getChartSelection() {
-  var saved = localStorage.getItem(getChartSelKey());
-  if (saved) {
-    try {
-      var arr = JSON.parse(saved);
-      var allTickers = getChartUniqueTickers();
-      return arr.filter(function(t) { return allTickers.indexOf(t) !== -1; });
-    } catch(e) {}
-  }
-  return []; // default: none
+  // Returns array of tickers for the currently selected set, or [] if no set
+  // selected. 'portfolio' is handled separately (returns all unique tickers).
+  var sel = getChartSelectedSet();
+  if (sel === 'portfolio') return getChartUniqueTickers();
+  var set = getPositionSets().find(function(s) { return s.id === sel; });
+  if (!set) return [];
+  // Filter to tickers actually present in current portfolio
+  var allTickers = getChartUniqueTickers();
+  return set.tickers.filter(function(t) { return allTickers.indexOf(t) !== -1; });
 }
 
 function getChartUniqueTickers() {
@@ -4433,6 +4500,26 @@ function setChartViewType(t) {
   render();
 }
 
+function setChartSelectionPortfolio() {
+  setChartSelectedSet('portfolio');
+  var m = document.getElementById('chartViewMenu');
+  if (m) m.style.display = 'none';
+  render();
+}
+function setChartSelectionSet(setId) {
+  setChartSelectedSet(setId);
+  var m = document.getElementById('chartViewMenu');
+  if (m) m.style.display = 'none';
+  render();
+}
+function openPositionSetsFromMenu() {
+  var m = document.getElementById('chartViewMenu');
+  if (m) m.style.display = 'none';
+  var m2 = document.getElementById('fundViewMenu');
+  if (m2) m2.style.display = 'none';
+  openPositionSetsModal();
+}
+
 function toggleChartSelection() {
   window.chartSelectionOpen = !window.chartSelectionOpen;
   render();
@@ -4464,21 +4551,156 @@ function chartSelectNone() {
 
 window.chartRange = '1mo';
 
+// ── Position Sets management modal ──────────────────────────────────────────
+// Opens a modal listing all sets for the current portfolio with edit/delete
+// inline. "+ NEW SET" creates one; edit form shows name input + ticker
+// checkboxes. Used from chart and fundamentals view menus.
+
+window._editingSetId = null;  // null = not editing; '_new' = adding; setId = editing existing
+
+function openPositionSetsModal() {
+  window._editingSetId = null;
+  var existing = document.getElementById('positionSetsModal');
+  if (existing) existing.remove();
+  var modal = document.createElement('div');
+  modal.id = 'positionSetsModal';
+  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:400;display:flex;align-items:flex-start;justify-content:center;padding:40px 12px;overflow-y:auto';
+  modal.onclick = function(e) { if (e.target === modal) closePositionSetsModal(); };
+  document.body.appendChild(modal);
+  renderPositionSetsModal();
+}
+
+function closePositionSetsModal() {
+  var m = document.getElementById('positionSetsModal');
+  if (m) m.remove();
+  window._editingSetId = null;
+  render();
+}
+
+function renderPositionSetsModal() {
+  var modal = document.getElementById('positionSetsModal');
+  if (!modal) return;
+  var sets = getPositionSets();
+  var editing = window._editingSetId;
+  var allTickers = getChartUniqueTickers();
+
+  function renderEditForm(set) {
+    var checked = set ? (set.tickers || []) : [];
+    var nameVal = set ? set.name : '';
+    return '<div style="padding:10px 12px;background:var(--bg);border:1px solid var(--border)">'
+      + '<div class="field"><label>NAME</label><input type="text" id="setNameInput" value="' + nameVal + '" style="width:100%;box-sizing:border-box" autocomplete="off" oninput="this.value = this.value.toUpperCase()"></div>'
+      + (allTickers.length === 0
+          ? '<div style="font-size:11px;color:var(--dim);padding:10px 0">No tickers in this portfolio</div>'
+          : '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:10px 0 6px">TICKERS</div>'
+            + '<div style="display:flex;gap:8px;margin-bottom:8px">'
+            + '<button onclick="setsModalSelectAll()" class="btn" style="font-size:9px;padding:3px 8px">ALL</button>'
+            + '<button onclick="setsModalSelectNone()" class="btn" style="font-size:9px;padding:3px 8px">NONE</button>'
+            + '</div>'
+            + '<div style="display:flex;flex-direction:column;gap:5px;max-height:280px;overflow-y:auto;border:1px solid var(--border);padding:8px;background:var(--bg2)">'
+            + allTickers.map(function(t) {
+                var pos = positions.find(function(p) { return p.ticker === t; });
+                var name = pos && pos.shortName ? pos.shortName : '';
+                var isChecked = checked.indexOf(t) !== -1 ? 'checked' : '';
+                return '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">'
+                  + '<input type="checkbox" id="setcb_' + t + '" ' + isChecked + ' style="cursor:pointer">'
+                  + '<span>' + t + '</span>'
+                  + (name ? '<span style="color:var(--dim);font-size:10px">' + name + '</span>' : '')
+                  + '</label>';
+              }).join('')
+            + '</div>')
+      + '<div style="display:flex;gap:8px;margin-top:12px">'
+      + '<button onclick="savePositionSetFromModal()" class="btn btn-green" style="padding:5px 14px">SAVE</button>'
+      + '<button onclick="cancelEditPositionSet()" class="btn" style="padding:5px 14px;color:var(--dim)">CANCEL</button>'
+      + '</div>'
+      + '</div>';
+  }
+
+  var setsListHtml = sets.length === 0 && editing !== '_new'
+    ? '<div style="font-size:11px;color:var(--dim);padding:14px 0;text-align:center">No sets yet</div>'
+    : sets.map(function(s) {
+        if (s.id === editing) return renderEditForm(s);
+        var count = (s.tickers || []).filter(function(t) { return allTickers.indexOf(t) !== -1; }).length;
+        return '<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--border)">'
+          + '<div style="flex:1;font-size:12px"><span style="color:var(--bright);letter-spacing:1px">' + s.name + '</span> <span style="color:var(--dim);font-size:10px">' + count + (count === 1 ? ' ticker' : ' tickers') + '</span></div>'
+          + '<button class="btn-icon" onclick="startEditPositionSet(&apos;' + s.id + '&apos;)" style="font-size:13px;padding:4px 7px">&#9998;</button>'
+          + '<button class="btn-icon" onclick="confirmDeletePositionSet(&apos;' + s.id + '&apos;)" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
+          + '</div>';
+      }).join('');
+
+  var newRowHtml = editing === '_new'
+    ? renderEditForm(null)
+    : '<button onclick="startEditPositionSet(&apos;_new&apos;)" class="btn btn-green" style="margin-top:10px;padding:6px 14px">+ NEW SET</button>';
+
+  modal.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--border);padding:18px 18px 16px;min-width:280px;max-width:480px;width:100%;position:relative">'
+    + '<button class="btn-icon" onclick="closePositionSetsModal()" style="position:absolute;top:10px;right:10px;font-size:16px">&#10005;</button>'
+    + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:12px">POSITION SETS</div>'
+    + setsListHtml
+    + newRowHtml
+    + '</div>';
+}
+
+function startEditPositionSet(setId) {
+  window._editingSetId = setId;
+  renderPositionSetsModal();
+}
+
+function cancelEditPositionSet() {
+  window._editingSetId = null;
+  renderPositionSetsModal();
+}
+
+function setsModalSelectAll() {
+  getChartUniqueTickers().forEach(function(t) {
+    var cb = document.getElementById('setcb_' + t);
+    if (cb) cb.checked = true;
+  });
+}
+function setsModalSelectNone() {
+  getChartUniqueTickers().forEach(function(t) {
+    var cb = document.getElementById('setcb_' + t);
+    if (cb) cb.checked = false;
+  });
+}
+
+function savePositionSetFromModal() {
+  var nameInput = document.getElementById('setNameInput');
+  var name = (nameInput.value || '').trim().toUpperCase();
+  if (!name) { alert('Set name is required'); return; }
+  var allTickers = getChartUniqueTickers();
+  var selected = allTickers.filter(function(t) {
+    var cb = document.getElementById('setcb_' + t);
+    return cb && cb.checked;
+  });
+  if (window._editingSetId === '_new') {
+    createPositionSet(name, selected);
+  } else {
+    updatePositionSet(window._editingSetId, { name: name, tickers: selected });
+  }
+  window._editingSetId = null;
+  renderPositionSetsModal();
+}
+
+function confirmDeletePositionSet(setId) {
+  var set = getPositionSets().find(function(s) { return s.id === setId; });
+  if (!set) return;
+  if (!confirm('Delete set "' + set.name + '"?')) return;
+  deletePositionSet(setId);
+  renderPositionSetsModal();
+}
+
+
 // --- Fundamentals view: selection helpers + sub-view state ---
 function getFundamentalsSelKey() {
   return 'pt_fund_sel_' + currentPortfolioId;
 }
 
 function getFundamentalsSelection() {
-  var saved = localStorage.getItem(getFundamentalsSelKey());
-  if (saved) {
-    try {
-      var arr = JSON.parse(saved);
-      var allTickers = getFundamentalsUniqueTickers();
-      return arr.filter(function(t) { return allTickers.indexOf(t) !== -1; });
-    } catch(e) {}
-  }
-  return []; // default: none
+  var sel = getFundamentalsSelectedSet();
+  if (!sel) return [];
+  var set = getPositionSets().find(function(s) { return s.id === sel; });
+  if (!set) return [];
+  var allTickers = getFundamentalsUniqueTickers();
+  return set.tickers.filter(function(t) { return allTickers.indexOf(t) !== -1; });
 }
 
 function getFundamentalsUniqueTickers() {
@@ -4497,6 +4719,17 @@ function saveFundamentalsSelection(tickers) {
 
 function toggleFundamentalsSelection() {
   window.fundamentalsSelectionOpen = !window.fundamentalsSelectionOpen;
+  render();
+}
+
+function toggleFundViewMenu() {
+  var m = document.getElementById('fundViewMenu');
+  if (m) m.style.display = m.style.display === 'none' ? '' : 'none';
+}
+function setFundamentalsSelectionSet(setId) {
+  setFundamentalsSelectedSet(setId);
+  var m = document.getElementById('fundViewMenu');
+  if (m) m.style.display = 'none';
   render();
 }
 
@@ -7499,34 +7732,17 @@ function render() {
   // Chart view
   if (viewMode === 'chart') {
     var chartRange = window.chartRange || '1mo';
-    var cvt = isWatchlist() ? 'positions' : (window.chartViewType || 'portfolio');
-    var selOpen = window.chartSelectionOpen || false;
-    var allTickers = getChartUniqueTickers();
-    var selectedTickers = getChartSelection();
-
-    // Build selection panel HTML
-    var selPanel = '';
-    if (selOpen) {
-      selPanel = '<div style="background:var(--bg2);border:1px solid var(--border);padding:10px;margin-bottom:8px">'
-        + '<div style="display:flex;gap:8px;margin-bottom:8px">'
-        + '<button onclick="chartSelectAll()" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);background:var(--bg);color:var(--dim);cursor:pointer;font-family:var(--font)">ALL</button>'
-        + '<button onclick="chartSelectNone()" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);background:var(--bg);color:var(--dim);cursor:pointer;font-family:var(--font)">NONE</button>'
-        + '</div>'
-        + '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">'
-        + allTickers.map(function(t) {
-            var pos = positions.find(function(p) { return p.ticker === t && !p.sold && p.qty > 0; });
-            var name = pos && pos.shortName ? pos.shortName : '';
-            var checked = selectedTickers.indexOf(t) !== -1 ? 'checked' : '';
-            return '<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">'
-              + '<input type="checkbox" id="chartcb_' + t + '" ' + checked + ' style="cursor:pointer">'
-              + '<span>' + t + '</span>'
-              + (name ? '<span style="color:var(--dim);font-size:10px">' + name + '</span>' : '')
-              + '</label>';
-          }).join('')
-        + '</div>'
-        + '<button onclick="applyChartSelection()" class="btn btn-green" style="font-size:10px;padding:5px 14px">APPLY</button>'
-        + '</div>';
+    var sets = getPositionSets();
+    var selSetId = isWatchlist() ? (sets[0] ? sets[0].id : null) : getChartSelectedSet();
+    // Validate: if selected set was deleted, fall back to portfolio
+    if (selSetId !== 'portfolio' && selSetId && !sets.find(function(s) { return s.id === selSetId; })) {
+      selSetId = isWatchlist() ? null : 'portfolio';
+      if (!isWatchlist()) setChartSelectedSet('portfolio');
     }
+    var selSet = (selSetId && selSetId !== 'portfolio') ? sets.find(function(s) { return s.id === selSetId; }) : null;
+    var selLabel = isWatchlist()
+      ? (selSet ? selSet.name : 'NO SETS')
+      : (selSetId === 'portfolio' ? 'PORTFOLIO' : (selSet ? selSet.name : 'NO SET'));
 
     area.innerHTML = '<div style="padding:8px 0 4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
       + ['1d','5d','1mo','3mo','6mo','1y','5y'].map(function(r) {
@@ -7534,24 +7750,34 @@ function render() {
           return '<button onclick="setChartRange(&apos;' + r + '&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 6px;border:1px solid ' + (active ? 'var(--green)' : 'var(--border)') + ';background:' + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">' + r.toUpperCase().replace('MO','M') + '</button>';
         }).join('')
       + '<div style="flex:1"></div>'
+      + '<div style="position:relative">'
+      + '<button onclick="toggleChartViewMenu()" style="font-size:9px;letter-spacing:1px;padding:4px 8px;border:1px solid var(--green);background:var(--bg2);color:var(--green);cursor:pointer;font-family:var(--font);text-transform:uppercase">' + selLabel + '</button>'
+      + '<div id="chartViewMenu" style="display:none;position:absolute;right:0;top:100%;background:var(--bg2);border:1px solid var(--border);z-index:100;min-width:140px">'
       + (isWatchlist() ? '' :
-          '<div style="position:relative">'
-          + '<button onclick="toggleChartViewMenu()" style="font-size:9px;letter-spacing:1px;padding:4px 8px;border:1px solid var(--green);background:var(--bg2);color:var(--green);cursor:pointer;font-family:var(--font);text-transform:uppercase">' + cvt.toUpperCase() + '</button>'
-          + '<div id="chartViewMenu" style="display:none;position:absolute;right:0;top:100%;background:var(--bg2);border:1px solid var(--border);z-index:100;min-width:110px">'
-          + ['portfolio','positions'].map(function(t) {
-              return '<div onclick="setChartViewType(&apos;' + t + '&apos;)" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;color:' + (cvt === t ? 'var(--green)' : 'var(--bright)') + '">' + t.toUpperCase() + '</div>';
-            }).join('')
-          + '</div></div>'
+          '<div onclick="setChartSelectionPortfolio()" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;color:' + (selSetId === 'portfolio' ? 'var(--green)' : 'var(--bright)') + '">PORTFOLIO</div>'
         )
+      + (sets.length > 0 ? (isWatchlist() ? '' : '<div style="border-top:1px solid var(--border)"></div>') : '')
+      + sets.map(function(s) {
+          return '<div onclick="setChartSelectionSet(&apos;' + s.id + '&apos;)" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;color:' + (selSetId === s.id ? 'var(--green)' : 'var(--bright)') + '">' + s.name + '</div>';
+        }).join('')
+      + '<div style="border-top:1px solid var(--border)"></div>'
+      + '<div onclick="openPositionSetsFromMenu()" style="padding:10px 14px;cursor:pointer;font-size:10px;letter-spacing:2px;color:var(--dim)">MANAGE SETS&hellip;</div>'
+      + '</div></div>'
       + '</div>'
-      + (cvt === 'positions' ? '<div style="text-align:right;font-size:10px;margin-bottom:4px"><a href="#" onclick="toggleChartSelection();return false" style="color:var(--dim)">&#9998; Edit selection (' + selectedTickers.length + '/' + allTickers.length + ')</a></div>' : '')
-      + selPanel
       + '<div id="chartArea" style="min-height:200px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px">Loading...</div>';
 
-    if (cvt === 'portfolio' && !isWatchlist()) {
+    if (selSetId === 'portfolio' && !isWatchlist()) {
       loadChartData(chartRange);
+    } else if (selSet) {
+      var tickers = selSet.tickers.filter(function(t) { return getChartUniqueTickers().indexOf(t) !== -1; });
+      if (tickers.length === 0) {
+        document.getElementById('chartArea').innerHTML = '<div style="color:var(--dim);font-size:11px">No positions in this set</div>';
+      } else {
+        loadPositionsChartData(chartRange, tickers);
+      }
     } else {
-      loadPositionsChartData(chartRange, selectedTickers);
+      // No set selected and no portfolio option (watchlist) → empty state
+      document.getElementById('chartArea').innerHTML = '<div style="color:var(--dim);font-size:11px;text-align:center;padding:20px">Create a set to view the chart</div>';
     }
     return;
   }
@@ -7559,8 +7785,15 @@ function render() {
   // Fundamentals view
   if (viewMode === 'fundamentals') {
     var fSubView = window.fundamentalsSubView || 'targets';
-    var fSelOpen = window.fundamentalsSelectionOpen || false;
     var fAllTickers = getFundamentalsUniqueTickers();
+    var sets = getPositionSets();
+    var selSetId = getFundamentalsSelectedSet();
+    if (selSetId && !sets.find(function(s) { return s.id === selSetId; })) {
+      selSetId = null;
+      setFundamentalsSelectedSet(null);
+    }
+    var selSet = selSetId ? sets.find(function(s) { return s.id === selSetId; }) : null;
+    var selLabel = selSet ? selSet.name : 'NO SET';
     var fSelected = getFundamentalsSelection();
 
     var subViews = [
@@ -7579,34 +7812,12 @@ function render() {
         + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">' + sv.label + '</button>';
     }).join('');
 
-    // Selection panel
-    var fSelPanel = '';
-    if (fSelOpen) {
-      fSelPanel = '<div style="background:var(--bg2);border:1px solid var(--border);padding:10px;margin-bottom:8px">'
-        + '<div style="display:flex;gap:8px;margin-bottom:8px">'
-        + '<button onclick="fundamentalsSelectAll()" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);background:var(--bg);color:var(--dim);cursor:pointer;font-family:var(--font)">ALL</button>'
-        + '<button onclick="fundamentalsSelectNone()" style="font-size:9px;letter-spacing:1px;padding:3px 8px;border:1px solid var(--border);background:var(--bg);color:var(--dim);cursor:pointer;font-family:var(--font)">NONE</button>'
-        + '</div>'
-        + '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">'
-        + fAllTickers.map(function(t) {
-            var pos = positions.find(function(p) { return p.ticker === t; });
-            var name = pos && pos.shortName ? pos.shortName : '';
-            var checked = fSelected.indexOf(t) !== -1 ? 'checked' : '';
-            return '<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">'
-              + '<input type="checkbox" id="fundcb_' + t + '" ' + checked + ' style="cursor:pointer">'
-              + '<span>' + t + '</span>'
-              + (name ? '<span style="color:var(--dim);font-size:10px">' + name + '</span>' : '')
-              + '</label>';
-          }).join('')
-        + '</div>'
-        + '<button onclick="applyFundamentalsSelection()" class="btn btn-green" style="font-size:10px;padding:5px 14px">APPLY</button>'
-        + '</div>';
-    }
-
     // Main content: empty state or sub-view content
     var fContent;
-    if (!fSelected.length) {
-      fContent = '<div style="text-align:center;color:var(--dim);padding:36px 0;font-size:11px;letter-spacing:2px">SELECT POSITIONS TO COMPARE</div>';
+    if (!selSet) {
+      fContent = '<div style="text-align:center;color:var(--dim);padding:36px 0;font-size:11px;letter-spacing:2px">CREATE A SET TO START</div>';
+    } else if (!fSelected.length) {
+      fContent = '<div style="text-align:center;color:var(--dim);padding:36px 0;font-size:11px;letter-spacing:2px">NO POSITIONS IN THIS SET</div>';
     } else if (fSubView === 'targets') {
       var fCurMode = window.fundamentalsCurrentMode || 'cur';
       var fWin     = window.fundamentalsTargetWindow || 30;
@@ -7635,9 +7846,16 @@ function render() {
     area.innerHTML = '<div style="padding:8px 0 4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
       + tabsHtml
       + '<div style="flex:1"></div>'
-      + '<a href="#" onclick="toggleFundamentalsSelection();return false" style="font-size:10px;color:var(--dim)">&#9998; Edit selection (' + fSelected.length + '/' + fAllTickers.length + ')</a>'
+      + '<div style="position:relative">'
+      + '<button onclick="toggleFundViewMenu()" style="font-size:9px;letter-spacing:1px;padding:4px 8px;border:1px solid var(--green);background:var(--bg2);color:var(--green);cursor:pointer;font-family:var(--font);text-transform:uppercase">' + selLabel + '</button>'
+      + '<div id="fundViewMenu" style="display:none;position:absolute;right:0;top:100%;background:var(--bg2);border:1px solid var(--border);z-index:100;min-width:140px">'
+      + sets.map(function(s) {
+          return '<div onclick="setFundamentalsSelectionSet(&apos;' + s.id + '&apos;)" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;color:' + (selSetId === s.id ? 'var(--green)' : 'var(--bright)') + '">' + s.name + '</div>';
+        }).join('')
+      + (sets.length > 0 ? '<div style="border-top:1px solid var(--border)"></div>' : '')
+      + '<div onclick="openPositionSetsFromMenu()" style="padding:10px 14px;cursor:pointer;font-size:10px;letter-spacing:2px;color:var(--dim)">MANAGE SETS&hellip;</div>'
+      + '</div></div>'
       + '</div>'
-      + fSelPanel
       + fContent;
     return;
   }
