@@ -3283,6 +3283,7 @@ var __regularMarketPrice = null;
 var __previousClose = null;
 var __currency = null;
 var __shortName = null;
+var __instrumentType = null;
 function fetchPrice(ticker) {
   var baseUrl = getApiKey();
   if (!baseUrl) return Promise.reject(new Error('no_key'));
@@ -3308,6 +3309,7 @@ function fetchPrice(ticker) {
     __previousClose = data.previousClose || null;
     __currency = data.currency || null;
     __shortName = data.shortName || null;
+    __instrumentType = data.instrumentType || null;
     return data.price;
   });
 }
@@ -3403,7 +3405,7 @@ function addPosition() {
       return;
     }
     errEl.textContent = '';
-    doAddPosition({ currency: d.currency || null, shortName: d.shortName || null });
+    doAddPosition({ currency: d.currency || null, shortName: d.shortName || null, instrumentType: d.instrumentType || null });
   }).catch(function() {
     errEl.textContent = '✗ Ticker check failed';
   });
@@ -3759,7 +3761,7 @@ function refreshPrice(id) {
         var updatedAlerts = (p.alerts || []).map(function(a) {
           return Object.assign({}, a, { triggered: a.condition === '>' ? price > a.value : price < a.value });
         });
-        return Object.assign({}, p, { current: price, priceType: __priceType, marketState: __marketState, regularMarketPrice: __regularMarketPrice, previousClose: __previousClose, currency: __currency, shortName: __shortName, alerts: updatedAlerts });
+        return Object.assign({}, p, { current: price, priceType: __priceType, marketState: __marketState, regularMarketPrice: __regularMarketPrice, previousClose: __previousClose, currency: __currency, shortName: __shortName, instrumentType: __instrumentType || p.instrumentType, alerts: updatedAlerts });
       }
       return p;
     });
@@ -3790,6 +3792,7 @@ function refreshAllPortfolios() {
         p.marketState = __marketState;
         p.regularMarketPrice = __regularMarketPrice;
         p.previousClose = __previousClose;
+        if (__instrumentType) p.instrumentType = __instrumentType;
         p.alerts = (p.alerts || []).map(function(a) {
           return Object.assign({}, a, { triggered: a.condition === '>' ? price > a.value : price < a.value });
         });
@@ -4701,6 +4704,53 @@ function getFundamentalsSelection() {
   if (!set) return [];
   var allTickers = getFundamentalsUniqueTickers();
   return set.tickers.filter(function(t) { return allTickers.indexOf(t) !== -1; });
+}
+
+// Partition tickers into:
+//   equity:  tickers whose positions are EQUITY (or whose instrumentType
+//            is unknown — included optimistically pending lazy migration)
+//   unknown: tickers needing lazy fetch (no instrumentType stored yet)
+//   skipped: count of tickers with known non-EQUITY type (ETF, INDEX, etc.)
+function filterFundamentalsTickers(tickers) {
+  var equity = [], unknown = [], skipped = 0;
+  tickers.forEach(function(t) {
+    var pos = positions.find(function(p) { return p.ticker === t; });
+    var it = pos && pos.instrumentType;
+    if (!it) {
+      // Not yet migrated — include for now, queue lazy fetch
+      equity.push(t);
+      unknown.push(t);
+    } else if (it === 'EQUITY') {
+      equity.push(t);
+    } else {
+      skipped++;
+    }
+  });
+  return { equity: equity, unknown: unknown, skipped: skipped };
+}
+
+// Lazy migration: fetch quote for tickers missing instrumentType,
+// store result on every position with that ticker in current portfolio.
+// Session-level dedupe to prevent multiple in-flight requests for same ticker.
+var _fetchingInstrumentTypes = {};
+function lazyFetchInstrumentTypes(tickers) {
+  var toFetch = tickers.filter(function(t) { return !_fetchingInstrumentTypes[t]; });
+  if (toFetch.length === 0) return;
+  toFetch.forEach(function(t) { _fetchingInstrumentTypes[t] = true; });
+  var promises = toFetch.map(function(t) {
+    return fetchPrice(t).then(function() {
+      var it = __instrumentType;
+      if (!it) return;
+      positions = positions.map(function(p) {
+        return p.ticker === t ? Object.assign({}, p, { instrumentType: it }) : p;
+      });
+    }).catch(function() {});
+  });
+  Promise.all(promises).then(function() {
+    // Do NOT release dedupe — within this session, treat as done. Retries on next session.
+    saveLocal();
+    render();
+  });
 }
 
 function getFundamentalsUniqueTickers() {
@@ -7740,9 +7790,13 @@ function render() {
       if (!isWatchlist()) setChartSelectedSet('portfolio');
     }
     var selSet = (selSetId && selSetId !== 'portfolio') ? sets.find(function(s) { return s.id === selSetId; }) : null;
-    var selLabel = isWatchlist()
-      ? (selSet ? selSet.name : 'NO SETS')
-      : (selSetId === 'portfolio' ? 'PORTFOLIO' : (selSet ? selSet.name : 'NO SET'));
+    var chartHasSel = selSetId === 'portfolio' || !!selSet;
+    var selLabel = chartHasSel
+      ? (selSetId === 'portfolio' ? 'PORTFOLIO' : selSet.name)
+      : '(select set)';
+    var chartBtnStyle = chartHasSel
+      ? 'border:1px solid var(--green);background:var(--bg2);color:var(--green);text-transform:uppercase'
+      : 'border:1px dashed var(--border);background:var(--bg);color:var(--dim);text-transform:none';
 
     area.innerHTML = '<div style="padding:8px 0 4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
       + ['1d','5d','1mo','3mo','6mo','1y','5y'].map(function(r) {
@@ -7751,7 +7805,7 @@ function render() {
         }).join('')
       + '<div style="flex:1"></div>'
       + '<div style="position:relative">'
-      + '<button onclick="toggleChartViewMenu()" style="font-size:9px;letter-spacing:1px;padding:4px 8px;border:1px solid var(--green);background:var(--bg2);color:var(--green);cursor:pointer;font-family:var(--font);text-transform:uppercase">' + selLabel + '</button>'
+      + '<button onclick="toggleChartViewMenu()" style="font-size:9px;letter-spacing:1px;padding:4px 8px;cursor:pointer;font-family:var(--font);' + chartBtnStyle + '">' + selLabel + '</button>'
       + '<div id="chartViewMenu" style="display:none;position:absolute;right:0;top:100%;background:var(--bg2);border:1px solid var(--border);z-index:100;min-width:140px">'
       + (isWatchlist() ? '' :
           '<div onclick="setChartSelectionPortfolio()" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;color:' + (selSetId === 'portfolio' ? 'var(--green)' : 'var(--bright)') + '">PORTFOLIO</div>'
@@ -7793,7 +7847,11 @@ function render() {
       setFundamentalsSelectedSet(null);
     }
     var selSet = selSetId ? sets.find(function(s) { return s.id === selSetId; }) : null;
-    var selLabel = selSet ? selSet.name : 'NO SET';
+    var fundHasSel = !!selSet;
+    var selLabel = fundHasSel ? selSet.name : '(select set)';
+    var fundBtnStyle = fundHasSel
+      ? 'border:1px solid var(--green);background:var(--bg2);color:var(--green);text-transform:uppercase'
+      : 'border:1px dashed var(--border);background:var(--bg);color:var(--dim);text-transform:none';
     var fSelected = getFundamentalsSelection();
 
     var subViews = [
@@ -7812,34 +7870,52 @@ function render() {
         + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">' + sv.label + '</button>';
     }).join('');
 
+    // Filter to EQUITY (skip ETF / INDEX / etc.) + lazy-migrate unknowns
+    var fFiltered = filterFundamentalsTickers(fSelected);
+    var fEquity = fFiltered.equity;
+    var fSkippedCount = fFiltered.skipped;
+    if (fFiltered.unknown.length > 0) {
+      setTimeout(function() { lazyFetchInstrumentTypes(fFiltered.unknown); }, 0);
+    }
+
     // Main content: empty state or sub-view content
     var fContent;
     if (!selSet) {
       fContent = '<div style="text-align:center;color:var(--dim);padding:36px 0;font-size:11px;letter-spacing:2px">CREATE A SET TO START</div>';
     } else if (!fSelected.length) {
       fContent = '<div style="text-align:center;color:var(--dim);padding:36px 0;font-size:11px;letter-spacing:2px">NO POSITIONS IN THIS SET</div>';
+    } else if (!fEquity.length) {
+      fContent = '<div style="text-align:center;color:var(--dim);padding:36px 0;font-size:11px;letter-spacing:2px">NO EQUITY POSITIONS IN THIS SET</div>';
     } else if (fSubView === 'targets') {
       var fCurMode = window.fundamentalsCurrentMode || 'cur';
       var fWin     = window.fundamentalsTargetWindow || 30;
       fContent = (typeof buildFundamentalsTargetsTable === 'function')
-        ? buildFundamentalsTargetsTable(fSelected, fCurMode, fWin)
+        ? buildFundamentalsTargetsTable(fEquity, fCurMode, fWin)
         : '<div style="padding:36px 0;text-align:center;color:var(--dim)">TARGETS module not loaded</div>';
     } else if (fSubView === 'ratings') {
       fContent = (typeof buildFundamentalsRatingsTable === 'function')
-        ? buildFundamentalsRatingsTable(fSelected)
+        ? buildFundamentalsRatingsTable(fEquity)
         : '<div style="padding:36px 0;text-align:center;color:var(--dim)">RATINGS module not loaded</div>';
     } else if (fSubView === 'earnings') {
       fContent = (typeof buildFundamentalsEarningsTable === 'function')
-        ? buildFundamentalsEarningsTable(fSelected)
+        ? buildFundamentalsEarningsTable(fEquity)
         : '<div style="padding:36px 0;text-align:center;color:var(--dim)">EARNINGS module not loaded</div>';
     } else if (fSubView === 'eps') {
       fContent = (typeof buildFundamentalsEpsTable === 'function')
-        ? buildFundamentalsEpsTable(fSelected)
+        ? buildFundamentalsEpsTable(fEquity)
         : '<div style="padding:36px 0;text-align:center;color:var(--dim)">EPS module not loaded</div>';
     } else {
       // Should not happen — all 4 sub-views handled above
       fContent = '<div id="fundamentalsArea" style="padding:12px 0;color:var(--dim);font-size:11px;letter-spacing:1px">'
-        + fSubView.toUpperCase() + ' &mdash; ' + fSelected.length + ' position' + (fSelected.length === 1 ? '' : 's') + ' selected'
+        + fSubView.toUpperCase() + ' &mdash; ' + fEquity.length + ' position' + (fEquity.length === 1 ? '' : 's') + ' selected'
+        + '</div>';
+    }
+
+    // Footer note for non-equity skipped tickers
+    var skippedNote = '';
+    if (fSkippedCount > 0 && selSet) {
+      skippedNote = '<div style="margin-top:12px;font-size:10px;color:var(--dim);text-align:center;opacity:0.7">'
+        + fSkippedCount + ' non-equity ' + (fSkippedCount === 1 ? 'ticker' : 'tickers') + ' (ETF / index / etc.) skipped'
         + '</div>';
     }
 
@@ -7847,7 +7923,7 @@ function render() {
       + tabsHtml
       + '<div style="flex:1"></div>'
       + '<div style="position:relative">'
-      + '<button onclick="toggleFundViewMenu()" style="font-size:9px;letter-spacing:1px;padding:4px 8px;border:1px solid var(--green);background:var(--bg2);color:var(--green);cursor:pointer;font-family:var(--font);text-transform:uppercase">' + selLabel + '</button>'
+      + '<button onclick="toggleFundViewMenu()" style="font-size:9px;letter-spacing:1px;padding:4px 8px;cursor:pointer;font-family:var(--font);' + fundBtnStyle + '">' + selLabel + '</button>'
       + '<div id="fundViewMenu" style="display:none;position:absolute;right:0;top:100%;background:var(--bg2);border:1px solid var(--border);z-index:100;min-width:140px">'
       + sets.map(function(s) {
           return '<div onclick="setFundamentalsSelectionSet(&apos;' + s.id + '&apos;)" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;color:' + (selSetId === s.id ? 'var(--green)' : 'var(--bright)') + '">' + s.name + '</div>';
@@ -7856,7 +7932,8 @@ function render() {
       + '<div onclick="openPositionSetsFromMenu()" style="padding:10px 14px;cursor:pointer;font-size:10px;letter-spacing:2px;color:var(--dim)">MANAGE SETS&hellip;</div>'
       + '</div></div>'
       + '</div>'
-      + fContent;
+      + fContent
+      + skippedNote;
     return;
   }
 

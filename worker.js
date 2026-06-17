@@ -244,6 +244,7 @@ async function getQuote(ticker) {
       currency: meta.currency || null,
       exchangeName: meta.fullExchangeName || meta.exchangeName || null,
       shortName: meta.shortName || null,
+      instrumentType: meta.instrumentType || null,
     };
   }
 
@@ -294,6 +295,7 @@ async function getQuote(ticker) {
         currency: meta.currency || null,
         exchangeName: meta.fullExchangeName || meta.exchangeName || null,
         shortName: meta.shortName || null,
+        instrumentType: meta.instrumentType || null,
       };
     }
   }
@@ -310,6 +312,7 @@ async function getQuote(ticker) {
     currency: meta.currency || null,
     exchangeName: meta.fullExchangeName || meta.exchangeName || null,
     shortName: meta.shortName || null,
+    instrumentType: meta.instrumentType || null,
   };
 }
 
