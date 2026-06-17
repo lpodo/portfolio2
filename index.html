@@ -865,6 +865,7 @@ function cancelDictNew(field) {
 function removeFromDict(field, value) {
   var dict = field === 'cat' ? catDict : field === 'reg' ? regDict : field === 'sec' ? secDict : field === 'ccat' ? cashCatDict : null;
   if (!dict) return;
+  if (!confirm('Delete "' + value + '"?')) return;
   var idx = dict.indexOf(value);
   if (idx !== -1) dict.splice(idx, 1);
   saveDicts();
@@ -891,7 +892,7 @@ function renderDictsPanel() {
           var esc = v.replace(/&/g,'&amp;').replace(/'/g,'&#39;');
           return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">'
             + '<span style="font-size:11px;color:var(--bright)">' + v.replace(/&/g,'&amp;') + '</span>'
-            + '<button onclick="removeFromDict(\'' + field + '\',\'' + esc + '\')" class="btn" style="padding:1px 6px;font-size:10px">&#10005;</button>'
+            + '<button onclick="removeFromDict(\'' + field + '\',\'' + esc + '\')" class="btn" style="padding:1px 6px;font-size:10px;color:var(--red)">&#10005;</button>'
             + '</div>';
         }).join('') : '<div style="font-size:10px;color:var(--dim);font-style:italic">empty</div>')
       + '</div>';
@@ -3490,6 +3491,7 @@ function confirmSell(id) {
 
 function removePosition(id) {
   var pos = positions.find(function(p) { return p.id === id; });
+  if (!confirm('Delete "' + (pos ? pos.ticker : 'this position') + '"?')) return;
   if (pos) {
     positionClipboard = { ticker: pos.ticker, qty: pos.qty, entry: pos.entry, current: pos.current };
   }
@@ -6017,7 +6019,7 @@ function render() {
         : (p.qty > 0 ? '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--bright)" onclick="sellPosition(' + p.id + ')">SELL</button>' : '');
       editActions = '<button class="btn-icon" onclick="showMoveMenu(' + p.id + ', this)" title="Move to portfolio" style="font-size:17px;padding:0 4px;line-height:1">&#8680;</button>'
         + '<button class="btn-icon" onclick="startEdit(' + p.id + ')">&#9998;</button>'
-        + '<button class="btn-icon" onclick="removePosition(' + p.id + ')">&#10005;</button>';
+        + '<button class="btn-icon" onclick="removePosition(' + p.id + ')" style="color:var(--red)">&#10005;</button>';
     }
 
     var isExpanded = expandedId === p.id;
@@ -7368,7 +7370,7 @@ function render() {
         + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(p.marketState) + '</td>'
         + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
         + '<td style="white-space:nowrap">'
-          + '<button class="btn-icon" onclick="removePosition(' + p.id + ')">&#10005;</button>'
+          + '<button class="btn-icon" onclick="removePosition(' + p.id + ')" style="color:var(--red)">&#10005;</button>'
         + '</td>'
         + '</tr>'
         + (isExpanded ? '<tr><td colspan="7" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>' : '');
