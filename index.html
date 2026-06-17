@@ -7796,7 +7796,7 @@ function render() {
       : '(select set)';
     var chartBtnStyle = chartHasSel
       ? 'border:1px solid var(--green);background:var(--bg2);color:var(--green);text-transform:uppercase'
-      : 'border:1px dashed var(--border);background:var(--bg);color:var(--dim);text-transform:none';
+      : 'border:1px solid var(--border);background:var(--bg);color:var(--dim);text-transform:none';
 
     area.innerHTML = '<div style="padding:8px 0 4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
       + ['1d','5d','1mo','3mo','6mo','1y','5y'].map(function(r) {
@@ -7851,7 +7851,7 @@ function render() {
     var selLabel = fundHasSel ? selSet.name : '(select set)';
     var fundBtnStyle = fundHasSel
       ? 'border:1px solid var(--green);background:var(--bg2);color:var(--green);text-transform:uppercase'
-      : 'border:1px dashed var(--border);background:var(--bg);color:var(--dim);text-transform:none';
+      : 'border:1px solid var(--border);background:var(--bg);color:var(--dim);text-transform:none';
     var fSelected = getFundamentalsSelection();
 
     var subViews = [
@@ -7881,7 +7881,7 @@ function render() {
     // Main content: empty state or sub-view content
     var fContent;
     if (!selSet) {
-      fContent = '<div style="text-align:center;color:var(--dim);padding:36px 0;font-size:11px;letter-spacing:2px">CREATE A SET TO START</div>';
+      fContent = '<div style="text-align:center;color:var(--dim);padding:36px 0;font-size:11px;letter-spacing:2px">NO SET SELECTED</div>';
     } else if (!fSelected.length) {
       fContent = '<div style="text-align:center;color:var(--dim);padding:36px 0;font-size:11px;letter-spacing:2px">NO POSITIONS IN THIS SET</div>';
     } else if (!fEquity.length) {
@@ -7914,7 +7914,7 @@ function render() {
     // Footer note for non-equity skipped tickers
     var skippedNote = '';
     if (fSkippedCount > 0 && selSet) {
-      skippedNote = '<div style="margin-top:12px;font-size:10px;color:var(--dim);text-align:center;opacity:0.7">'
+      skippedNote = '<div style="margin-top:12px;font-size:10px;color:var(--dim);text-align:left;opacity:0.7">'
         + fSkippedCount + ' non-equity ' + (fSkippedCount === 1 ? 'ticker' : 'tickers') + ' (ETF / index / etc.) skipped'
         + '</div>';
     }
