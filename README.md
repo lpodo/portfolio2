@@ -21,6 +21,7 @@ A PWA stock portfolio tracker with a Cloudflare Worker backend. Supports all maj
   - [Summary (Cross-Portfolio)](#summary-cross-portfolio)
   - [Price Alerts](#price-alerts)
   - [Charts](#charts)
+  - [Position sets](#position-sets)
   - [Fundamentals](#fundamentals)
   - [Analytics](#analytics)
   - [Expanded Row](#expanded-row)
@@ -249,9 +250,9 @@ This view is useful as a single dashboard of everything being watched — you se
 
 Available via dropdown menu → CHART for individual portfolios and Summary.
 
-**Controls:** 7 range buttons — **1D · 5D · 1M · 3M · 6M · 1Y · 5Y**. A dropdown button (showing the current mode) selects between **PORTFOLIO** and **POSITIONS** for individual charts, and **TOTAL** and **BY PORTFOLIO** for the Summary chart.
+**Controls:** 7 range buttons — **1D · 5D · 1M · 3M · 6M · 1Y · 5Y**. A dropdown selects what's plotted. For individual portfolios it offers **PORTFOLIO** (default) plus each defined [position set](#position-sets), with a **MANAGE SETS…** entry at the bottom. For watchlists, PORTFOLIO is hidden — only sets are available. For the Summary chart, the dropdown selects **TOTAL** or **BY PORTFOLIO**.
 
-**Range notes:** 1D is blocked in PORTFOLIO mode and in the Summary chart (with an explanatory message) — it only works in POSITIONS mode for individual portfolios and watchlists.
+**Range notes:** 1D is blocked in PORTFOLIO mode and in the Summary chart (with an explanatory message) — it only works when a set is selected.
 
 **Force reload:** A ↻ button at the end of the chart legend clears the history cache for the current tickers and range, refreshes all position prices, then redraws the chart — one tap for a fully up-to-date view.
 
@@ -259,11 +260,9 @@ Available via dropdown menu → CHART for individual portfolios and Summary.
 
 Single line showing total portfolio value over time in base currency. Active positions only (sold and qty=0 excluded).
 
-### Portfolio Chart — POSITIONS mode
+### Portfolio Chart — position set mode
 
-Normalized % lines for individually selected tickers (deduplicated — if the same ticker appears multiple times, one line is shown). Each line starts at 0% on the first available date. Color-coded with a legend showing the final % change.
-
-**Selection:** Click ✎ Edit selection (N/M) to open a checkbox list with ALL / NONE shortcuts. Selection is saved to localStorage per portfolio and persists across sessions. Default on first open: none selected.
+Normalized % lines for the tickers in the selected set (deduplicated — if the same ticker appears multiple times, one line is shown). Each line starts at 0% on the first available date. Color-coded with a legend showing the final % change. An empty set (no tickers in the current portfolio) shows "No positions in this set"; on a watchlist with no sets defined, the placeholder reads "Create a set to view the chart".
 
 ### Summary Chart
 
@@ -271,6 +270,16 @@ In Summary, the dropdown menu → CHART shows two modes selectable via a green d
 
 - **TOTAL** — single line showing the combined value of all active portfolios in USD with FX conversion.
 - **BY PORTFOLIO** — one normalized line per portfolio starting at 0%, each calculated in its own base currency (no USD conversion, so FX effects don't distort relative stock performance). Color-coded with a legend showing the final % change.
+
+## Position sets
+
+A portfolio can have any number of **position sets** — named subsets of its tickers, reusable across Chart and Fundamentals views. Each set has a name (uppercase, free text) and a list of tickers picked from the portfolio. Sets are stored as part of the portfolio JSON (`positionSets`) and synced to the cloud alongside everything else; tickers are tracked by symbol, so re-adding a deleted position keeps it in any set it belonged to.
+
+The picker dropdown in Chart and Fundamentals views lists all sets defined for the current portfolio. The currently shown set is remembered per portfolio in localStorage (`pt_chart_set_{portfolioId}` for Chart, `pt_fund_set_{portfolioId}` for Fundamentals) and persists across reloads. If a previously-selected set is deleted, the next render falls back to the default (PORTFOLIO for Chart, none for Fundamentals).
+
+**Managing sets:** the bottom of the picker dropdown has a **MANAGE SETS…** entry that opens a modal listing all sets for the current portfolio, plus a **+ NEW SET** button. For each set there are ✎ (edit name and tickers) and ✕ (delete, with confirmation) buttons. Creating or editing a set opens an inline form with a name input and a checkbox list of all tickers in the portfolio, with **ALL** / **NONE** shortcuts. Saving stores the set in the portfolio JSON; cancelling discards changes.
+
+A set with zero tickers can be saved — it simply renders as the corresponding empty placeholder in the views.
 
 ## Fundamentals
 
@@ -285,11 +294,17 @@ A comparative table across selected tickers with four subviews switchable via ta
 
 On entering the view, state is always reset to defaults: **Targets** tab, **Current** price, **30d** window.
 
-### Position selection
+### Set selection
 
-Click **Edit selection** in the upper right corner to open a checkbox list of all tickers in the portfolio, with **ALL** / **NONE** shortcuts for bulk toggling and **APPLY** to confirm. Default on first open: empty — the view shows the placeholder `SELECT POSITIONS TO COMPARE`.
+Use the picker dropdown in the upper right to choose which [position set](#position-sets) to compare. Default: nothing selected — the view shows the placeholder `NO SET SELECTED`. If the chosen set has no tickers in the current portfolio, the placeholder becomes `NO POSITIONS IN THIS SET`; if the set's tickers are all non-equity (see below), it shows `NO EQUITY POSITIONS IN THIS SET`.
 
-Selection is saved to localStorage per portfolio (`pt_fund_sel_{portfolioId}`) and persists across reloads. Tickers removed from the portfolio drop out of the selection automatically.
+The current selection is remembered per portfolio in localStorage (`pt_fund_set_{portfolioId}`) and persists across reloads.
+
+### Non-equity filtering
+
+Fundamentals data is meaningful only for individual stocks. Other instrument types (ETFs, indices, mutual funds, currencies, etc.) are filtered out of the comparative table — the worker tags every quote with an `instrumentType` field (sourced from Yahoo's `meta.instrumentType`), and only `EQUITY` rows are included. The number of skipped tickers is shown below the table, e.g. `2 non-equity tickers (ETF / index / etc.) skipped`.
+
+Positions added before this filter existed don't have `instrumentType` stored yet — they're included optimistically and a background fetch fills the field on view open. After one render cycle the position is classified correctly and saved.
 
 ### Expanded row
 
@@ -653,7 +668,7 @@ Market state (`REGULAR` / `PRE` / `POST` / `CLOSED`) is determined from `current
 
 ### Endpoints
 
-- `/api/quote?ticker=AAPL` — price quote. Returns `price`, `priceType`, `marketState`, `regularMarketPrice`, `previousClose`, `priceTimestamp`, `currency`, `shortName`. Optional `&simple=1` skips extended-hours candle logic.
+- `/api/quote?ticker=AAPL` — price quote. Returns `price`, `priceType`, `marketState`, `regularMarketPrice`, `previousClose`, `priceTimestamp`, `currency`, `exchangeName`, `shortName`, `instrumentType`. `instrumentType` comes from Yahoo's `meta.instrumentType` (`EQUITY`, `ETF`, `INDEX`, `MUTUALFUND`, `CURRENCY`, etc.) and is used by the Fundamentals view to filter out non-equity rows. Optional `&simple=1` skips extended-hours candle logic.
 - `/api/history?ticker=AAPL&range=1mo` — historical OHLCV for charts. Supported ranges: `1d`, `5d`, `1mo`, `3mo`, `6mo`, `1y`, `5y`. Returns `{ points: [{t, o, h, l, c, v}] }`.
 - `/api/kv` — cloud storage proxy (GET to load, PUT to save). Requires the `X-KV-Key` header with the user's storage key. Only available when the Cloudflare KV backend is configured.
 - `/api/profile?ticker=AAPL` — sector/industry/country from Yahoo `assetProfile`. Returns nulls for ETFs and when Yahoo blocks the request.
@@ -686,6 +701,7 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
   "sold": false,
   "currency": "USD",
   "shortName": "EOG Resources, Inc.",
+  "instrumentType": "EQUITY",
   "priceType": "regular",
   "marketState": "REGULAR",
   "regularMarketPrice": 140.75,
@@ -698,6 +714,7 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
 
 - `currency` — position currency code from Yahoo Finance (e.g. `GBP`, `EUR`). Set on add. Used for symbol display and FX conversion in totals/weights.
 - `shortName` — company/ETF name from Yahoo Finance. Displayed in MARKET and WEIGHT views.
+- `instrumentType` — instrument category from Yahoo (`EQUITY`, `ETF`, `INDEX`, `MUTUALFUND`, `CURRENCY`, etc.). Used to filter non-equity tickers out of the [Fundamentals view](#fundamentals). Populated on add and on every refresh; positions stored before this field existed are migrated lazily on first Fundamentals open.
 - `sold` — marks position as sold; price frozen at sell price, excluded from Refresh.
 - `previousClose`, `regularMarketPrice` — cached from the worker response for Market view Δ% calculations.
 - `category`, `region`, `sector` — classification fields for the Analytics view. Selected from per-field dictionaries; free text is not allowed.
@@ -715,13 +732,15 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
   "currencyCode": "USD",
   "watchlist": false,
   "archive": false,
-  "positions": []
+  "positions": [],
+  "positionSets": []
 }
 ```
 
 - `currencyCode` — ISO 4217 base currency. All position values are converted to this currency for VALUE and WEIGHTS. Validated against Yahoo Finance on creation/rename.
 - `watchlist: true` — watchlist portfolio (no qty/entry fields, simple price display, excluded from Summary).
 - `archive: true` — realized portfolio (all positions sold, no Refresh, excluded from the main Summary).
+- `positionSets` — array of named ticker subsets for use by Chart and Fundamentals views: `[{ id: "set_<timestamp>", name: "AI BASKET", tickers: ["NVDA", "ASML.AS"] }]`. Tickers are stored as symbols, not IDs, so re-adding a removed position keeps it in any set it belonged to. See [Position sets](#position-sets).
 
 ## Local Storage
 
@@ -752,8 +771,8 @@ Primary on-device storage:
 - `pt_blink_period` — APPEARANCE base blink period for triggered alerts (`slow` / `med` / `fast`); default `med`
 - `pt_close_mode` — close column mode: `prev` (Prev.Close), `reg` (Reg.Price), or a historical period (`5d`, `1mo`, `3mo`, `6mo`, `1y`, `5y`); default `prev`
 - `pt_current_mode` — current column mode: `cur` (Current) or `reg` (Reg.Price); default `cur`
-- `pt_chart_sel_{portfolioId}` — per-portfolio ticker selection for the POSITIONS chart
-- `pt_fund_sel_{portfolioId}` — per-portfolio ticker selection for the Fundamentals view
+- `pt_chart_set_{portfolioId}` — currently selected set in the Chart view (a set ID or the string `portfolio` for PORTFOLIO mode)
+- `pt_fund_set_{portfolioId}` — currently selected set in the Fundamentals view (a set ID, or absent for "no selection")
 - `chart_hist_{ticker}_{range}` — historical price cache (daily TTL)
 - `yfund_{ticker}` — fundamentals cache for Targets and Ratings (4-hour TTL)
 - `yearn_{ticker}` — earnings cache for Earnings and EPS (12-hour TTL)
