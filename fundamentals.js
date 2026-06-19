@@ -6,8 +6,8 @@
 
 /* ── Constants ──────────────────────────────────────────────────────────── */
 var FUND_CACHE_TTL  = 4 * 60 * 60 * 1000;
-var FUND_CACHE_VER  = 1;
-var FUND_ROW_MODS   = 'financialData,defaultKeyStatistics,recommendationTrend,upgradeDowngradeHistory';
+var FUND_CACHE_VER  = 2; // bumped from 1: GBp normalization added; old cache for UK stocks had pence-valued fields
+var FUND_ROW_MODS   = 'price,financialData,defaultKeyStatistics,recommendationTrend,upgradeDowngradeHistory';
 var FUND_ACCENT     = '#5b9cf6';
 var FUND_HIST_DAYS  = 100;
 var FUND_HIST_DFLT  = 30;
@@ -233,7 +233,18 @@ function fundFetchRow(ticker) {
       var dks    = (result && result.defaultKeyStatistics)  || null;
       var rt     = (result && result.recommendationTrend)   || null;
       var udh    = (result && result.upgradeDowngradeHistory) || null;
+      var price  = (result && result.price)                 || null;
       var trend0 = (rt && rt.trend && rt.trend[0])          || null;
+
+      // GBp normalization. Yahoo returns currency-denominated fields in
+      // pence for UK LSE stocks (currency 'GBp'), inconsistently with other
+      // fields (trailingEps is in pounds). We detect from price.currency
+      // and divide affected fields by 100 so downstream code can treat
+      // cached values uniformly as GBP. Note: forwardPE is a ratio, but
+      // Yahoo computes it as price(pence) / forwardEps(pounds), so it's
+      // also off by 100x — same /100 fix applies.
+      var isGBp = price && price.currency === 'GBp';
+      function px(v) { return v == null ? null : (isGBp ? v / 100 : v); }
 
       // Filter upgrade/downgrade history to last FUND_HIST_DAYS days,
       // keep only {date, target} for entries with a valid target price.
@@ -246,7 +257,7 @@ function fundFetchRow(ticker) {
           var hd = h && h.epochGradeDate;
           var ht = h && fundRawNum(h.currentPriceTarget);
           if (hd && hd >= cutoff && ht !== null && ht > 0) {
-            targets.push({ date: hd, target: ht });
+            targets.push({ date: hd, target: px(ht) });
           }
         }
       }
@@ -260,10 +271,10 @@ function fundFetchRow(ticker) {
         hold:            trend0 ? fundRawNum(trend0.hold)       : null,
         sell:            trend0 ? fundRawNum(trend0.sell)       : null,
         strongSell:      trend0 ? fundRawNum(trend0.strongSell) : null,
-        targetMeanPrice: fd  ? fundRawNum(fd.targetMeanPrice)   : null,
-        currentPrice:    fd  ? fundRawNum(fd.currentPrice)      : null,
+        targetMeanPrice: px(fd  ? fundRawNum(fd.targetMeanPrice)   : null),
+        currentPrice:    px(fd  ? fundRawNum(fd.currentPrice)      : null),
         trailingEps:     dks ? fundRawNum(dks.trailingEps)      : null,
-        forwardPE:       dks ? fundRawNum(dks.forwardPE)        : null,
+        forwardPE:       px(dks ? fundRawNum(dks.forwardPE)        : null),
         targets:         targets
       });
     })
