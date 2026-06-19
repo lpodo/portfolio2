@@ -304,8 +304,6 @@ The current selection is remembered per portfolio in localStorage (`pt_fund_set_
 
 Fundamentals data is meaningful only for individual stocks. Other instrument types (ETFs, indices, mutual funds, currencies, etc.) are filtered out of the comparative table — the worker tags every quote with an `instrumentType` field (sourced from Yahoo's `meta.instrumentType`), and only `EQUITY` rows are included. The number of skipped tickers is shown below the table, e.g. `2 non-equity tickers (ETF / index / etc.) skipped`.
 
-Positions added before this filter existed don't have `instrumentType` stored yet — they're included optimistically and a background fetch fills the field on view open. After one render cycle the position is classified correctly and saved.
-
 ### Expanded row
 
 Tap a ticker in any of the four tabs to toggle a compact "lite" sub-row beneath it. Four lines:
@@ -714,7 +712,7 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
 
 - `currency` — position currency code from Yahoo Finance (e.g. `GBP`, `EUR`). Set on add. Used for symbol display and FX conversion in totals/weights.
 - `shortName` — company/ETF name from Yahoo Finance. Displayed in MARKET and WEIGHT views.
-- `instrumentType` — instrument category from Yahoo (`EQUITY`, `ETF`, `INDEX`, `MUTUALFUND`, `CURRENCY`, etc.). Used to filter non-equity tickers out of the [Fundamentals view](#fundamentals). Populated on add and on every refresh; positions stored before this field existed are migrated lazily on first Fundamentals open.
+- `instrumentType` — instrument category from Yahoo (`EQUITY`, `ETF`, `INDEX`, `MUTUALFUND`, `CURRENCY`, etc.). Used to filter non-equity tickers out of the [Fundamentals view](#fundamentals). Populated on add and on every refresh; positions stored before this field existed are migrated lazily.
 - `sold` — marks position as sold; price frozen at sell price, excluded from Refresh.
 - `previousClose`, `regularMarketPrice` — cached from the worker response for Market view Δ% calculations.
 - `category`, `region`, `sector` — classification fields for the Analytics view. Selected from per-field dictionaries; free text is not allowed.
