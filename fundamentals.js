@@ -159,25 +159,49 @@ function fundFormatField(value, format) {
 /* ── localStorage cache ─────────────────────────────────────────────────── */
 function fundCacheKey(ticker) { return 'yfund_' + ticker.toUpperCase(); }
 
+// In-memory fallback used only when localStorage.setItem throws (quota
+// exceeded, private browsing restrictions, disabled storage). Prevents the
+// "cache miss → fetch → write fails → cache miss → fetch → ..." infinite
+// loop. Memory cache doesn't survive reload, but neither would localStorage
+// in the failure case, so cost is one fetch per ticker per session.
+var fundMemCache = {};
+
 function fundCacheGet(ticker) {
+  var key = fundCacheKey(ticker);
+  // Try localStorage first (normal path)
   try {
-    var raw = localStorage.getItem(fundCacheKey(ticker));
-    if (!raw) return null;
-    var entry = JSON.parse(raw);
-    if (!entry || !entry.ts) return null;
-    if (entry.v !== FUND_CACHE_VER) return null;
-    if (Date.now() - entry.ts > FUND_CACHE_TTL) return null;
-    return entry;
-  } catch(e) { return null; }
+    var raw = localStorage.getItem(key);
+    if (raw) {
+      var entry = JSON.parse(raw);
+      if (entry && entry.ts && entry.v === FUND_CACHE_VER
+          && Date.now() - entry.ts <= FUND_CACHE_TTL) {
+        return entry;
+      }
+    }
+  } catch(e) {}
+  // Fall back to memory (used when localStorage writes have been failing)
+  var mem = fundMemCache[key];
+  if (mem && mem.ts && mem.v === FUND_CACHE_VER
+      && Date.now() - mem.ts <= FUND_CACHE_TTL) {
+    return mem;
+  }
+  return null;
 }
 
 function fundCacheSet(ticker, data) {
+  var key = fundCacheKey(ticker);
+  var obj = { v: FUND_CACHE_VER, ts: Date.now() };
+  var keys = Object.keys(data);
+  for (var i = 0; i < keys.length; i++) obj[keys[i]] = data[keys[i]];
   try {
-    var obj = { v: FUND_CACHE_VER, ts: Date.now() };
-    var keys = Object.keys(data);
-    for (var i = 0; i < keys.length; i++) obj[keys[i]] = data[keys[i]];
-    localStorage.setItem(fundCacheKey(ticker), JSON.stringify(obj));
-  } catch(e) {}
+    localStorage.setItem(key, JSON.stringify(obj));
+    delete fundMemCache[key]; // clear any stale memory entry
+  } catch(e) {
+    fundMemCache[key] = obj;
+    if (typeof console !== 'undefined' && console.warn) {
+      console.warn('fundCache: localStorage write failed for ' + ticker + ' — using memory fallback');
+    }
+  }
 }
 
 /* ── Fetch helpers ──────────────────────────────────────────────────────── */
@@ -192,8 +216,15 @@ function fundFetchRow(ticker) {
   if (!base || !token) return Promise.resolve();
   var url = base + '/api/quotesummary?ticker=' + encodeURIComponent(ticker)
     + '&modules=' + encodeURIComponent(FUND_ROW_MODS);
-  return fetch(url, { headers: { 'X-API-Token': token } })
-    .then(function(res) { return res.json(); })
+  // 15s timeout via AbortController. Without it, a hung fetch leaves
+  // fundInflight[ticker] set forever (neither .then nor .catch fire),
+  // blocking all future fundamentals rendering for this ticker until reload.
+  var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  var timer = controller ? setTimeout(function() { controller.abort(); }, 15000) : null;
+  var opts = { headers: { 'X-API-Token': token } };
+  if (controller) opts.signal = controller.signal;
+  return fetch(url, opts)
+    .then(function(res) { if (timer) clearTimeout(timer); return res.json(); })
     .then(function(data) {
       var result = (!data._error && data.quoteSummary)
         ? (data.quoteSummary.result && data.quoteSummary.result[0])
@@ -236,7 +267,7 @@ function fundFetchRow(ticker) {
         targets:         targets
       });
     })
-    .catch(function() {}); // Network error: don't cache, allow retry next time
+    .catch(function() { if (timer) clearTimeout(timer); }); // Network error / timeout: don't cache, allow retry next time
 }
 
 function fundFetchModules(ticker, modules) {
@@ -245,8 +276,12 @@ function fundFetchModules(ticker, modules) {
   if (!base || !token) return Promise.reject(new Error('Worker not configured'));
   var url = base + '/api/quotesummary?ticker=' + encodeURIComponent(ticker)
     + '&modules=' + encodeURIComponent(modules);
-  return fetch(url, { headers: { 'X-API-Token': token } })
-    .then(function(res) { return res.json(); })
+  var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  var timer = controller ? setTimeout(function() { controller.abort(); }, 15000) : null;
+  var opts = { headers: { 'X-API-Token': token } };
+  if (controller) opts.signal = controller.signal;
+  return fetch(url, opts)
+    .then(function(res) { if (timer) clearTimeout(timer); return res.json(); })
     .then(function(data) {
       if (data._error) throw new Error(data._error);
       var yErr = data.quoteSummary && data.quoteSummary.error;
@@ -254,6 +289,10 @@ function fundFetchModules(ticker, modules) {
       var result = data.quoteSummary && data.quoteSummary.result && data.quoteSummary.result[0];
       if (!result) throw new Error('No data');
       return result;
+    })
+    .catch(function(err) {
+      if (timer) clearTimeout(timer);
+      throw err;
     });
 }
 
@@ -1637,23 +1676,41 @@ var yearnInflight = {};
 
 function yearnCacheKey(ticker) { return 'yearn_' + ticker.toUpperCase(); }
 
+// In-memory fallback — same rationale as fundMemCache. See note above.
+var yearnMemCache = {};
+
 function yearnCacheGet(ticker) {
+  var key = yearnCacheKey(ticker);
   try {
-    var raw = localStorage.getItem(yearnCacheKey(ticker));
-    if (!raw) return null;
-    var entry = JSON.parse(raw);
-    if (!entry || !entry.ts) return null;
-    if (entry.v !== YEARN_CACHE_VER) return null;
-    if (Date.now() - entry.ts > YEARN_CACHE_TTL) return null;
-    return entry; // caller reads entry.data (may be null for ETFs with no earnings)
-  } catch(e) { return null; }
+    var raw = localStorage.getItem(key);
+    if (raw) {
+      var entry = JSON.parse(raw);
+      if (entry && entry.ts && entry.v === YEARN_CACHE_VER
+          && Date.now() - entry.ts <= YEARN_CACHE_TTL) {
+        return entry; // caller reads entry.data (may be null for ETFs with no earnings)
+      }
+    }
+  } catch(e) {}
+  var mem = yearnMemCache[key];
+  if (mem && mem.ts && mem.v === YEARN_CACHE_VER
+      && Date.now() - mem.ts <= YEARN_CACHE_TTL) {
+    return mem;
+  }
+  return null;
 }
 
 function yearnCacheSet(ticker, earningsModule) {
+  var key = yearnCacheKey(ticker);
+  var obj = { v: YEARN_CACHE_VER, ts: Date.now(), data: earningsModule || null };
   try {
-    var obj = { v: YEARN_CACHE_VER, ts: Date.now(), data: earningsModule || null };
-    localStorage.setItem(yearnCacheKey(ticker), JSON.stringify(obj));
-  } catch(e) {}
+    localStorage.setItem(key, JSON.stringify(obj));
+    delete yearnMemCache[key];
+  } catch(e) {
+    yearnMemCache[key] = obj;
+    if (typeof console !== 'undefined' && console.warn) {
+      console.warn('yearnCache: localStorage write failed for ' + ticker + ' — using memory fallback');
+    }
+  }
 }
 
 // Standalone fetch with normalized error handling — caches null for ETFs / no-data,
@@ -1663,8 +1720,13 @@ function yearnFetch(ticker) {
   var token = fundWorkerToken();
   if (!base || !token) return Promise.resolve();
   var url = base + '/api/quotesummary?ticker=' + encodeURIComponent(ticker) + '&modules=earnings';
-  return fetch(url, { headers: { 'X-API-Token': token } })
-    .then(function(res) { return res.json(); })
+  // 15s timeout — see fundFetchRow for rationale (hung fetch leaves inflight stuck)
+  var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  var timer = controller ? setTimeout(function() { controller.abort(); }, 15000) : null;
+  var opts = { headers: { 'X-API-Token': token } };
+  if (controller) opts.signal = controller.signal;
+  return fetch(url, opts)
+    .then(function(res) { if (timer) clearTimeout(timer); return res.json(); })
     .then(function(data) {
       var result = (!data._error && data.quoteSummary && !data.quoteSummary.error)
         ? (data.quoteSummary.result && data.quoteSummary.result[0])
@@ -1672,7 +1734,7 @@ function yearnFetch(ticker) {
       var earnings = result && result.earnings ? result.earnings : null;
       yearnCacheSet(ticker, earnings);
     })
-    .catch(function() {}); // network error: don't cache, allow retry next time
+    .catch(function() { if (timer) clearTimeout(timer); }); // network error / timeout: don't cache, allow retry next time
 }
 
 /* ── Side-by-side Fundamentals view: Earnings + EPS sub-views ─────────── */

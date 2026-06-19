@@ -4707,50 +4707,27 @@ function getFundamentalsSelection() {
 }
 
 // Partition tickers into:
-//   equity:  tickers whose positions are EQUITY (or whose instrumentType
-//            is unknown — included optimistically pending lazy migration)
-//   unknown: tickers needing lazy fetch (no instrumentType stored yet)
-//   skipped: count of tickers with known non-EQUITY type (ETF, INDEX, etc.)
+//   equity:  EQUITY positions OR positions whose instrumentType is not yet
+//            populated (optimistically included; will be filtered correctly
+//            after the next price refresh populates the field)
+//   skipped: positions with known non-EQUITY instrumentType (ETF, INDEX, etc.)
+//
+// Note: instrumentType is captured during every fetchPrice() call (single
+// or batch), and refreshAll() runs automatically on portfolio open and app
+// startup. So in practice positions get tagged through normal use without
+// any dedicated migration code.
 function filterFundamentalsTickers(tickers) {
-  var equity = [], unknown = [], skipped = 0;
+  var equity = [], skipped = 0;
   tickers.forEach(function(t) {
     var pos = positions.find(function(p) { return p.ticker === t; });
     var it = pos && pos.instrumentType;
-    if (!it) {
-      // Not yet migrated — include for now, queue lazy fetch
-      equity.push(t);
-      unknown.push(t);
-    } else if (it === 'EQUITY') {
+    if (!it || it === 'EQUITY') {
       equity.push(t);
     } else {
       skipped++;
     }
   });
-  return { equity: equity, unknown: unknown, skipped: skipped };
-}
-
-// Lazy migration: fetch quote for tickers missing instrumentType,
-// store result on every position with that ticker in current portfolio.
-// Session-level dedupe to prevent multiple in-flight requests for same ticker.
-var _fetchingInstrumentTypes = {};
-function lazyFetchInstrumentTypes(tickers) {
-  var toFetch = tickers.filter(function(t) { return !_fetchingInstrumentTypes[t]; });
-  if (toFetch.length === 0) return;
-  toFetch.forEach(function(t) { _fetchingInstrumentTypes[t] = true; });
-  var promises = toFetch.map(function(t) {
-    return fetchPrice(t).then(function() {
-      var it = __instrumentType;
-      if (!it) return;
-      positions = positions.map(function(p) {
-        return p.ticker === t ? Object.assign({}, p, { instrumentType: it }) : p;
-      });
-    }).catch(function() {});
-  });
-  Promise.all(promises).then(function() {
-    // Do NOT release dedupe — within this session, treat as done. Retries on next session.
-    saveLocal();
-    render();
-  });
+  return { equity: equity, skipped: skipped };
 }
 
 function getFundamentalsUniqueTickers() {
@@ -7870,13 +7847,12 @@ function render() {
         + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">' + sv.label + '</button>';
     }).join('');
 
-    // Filter to EQUITY (skip ETF / INDEX / etc.) + lazy-migrate unknowns
+    // Filter to EQUITY (skip ETF / INDEX / etc.). Positions without
+    // instrumentType yet are included optimistically — they'll be tagged
+    // by the next price refresh (auto-triggered on portfolio open).
     var fFiltered = filterFundamentalsTickers(fSelected);
     var fEquity = fFiltered.equity;
     var fSkippedCount = fFiltered.skipped;
-    if (fFiltered.unknown.length > 0) {
-      setTimeout(function() { lazyFetchInstrumentTypes(fFiltered.unknown); }, 0);
-    }
 
     // Main content: empty state or sub-view content
     var fContent;
