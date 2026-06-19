@@ -4561,6 +4561,87 @@ window.chartRange = '1mo';
 
 window._editingSetId = null;  // null = not editing; '_new' = adding; setId = editing existing
 
+// ── Aggregation detail modal ───────────────────────────────────────────────
+// Shows the individual positions that make up a ×n aggregated row in P&L.
+// Active and sold aggregations are separate (each has its own ×n icon),
+// so this modal shows positions matching the same (ticker, sold-flag).
+
+function showAggDetail(ticker, soldFlag) {
+  var isSold = soldFlag === 1 || soldFlag === '1' || soldFlag === true;
+  // Collect positions in the current portfolio matching this aggregation
+  var group = positions.filter(function(p) {
+    return p.ticker === ticker && (isSold ? !!p.sold : (!p.sold && p.qty > 0));
+  });
+  if (!group.length) return;
+  // Aggregate totals (same formulas as aggregatePositions/makeEntry)
+  var totalQty = 0, totalCost = 0, totalSell = 0;
+  group.forEach(function(p) {
+    totalQty += p.qty;
+    totalCost += p.qty * p.entry;
+    if (isSold) totalSell += p.qty * p.current;
+  });
+  var avgEntry = totalQty > 0 ? totalCost / totalQty : 0;
+  var aggCurrent = isSold
+    ? (totalQty > 0 ? totalSell / totalQty : 0)
+    : (group[0].current != null ? group[0].current : 0);
+  var aggPnlAbs = (aggCurrent - avgEntry) * totalQty;
+  var aggPnlPct = avgEntry > 0 ? ((aggCurrent / avgEntry) - 1) * 100 : null;
+  var currSym = CURRENCY_SYMBOLS[group[0].currency] || group[0].currency || '';
+
+  function row(p, isAggRow) {
+    var qty = p.qty;
+    var entry = p.entry;
+    var current = isAggRow ? aggCurrent : (p.current != null ? p.current : 0);
+    var pnlAbs = (current - entry) * qty;
+    var pnlPct = entry > 0 ? ((current / entry) - 1) * 100 : null;
+    var pnlClass = cls(pnlAbs);
+    var pctClass = cls(pnlPct);
+    var rowStyle = isAggRow
+      ? 'border-top:1px solid var(--border);font-weight:normal'
+      : (isSold ? 'opacity:0.75' : '');
+    var tdStyle  = 'padding:6px 8px;white-space:nowrap;text-align:right';
+    var tdStyleL = 'padding:6px 8px;white-space:nowrap;text-align:left';
+    return '<tr style="' + rowStyle + '">'
+      + '<td style="' + tdStyleL + '">' + qty + '</td>'
+      + '<td style="' + tdStyle + '">' + currSym + f2(entry) + '</td>'
+      + '<td style="' + tdStyle + '">' + currSym + f2(current) + '</td>'
+      + '<td class="' + pnlClass + '" style="' + tdStyle + '">' + fSign(pnlAbs) + '</td>'
+      + '<td class="' + pctClass + '" style="' + tdStyle + '">' + fPct(pnlPct) + '</td>'
+      + '</tr>';
+  }
+
+  var existing = document.getElementById('aggDetailModal');
+  if (existing) existing.remove();
+  var modal = document.createElement('div');
+  modal.id = 'aggDetailModal';
+  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:400;display:flex;align-items:flex-start;justify-content:center;padding:40px 12px;overflow-y:auto';
+  modal.onclick = function(e) { if (e.target === modal) closeAggDetailModal(); };
+  var headStyle = 'padding:6px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;font-weight:normal';
+  modal.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--border);padding:16px 8px 12px;min-width:280px;max-width:480px;width:100%;position:relative">'
+    + '<button class="btn-icon" onclick="closeAggDetailModal()" style="position:absolute;top:8px;right:8px;font-size:16px">&#10005;</button>'
+    + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:0 8px 10px">'
+    + ticker + ' &times;' + group.length + (isSold ? ' &middot; SOLD' : '')
+    + '</div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:0">'
+    + '<thead><tr>'
+    + '<th style="' + headStyle + ';text-align:left">QTY</th>'
+    + '<th style="' + headStyle + ';text-align:right">ENTRY</th>'
+    + '<th style="' + headStyle + ';text-align:right">' + (isSold ? 'SOLD' : 'CURRENT') + '</th>'
+    + '<th style="' + headStyle + ';text-align:right">P&amp;L</th>'
+    + '<th style="' + headStyle + ';text-align:right">%</th>'
+    + '</tr></thead>'
+    + '<tbody>' + group.map(function(p) { return row(p, false); }).join('') + '</tbody>'
+    + '<tfoot>' + row({ qty: totalQty, entry: avgEntry, current: aggCurrent }, true) + '</tfoot>'
+    + '</table>'
+    + '</div>';
+  document.body.appendChild(modal);
+}
+
+function closeAggDetailModal() {
+  var m = document.getElementById('aggDetailModal');
+  if (m) m.remove();
+}
+
 function openPositionSetsModal() {
   window._editingSetId = null;
   var existing = document.getElementById('positionSetsModal');
@@ -6271,7 +6352,7 @@ function render() {
         + '<button class="btn-icon" onclick="cancelEdit()">&#10005;</button>';
       editActions = '';
     } else if (isAgg) {
-      sellAction = '<span style="font-size:12px;letter-spacing:1px;color:var(--dim);padding:0 4px">&times;' + aggCount + '</span>';
+      sellAction = '<button class="btn-icon" onclick="showAggDetail(\'' + p.ticker + '\',' + (p.sold ? '1' : '0') + ')" style="font-size:12px;letter-spacing:1px;color:var(--bright);padding:0 4px;cursor:pointer;background:none;border:none;font-family:var(--font)">&times;' + aggCount + '</button>';
       editActions = '';
     } else {
       sellAction = p.sold
