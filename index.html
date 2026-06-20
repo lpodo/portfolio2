@@ -4876,8 +4876,14 @@ function showAggDetail(ticker, soldFlag) {
   function brokerSubgroupHtml(bd, idx) {
     var sellBtn = isSold ? '' :
       '<button id="aggSellBtn_' + idx + '" class="btn" onclick="showAggSellForm(' + idx + ')" style="padding:3px 10px;font-size:9px;letter-spacing:1px;border-color:var(--bright);color:var(--bright)">SELL</button>';
-    var brokerLabel = '<span style="font-size:9px;color:var(--dim);letter-spacing:2px">BROKER&nbsp;</span>'
-                    + '<span style="font-size:11px;color:var(--bright);letter-spacing:1px;font-weight:bold">' + bd.broker.replace(/&/g,'&amp;') + '</span>';
+    // Label is one logical unit (BROKER + name) — wrap in a single span so
+    // flex's space-between keeps it pinned to the left whether SELL is
+    // present or not (without the wrapper, the two child spans would be
+    // split apart by space-between's distribution).
+    var brokerLabel = '<span>'
+                    + '<span style="font-size:9px;color:var(--dim);letter-spacing:2px">BROKER&nbsp;</span>'
+                    + '<span style="font-size:11px;color:var(--bright);letter-spacing:1px;font-weight:bold">' + bd.broker.replace(/&/g,'&amp;') + '</span>'
+                    + '</span>';
     return '<tr><td colspan="6" style="padding:14px 8px 4px">'
       + '<div style="display:flex;justify-content:space-between;align-items:center">'
       + brokerLabel
@@ -4912,13 +4918,13 @@ function showAggDetail(ticker, soldFlag) {
       + '<button class="btn" onclick="showArchiveMenuAgg(\'' + ticker + '\', this)">&#8863; MOVE TO REALIZED</button>'
       + '</div>';
   } else {
-    actionHtml = '<div id="aggSellForm" style="display:none;margin-top:16px;padding:16px 12px 0;border-top:1px solid var(--border)">'
-      + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:14px">SELL ' + ticker + ' FROM <span id="aggSellFormBroker" style="color:var(--bright);letter-spacing:1px"></span></div>'
-      + '<div style="display:flex;flex-direction:column;gap:10px">'
+    actionHtml = '<div id="aggSellForm" style="display:none;margin-top:16px;margin-left:auto;max-width:300px;padding:14px 16px 10px;border:1px solid var(--border);background:var(--bg)">'
+      + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:12px">SELL ' + ticker + ' FROM <span id="aggSellFormBroker" style="color:var(--bright);letter-spacing:1px"></span></div>'
+      + '<div style="display:flex;flex-direction:column;gap:8px">'
       + '<div class="field"><label>QTY (max <span id="aggSellMax">0</span>)</label><input type="number" id="aggSellQty" min="0.0001" step="any" style="width:100%;box-sizing:border-box" onkeydown="if(event.key===\'Enter\')document.getElementById(\'aggSellPrice\').focus()"></div>'
       + '<div class="field"><label>SELL PRICE</label><input type="number" id="aggSellPrice" min="0" step="any" style="width:100%;box-sizing:border-box" onkeydown="if(event.key===\'Enter\')confirmAggSell()"></div>'
       + '</div>'
-      + '<div style="display:flex;gap:8px;margin-top:16px">'
+      + '<div style="display:flex;gap:8px;margin-top:14px">'
       + '<button class="btn-primary" onclick="confirmAggSell()" style="flex:1">SELL</button>'
       + '<button class="btn" onclick="cancelAggSell()" style="flex:1">CANCEL</button>'
       + '</div>'
