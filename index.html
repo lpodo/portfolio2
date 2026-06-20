@@ -276,7 +276,7 @@
         <input type="number" id="fCurrent" placeholder="&#8212;" min="0" step="any" style="width:86px" onkeydown="if(event.key==='Enter')addPosition()">
       </div>
       <div class="field">
-        <label>DATE</label>
+        <label>BUY DATE</label>
         <input type="date" id="fDate" style="width:130px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;box-sizing:border-box">
       </div>
     </div>
@@ -3562,6 +3562,22 @@ function removePosition(id) {
   save(); render();
 }
 
+// Batch delete all positions in an aggregation (same ticker, same sold state)
+// in the current portfolio. Used by ✕ button on aggregation rows.
+function removeAggPositions(ticker, soldFlag) {
+  var isSold = soldFlag === 1 || soldFlag === '1' || soldFlag === true;
+  var group = positions.filter(function(p) {
+    return p.ticker === ticker && (isSold ? !!p.sold : (!p.sold && p.qty > 0));
+  });
+  if (!group.length) return;
+  if (!confirm('Delete ' + group.length + ' positions of ' + ticker + '?')) return;
+  var groupIds = {};
+  group.forEach(function(gp) { groupIds[gp.id] = true; });
+  positions = positions.filter(function(p) { return !(p.id in groupIds); });
+  save();
+  render();
+}
+
 // Find the portfolio object that contains a given position id.
 // Used by alert/note operations that may run from summary views where
 // the global `positions` doesn't necessarily include the target.
@@ -4744,7 +4760,7 @@ function showAggDetail(ticker, soldFlag) {
     + '<th style="' + headStyle + ';text-align:right">' + (isSold ? 'SOLD' : 'CURRENT') + '</th>'
     + '<th style="' + headStyle + ';text-align:right">P&amp;L</th>'
     + '<th style="' + headStyle + ';text-align:right">%</th>'
-    + '<th style="' + headStyle + ';text-align:right">DATE</th>'
+    + '<th style="' + headStyle + ';text-align:right">BUY DATE</th>'
     + '</tr></thead>'
     + '<tbody>' + group.map(function(p) { return row(p, false); }).join('') + '</tbody>'
     + '<tfoot>' + row({ qty: totalQty, entry: avgEntry, current: aggCurrent }, true) + '</tfoot>'
@@ -6565,21 +6581,23 @@ function render() {
       ? '<input class="edit-input" id="editCurrent" type="number" value="' + (p.current !== null && p.current !== undefined ? p.current : '') + '" placeholder="&mdash;">'
       : curCell;
 
-    var sellAction, editActions;
+    var sellAction, moveBtn, editBtn, deleteBtn;
     if (isEdit) {
       sellAction = '<button class="btn-icon" style="color:var(--green)" onclick="saveEdit(' + p.id + ')">&#10003;</button>'
         + '<button class="btn-icon" onclick="cancelEdit()">&#10005;</button>';
-      editActions = '';
+      moveBtn = ''; editBtn = ''; deleteBtn = '';
     } else if (isAgg) {
       sellAction = '<button class="btn-icon" onclick="showAggDetail(\'' + p.ticker + '\',' + (p.sold ? '1' : '0') + ')" style="font-size:12px;letter-spacing:1px;color:var(--bright);padding:0 4px;cursor:pointer;background:none;border:none;font-family:var(--font)">&times;' + aggCount + '</button>';
-      editActions = '<button class="btn-icon" onclick="showMoveMenuAgg(\'' + p.ticker + '\',' + (p.sold ? '1' : '0') + ', this)" title="Move all to portfolio" style="font-size:17px;padding:0 4px;line-height:1">&#8680;</button>';
+      moveBtn   = '<button class="btn-icon" onclick="showMoveMenuAgg(\'' + p.ticker + '\',' + (p.sold ? '1' : '0') + ', this)" title="Move all to portfolio" style="font-size:17px;padding:0 4px;line-height:1">&#8680;</button>';
+      editBtn   = '';
+      deleteBtn = '<button class="btn-icon" onclick="removeAggPositions(\'' + p.ticker + '\',' + (p.sold ? '1' : '0') + ')" style="color:var(--red)">&#10005;</button>';
     } else {
       sellAction = p.sold
         ? '<button class="btn-icon" onclick="showArchiveMenu(' + p.id + ', this)" title="Move to Realized" style="font-size:14px;padding:0 4px">&#8863;</button>'
         : (p.qty > 0 ? '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--bright)" onclick="sellPosition(' + p.id + ')">SELL</button>' : '');
-      editActions = '<button class="btn-icon" onclick="showMoveMenu(' + p.id + ', this)" title="Move to portfolio" style="font-size:17px;padding:0 4px;line-height:1">&#8680;</button>'
-        + '<button class="btn-icon" onclick="startEdit(' + p.id + ')">&#9998;</button>'
-        + '<button class="btn-icon" onclick="removePosition(' + p.id + ')" style="color:var(--red)">&#10005;</button>';
+      moveBtn   = '<button class="btn-icon" onclick="showMoveMenu(' + p.id + ', this)" title="Move to portfolio" style="font-size:17px;padding:0 4px;line-height:1">&#8680;</button>';
+      editBtn   = '<button class="btn-icon" onclick="startEdit(' + p.id + ')">&#9998;</button>';
+      deleteBtn = '<button class="btn-icon" onclick="removePosition(' + p.id + ')" style="color:var(--red)">&#10005;</button>';
     }
 
     var isExpanded = expandedId === p.id;
@@ -6599,14 +6617,16 @@ function render() {
       + '<td class="' + cls(pnlPct) + '">' + fPct(pnlPct) + '</td>'
       + '<td style="width:16px;padding:0 2px;text-align:center">' + (p.sold ? '<span style="color:#7090b0;font-size:13px">&#8960;</span>' : marketIcon(p.marketState)) + '</td>'
       + '<td style="white-space:nowrap;text-align:left">' + sellAction + '</td>'
-      + '<td style="white-space:nowrap">' + editActions + '</td>'
+      + '<td style="white-space:nowrap;text-align:center">' + moveBtn + '</td>'
+      + '<td style="white-space:nowrap;text-align:center">' + editBtn + '</td>'
+      + '<td style="white-space:nowrap;text-align:center">' + deleteBtn + '</td>'
       + '</tr>'
-      + (isEdit ? '<tr><td colspan="8" style="padding:6px 4px 10px;background:var(--bg2)">'
+      + (isEdit ? '<tr><td colspan="11" style="padding:6px 4px 10px;background:var(--bg2)">'
         + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">'
         + buildDictSelectHtml('cat', catDict, p.category || null, 'CATEGORY', '115px')
         + buildDictSelectHtml('reg', regDict, p.region || null, 'REGION', '80px')
         + buildDictSelectHtml('sec', secDict, p.sector || null, 'SECTOR', '120px')
-        + '<div class="field"><label>DATE</label><input type="date" id="editDate" value="' + (p.purchaseDate || '') + '" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;box-sizing:border-box;width:130px"></div>'
+        + '<div class="field"><label>BUY DATE</label><input type="date" id="editDate" value="' + (p.purchaseDate || '') + '" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;box-sizing:border-box;width:130px"></div>'
         + '</div>'
         + '<div style="margin-top:6px"><div class="field" style="width:100%"><label>NOTE</label><input type="text" id="editNote" value="' + (p.note || '') + '" placeholder="optional note..." style="width:100%;box-sizing:border-box" autocomplete="off" autocorrect="off"></div></div>'
         + '<div style="margin-top:8px">'
@@ -6628,7 +6648,7 @@ function render() {
         + '<button class="btn" style="padding:6px 16px;color:var(--dim)" onclick="cancelEdit()">CANCEL</button>'
         + '</div>'
         + '</td></tr>'
-        : (isExpanded ? '<tr><td colspan="8" style="padding:4px 8px 8px;background:var(--bg2)">' + (isAgg ? buildExpandedInnerAgg(p, aggGroup) : buildExpandedInner(p)) + '</td></tr>'
+        : (isExpanded ? '<tr><td colspan="11" style="padding:4px 8px 8px;background:var(--bg2)">' + (isAgg ? buildExpandedInnerAgg(p, aggGroup) : buildExpandedInner(p)) + '</td></tr>'
         : ''));
   });
 
@@ -8375,6 +8395,8 @@ function render() {
     + thBtn('pnlpct', 'P&amp;L %')
     + '<th style="width:16px;padding:0"></th>'
     + '<th style="text-align:left;padding:5px 4px;border-bottom:1px solid var(--border)"><span onclick="toggleAggregated()" title="Toggle aggregation" style="cursor:pointer;font-size:14px;color:' + (isAggregated() ? 'var(--green)' : 'var(--dim)') + '">&#8801;</span></th>'
+    + '<th style="border-bottom:1px solid var(--border)"></th>'
+    + '<th style="border-bottom:1px solid var(--border)"></th>'
     + '<th style="border-bottom:1px solid var(--border)"></th>'
     + '</tr></thead>'
     + '<tbody>' + rows + '</tbody>'
