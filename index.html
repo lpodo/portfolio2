@@ -4859,11 +4859,10 @@ function showAggDetail(ticker, soldFlag) {
       + dateCell
       + '</tr>';
   }
-  function totalRow(qty, entry, current, isGrand) {
+  function subtotalRow(qty, entry, current) {
     var pnlAbs = (current - entry) * qty;
     var pnlPct = entry > 0 ? ((current / entry) - 1) * 100 : null;
-    var borderTop = isGrand ? '2px solid var(--border)' : '1px solid var(--border)';
-    return '<tr style="border-top:' + borderTop + '">'
+    return '<tr style="border-top:1px solid var(--border)">'
       + '<td style="' + tdStyleL + '">' + qty + '</td>'
       + '<td style="' + tdStyle + '">' + currSym + f2(entry) + '</td>'
       + '<td style="' + tdStyle + '">' + currSym + f2(current) + '</td>'
@@ -4872,57 +4871,58 @@ function showAggDetail(ticker, soldFlag) {
       + '<td></td>'
       + '</tr>';
   }
-  function brokerHeaderRow(broker, idx) {
-    // colspan = 6 (QTY ENTRY CURRENT P&L % BUY DATE)
-    // Active aggregation: SELL button right-aligned, scoped to this broker (by index)
+  // Each broker subgroup is self-contained: broker label + SELL button row,
+  // column headers row, position rows, subtotal row. Repeats per broker.
+  function brokerSubgroupHtml(bd, idx) {
     var sellBtn = isSold ? '' :
-      '<button id="aggSellBtn_' + idx + '" class="btn btn-green" onclick="showAggSellForm(' + idx + ')" style="padding:3px 10px;font-size:9px;letter-spacing:1px">SELL</button>';
-    return '<tr><td colspan="6" style="padding:12px 8px 4px">'
+      '<button id="aggSellBtn_' + idx + '" class="btn" onclick="showAggSellForm(' + idx + ')" style="padding:3px 10px;font-size:9px;letter-spacing:1px;border-color:var(--bright);color:var(--bright)">SELL</button>';
+    var brokerLabel = '<span style="font-size:9px;color:var(--dim);letter-spacing:2px">BROKER&nbsp;</span>'
+                    + '<span style="font-size:11px;color:var(--bright);letter-spacing:1px;font-weight:bold">' + bd.broker.replace(/&/g,'&amp;') + '</span>';
+    return '<tr><td colspan="6" style="padding:14px 8px 4px">'
       + '<div style="display:flex;justify-content:space-between;align-items:center">'
-      + '<span style="font-size:10px;color:var(--bright);letter-spacing:1px;font-weight:bold">' + broker.replace(/&/g,'&amp;') + '</span>'
+      + brokerLabel
       + sellBtn
       + '</div>'
-      + '</td></tr>';
+      + '</td></tr>'
+      + '<tr>'
+      + '<td style="' + headStyle + ';text-align:left">QTY</td>'
+      + '<td style="' + headStyle + ';text-align:right">ENTRY</td>'
+      + '<td style="' + headStyle + ';text-align:right">' + (isSold ? 'SOLD' : 'CURRENT') + '</td>'
+      + '<td style="' + headStyle + ';text-align:right">P&amp;L</td>'
+      + '<td style="' + headStyle + ';text-align:right">%</td>'
+      + '<td style="' + headStyle + ';text-align:right">BUY DATE</td>'
+      + '</tr>'
+      + bd.group.map(positionRow).join('')
+      + subtotalRow(bd.qty, bd.avgEntry, bd.current);
   }
 
-  var tbodyHtml = '';
-  brokerData.forEach(function(bd, idx) {
-    tbodyHtml += brokerHeaderRow(bd.broker, idx);
-    tbodyHtml += bd.group.map(positionRow).join('');
-    tbodyHtml += totalRow(bd.qty, bd.avgEntry, bd.current, false);
-  });
-  // Grand total only if more than one broker
-  var grandTotalHtml = brokerData.length > 1 ? totalRow(totalQty, grandAvgEntry, grandCurrent, true) : '';
+  var tbodyHtml = brokerData.map(function(bd, i) { return brokerSubgroupHtml(bd, i); }).join('');
 
   var warningHtml = missingDateCount > 0
     ? '<div style="margin:10px 8px 0;font-size:10px;color:var(--dim);text-align:left;opacity:0.7">&#9888; ' + missingDateCount + ' position' + (missingDateCount === 1 ? '' : 's') + ' without date (treated as oldest in FIFO)</div>'
     : '';
 
   // For active: hidden sell form (revealed by per-broker SELL click).
+  // Styled to match the single-position sell modal: title, two stacked
+  // labelled inputs, SELL + CANCEL on one row.
   // For sold: MOVE TO REALIZED (acts on all sold positions regardless of broker).
-  var inputStyle = 'width:70px;padding:4px 6px;font-size:12px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);outline:none';
   var actionHtml;
   if (isSold) {
     actionHtml = '<div style="margin-top:14px;padding:0 8px;display:flex;justify-content:flex-end">'
       + '<button class="btn" onclick="showArchiveMenuAgg(\'' + ticker + '\', this)">&#8863; MOVE TO REALIZED</button>'
       + '</div>';
   } else {
-    actionHtml = '<div id="aggSellForm" style="display:none;margin-top:14px;padding:0 8px">'
-      + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:6px;text-align:right">'
-      + 'SELLING FROM <span id="aggSellFormBroker" style="color:var(--bright);letter-spacing:1px"></span>'
+    actionHtml = '<div id="aggSellForm" style="display:none;margin-top:16px;padding:16px 12px 0;border-top:1px solid var(--border)">'
+      + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:14px">SELL ' + ticker + ' FROM <span id="aggSellFormBroker" style="color:var(--bright);letter-spacing:1px"></span></div>'
+      + '<div style="display:flex;flex-direction:column;gap:10px">'
+      + '<div class="field"><label>QTY (max <span id="aggSellMax">0</span>)</label><input type="number" id="aggSellQty" min="0.0001" step="any" style="width:100%;box-sizing:border-box" onkeydown="if(event.key===\'Enter\')document.getElementById(\'aggSellPrice\').focus()"></div>'
+      + '<div class="field"><label>SELL PRICE</label><input type="number" id="aggSellPrice" min="0" step="any" style="width:100%;box-sizing:border-box" onkeydown="if(event.key===\'Enter\')confirmAggSell()"></div>'
       + '</div>'
-      + '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:flex-end">'
-      + '<div style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--dim);letter-spacing:1px">'
-      + 'QTY <input id="aggSellQty" type="number" min="0" step="any" style="' + inputStyle + '" onkeydown="if(event.key===\'Enter\')document.getElementById(\'aggSellPrice\').focus()">'
-      + '<span style="color:var(--dim);font-size:11px">&nbsp;/&nbsp;<span id="aggSellMax"></span></span>'
+      + '<div style="display:flex;gap:8px;margin-top:16px">'
+      + '<button class="btn-primary" onclick="confirmAggSell()" style="flex:1">SELL</button>'
+      + '<button class="btn" onclick="cancelAggSell()" style="flex:1">CANCEL</button>'
       + '</div>'
-      + '<div style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--dim);letter-spacing:1px">'
-      + 'PRICE <input id="aggSellPrice" type="number" min="0" step="any" style="' + inputStyle + '" onkeydown="if(event.key===\'Enter\')confirmAggSell()">'
-      + '</div>'
-      + '<button class="btn btn-green" onclick="confirmAggSell()">CONFIRM</button>'
-      + '<button class="btn" onclick="cancelAggSell()">CANCEL</button>'
-      + '</div>'
-      + '<div id="aggSellErr" style="width:100%;margin-top:6px;color:var(--red);font-size:11px;text-align:right;display:none"></div>'
+      + '<div id="aggSellErr" style="color:var(--red);font-size:11px;margin-top:6px;display:none"></div>'
       + '</div>';
   }
 
@@ -4941,16 +4941,7 @@ function showAggDetail(ticker, soldFlag) {
     + (isSold ? ' <span style="font-size:10px;color:var(--dim);letter-spacing:2px">SOLD</span>' : '')
     + '</div>'
     + '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:0">'
-    + '<thead><tr>'
-    + '<th style="' + headStyle + ';text-align:left">QTY</th>'
-    + '<th style="' + headStyle + ';text-align:right">ENTRY</th>'
-    + '<th style="' + headStyle + ';text-align:right">' + (isSold ? 'SOLD' : 'CURRENT') + '</th>'
-    + '<th style="' + headStyle + ';text-align:right">P&amp;L</th>'
-    + '<th style="' + headStyle + ';text-align:right">%</th>'
-    + '<th style="' + headStyle + ';text-align:right">BUY DATE</th>'
-    + '</tr></thead>'
     + '<tbody>' + tbodyHtml + '</tbody>'
-    + (grandTotalHtml ? '<tfoot>' + grandTotalHtml + '</tfoot>' : '')
     + '</table>'
     + warningHtml
     + actionHtml
@@ -4982,11 +4973,16 @@ function showAggSellForm(brokerIndex) {
   if (labelEl) labelEl.textContent = bd.broker;
   var maxEl = document.getElementById('aggSellMax');
   if (maxEl) maxEl.textContent = bd.qty;
+  // Pre-fill qty with broker total and price with broker current (mirrors
+  // single-position sell modal where both fields are pre-filled).
+  var qtyEl = document.getElementById('aggSellQty');
+  if (qtyEl) qtyEl.value = bd.qty;
+  var priceEl = document.getElementById('aggSellPrice');
+  if (priceEl) priceEl.value = bd.current != null ? bd.current.toFixed(2) : '';
   // Stash the broker for the confirm handler
   _aggOverlayState.activeBrokerIndex = brokerIndex;
   var form = document.getElementById('aggSellForm');
   if (form) form.style.display = 'block';
-  var qtyEl = document.getElementById('aggSellQty');
   if (qtyEl) qtyEl.focus();
 }
 
