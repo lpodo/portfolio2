@@ -279,6 +279,7 @@
         <label>BUY DATE</label>
         <input type="date" id="fDate" style="width:130px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;box-sizing:border-box">
       </div>
+      <div id="addBrokerSlot"></div>
     </div>
     <div style="display:flex;align-items:center;margin-top:8px">
       <button class="btn-primary" onclick="addPosition()">ADD</button>
@@ -734,6 +735,8 @@ try { var _ws = JSON.parse(localStorage.getItem('pt_wl_sort')); if (_ws) { watch
 var catDict = [];
 var regDict = [];
 var secDict = [];
+var brokerDict = [];
+var _defaultBroker = null;
 
 // --- Local storage ---
 function loadLocal() {
@@ -749,12 +752,19 @@ function loadDicts() {
   try { regDict = JSON.parse(localStorage.getItem('pt_reg_dict')) || []; } catch(e) { regDict = []; }
   try { secDict = JSON.parse(localStorage.getItem('pt_sec_dict')) || []; } catch(e) { secDict = []; }
   try { cashCatDict = JSON.parse(localStorage.getItem('pt_cash_cat_dict')) || []; } catch(e) { cashCatDict = []; }
+  try { brokerDict = JSON.parse(localStorage.getItem('pt_broker_dict')) || []; } catch(e) { brokerDict = []; }
+  try { _defaultBroker = localStorage.getItem('pt_default_broker') || null; } catch(e) { _defaultBroker = null; }
 }
 function saveDicts() {
   try { localStorage.setItem('pt_cat_dict', JSON.stringify(catDict)); } catch(e) {}
   try { localStorage.setItem('pt_reg_dict', JSON.stringify(regDict)); } catch(e) {}
   try { localStorage.setItem('pt_sec_dict', JSON.stringify(secDict)); } catch(e) {}
   try { localStorage.setItem('pt_cash_cat_dict', JSON.stringify(cashCatDict)); } catch(e) {}
+  try { localStorage.setItem('pt_broker_dict', JSON.stringify(brokerDict)); } catch(e) {}
+  try {
+    if (_defaultBroker) localStorage.setItem('pt_default_broker', _defaultBroker);
+    else localStorage.removeItem('pt_default_broker');
+  } catch(e) {}
 }
 function addToDict(dict, value) {
   value = String(value).trim();
@@ -775,6 +785,52 @@ function migrateDicts() {
   saveDicts();
 }
 
+// Broker helpers. Default broker is canonical when pos.broker is missing.
+// If the stored _defaultBroker is no longer in the dict (e.g. deleted),
+// fall back to the first dict entry so positions never lose their group.
+function getDefaultBroker() {
+  if (_defaultBroker && brokerDict.indexOf(_defaultBroker) !== -1) return _defaultBroker;
+  return brokerDict[0] || null;
+}
+function getPositionBroker(p) {
+  return p.broker || getDefaultBroker();
+}
+function countPositionsWithBroker(broker) {
+  var n = 0;
+  Object.keys(portfolios).forEach(function(pid) {
+    (portfolios[pid].positions || []).forEach(function(pos) {
+      if (pos.broker === broker) n++;
+    });
+  });
+  return n;
+}
+function setDefaultBroker(broker) {
+  if (!broker || brokerDict.indexOf(broker) === -1) return;
+  _defaultBroker = broker;
+  saveDicts();
+  if (getCloudBackend() === 'kv') cloudSaveKV(); else cloudSave();
+  renderDictsPanel();
+}
+
+// Lookup helpers used by all the field-driven dict UI code below.
+function _dictHiddenId(field) {
+  return field === 'cat' ? 'editCategory'
+       : field === 'reg' ? 'editRegion'
+       : field === 'sec' ? 'editSector'
+       : field === 'ccat' ? 'editCashCategory'
+       : field === 'bro' ? 'editBroker'
+       : field === 'broAdd' ? 'addBroker'
+       : '';
+}
+function _dictRef(field) {
+  return field === 'cat' ? catDict
+       : field === 'reg' ? regDict
+       : field === 'sec' ? secDict
+       : field === 'ccat' ? cashCatDict
+       : (field === 'bro' || field === 'broAdd') ? brokerDict
+       : null;
+}
+
 var _openDictDrop = null;
 var _activeDictPanel = null;
 
@@ -792,7 +848,7 @@ function buildDictDropOptions(field, dict, currentVal) {
   return opts;
 }
 function buildDictSelectHtml(field, dict, currentVal, label, width) {
-  var id = field === 'cat' ? 'editCategory' : field === 'reg' ? 'editRegion' : 'editSector';
+  var id = _dictHiddenId(field);
   var dispHtml = currentVal ? currentVal.replace(/&/g,'&amp;') : '<span style="color:var(--dim)">—</span>';
   return '<div class="field" style="position:relative">'
     + '<label>' + label + '</label>'
@@ -823,7 +879,7 @@ function toggleDictDropdown(field) {
   _openDictDrop = open ? null : field;
 }
 function pickDictVal(field, val) {
-  var id = field === 'cat' ? 'editCategory' : field === 'reg' ? 'editRegion' : field === 'sec' ? 'editSector' : field === 'ccat' ? 'editCashCategory' : '';
+  var id = _dictHiddenId(field);
   var hidden = document.getElementById(id);
   if (hidden) hidden.value = val;
   var display = document.getElementById('dictDisplay_' + field);
@@ -847,9 +903,12 @@ function confirmDictNew(field) {
   var input = document.getElementById('dictNewVal_' + field);
   var val = input ? input.value.trim() : '';
   if (!val) { cancelDictNew(field); return; }
-  var dict = field === 'cat' ? catDict : field === 'reg' ? regDict : field === 'sec' ? secDict : field === 'ccat' ? cashCatDict : null;
+  var dict = _dictRef(field);
   if (!dict) return;
+  var wasEmpty = (field === 'bro' || field === 'broAdd') && dict.length === 0;
   addToDict(dict, val);
+  // First broker added auto-becomes default
+  if (wasEmpty) _defaultBroker = val;
   saveDicts();
   var drop = document.getElementById('dictDrop_' + field);
   if (drop) drop.innerHTML = buildDictDropOptions(field, dict, val);
@@ -867,11 +926,23 @@ function cancelDictNew(field) {
   if (ns) ns.style.display = 'none';
 }
 function removeFromDict(field, value) {
-  var dict = field === 'cat' ? catDict : field === 'reg' ? regDict : field === 'sec' ? secDict : field === 'ccat' ? cashCatDict : null;
+  var dict = _dictRef(field);
   if (!dict) return;
+  // Special handling for brokers: refuse if any position still uses it
+  if (field === 'bro') {
+    var n = countPositionsWithBroker(value);
+    if (n > 0) {
+      alert('Cannot delete "' + value + '": ' + n + ' position' + (n === 1 ? '' : 's') + ' still use' + (n === 1 ? 's' : '') + ' this broker. Reassign or delete those positions first.');
+      return;
+    }
+  }
   if (!confirm('Delete "' + value + '"?')) return;
   var idx = dict.indexOf(value);
   if (idx !== -1) dict.splice(idx, 1);
+  // If we just removed the default broker, auto-promote the first remaining one
+  if (field === 'bro' && _defaultBroker === value) {
+    _defaultBroker = brokerDict[0] || null;
+  }
   saveDicts();
   renderDictsPanel();
 }
@@ -882,20 +953,35 @@ function showDictPanel(field) {
 function renderDictsPanel() {
   var el = document.getElementById('dictsPanel');
   if (!el) return;
-  var btns = ['cat','reg','sec','ccat'].map(function(f) {
-    var label = f === 'cat' ? 'CATEGORIES' : f === 'reg' ? 'REGIONS' : f === 'sec' ? 'SECTORS' : 'CASH CAT';
+  var btns = ['cat','reg','sec','bro','ccat'].map(function(f) {
+    var label = f === 'cat' ? 'CATEGORIES'
+              : f === 'reg' ? 'REGIONS'
+              : f === 'sec' ? 'SECTORS'
+              : f === 'bro' ? 'BROKERS'
+              : 'CASH CAT';
     var active = _activeDictPanel === f;
     return '<button onclick="showDictPanel(\'' + f + '\')" class="btn' + (active ? ' btn-green' : '') + '" style="flex:1;padding:5px 2px;font-size:9px;letter-spacing:1px">' + label + '</button>';
   }).join('');
   var content = '';
   if (_activeDictPanel) {
-    var dict = _activeDictPanel === 'cat' ? catDict : _activeDictPanel === 'reg' ? regDict : _activeDictPanel === 'sec' ? secDict : cashCatDict;
+    var dict = _dictRef(_activeDictPanel);
     var field = _activeDictPanel;
+    var isBroker = field === 'bro';
     content = '<div style="margin-top:8px;max-height:140px;overflow-y:auto">'
       + (dict.length ? dict.map(function(v) {
           var esc = v.replace(/&/g,'&amp;').replace(/'/g,'&#39;');
+          var nameHtml;
+          if (isBroker) {
+            var isDefault = (v === _defaultBroker);
+            nameHtml = '<span onclick="setDefaultBroker(\'' + esc + '\')" style="font-size:11px;color:var(--bright);cursor:pointer" title="Click to set as default">'
+                     + v.replace(/&/g,'&amp;')
+                     + '</span>'
+                     + (isDefault ? ' <span style="font-size:9px;color:var(--dim);letter-spacing:1px">(default)</span>' : '');
+          } else {
+            nameHtml = '<span style="font-size:11px;color:var(--bright)">' + v.replace(/&/g,'&amp;') + '</span>';
+          }
           return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">'
-            + '<span style="font-size:11px;color:var(--bright)">' + v.replace(/&/g,'&amp;') + '</span>'
+            + nameHtml
             + '<button onclick="removeFromDict(\'' + field + '\',\'' + esc + '\')" class="btn" style="padding:1px 6px;font-size:10px;color:var(--red)">&#10005;</button>'
             + '</div>';
         }).join('') : '<div style="font-size:10px;color:var(--dim);font-style:italic">empty</div>')
@@ -1597,7 +1683,8 @@ function moveToPortfolio(targetPid) {
       region: pos.region || null,
       sector: pos.sector || null,
       purchaseDate: pos.purchaseDate || undefined,
-      instrumentType: pos.instrumentType || undefined
+      instrumentType: pos.instrumentType || undefined,
+      broker: pos.broker || undefined
     });
   });
   positions = positions.filter(function(p) { return movePosIds.indexOf(p.id) === -1; });
@@ -1681,7 +1768,8 @@ function moveToArchive(archivePid) {
       region: pos.region || null,
       sector: pos.sector || null,
       purchaseDate: pos.purchaseDate || undefined,
-      instrumentType: pos.instrumentType || undefined
+      instrumentType: pos.instrumentType || undefined,
+      broker: pos.broker || undefined
     });
   });
   positions = positions.filter(function(p) { return archiveMenuPosIds.indexOf(p.id) === -1; });
@@ -2799,7 +2887,9 @@ function backupData() {
     catDict: catDict,
     regDict: regDict,
     secDict: secDict,
-    cashCatDict: cashCatDict
+    cashCatDict: cashCatDict,
+    brokerDict: brokerDict,
+    defaultBroker: _defaultBroker || null
   };
   var json = JSON.stringify(data, null, 2);
   var blob = new Blob([json], { type: 'application/json' });
@@ -2840,6 +2930,8 @@ function restoreData(event) {
       if (data.regDict && Array.isArray(data.regDict)) { regDict = data.regDict; }
       if (data.secDict && Array.isArray(data.secDict)) { secDict = data.secDict; }
       if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
+      if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
+      if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
       saveDicts();
       currentPortfolioId = Object.keys(portfolios)[0];
       localStorage.setItem('pt_current', currentPortfolioId);
@@ -2977,7 +3069,7 @@ function cloudSave() {
 }
 
 function _doCloudSave(key, binId) {
-  var plaintext = JSON.stringify({ portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict });
+  var plaintext = JSON.stringify({ portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, brokerDict: brokerDict, defaultBroker: _defaultBroker || null });
   var encKey = getEncKey();
 
   function doSend(body) {
@@ -3067,6 +3159,8 @@ function cloudLoadKV(callback) {
           if (data.regDict && Array.isArray(data.regDict)) { regDict = data.regDict; }
           if (data.secDict && Array.isArray(data.secDict)) { secDict = data.secDict; }
           if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
+          if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
+          if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
           saveDicts();
           savePortfolios();
           if (!portfolios[currentPortfolioId]) { currentPortfolioId = Object.keys(portfolios)[0]; localStorage.setItem('pt_current', currentPortfolioId); }
@@ -3103,7 +3197,7 @@ function cloudSaveKV() {
   var token = getToken();
   var kvKey = getKvKey();
   if (!baseUrl || !kvKey) return;
-  var payload = { portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict };
+  var payload = { portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, brokerDict: brokerDict, defaultBroker: _defaultBroker || null };
   var encKey = getEncKey();
   function doSave(body) {
     fetch(baseUrl + '/api/kv', {
@@ -3164,6 +3258,8 @@ function cloudLoad(callback) {
         if (data.regDict && Array.isArray(data.regDict)) { regDict = data.regDict; }
         if (data.secDict && Array.isArray(data.secDict)) { secDict = data.secDict; }
         if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
+        if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
+        if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
         saveDicts();
         savePortfolios();
         if (!portfolios[currentPortfolioId]) {
@@ -3370,6 +3466,16 @@ function todayLocalISO() {
   return new Date().toLocaleDateString('en-CA');
 }
 
+// Render the BROKER select in the add form. Default broker (if any) is
+// pre-selected. Called on init and after each successful add to refresh
+// the dropdown contents.
+function renderAddBrokerSlot() {
+  var slot = document.getElementById('addBrokerSlot');
+  if (!slot) return;
+  var def = getDefaultBroker();
+  slot.innerHTML = buildDictSelectHtml('broAdd', brokerDict, def, 'BROKER', '115px');
+}
+
 function f2(n) {
   if (n === null || n === undefined || isNaN(n)) return '&mdash;';
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -3412,6 +3518,12 @@ function addPosition() {
   var current = curRaw ? parseFloat(curRaw) : null;
   var dateRaw = (document.getElementById('fDate').value || '').trim();
   var purchaseDate = dateRaw || null; // null if user cleared the field
+  // Broker: hidden input from buildDictSelectHtml('broAdd',...). Empty
+  // means user explicitly chose "(not set)" or no brokers exist yet —
+  // either way we store as null and let getPositionBroker() substitute
+  // the current default at read time.
+  var brokerInput = document.getElementById('addBroker');
+  var broker = brokerInput ? (brokerInput.value.trim() || null) : null;
   if (!ticker) { document.getElementById('addErr').textContent = 'Enter ticker'; return; }
   if (isWatchlist() && positions.some(function(p) { return p.ticker === ticker; })) {
     document.getElementById('addErr').textContent = ticker + ' is already in this watchlist';
@@ -3446,6 +3558,7 @@ function addPosition() {
     save();
     ['fTicker','fQty','fEntry','fCurrent'].forEach(function(id) { document.getElementById(id).value = ''; });
     document.getElementById('fDate').value = todayLocalISO();
+    renderAddBrokerSlot(); // refresh dropdown + reset to current default
     render();
     if (!isSold && !isWatchlist()) refreshPrice(pos.id);
   }
@@ -3455,7 +3568,7 @@ function addPosition() {
   errEl.textContent = 'Checking ticker...';
   var baseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
   var token = getToken();
-  if (!baseUrl) { doAddPosition({ purchaseDate: purchaseDate }); return; }
+  if (!baseUrl) { doAddPosition({ purchaseDate: purchaseDate, broker: broker }); return; }
   var url = baseUrl + '/api/quote?ticker=' + encodeURIComponent(ticker) + '&simple=1';
   var opts = token ? { headers: { 'X-API-Token': token } } : {};
   fetch(url, opts).then(function(r) { return r.json(); }).then(function(d) {
@@ -3464,7 +3577,7 @@ function addPosition() {
       return;
     }
     errEl.textContent = '';
-    doAddPosition({ currency: d.currency || null, shortName: d.shortName || null, instrumentType: d.instrumentType || null, purchaseDate: purchaseDate });
+    doAddPosition({ currency: d.currency || null, shortName: d.shortName || null, instrumentType: d.instrumentType || null, purchaseDate: purchaseDate, broker: broker });
   }).catch(function() {
     errEl.textContent = '✗ Ticker check failed';
   });
@@ -3477,6 +3590,7 @@ function clearAddForm() {
   });
   var dateEl = document.getElementById('fDate');
   if (dateEl) dateEl.value = todayLocalISO();
+  renderAddBrokerSlot();
   var errEl = document.getElementById('addErr');
   if (errEl) errEl.textContent = '';
 }
@@ -3656,6 +3770,8 @@ function buildExpandedInner(p) {
     + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (p.category || '—') + '</span></span>'
     + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (p.region || '—') + '</span></span>'
     + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (p.sector || '—') + '</span></span>'
+    + '<span><span style="opacity:0.6">BROKER</span> <span style="color:var(--bright)">' + (getPositionBroker(p) || 'default') + '</span></span>'
+    + '<span><span style="opacity:0.6">BUY</span> <span style="color:var(--bright)">' + (p.purchaseDate || '—') + '</span></span>'
     + '</div>'
     + '<div style="margin-top:8px;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
     + '<span style="opacity:0.6">NOTE</span>'
@@ -3680,10 +3796,22 @@ function buildExpandedInner(p) {
 
 function buildExpandedInnerAgg(p, group) {
   var first = group[0];
+  // For broker and buy date, aggregations may span multiple values.
+  // If all positions in the group share the same value, show it;
+  // otherwise show "varies" (user can open ×N overlay to see per-position).
+  var brokers = {}, dates = {};
+  group.forEach(function(g) {
+    brokers[getPositionBroker(g) || 'default'] = true;
+    dates[g.purchaseDate || '—'] = true;
+  });
+  var brokerStr = Object.keys(brokers).length === 1 ? Object.keys(brokers)[0] : 'varies';
+  var dateStr   = Object.keys(dates).length === 1   ? Object.keys(dates)[0]   : 'varies';
   var html = '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px">'
     + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (first.category || '—') + '</span></span>'
     + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (first.region || '—') + '</span></span>'
     + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (first.sector || '—') + '</span></span>'
+    + '<span><span style="opacity:0.6">BROKER</span> <span style="color:var(--bright)">' + brokerStr + '</span></span>'
+    + '<span><span style="opacity:0.6">BUY</span> <span style="color:var(--bright)">' + dateStr + '</span></span>'
     + '</div>';
   var notes = group.map(function(g) { return g.note || ''; }).filter(Boolean).join(' • ');
   html += '<div style="margin-top:8px;font-size:10px;color:var(--dim);letter-spacing:1px">'
@@ -3798,15 +3926,16 @@ function saveEdit(id) {
   for (var i = 0; i < positions.length; i++) { if (positions[i].id === id) { pos = positions[i]; break; } }
   var current = curRaw ? parseFloat(curRaw) : (pos ? pos.current : null);
   if (qty === null || isNaN(qty) || qty < 0 || (qty > 0 && entry <= 0)) return;
-  var catEl = document.getElementById('editCategory'); var regEl = document.getElementById('editRegion'); var secEl = document.getElementById('editSector'); var noteEl = document.getElementById('editNote'); var dateEl = document.getElementById('editDate');
+  var catEl = document.getElementById('editCategory'); var regEl = document.getElementById('editRegion'); var secEl = document.getElementById('editSector'); var noteEl = document.getElementById('editNote'); var dateEl = document.getElementById('editDate'); var broEl = document.getElementById('editBroker');
   var category = catEl ? (catEl.value.trim() || null) : (pos ? pos.category : null);
   var region   = regEl ? (regEl.value.trim() || null) : (pos ? pos.region   : null);
   var sector   = secEl ? (secEl.value.trim() || null) : (pos ? pos.sector   : null);
   var note     = noteEl ? (noteEl.value.trim() || null) : (pos ? pos.note    : null);
   var purchaseDate = dateEl ? (dateEl.value.trim() || null) : (pos ? pos.purchaseDate : null);
+  var broker   = broEl ? (broEl.value.trim() || null) : (pos ? pos.broker : null);
   var syncTicker = (newTicker || (pos ? pos.ticker : '')).toUpperCase();
   positions = positions.map(function(p) {
-    return p.id === id ? Object.assign({}, p, { ticker: newTicker || p.ticker, qty: qty, entry: entry, current: current, category: category, region: region, sector: sector, note: note, purchaseDate: purchaseDate, alerts: p.alerts || [] }) : p;
+    return p.id === id ? Object.assign({}, p, { ticker: newTicker || p.ticker, qty: qty, entry: entry, current: current, category: category, region: region, sector: sector, note: note, purchaseDate: purchaseDate, broker: broker, alerts: p.alerts || [] }) : p;
   });
   portfolios[currentPortfolioId].positions = positions;
   Object.keys(portfolios).forEach(function(pid) {
@@ -4644,69 +4773,157 @@ window._editingSetId = null;  // null = not editing; '_new' = adding; setId = ed
 // Active and sold aggregations are separate (each has its own ×n icon),
 // so this modal shows positions matching the same (ticker, sold-flag).
 
+// State for the agg overlay's sell form. Set when an overlay is built,
+// consumed by showAggSellForm/confirmAggSell. We track broker subgroups
+// by index to avoid escaping broker names through inline onclick handlers.
+var _aggOverlayState = null;
+
 function showAggDetail(ticker, soldFlag) {
   var isSold = soldFlag === 1 || soldFlag === '1' || soldFlag === true;
-  // Collect positions in the current portfolio matching this aggregation
-  var group = positions.filter(function(p) {
+  // Collect all positions in the current portfolio matching this aggregation
+  var allPositions = positions.filter(function(p) {
     return p.ticker === ticker && (isSold ? !!p.sold : (!p.sold && p.qty > 0));
   });
-  if (!group.length) return;
+  if (!allPositions.length) return;
 
-  // Sort FIFO: by purchaseDate asc (empty/missing sorts first as -∞),
-  // tiebreak by id asc. Empty string '' lex-sorts before any date string.
-  group.sort(function(a, b) {
-    var ad = a.purchaseDate || '';
-    var bd = b.purchaseDate || '';
-    if (ad !== bd) return ad < bd ? -1 : 1;
-    return a.id - b.id;
+  // Group by broker. getPositionBroker substitutes default for empty pos.broker
+  // so positions without explicit broker land in the default's subgroup. If
+  // no brokers are defined yet (brokerDict empty), all positions land under
+  // the literal label "default" — semantically they all belong to the same
+  // implicit-default broker, just not named yet.
+  var brokerGroups = {};
+  allPositions.forEach(function(p) {
+    var b = getPositionBroker(p) || 'default';
+    if (!brokerGroups[b]) brokerGroups[b] = [];
+    brokerGroups[b].push(p);
   });
-  var missingDateCount = group.filter(function(p) { return !p.purchaseDate; }).length;
+  // Alphabetical broker order; 'default' (no broker defined yet) sorts naturally.
+  var brokerKeys = Object.keys(brokerGroups).sort(function(a, b) {
+    return a.localeCompare(b);
+  });
 
-  // Aggregate totals (same formulas as aggregatePositions/makeEntry)
+  var currSym = CURRENCY_SYMBOLS[allPositions[0].currency] || allPositions[0].currency || '';
   var totalQty = 0, totalCost = 0, totalSell = 0;
-  group.forEach(function(p) {
-    totalQty += p.qty;
-    totalCost += p.qty * p.entry;
-    if (isSold) totalSell += p.qty * p.current;
+  var brokerData = brokerKeys.map(function(broker) {
+    var group = brokerGroups[broker].slice().sort(function(a, b) {
+      var ad = a.purchaseDate || '';
+      var bd = b.purchaseDate || '';
+      if (ad !== bd) return ad < bd ? -1 : 1;
+      return a.id - b.id;
+    });
+    var sQty = 0, sCost = 0, sSell = 0;
+    group.forEach(function(p) {
+      sQty += p.qty;
+      sCost += p.qty * p.entry;
+      if (isSold) sSell += p.qty * p.current;
+    });
+    var sAvgEntry = sQty > 0 ? sCost / sQty : 0;
+    var sCurrent = isSold
+      ? (sQty > 0 ? sSell / sQty : 0)
+      : (group[0].current != null ? group[0].current : 0);
+    totalQty += sQty;
+    totalCost += sCost;
+    totalSell += sSell;
+    return { broker: broker, group: group, qty: sQty, avgEntry: sAvgEntry, current: sCurrent };
   });
-  var avgEntry = totalQty > 0 ? totalCost / totalQty : 0;
-  var aggCurrent = isSold
+  var grandAvgEntry = totalQty > 0 ? totalCost / totalQty : 0;
+  var grandCurrent = isSold
     ? (totalQty > 0 ? totalSell / totalQty : 0)
-    : (group[0].current != null ? group[0].current : 0);
-  var aggPnlAbs = (aggCurrent - avgEntry) * totalQty;
-  var aggPnlPct = avgEntry > 0 ? ((aggCurrent / avgEntry) - 1) * 100 : null;
-  var currSym = CURRENCY_SYMBOLS[group[0].currency] || group[0].currency || '';
+    : (allPositions[0].current != null ? allPositions[0].current : 0);
+  var missingDateCount = allPositions.filter(function(p) { return !p.purchaseDate; }).length;
 
-  function row(p, isAggRow) {
+  _aggOverlayState = { ticker: ticker, isSold: isSold, brokerData: brokerData };
+
+  var headStyle = 'padding:6px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;font-weight:normal';
+  var tdStyle  = 'padding:6px 8px;white-space:nowrap;text-align:right';
+  var tdStyleL = 'padding:6px 8px;white-space:nowrap;text-align:left';
+
+  function positionRow(p) {
     var qty = p.qty;
     var entry = p.entry;
-    var current = isAggRow ? aggCurrent : (p.current != null ? p.current : 0);
+    var current = p.current != null ? p.current : 0;
     var pnlAbs = (current - entry) * qty;
     var pnlPct = entry > 0 ? ((current / entry) - 1) * 100 : null;
-    var pnlClass = cls(pnlAbs);
-    var pctClass = cls(pnlPct);
-    var rowStyle = isAggRow
-      ? 'border-top:1px solid var(--border);font-weight:normal'
-      : (isSold ? 'opacity:0.75' : '');
-    var tdStyle  = 'padding:6px 8px;white-space:nowrap;text-align:right';
-    var tdStyleL = 'padding:6px 8px;white-space:nowrap;text-align:left';
-    // Date cell: empty for agg total; dim+small for present date; normal style for missing
     var dateCell;
-    if (isAggRow) {
-      dateCell = '<td></td>';
-    } else if (p.purchaseDate) {
+    if (p.purchaseDate) {
       dateCell = '<td style="padding:6px 8px;text-align:right;white-space:nowrap;font-size:10px;color:var(--dim)">' + p.purchaseDate + '</td>';
     } else {
       dateCell = '<td style="padding:6px 8px;text-align:right;white-space:nowrap">&mdash;</td>';
     }
-    return '<tr style="' + rowStyle + '">'
+    return '<tr style="' + (isSold ? 'opacity:0.75' : '') + '">'
       + '<td style="' + tdStyleL + '">' + qty + '</td>'
       + '<td style="' + tdStyle + '">' + currSym + f2(entry) + '</td>'
       + '<td style="' + tdStyle + '">' + currSym + f2(current) + '</td>'
-      + '<td class="' + pnlClass + '" style="' + tdStyle + '">' + fSign(pnlAbs) + '</td>'
-      + '<td class="' + pctClass + '" style="' + tdStyle + '">' + fPct(pnlPct) + '</td>'
+      + '<td class="' + cls(pnlAbs) + '" style="' + tdStyle + '">' + fSign(pnlAbs) + '</td>'
+      + '<td class="' + cls(pnlPct) + '" style="' + tdStyle + '">' + fPct(pnlPct) + '</td>'
       + dateCell
       + '</tr>';
+  }
+  function totalRow(qty, entry, current, isGrand) {
+    var pnlAbs = (current - entry) * qty;
+    var pnlPct = entry > 0 ? ((current / entry) - 1) * 100 : null;
+    var borderTop = isGrand ? '2px solid var(--border)' : '1px solid var(--border)';
+    return '<tr style="border-top:' + borderTop + '">'
+      + '<td style="' + tdStyleL + '">' + qty + '</td>'
+      + '<td style="' + tdStyle + '">' + currSym + f2(entry) + '</td>'
+      + '<td style="' + tdStyle + '">' + currSym + f2(current) + '</td>'
+      + '<td class="' + cls(pnlAbs) + '" style="' + tdStyle + '">' + fSign(pnlAbs) + '</td>'
+      + '<td class="' + cls(pnlPct) + '" style="' + tdStyle + '">' + fPct(pnlPct) + '</td>'
+      + '<td></td>'
+      + '</tr>';
+  }
+  function brokerHeaderRow(broker, idx) {
+    // colspan = 6 (QTY ENTRY CURRENT P&L % BUY DATE)
+    // Active aggregation: SELL button right-aligned, scoped to this broker (by index)
+    var sellBtn = isSold ? '' :
+      '<button id="aggSellBtn_' + idx + '" class="btn btn-green" onclick="showAggSellForm(' + idx + ')" style="padding:3px 10px;font-size:9px;letter-spacing:1px">SELL</button>';
+    return '<tr><td colspan="6" style="padding:12px 8px 4px">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center">'
+      + '<span style="font-size:10px;color:var(--bright);letter-spacing:1px;font-weight:bold">' + broker.replace(/&/g,'&amp;') + '</span>'
+      + sellBtn
+      + '</div>'
+      + '</td></tr>';
+  }
+
+  var tbodyHtml = '';
+  brokerData.forEach(function(bd, idx) {
+    tbodyHtml += brokerHeaderRow(bd.broker, idx);
+    tbodyHtml += bd.group.map(positionRow).join('');
+    tbodyHtml += totalRow(bd.qty, bd.avgEntry, bd.current, false);
+  });
+  // Grand total only if more than one broker
+  var grandTotalHtml = brokerData.length > 1 ? totalRow(totalQty, grandAvgEntry, grandCurrent, true) : '';
+
+  var warningHtml = missingDateCount > 0
+    ? '<div style="margin:10px 8px 0;font-size:10px;color:var(--dim);text-align:left;opacity:0.7">&#9888; ' + missingDateCount + ' position' + (missingDateCount === 1 ? '' : 's') + ' without date (treated as oldest in FIFO)</div>'
+    : '';
+
+  // For active: hidden sell form (revealed by per-broker SELL click).
+  // For sold: MOVE TO REALIZED (acts on all sold positions regardless of broker).
+  var inputStyle = 'width:70px;padding:4px 6px;font-size:12px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);outline:none';
+  var actionHtml;
+  if (isSold) {
+    actionHtml = '<div style="margin-top:14px;padding:0 8px;display:flex;justify-content:flex-end">'
+      + '<button class="btn" onclick="showArchiveMenuAgg(\'' + ticker + '\', this)">&#8863; MOVE TO REALIZED</button>'
+      + '</div>';
+  } else {
+    actionHtml = '<div id="aggSellForm" style="display:none;margin-top:14px;padding:0 8px">'
+      + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:6px;text-align:right">'
+      + 'SELLING FROM <span id="aggSellFormBroker" style="color:var(--bright);letter-spacing:1px"></span>'
+      + '</div>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:flex-end">'
+      + '<div style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--dim);letter-spacing:1px">'
+      + 'QTY <input id="aggSellQty" type="number" min="0" step="any" style="' + inputStyle + '" onkeydown="if(event.key===\'Enter\')document.getElementById(\'aggSellPrice\').focus()">'
+      + '<span style="color:var(--dim);font-size:11px">&nbsp;/&nbsp;<span id="aggSellMax"></span></span>'
+      + '</div>'
+      + '<div style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--dim);letter-spacing:1px">'
+      + 'PRICE <input id="aggSellPrice" type="number" min="0" step="any" style="' + inputStyle + '" onkeydown="if(event.key===\'Enter\')confirmAggSell()">'
+      + '</div>'
+      + '<button class="btn btn-green" onclick="confirmAggSell()">CONFIRM</button>'
+      + '<button class="btn" onclick="cancelAggSell()">CANCEL</button>'
+      + '</div>'
+      + '<div id="aggSellErr" style="width:100%;margin-top:6px;color:var(--red);font-size:11px;text-align:right;display:none"></div>'
+      + '</div>';
   }
 
   var existing = document.getElementById('aggDetailModal');
@@ -4715,42 +4932,12 @@ function showAggDetail(ticker, soldFlag) {
   modal.id = 'aggDetailModal';
   modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:400;display:flex;align-items:flex-start;justify-content:center;padding:40px 12px;overflow-y:auto';
   modal.onclick = function(e) { if (e.target === modal) closeAggDetailModal(); };
-  var headStyle = 'padding:6px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;font-weight:normal';
-  var warningHtml = missingDateCount > 0
-    ? '<div style="margin:10px 8px 0;font-size:10px;color:var(--dim);text-align:left;opacity:0.7">&#9888; ' + missingDateCount + ' position' + (missingDateCount === 1 ? '' : 's') + ' without date (treated as oldest in FIFO)</div>'
-    : '';
 
-  // Action area: SELL+inline form for active aggregation,
-  // MOVE TO REALIZED for sold aggregation. Hidden if no positions.
-  var inputStyle = 'width:70px;padding:4px 6px;font-size:12px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);outline:none';
-  var actionHtml;
-  if (isSold) {
-    actionHtml = '<div style="margin-top:14px;padding:0 8px;display:flex;justify-content:flex-end">'
-      + '<button class="btn" onclick="showArchiveMenuAgg(\'' + ticker + '\', this)">&#8863; MOVE TO REALIZED</button>'
-      + '</div>';
-  } else {
-    actionHtml = '<div style="margin-top:14px;padding:0 8px;display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;align-items:center">'
-      + '<button id="aggSellBtn" class="btn" onclick="showAggSellForm()">SELL</button>'
-      + '<div id="aggSellForm" style="display:none;flex-wrap:wrap;gap:10px;align-items:center;justify-content:flex-end">'
-      + '<div style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--dim);letter-spacing:1px">'
-      + 'QTY <input id="aggSellQty" type="number" min="0" step="any" style="' + inputStyle + '" onkeydown="if(event.key===\'Enter\')document.getElementById(\'aggSellPrice\').focus()">'
-      + '<span style="color:var(--dim);font-size:11px">&nbsp;/&nbsp;' + totalQty + '</span>'
-      + '</div>'
-      + '<div style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--dim);letter-spacing:1px">'
-      + 'PRICE <input id="aggSellPrice" type="number" min="0" step="any" style="' + inputStyle + '" onkeydown="if(event.key===\'Enter\')confirmAggSell(\'' + ticker + '\')">'
-      + '</div>'
-      + '<button class="btn btn-green" onclick="confirmAggSell(\'' + ticker + '\')">CONFIRM</button>'
-      + '<button class="btn" onclick="cancelAggSell()">CANCEL</button>'
-      + '</div>'
-      + '<div id="aggSellErr" style="width:100%;margin-top:6px;color:var(--red);font-size:11px;text-align:right;display:none"></div>'
-      + '</div>';
-  }
-
-  modal.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--border);padding:16px 8px 12px;min-width:280px;max-width:520px;width:100%;position:relative">'
+  modal.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--border);padding:16px 8px 12px;min-width:280px;max-width:540px;width:100%;position:relative">'
     + '<button class="btn-icon" onclick="closeAggDetailModal()" style="position:absolute;top:8px;right:8px;font-size:16px">&#10005;</button>'
     + '<div style="margin:0 8px 12px">'
     + '<span style="font-size:13px;color:var(--bright);font-weight:bold;letter-spacing:1px">' + ticker + '</span>'
-    + ' <span style="font-size:12px;letter-spacing:1px;color:var(--bright)">&times;' + group.length + '</span>'
+    + ' <span style="font-size:12px;letter-spacing:1px;color:var(--bright)">&times;' + allPositions.length + '</span>'
     + (isSold ? ' <span style="font-size:10px;color:var(--dim);letter-spacing:2px">SOLD</span>' : '')
     + '</div>'
     + '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:0">'
@@ -4762,8 +4949,8 @@ function showAggDetail(ticker, soldFlag) {
     + '<th style="' + headStyle + ';text-align:right">%</th>'
     + '<th style="' + headStyle + ';text-align:right">BUY DATE</th>'
     + '</tr></thead>'
-    + '<tbody>' + group.map(function(p) { return row(p, false); }).join('') + '</tbody>'
-    + '<tfoot>' + row({ qty: totalQty, entry: avgEntry, current: aggCurrent }, true) + '</tfoot>'
+    + '<tbody>' + tbodyHtml + '</tbody>'
+    + (grandTotalHtml ? '<tfoot>' + grandTotalHtml + '</tfoot>' : '')
     + '</table>'
     + warningHtml
     + actionHtml
@@ -4774,24 +4961,47 @@ function showAggDetail(ticker, soldFlag) {
 function closeAggDetailModal() {
   var m = document.getElementById('aggDetailModal');
   if (m) m.remove();
+  _aggOverlayState = null;
 }
 
-// Show inline sell form in agg overlay (replaces SELL button)
-function showAggSellForm() {
-  var btn = document.getElementById('aggSellBtn');
+// Show the sell form scoped to a specific broker subgroup. brokerIndex
+// references _aggOverlayState.brokerData (set when overlay was built).
+// All SELL buttons across brokers are hidden while form is active to
+// avoid confusion about which broker the form is operating on.
+function showAggSellForm(brokerIndex) {
+  if (!_aggOverlayState) return;
+  var bd = _aggOverlayState.brokerData[brokerIndex];
+  if (!bd) return;
+  // Hide all SELL buttons (one per broker)
+  _aggOverlayState.brokerData.forEach(function(_, i) {
+    var btn = document.getElementById('aggSellBtn_' + i);
+    if (btn) btn.style.display = 'none';
+  });
+  // Populate form with this broker's context
+  var labelEl = document.getElementById('aggSellFormBroker');
+  if (labelEl) labelEl.textContent = bd.broker;
+  var maxEl = document.getElementById('aggSellMax');
+  if (maxEl) maxEl.textContent = bd.qty;
+  // Stash the broker for the confirm handler
+  _aggOverlayState.activeBrokerIndex = brokerIndex;
   var form = document.getElementById('aggSellForm');
-  if (btn) btn.style.display = 'none';
-  if (form) form.style.display = 'flex';
+  if (form) form.style.display = 'block';
   var qtyEl = document.getElementById('aggSellQty');
   if (qtyEl) qtyEl.focus();
 }
 
 function cancelAggSell() {
-  var btn = document.getElementById('aggSellBtn');
   var form = document.getElementById('aggSellForm');
-  var err = document.getElementById('aggSellErr');
   if (form) form.style.display = 'none';
-  if (btn) btn.style.display = '';
+  // Restore all SELL buttons
+  if (_aggOverlayState) {
+    _aggOverlayState.brokerData.forEach(function(_, i) {
+      var btn = document.getElementById('aggSellBtn_' + i);
+      if (btn) btn.style.display = '';
+    });
+    _aggOverlayState.activeBrokerIndex = null;
+  }
+  var err = document.getElementById('aggSellErr');
   if (err) { err.textContent = ''; err.style.display = 'none'; }
   var q = document.getElementById('aggSellQty');
   var p = document.getElementById('aggSellPrice');
@@ -4799,25 +5009,34 @@ function cancelAggSell() {
   if (p) p.value = '';
 }
 
-// FIFO batch sell: walks the aggregation in FIFO order, fully sells whole
-// lots until the target qty is satisfied; splits the last touched lot if
-// needed. Matches the single-position sellPosition split semantics: both
-// halves of a split get fresh IDs.
-function confirmAggSell(ticker) {
+// FIFO batch sell scoped to a specific broker. Same split semantics as
+// single-position sellPosition (both halves of a split get fresh IDs).
+// Filters positions by (ticker, active, broker) so a sale only touches
+// positions belonging to the selected broker.
+function confirmAggSell() {
+  if (!_aggOverlayState) return;
+  var ticker = _aggOverlayState.ticker;
+  var brokerIdx = _aggOverlayState.activeBrokerIndex;
+  var bd = (brokerIdx == null) ? null : _aggOverlayState.brokerData[brokerIdx];
+  if (!bd) return;
+  var broker = bd.broker;
+
   var errEl = document.getElementById('aggSellErr');
   function showErr(msg) {
     if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; }
   }
 
-  // Re-collect and re-sort group (positions might have changed since modal opened)
+  // Re-collect and re-sort group from current state (positions may have changed)
   var group = positions.filter(function(p) {
-    return p.ticker === ticker && !p.sold && p.qty > 0;
+    if (p.ticker !== ticker || p.sold || !(p.qty > 0)) return false;
+    var pb = getPositionBroker(p) || 'default';
+    return pb === broker;
   });
   if (!group.length) { closeAggDetailModal(); return; }
   group.sort(function(a, b) {
     var ad = a.purchaseDate || '';
-    var bd = b.purchaseDate || '';
-    if (ad !== bd) return ad < bd ? -1 : 1;
+    var bd2 = b.purchaseDate || '';
+    if (ad !== bd2) return ad < bd2 ? -1 : 1;
     return a.id - b.id;
   });
 
@@ -4828,7 +5047,7 @@ function confirmAggSell(ticker) {
 
   var totalQty = group.reduce(function(s, p) { return s + p.qty; }, 0);
   if (qtyInput > totalQty + 0.0001) {
-    showErr('Quantity exceeds total (' + totalQty + ')');
+    showErr('Quantity exceeds broker total (' + totalQty + ')');
     return;
   }
 
@@ -4855,7 +5074,6 @@ function confirmAggSell(ticker) {
     if (action.type === 'sell') {
       acc.push(Object.assign({}, p, { sold: true, current: priceInput }));
     } else {
-      // Split (same semantics as single sellPosition: both halves get new IDs)
       idOffset++;
       acc.push(Object.assign({}, p, {
         id: baseId + idOffset,
@@ -5328,7 +5546,14 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
   var groups = {};
   posns.forEach(function(p) {
     if (!p.qty || p.qty <= 0) return;
-    var key = breakdown === 'currency' ? (getPositionCurrencyCode(p) || 'Other') : ((p[breakdown] || '').trim().replace(/\s+/g, ' ') || 'Other');
+    var key;
+    if (breakdown === 'currency') {
+      key = getPositionCurrencyCode(p) || 'Other';
+    } else if (breakdown === 'broker') {
+      key = getPositionBroker(p) || 'default';
+    } else {
+      key = ((p[breakdown] || '').trim().replace(/\s+/g, ' ')) || 'Other';
+    }
     if (!groups[key]) groups[key] = [];
     groups[key].push(p);
   });
@@ -5370,7 +5595,7 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
       + '</tr>';
   }).join('');
 
-  var btns = ['category','region','sector','currency'].map(function(b) {
+  var btns = ['category','region','sector','broker','currency'].map(function(b) {
     var active = breakdown === b;
     return '<button onclick="setAnalyticsBreakdown(&apos;' + b + '&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 10px;border:1px solid ' + (active ? 'var(--green)' : 'var(--border)') + ';background:' + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font);text-transform:uppercase">' + b + '</button>';
   }).join('');
@@ -6627,6 +6852,7 @@ function render() {
         + buildDictSelectHtml('reg', regDict, p.region || null, 'REGION', '80px')
         + buildDictSelectHtml('sec', secDict, p.sector || null, 'SECTOR', '120px')
         + '<div class="field"><label>BUY DATE</label><input type="date" id="editDate" value="' + (p.purchaseDate || '') + '" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;box-sizing:border-box;width:130px"></div>'
+        + buildDictSelectHtml('bro', brokerDict, p.broker || null, 'BROKER', '115px')
         + '</div>'
         + '<div style="margin-top:6px"><div class="field" style="width:100%"><label>NOTE</label><input type="text" id="editNote" value="' + (p.note || '') + '" placeholder="optional note..." style="width:100%;box-sizing:border-box" autocomplete="off" autocorrect="off"></div></div>'
         + '<div style="margin-top:8px">'
@@ -8441,6 +8667,7 @@ setTitleForCurrentView();
 showKeyStatus();
 var _fDateEl = document.getElementById('fDate');
 if (_fDateEl) _fDateEl.value = todayLocalISO();
+renderAddBrokerSlot();
 render();
 if (_restoredView && _restoredView.switcherOpen) {
   setTimeout(function() {
