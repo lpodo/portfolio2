@@ -265,15 +265,19 @@
     <div class="form-row" style="flex-wrap:wrap">
       <div class="field">
         <label>QTY</label>
-        <input type="number" id="fQty" placeholder="10" min="0" step="any" style="width:78px" onkeydown="if(event.key==='Enter')addPosition()">
+        <input type="number" id="fQty" placeholder="10" min="0" step="any" style="width:70px" onkeydown="if(event.key==='Enter')addPosition()">
       </div>
       <div class="field">
         <label>ENTRY</label>
-        <input type="number" id="fEntry" placeholder="150.00" min="0" step="any" style="width:98px" onkeydown="if(event.key==='Enter')addPosition()">
+        <input type="number" id="fEntry" placeholder="150.00" min="0" step="any" style="width:86px" onkeydown="if(event.key==='Enter')addPosition()">
       </div>
       <div class="field">
         <label id="fCurrentLabel">CURRENT (opt.)</label>
-        <input type="number" id="fCurrent" placeholder="&#8212;" min="0" step="any" style="width:98px" onkeydown="if(event.key==='Enter')addPosition()">
+        <input type="number" id="fCurrent" placeholder="&#8212;" min="0" step="any" style="width:86px" onkeydown="if(event.key==='Enter')addPosition()">
+      </div>
+      <div class="field">
+        <label>DATE</label>
+        <input type="date" id="fDate" style="width:130px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;box-sizing:border-box">
       </div>
     </div>
     <div style="display:flex;align-items:center;margin-top:8px">
@@ -326,7 +330,7 @@
   <div id="movePosMenuList"></div>
 </div>
 <!-- Archive position menu -->
-<div id="archivePosMenu" style="display:none;position:fixed;z-index:400;background:var(--bg2);border:1px solid var(--border);min-width:160px;box-shadow:0 4px 12px rgba(0,0,0,0.4)">
+<div id="archivePosMenu" style="display:none;position:fixed;z-index:500;background:var(--bg2);border:1px solid var(--border);min-width:160px;box-shadow:0 4px 12px rgba(0,0,0,0.4)">
   <div id="archivePosMenuList"></div>
 </div>
 <!-- Move cash entry menu -->
@@ -1511,18 +1515,34 @@ function addDepositPosition(bpId) {
 }
 // ───────────────────────────────────────────────────────────────────────────────
 
-var movePosId = null;
+var movePosIds = null;
 
 function showMoveMenu(posId, btn) {
-  movePosId = posId;
+  showMoveMenuMulti([posId], btn);
+}
+
+// Aggregation move: collects all position IDs in the current portfolio
+// matching (ticker, sold-flag) and opens the same move-menu DOM. The
+// onclick handlers still call moveToPortfolio, which now iterates over
+// the array. Active and sold aggregations are separate (each has its
+// own ⇨ button) — matches the same boundary as ×n shows.
+function showMoveMenuAgg(ticker, soldFlag, btn) {
+  var isSold = soldFlag === 1 || soldFlag === '1' || soldFlag === true;
+  var ids = positions.filter(function(p) {
+    return p.ticker === ticker && (isSold ? !!p.sold : (!p.sold && p.qty > 0));
+  }).map(function(p) { return p.id; });
+  if (!ids.length) return;
+  showMoveMenuMulti(ids, btn);
+}
+
+function showMoveMenuMulti(ids, btn) {
+  movePosIds = ids;
   var menu = document.getElementById('movePosMenu');
   var list = document.getElementById('movePosMenuList');
-  var isArchive = currentPortfolio().archive;
   // Show only active (non-archive, non-watchlist) portfolios, excluding current
   var targetPids = Object.keys(portfolios).filter(function(pid) {
     return !portfolios[pid].archive && !portfolios[pid].watchlist && pid !== currentPortfolioId;
   }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
-  // From archive: also include same
   if (targetPids.length === 0) {
     list.innerHTML = '<div style="padding:10px 12px;font-size:11px;color:var(--dim)">No portfolios to move to</div>';
   } else {
@@ -1551,36 +1571,60 @@ function closeMoveMenuOutside(e) {
 function moveToPortfolio(targetPid) {
   document.getElementById('movePosMenu').style.display = 'none';
   document.removeEventListener('click', closeMoveMenuOutside);
-  var pos = positions.find(function(p) { return p.id === movePosId; });
-  if (!pos) return;
-  // Add to target portfolio, preserving all fields including sold status
-  portfolios[targetPid].positions.push({
-    id: Date.now(),
-    ticker: pos.ticker,
-    qty: pos.qty,
-    entry: pos.entry,
-    current: pos.current,
-    sold: pos.sold || undefined,
-    currency: pos.currency,
-    shortName: pos.shortName,
-    previousClose: pos.previousClose,
-    regularMarketPrice: pos.regularMarketPrice,
-    marketState: pos.marketState,
-    priceType: pos.priceType,
-    category: pos.category || null,
-    region: pos.region || null,
-    sector: pos.sector || null
+  if (!movePosIds || !movePosIds.length) return;
+  // Preserve array order — toMove iterated in source order, appended to
+  // target in same order. New IDs use Date.now() + i to avoid collisions
+  // within a batch (Date.now() resolution is 1ms; matches the existing
+  // sell-split pattern at line ~3483).
+  var toMove = positions.filter(function(p) { return movePosIds.indexOf(p.id) !== -1; });
+  if (!toMove.length) return;
+  var baseId = Date.now();
+  toMove.forEach(function(pos, i) {
+    portfolios[targetPid].positions.push({
+      id: baseId + i,
+      ticker: pos.ticker,
+      qty: pos.qty,
+      entry: pos.entry,
+      current: pos.current,
+      sold: pos.sold || undefined,
+      currency: pos.currency,
+      shortName: pos.shortName,
+      previousClose: pos.previousClose,
+      regularMarketPrice: pos.regularMarketPrice,
+      marketState: pos.marketState,
+      priceType: pos.priceType,
+      category: pos.category || null,
+      region: pos.region || null,
+      sector: pos.sector || null,
+      purchaseDate: pos.purchaseDate || undefined,
+      instrumentType: pos.instrumentType || undefined
+    });
   });
-  // Remove from current
-  positions = positions.filter(function(p) { return p.id !== movePosId; });
+  positions = positions.filter(function(p) { return movePosIds.indexOf(p.id) === -1; });
+  movePosIds = null;
   save();
   render();
 }
 
-var archiveMenuPosId = null;
+var archiveMenuPosIds = null;
 
 function showArchiveMenu(posId, btn) {
-  archiveMenuPosId = posId;
+  showArchiveMenuMulti([posId], btn);
+}
+
+// Aggregation move to Realized: collects all sold positions in the current
+// portfolio matching the ticker. Same pattern as showMoveMenuAgg —
+// active and sold aggregations are independent; this is for the sold one.
+function showArchiveMenuAgg(ticker, btn) {
+  var ids = positions.filter(function(p) {
+    return p.ticker === ticker && !!p.sold;
+  }).map(function(p) { return p.id; });
+  if (!ids.length) return;
+  showArchiveMenuMulti(ids, btn);
+}
+
+function showArchiveMenuMulti(ids, btn) {
+  archiveMenuPosIds = ids;
   var menu = document.getElementById('archivePosMenu');
   var list = document.getElementById('archivePosMenuList');
   var archivePids = Object.keys(portfolios).filter(function(pid) {
@@ -1617,24 +1661,31 @@ function closeArchiveMenuOutside(e) {
 function moveToArchive(archivePid) {
   document.getElementById('archivePosMenu').style.display = 'none';
   document.removeEventListener('click', closeArchiveMenuOutside);
-  var pos = positions.find(function(p) { return p.id === archiveMenuPosId; });
-  if (!pos) return;
-  // Add to archive portfolio
-  portfolios[archivePid].positions.push({
-    id: Date.now(),
-    ticker: pos.ticker,
-    qty: pos.qty,
-    entry: pos.entry,
-    current: pos.current,
-    sold: true,
-    currency: pos.currency,
-    shortName: pos.shortName,
-    category: pos.category || null,
-    region: pos.region || null,
-    sector: pos.sector || null
+  if (!archiveMenuPosIds || !archiveMenuPosIds.length) return;
+  var toMove = positions.filter(function(p) { return archiveMenuPosIds.indexOf(p.id) !== -1; });
+  if (!toMove.length) return;
+  // Close the agg detail modal if it's open (it's invalidated once we move)
+  closeAggDetailModal();
+  var baseId = Date.now();
+  toMove.forEach(function(pos, i) {
+    portfolios[archivePid].positions.push({
+      id: baseId + i,
+      ticker: pos.ticker,
+      qty: pos.qty,
+      entry: pos.entry,
+      current: pos.current,
+      sold: true,
+      currency: pos.currency,
+      shortName: pos.shortName,
+      category: pos.category || null,
+      region: pos.region || null,
+      sector: pos.sector || null,
+      purchaseDate: pos.purchaseDate || undefined,
+      instrumentType: pos.instrumentType || undefined
+    });
   });
-  // Remove from current portfolio
-  positions = positions.filter(function(p) { return p.id !== archiveMenuPosId; });
+  positions = positions.filter(function(p) { return archiveMenuPosIds.indexOf(p.id) === -1; });
+  archiveMenuPosIds = null;
   save();
   render();
 }
@@ -3314,6 +3365,11 @@ function fetchPrice(ticker) {
   });
 }
 
+// YYYY-MM-DD in local timezone, used as default purchaseDate for new positions
+function todayLocalISO() {
+  return new Date().toLocaleDateString('en-CA');
+}
+
 function f2(n) {
   if (n === null || n === undefined || isNaN(n)) return '&mdash;';
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -3354,6 +3410,8 @@ function addPosition() {
   var entry = parseFloat(document.getElementById('fEntry').value);
   var curRaw = document.getElementById('fCurrent').value.trim();
   var current = curRaw ? parseFloat(curRaw) : null;
+  var dateRaw = (document.getElementById('fDate').value || '').trim();
+  var purchaseDate = dateRaw || null; // null if user cleared the field
   if (!ticker) { document.getElementById('addErr').textContent = 'Enter ticker'; return; }
   if (isWatchlist() && positions.some(function(p) { return p.ticker === ticker; })) {
     document.getElementById('addErr').textContent = ticker + ' is already in this watchlist';
@@ -3387,6 +3445,7 @@ function addPosition() {
     positions.push(pos);
     save();
     ['fTicker','fQty','fEntry','fCurrent'].forEach(function(id) { document.getElementById(id).value = ''; });
+    document.getElementById('fDate').value = todayLocalISO();
     render();
     if (!isSold && !isWatchlist()) refreshPrice(pos.id);
   }
@@ -3396,7 +3455,7 @@ function addPosition() {
   errEl.textContent = 'Checking ticker...';
   var baseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
   var token = getToken();
-  if (!baseUrl) { doAddPosition({}); return; }
+  if (!baseUrl) { doAddPosition({ purchaseDate: purchaseDate }); return; }
   var url = baseUrl + '/api/quote?ticker=' + encodeURIComponent(ticker) + '&simple=1';
   var opts = token ? { headers: { 'X-API-Token': token } } : {};
   fetch(url, opts).then(function(r) { return r.json(); }).then(function(d) {
@@ -3405,7 +3464,7 @@ function addPosition() {
       return;
     }
     errEl.textContent = '';
-    doAddPosition({ currency: d.currency || null, shortName: d.shortName || null, instrumentType: d.instrumentType || null });
+    doAddPosition({ currency: d.currency || null, shortName: d.shortName || null, instrumentType: d.instrumentType || null, purchaseDate: purchaseDate });
   }).catch(function() {
     errEl.textContent = '✗ Ticker check failed';
   });
@@ -3416,6 +3475,8 @@ function clearAddForm() {
     var el = document.getElementById(id);
     if (el) el.value = '';
   });
+  var dateEl = document.getElementById('fDate');
+  if (dateEl) dateEl.value = todayLocalISO();
   var errEl = document.getElementById('addErr');
   if (errEl) errEl.textContent = '';
 }
@@ -3721,14 +3782,15 @@ function saveEdit(id) {
   for (var i = 0; i < positions.length; i++) { if (positions[i].id === id) { pos = positions[i]; break; } }
   var current = curRaw ? parseFloat(curRaw) : (pos ? pos.current : null);
   if (qty === null || isNaN(qty) || qty < 0 || (qty > 0 && entry <= 0)) return;
-  var catEl = document.getElementById('editCategory'); var regEl = document.getElementById('editRegion'); var secEl = document.getElementById('editSector'); var noteEl = document.getElementById('editNote');
+  var catEl = document.getElementById('editCategory'); var regEl = document.getElementById('editRegion'); var secEl = document.getElementById('editSector'); var noteEl = document.getElementById('editNote'); var dateEl = document.getElementById('editDate');
   var category = catEl ? (catEl.value.trim() || null) : (pos ? pos.category : null);
   var region   = regEl ? (regEl.value.trim() || null) : (pos ? pos.region   : null);
   var sector   = secEl ? (secEl.value.trim() || null) : (pos ? pos.sector   : null);
   var note     = noteEl ? (noteEl.value.trim() || null) : (pos ? pos.note    : null);
+  var purchaseDate = dateEl ? (dateEl.value.trim() || null) : (pos ? pos.purchaseDate : null);
   var syncTicker = (newTicker || (pos ? pos.ticker : '')).toUpperCase();
   positions = positions.map(function(p) {
-    return p.id === id ? Object.assign({}, p, { ticker: newTicker || p.ticker, qty: qty, entry: entry, current: current, category: category, region: region, sector: sector, note: note, alerts: p.alerts || [] }) : p;
+    return p.id === id ? Object.assign({}, p, { ticker: newTicker || p.ticker, qty: qty, entry: entry, current: current, category: category, region: region, sector: sector, note: note, purchaseDate: purchaseDate, alerts: p.alerts || [] }) : p;
   });
   portfolios[currentPortfolioId].positions = positions;
   Object.keys(portfolios).forEach(function(pid) {
@@ -4573,6 +4635,17 @@ function showAggDetail(ticker, soldFlag) {
     return p.ticker === ticker && (isSold ? !!p.sold : (!p.sold && p.qty > 0));
   });
   if (!group.length) return;
+
+  // Sort FIFO: by purchaseDate asc (empty/missing sorts first as -∞),
+  // tiebreak by id asc. Empty string '' lex-sorts before any date string.
+  group.sort(function(a, b) {
+    var ad = a.purchaseDate || '';
+    var bd = b.purchaseDate || '';
+    if (ad !== bd) return ad < bd ? -1 : 1;
+    return a.id - b.id;
+  });
+  var missingDateCount = group.filter(function(p) { return !p.purchaseDate; }).length;
+
   // Aggregate totals (same formulas as aggregatePositions/makeEntry)
   var totalQty = 0, totalCost = 0, totalSell = 0;
   group.forEach(function(p) {
@@ -4601,12 +4674,22 @@ function showAggDetail(ticker, soldFlag) {
       : (isSold ? 'opacity:0.75' : '');
     var tdStyle  = 'padding:6px 8px;white-space:nowrap;text-align:right';
     var tdStyleL = 'padding:6px 8px;white-space:nowrap;text-align:left';
+    // Date cell: empty for agg total; dim+small for present date; normal style for missing
+    var dateCell;
+    if (isAggRow) {
+      dateCell = '<td></td>';
+    } else if (p.purchaseDate) {
+      dateCell = '<td style="padding:6px 8px;text-align:right;white-space:nowrap;font-size:10px;color:var(--dim)">' + p.purchaseDate + '</td>';
+    } else {
+      dateCell = '<td style="padding:6px 8px;text-align:right;white-space:nowrap">&mdash;</td>';
+    }
     return '<tr style="' + rowStyle + '">'
       + '<td style="' + tdStyleL + '">' + qty + '</td>'
       + '<td style="' + tdStyle + '">' + currSym + f2(entry) + '</td>'
       + '<td style="' + tdStyle + '">' + currSym + f2(current) + '</td>'
       + '<td class="' + pnlClass + '" style="' + tdStyle + '">' + fSign(pnlAbs) + '</td>'
       + '<td class="' + pctClass + '" style="' + tdStyle + '">' + fPct(pnlPct) + '</td>'
+      + dateCell
       + '</tr>';
   }
 
@@ -4617,10 +4700,42 @@ function showAggDetail(ticker, soldFlag) {
   modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:400;display:flex;align-items:flex-start;justify-content:center;padding:40px 12px;overflow-y:auto';
   modal.onclick = function(e) { if (e.target === modal) closeAggDetailModal(); };
   var headStyle = 'padding:6px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;font-weight:normal';
-  modal.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--border);padding:16px 8px 12px;min-width:280px;max-width:480px;width:100%;position:relative">'
+  var warningHtml = missingDateCount > 0
+    ? '<div style="margin:10px 8px 0;font-size:10px;color:var(--dim);text-align:left;opacity:0.7">&#9888; ' + missingDateCount + ' position' + (missingDateCount === 1 ? '' : 's') + ' without date (treated as oldest in FIFO)</div>'
+    : '';
+
+  // Action area: SELL+inline form for active aggregation,
+  // MOVE TO REALIZED for sold aggregation. Hidden if no positions.
+  var inputStyle = 'width:70px;padding:4px 6px;font-size:12px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);outline:none';
+  var actionHtml;
+  if (isSold) {
+    actionHtml = '<div style="margin-top:14px;padding:0 8px;display:flex;justify-content:flex-end">'
+      + '<button class="btn" onclick="showArchiveMenuAgg(\'' + ticker + '\', this)">&#8863; MOVE TO REALIZED</button>'
+      + '</div>';
+  } else {
+    actionHtml = '<div style="margin-top:14px;padding:0 8px;display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;align-items:center">'
+      + '<button id="aggSellBtn" class="btn" onclick="showAggSellForm()">SELL</button>'
+      + '<div id="aggSellForm" style="display:none;flex-wrap:wrap;gap:10px;align-items:center;justify-content:flex-end">'
+      + '<div style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--dim);letter-spacing:1px">'
+      + 'QTY <input id="aggSellQty" type="number" min="0" step="any" style="' + inputStyle + '" onkeydown="if(event.key===\'Enter\')document.getElementById(\'aggSellPrice\').focus()">'
+      + '<span style="color:var(--dim);font-size:11px">&nbsp;/&nbsp;' + totalQty + '</span>'
+      + '</div>'
+      + '<div style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--dim);letter-spacing:1px">'
+      + 'PRICE <input id="aggSellPrice" type="number" min="0" step="any" style="' + inputStyle + '" onkeydown="if(event.key===\'Enter\')confirmAggSell(\'' + ticker + '\')">'
+      + '</div>'
+      + '<button class="btn btn-green" onclick="confirmAggSell(\'' + ticker + '\')">CONFIRM</button>'
+      + '<button class="btn" onclick="cancelAggSell()">CANCEL</button>'
+      + '</div>'
+      + '<div id="aggSellErr" style="width:100%;margin-top:6px;color:var(--red);font-size:11px;text-align:right;display:none"></div>'
+      + '</div>';
+  }
+
+  modal.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--border);padding:16px 8px 12px;min-width:280px;max-width:520px;width:100%;position:relative">'
     + '<button class="btn-icon" onclick="closeAggDetailModal()" style="position:absolute;top:8px;right:8px;font-size:16px">&#10005;</button>'
-    + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:0 8px 10px">'
-    + ticker + ' &times;' + group.length + (isSold ? ' &middot; SOLD' : '')
+    + '<div style="margin:0 8px 12px">'
+    + '<span style="font-size:13px;color:var(--bright);font-weight:bold;letter-spacing:1px">' + ticker + '</span>'
+    + ' <span style="font-size:12px;letter-spacing:1px;color:var(--bright)">&times;' + group.length + '</span>'
+    + (isSold ? ' <span style="font-size:10px;color:var(--dim);letter-spacing:2px">SOLD</span>' : '')
     + '</div>'
     + '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:0">'
     + '<thead><tr>'
@@ -4629,10 +4744,13 @@ function showAggDetail(ticker, soldFlag) {
     + '<th style="' + headStyle + ';text-align:right">' + (isSold ? 'SOLD' : 'CURRENT') + '</th>'
     + '<th style="' + headStyle + ';text-align:right">P&amp;L</th>'
     + '<th style="' + headStyle + ';text-align:right">%</th>'
+    + '<th style="' + headStyle + ';text-align:right">DATE</th>'
     + '</tr></thead>'
     + '<tbody>' + group.map(function(p) { return row(p, false); }).join('') + '</tbody>'
     + '<tfoot>' + row({ qty: totalQty, entry: avgEntry, current: aggCurrent }, true) + '</tfoot>'
     + '</table>'
+    + warningHtml
+    + actionHtml
     + '</div>';
   document.body.appendChild(modal);
 }
@@ -4640,6 +4758,107 @@ function showAggDetail(ticker, soldFlag) {
 function closeAggDetailModal() {
   var m = document.getElementById('aggDetailModal');
   if (m) m.remove();
+}
+
+// Show inline sell form in agg overlay (replaces SELL button)
+function showAggSellForm() {
+  var btn = document.getElementById('aggSellBtn');
+  var form = document.getElementById('aggSellForm');
+  if (btn) btn.style.display = 'none';
+  if (form) form.style.display = 'flex';
+  var qtyEl = document.getElementById('aggSellQty');
+  if (qtyEl) qtyEl.focus();
+}
+
+function cancelAggSell() {
+  var btn = document.getElementById('aggSellBtn');
+  var form = document.getElementById('aggSellForm');
+  var err = document.getElementById('aggSellErr');
+  if (form) form.style.display = 'none';
+  if (btn) btn.style.display = '';
+  if (err) { err.textContent = ''; err.style.display = 'none'; }
+  var q = document.getElementById('aggSellQty');
+  var p = document.getElementById('aggSellPrice');
+  if (q) q.value = '';
+  if (p) p.value = '';
+}
+
+// FIFO batch sell: walks the aggregation in FIFO order, fully sells whole
+// lots until the target qty is satisfied; splits the last touched lot if
+// needed. Matches the single-position sellPosition split semantics: both
+// halves of a split get fresh IDs.
+function confirmAggSell(ticker) {
+  var errEl = document.getElementById('aggSellErr');
+  function showErr(msg) {
+    if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; }
+  }
+
+  // Re-collect and re-sort group (positions might have changed since modal opened)
+  var group = positions.filter(function(p) {
+    return p.ticker === ticker && !p.sold && p.qty > 0;
+  });
+  if (!group.length) { closeAggDetailModal(); return; }
+  group.sort(function(a, b) {
+    var ad = a.purchaseDate || '';
+    var bd = b.purchaseDate || '';
+    if (ad !== bd) return ad < bd ? -1 : 1;
+    return a.id - b.id;
+  });
+
+  var qtyInput = parseFloat(document.getElementById('aggSellQty').value);
+  var priceInput = parseFloat(document.getElementById('aggSellPrice').value);
+  if (isNaN(qtyInput) || qtyInput <= 0) { showErr('Enter quantity'); return; }
+  if (isNaN(priceInput) || priceInput <= 0) { showErr('Enter price'); return; }
+
+  var totalQty = group.reduce(function(s, p) { return s + p.qty; }, 0);
+  if (qtyInput > totalQty + 0.0001) {
+    showErr('Quantity exceeds total (' + totalQty + ')');
+    return;
+  }
+
+  // Build action plan keyed by position id
+  var actions = {};
+  var remaining = qtyInput;
+  for (var i = 0; i < group.length && remaining > 0.0001; i++) {
+    var p = group[i];
+    if (remaining + 0.0001 >= p.qty) {
+      actions[p.id] = { type: 'sell' };
+      remaining -= p.qty;
+    } else {
+      actions[p.id] = { type: 'split', soldQty: remaining };
+      remaining = 0;
+    }
+  }
+
+  // Apply: rebuild positions array, transforming actioned entries
+  var baseId = Date.now();
+  var idOffset = 0;
+  positions = positions.reduce(function(acc, p) {
+    if (!(p.id in actions)) { acc.push(p); return acc; }
+    var action = actions[p.id];
+    if (action.type === 'sell') {
+      acc.push(Object.assign({}, p, { sold: true, current: priceInput }));
+    } else {
+      // Split (same semantics as single sellPosition: both halves get new IDs)
+      idOffset++;
+      acc.push(Object.assign({}, p, {
+        id: baseId + idOffset,
+        qty: action.soldQty,
+        sold: true,
+        current: priceInput
+      }));
+      idOffset++;
+      acc.push(Object.assign({}, p, {
+        id: baseId + idOffset,
+        qty: Math.round((p.qty - action.soldQty) * 1e10) / 1e10
+      }));
+    }
+    return acc;
+  }, []);
+
+  closeAggDetailModal();
+  save();
+  render();
 }
 
 function openPositionSetsModal() {
@@ -6353,7 +6572,7 @@ function render() {
       editActions = '';
     } else if (isAgg) {
       sellAction = '<button class="btn-icon" onclick="showAggDetail(\'' + p.ticker + '\',' + (p.sold ? '1' : '0') + ')" style="font-size:12px;letter-spacing:1px;color:var(--bright);padding:0 4px;cursor:pointer;background:none;border:none;font-family:var(--font)">&times;' + aggCount + '</button>';
-      editActions = '';
+      editActions = '<button class="btn-icon" onclick="showMoveMenuAgg(\'' + p.ticker + '\',' + (p.sold ? '1' : '0') + ', this)" title="Move all to portfolio" style="font-size:17px;padding:0 4px;line-height:1">&#8680;</button>';
     } else {
       sellAction = p.sold
         ? '<button class="btn-icon" onclick="showArchiveMenu(' + p.id + ', this)" title="Move to Realized" style="font-size:14px;padding:0 4px">&#8863;</button>'
@@ -6387,6 +6606,7 @@ function render() {
         + buildDictSelectHtml('cat', catDict, p.category || null, 'CATEGORY', '115px')
         + buildDictSelectHtml('reg', regDict, p.region || null, 'REGION', '80px')
         + buildDictSelectHtml('sec', secDict, p.sector || null, 'SECTOR', '120px')
+        + '<div class="field"><label>DATE</label><input type="date" id="editDate" value="' + (p.purchaseDate || '') + '" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;box-sizing:border-box;width:130px"></div>'
         + '</div>'
         + '<div style="margin-top:6px"><div class="field" style="width:100%"><label>NOTE</label><input type="text" id="editNote" value="' + (p.note || '') + '" placeholder="optional note..." style="width:100%;box-sizing:border-box" autocomplete="off" autocorrect="off"></div></div>'
         + '<div style="margin-top:8px">'
@@ -8197,6 +8417,8 @@ cashPortfolios = getCashPortfolios();
 var _restoredView = restoreLastView();
 setTitleForCurrentView();
 showKeyStatus();
+var _fDateEl = document.getElementById('fDate');
+if (_fDateEl) _fDateEl.value = todayLocalISO();
 render();
 if (_restoredView && _restoredView.switcherOpen) {
   setTimeout(function() {
