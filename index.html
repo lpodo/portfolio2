@@ -275,11 +275,13 @@
         <label id="fCurrentLabel">CURRENT (opt.)</label>
         <input type="number" id="fCurrent" placeholder="&#8212;" min="0" step="any" style="width:86px" onkeydown="if(event.key==='Enter')addPosition()">
       </div>
+    </div>
+    <div class="form-row" style="flex-wrap:wrap;margin-top:8px">
+      <div id="addBrokerSlot"></div>
       <div class="field">
         <label>BUY DATE</label>
         <input type="date" id="fDate" style="width:130px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;box-sizing:border-box">
       </div>
-      <div id="addBrokerSlot"></div>
     </div>
     <div style="display:flex;align-items:center;margin-top:8px">
       <button class="btn-primary" onclick="addPosition()">ADD</button>
@@ -3767,11 +3769,13 @@ function getAlertDotsHtml(alerts) {
 
 function buildExpandedInner(p) {
   return '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px">'
+    + '<span><span style="opacity:0.6">BROKER</span> <span style="color:var(--bright)">' + (getPositionBroker(p) || 'default') + '</span></span>'
+    + '<span><span style="opacity:0.6">BUY DATE</span> <span style="color:var(--bright)">' + (p.purchaseDate || '—') + '</span></span>'
+    + '</div>'
+    + '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px;margin-top:4px">'
     + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (p.category || '—') + '</span></span>'
     + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (p.region || '—') + '</span></span>'
     + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (p.sector || '—') + '</span></span>'
-    + '<span><span style="opacity:0.6">BROKER</span> <span style="color:var(--bright)">' + (getPositionBroker(p) || 'default') + '</span></span>'
-    + '<span><span style="opacity:0.6">BUY</span> <span style="color:var(--bright)">' + (p.purchaseDate || '—') + '</span></span>'
     + '</div>'
     + '<div style="margin-top:8px;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
     + '<span style="opacity:0.6">NOTE</span>'
@@ -3796,22 +3800,26 @@ function buildExpandedInner(p) {
 
 function buildExpandedInnerAgg(p, group) {
   var first = group[0];
-  // For broker and buy date, aggregations may span multiple values.
-  // If all positions in the group share the same value, show it;
-  // otherwise show "varies" (user can open ×N overlay to see per-position).
-  var brokers = {}, dates = {};
+  // For aggregations: broker may span multiple values across positions.
+  // If all share the same broker, show its name (bright). If multiple,
+  // show count like "2 brokers" in dim — clearly a meta-description, not
+  // a real broker name. BUY DATE is intentionally hidden for aggregations:
+  // it varies across positions and isn't informative at the group level.
+  var brokerSet = {};
   group.forEach(function(g) {
-    brokers[getPositionBroker(g) || 'default'] = true;
-    dates[g.purchaseDate || '—'] = true;
+    brokerSet[getPositionBroker(g) || 'default'] = true;
   });
-  var brokerStr = Object.keys(brokers).length === 1 ? Object.keys(brokers)[0] : 'varies';
-  var dateStr   = Object.keys(dates).length === 1   ? Object.keys(dates)[0]   : 'varies';
+  var brokerKeys = Object.keys(brokerSet);
+  var brokerValueHtml = brokerKeys.length === 1
+    ? '<span style="color:var(--bright)">' + brokerKeys[0] + '</span>'
+    : '<span style="color:var(--dim)">' + brokerKeys.length + ' brokers</span>';
   var html = '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px">'
+    + '<span><span style="opacity:0.6">BROKER</span> ' + brokerValueHtml + '</span>'
+    + '</div>'
+    + '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px;margin-top:4px">'
     + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (first.category || '—') + '</span></span>'
     + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (first.region || '—') + '</span></span>'
     + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (first.sector || '—') + '</span></span>'
-    + '<span><span style="opacity:0.6">BROKER</span> <span style="color:var(--bright)">' + brokerStr + '</span></span>'
-    + '<span><span style="opacity:0.6">BUY</span> <span style="color:var(--bright)">' + dateStr + '</span></span>'
     + '</div>';
   var notes = group.map(function(g) { return g.note || ''; }).filter(Boolean).join(' • ');
   html += '<div style="margin-top:8px;font-size:10px;color:var(--dim);letter-spacing:1px">'
@@ -4875,7 +4883,7 @@ function showAggDetail(ticker, soldFlag) {
   // column headers row, position rows, subtotal row. Repeats per broker.
   function brokerSubgroupHtml(bd, idx) {
     var sellBtn = isSold ? '' :
-      '<button id="aggSellBtn_' + idx + '" class="btn" onclick="showAggSellForm(' + idx + ')" style="padding:3px 10px;font-size:9px;letter-spacing:1px;border-color:var(--bright);color:var(--bright)">SELL</button>';
+      '<button id="aggSellBtn_' + idx + '" class="btn-icon" onclick="showAggSellForm(' + idx + ')" style="font-size:10px;letter-spacing:2px;padding:0 4px;color:var(--bright)">SELL</button>';
     // Label is one logical unit (BROKER + name) — wrap in a single span so
     // flex's space-between keeps it pinned to the left whether SELL is
     // present or not (without the wrapper, the two child spans would be
@@ -4899,7 +4907,7 @@ function showAggDetail(ticker, soldFlag) {
       + '<td style="' + headStyle + ';text-align:right">BUY DATE</td>'
       + '</tr>'
       + bd.group.map(positionRow).join('')
-      + subtotalRow(bd.qty, bd.avgEntry, bd.current);
+      + (bd.group.length > 1 ? subtotalRow(bd.qty, bd.avgEntry, bd.current) : '');
   }
 
   var tbodyHtml = brokerData.map(function(bd, i) { return brokerSubgroupHtml(bd, i); }).join('');
@@ -5597,7 +5605,7 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
       + '</tr>';
   }).join('');
 
-  var btns = ['category','region','sector','broker','currency'].map(function(b) {
+  var btns = ['category','region','sector','currency','broker'].map(function(b) {
     var active = breakdown === b;
     return '<button onclick="setAnalyticsBreakdown(&apos;' + b + '&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 10px;border:1px solid ' + (active ? 'var(--green)' : 'var(--border)') + ';background:' + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font);text-transform:uppercase">' + b + '</button>';
   }).join('');
@@ -6850,11 +6858,13 @@ function render() {
       + '</tr>'
       + (isEdit ? '<tr><td colspan="11" style="padding:6px 4px 10px;background:var(--bg2)">'
         + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">'
+        + buildDictSelectHtml('bro', brokerDict, p.broker || null, 'BROKER', '115px')
+        + '<div class="field"><label>BUY DATE</label><input type="date" id="editDate" value="' + (p.purchaseDate || '') + '" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;box-sizing:border-box;width:130px"></div>'
+        + '</div>'
+        + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">'
         + buildDictSelectHtml('cat', catDict, p.category || null, 'CATEGORY', '115px')
         + buildDictSelectHtml('reg', regDict, p.region || null, 'REGION', '80px')
         + buildDictSelectHtml('sec', secDict, p.sector || null, 'SECTOR', '120px')
-        + '<div class="field"><label>BUY DATE</label><input type="date" id="editDate" value="' + (p.purchaseDate || '') + '" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;box-sizing:border-box;width:130px"></div>'
-        + buildDictSelectHtml('bro', brokerDict, p.broker || null, 'BROKER', '115px')
         + '</div>'
         + '<div style="margin-top:6px"><div class="field" style="width:100%"><label>NOTE</label><input type="text" id="editNote" value="' + (p.note || '') + '" placeholder="optional note..." style="width:100%;box-sizing:border-box" autocomplete="off" autocorrect="off"></div></div>'
         + '<div style="margin-top:8px">'
