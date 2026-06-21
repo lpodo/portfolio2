@@ -276,7 +276,7 @@
         <input type="number" id="fCurrent" placeholder="&#8212;" min="0" step="any" style="width:86px" onkeydown="if(event.key==='Enter')addPosition()">
       </div>
     </div>
-    <div class="form-row" style="flex-wrap:wrap;margin-top:8px">
+    <div id="addRowMeta" class="form-row" style="flex-wrap:wrap;margin-top:8px">
       <div id="addBrokerSlot"></div>
       <div class="field">
         <label>BUY DATE</label>
@@ -642,6 +642,9 @@ function updateAddForm() {
     var el = document.getElementById(id);
     if (el) el.parentElement.style.display = wl ? 'none' : '';
   });
+  // Broker/buy-date row hidden for watchlist (neither applies without an actual trade)
+  var metaRow = document.getElementById('addRowMeta');
+  if (metaRow) metaRow.style.display = wl ? 'none' : '';
   var curInput = document.getElementById('fCurrent');
   if (curInput) curInput.placeholder = arch ? '165.00' : '—';
 }
@@ -3768,11 +3771,18 @@ function getAlertDotsHtml(alerts) {
 }
 
 function buildExpandedInner(p) {
-  return '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px">'
-    + '<span><span style="opacity:0.6">BROKER</span> <span style="color:var(--bright)">' + (getPositionBroker(p) || 'default') + '</span></span>'
-    + '<span><span style="opacity:0.6">BUY DATE</span> <span style="color:var(--bright)">' + (p.purchaseDate || '—') + '</span></span>'
-    + '</div>'
-    + '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px;margin-top:6px">'
+  // For watchlist-style positions (qty=0) the broker/buy-date row isn't
+  // meaningful — neither field describes a real trade.
+  var showTradeMeta = p.qty > 0;
+  var row1Html = showTradeMeta
+    ? '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px">'
+      + '<span><span style="opacity:0.6">BROKER</span> <span style="color:var(--bright)">' + (getPositionBroker(p) || 'default') + '</span></span>'
+      + '<span><span style="opacity:0.6">BUY DATE</span> <span style="color:var(--bright)">' + (p.purchaseDate || '—') + '</span></span>'
+      + '</div>'
+    : '';
+  var row2MarginTop = showTradeMeta ? 'margin-top:6px' : '';
+  return row1Html
+    + '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px;' + row2MarginTop + '">'
     + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (p.category || '—') + '</span></span>'
     + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (p.region || '—') + '</span></span>'
     + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (p.sector || '—') + '</span></span>'
@@ -3788,7 +3798,7 @@ function buildExpandedInner(p) {
     + '<span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
     + ((p.alerts && p.alerts.length) ? p.alerts.map(function(a, i) {
         var color = a.triggered ? alertColorForCond(a.condition) : 'var(--bright)';
-        return '<span style="font-size:10px;color:' + color + '">' + (a.triggered ? '&#9679; ' : '') + a.condition + ' ' + a.value + '</span>'
+        return '<span style="font-size:10px;color:' + color + '">' + a.condition + ' ' + a.value + '</span>'
           + '<span onclick="deleteAlert(' + p.id + ',' + i + ')" style="cursor:pointer;font-size:11px;color:var(--dim);margin-left:-6px">&#10005;</span>';
       }).join('') : '')
     + '<span onclick="toggleAlertCondQuick(this)" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;min-width:20px;background:var(--bg);border:1px solid var(--border);color:var(--dim);font-family:var(--font);font-size:11px;padding:1px 5px;user-select:none">' + _alertCondQuick + '</span>'
@@ -3835,7 +3845,7 @@ function buildExpandedInnerAgg(p, group) {
     + allAlerts.map(function(item) {
         var a = item.alert;
         var color = a.triggered ? alertColorForCond(a.condition) : 'var(--bright)';
-        return '<span style="font-size:10px;color:' + color + '">' + (a.triggered ? '&#9679; ' : '') + a.condition + ' ' + a.value + '</span>'
+        return '<span style="font-size:10px;color:' + color + '">' + a.condition + ' ' + a.value + '</span>'
           + '<span onclick="deleteAlert(' + item.posId + ',' + item.alertIdx + ')" style="cursor:pointer;font-size:11px;color:var(--dim);margin-left:-6px">&#10005;</span>';
       }).join('')
     + '<span onclick="toggleAlertCondQuick(this)" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;min-width:20px;background:var(--bg);border:1px solid var(--border);color:var(--dim);font-family:var(--font);font-size:11px;padding:1px 5px;user-select:none">' + _alertCondQuick + '</span>'
@@ -3869,7 +3879,7 @@ function buildExpandedInnerLite(p, group) {
     + allAlerts.map(function(item) {
         var a = item.alert;
         var color = a.triggered ? alertColorForCond(a.condition) : 'var(--bright)';
-        return '<span style="font-size:10px;color:' + color + '">' + (a.triggered ? '&#9679; ' : '') + a.condition + ' ' + a.value + '</span>'
+        return '<span style="font-size:10px;color:' + color + '">' + a.condition + ' ' + a.value + '</span>'
           + '<span onclick="deleteAlert(' + item.posId + ',' + item.alertIdx + ')" style="cursor:pointer;font-size:11px;color:var(--dim);margin-left:-6px">&#10005;</span>';
       }).join('')
     + '<span onclick="toggleAlertCondQuick(this)" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;min-width:20px;background:var(--bg);border:1px solid var(--border);color:var(--dim);font-family:var(--font);font-size:11px;padding:1px 5px;user-select:none">' + _alertCondQuick + '</span>'
@@ -6869,16 +6879,15 @@ function render() {
         + '<div style="margin-top:6px"><div class="field" style="width:100%"><label>NOTE</label><input type="text" id="editNote" value="' + (p.note || '') + '" placeholder="optional note..." style="width:100%;box-sizing:border-box" autocomplete="off" autocorrect="off"></div></div>'
         + '<div style="margin-top:8px">'
         + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:6px">ALERTS</div>'
+        + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
         + ((p.alerts && p.alerts.length) ? p.alerts.map(function(a, i) {
-            return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'
-              + '<span style="font-size:12px;color:' + (a.triggered ? alertColorForCond(a.condition) : 'var(--bright)') + '">' + a.condition + ' ' + a.value + '</span>'
-              + '<button onclick="deleteAlert(' + p.id + ',' + i + ')" class="btn" style="padding:2px 6px;font-size:10px">&#10005;</button>'
-              + '</div>';
+            var color = a.triggered ? alertColorForCond(a.condition) : 'var(--bright)';
+            return '<span style="font-size:12px;color:' + color + '">' + a.condition + ' ' + a.value + '</span>'
+              + '<span onclick="deleteAlert(' + p.id + ',' + i + ')" style="cursor:pointer;font-size:13px;color:var(--dim);margin-left:-6px">&#10005;</span>';
           }).join('') : '')
-        + '<div style="display:flex;gap:6px;align-items:center;margin-top:4px">'
         + '<span onclick="toggleAlertCondEdit(this)" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;min-width:28px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:13px;padding:4px 8px;user-select:none">' + _alertCondEdit + '</span>'
         + '<input type="number" id="alertVal" placeholder="price" step="any" min="0" style="width:90px;box-sizing:border-box">'
-        + '<button onclick="addAlert(' + p.id + ')" class="btn btn-green" style="padding:5px 10px;font-size:11px">+ ADD</button>'
+        + '<span onclick="addAlert(' + p.id + ')" style="cursor:pointer;font-size:13px;color:var(--green);border:1px solid var(--green);padding:2px 6px">+</span>'
         + '</div>'
         + '</div>'
         + '<div style="margin-top:12px;display:flex;gap:8px">'
