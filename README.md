@@ -105,9 +105,9 @@ Portfolios in the **REALIZED** tab hold closed positions and show their actual r
 
 ### Adding, editing, deleting
 
-- Add position: ticker + qty (0 allowed) + entry price + current price (optional).
+- Add position: ticker + qty (0 allowed) + entry price + current price (optional) + purchase date (defaults to today) + broker (current default pre-selected, see [Brokers](#brokers)).
 - Adding a position validates the ticker against Yahoo Finance — unknown tickers are rejected.
-- Inline edit (✎) and delete (✕).
+- Inline edit (✎) and delete (✕). Editing exposes the same set of fields plus the classification dropdowns (CAT / REG / SEC) and the NOTE field.
 
 **qty=0** is allowed — used for watchlist candidates. P&L $ shows `—`, P&L % is calculated if entry > 0. Entry=0 is allowed only when qty=0 (pure price tracking). Excluded from WEIGHTS and Analytics totals.
 
@@ -136,6 +136,22 @@ A portfolio can be closed (⊟ button) only when **all** its positions are sold;
 ### Moving positions
 
 The ⇨ button moves any position to another active portfolio, preserving all fields including sold status. Available in both active and realized portfolios. Sold positions have an additional **⊟ button** that moves them directly to a chosen realized portfolio — available for sold positions in both active and realized portfolios.
+
+### Brokers
+
+Each position can be tagged with a **broker** — useful when the same ticker is held at multiple brokerages and needs to be tracked separately. Brokers are managed as a per-user dictionary (Settings → DICTIONARIES → BROKERS); set on a position via the dropdown in the Add or ✎ Edit form.
+
+**Default broker:** one entry in the dictionary is marked as default. To set the default, open Settings → BROKERS and click a broker name (a small `(default)` tag appears next to it). When a position has no explicit broker set, `getPositionBroker(p)` substitutes the current default at read time — so changing the default reassigns every still-default position retroactively. The first broker added to an empty dictionary auto-becomes the default.
+
+**Default fallback:** if the stored default broker is later removed from the dictionary, positions referring to it fall back to the first remaining entry alphabetically. If the dictionary is empty (no brokers ever defined), positions without a `broker` field render under the literal label `default` in places that show one (e.g. aggregation subgroups).
+
+**Deletion guard:** a broker cannot be removed from the dictionary while any position still uses it explicitly — the delete attempt is rejected with a message listing the number of positions still referring to it. Reassign or delete those positions first.
+
+Brokers feed three downstream features:
+
+- The **Expanded Row** metadata row shows BROKER alongside BUY DATE.
+- The **Aggregation** detail modal groups positions by broker into subgroups, each with its own SELL form.
+- The **Analytics** view has a `BROKER` rubric showing the portfolio breakdown by broker.
 
 ## Prices & P&L
 
@@ -184,7 +200,32 @@ Aggregation rules:
 - Sold positions: grouped by ticker separately, both entry and sell price weighted-averaged.
 - qty=0 watchlist candidates: always shown individually, not aggregated.
 
-Aggregated rows show ×N instead of action buttons (SELL, MOVE, EDIT, DELETE are hidden). Source positions are unchanged — aggregation is display-only.
+Source positions are unchanged — aggregation is display-only.
+
+**Aggregation row buttons:** instead of the per-position SELL / ✎ / ✕ set, an aggregated row shows three actions:
+
+- **×N** (clickable) — opens the [aggregation detail modal](#aggregation-detail-modal) for the group.
+- **⇨ MOVE** — moves *all* positions in the aggregation to another portfolio in one operation.
+- **✕ DELETE** — deletes *all* positions in the aggregation with confirmation showing the count.
+
+There is no batch edit and no batch sell directly on the row — selling is done from the detail modal per broker subgroup (active) or there's a single MOVE TO REALIZED button (sold). Individual edits remain available by switching aggregation off.
+
+#### Aggregation detail modal
+
+Clicking the **×N** button opens a modal listing the individual positions making up the aggregation, grouped by **broker** into subgroups. Each subgroup is self-contained:
+
+- Subgroup header: `BROKER {name}` on the left; for active aggregations, a **SELL** button on the right.
+- Column headers: QTY · ENTRY · CURRENT (or SOLD for sold aggregations) · P&L · % · BUY DATE.
+- Position rows sorted by purchase date ascending (FIFO), then by id as tiebreaker.
+- A subtotal row appears only if the subgroup has more than one position; with a single position the subtotal is suppressed as redundant.
+
+Positions without a `broker` field land in the subgroup of the current default broker. If no brokers are defined at all, every position appears under the literal label `default`.
+
+**Per-broker SELL form (active aggregations only):** clicking the subgroup's SELL button reveals an inline form asking QTY (max = subgroup quantity) and SELL PRICE. The sell is applied FIFO within the subgroup — the oldest positions are sold first; partial sells split the boundary position as in single-position sells. Positions in other broker subgroups are untouched.
+
+**Sold aggregations:** the modal ends with a single **⊟ MOVE TO REALIZED** button that moves every sold position in the aggregation (across all brokers) to a chosen realized portfolio.
+
+**Missing-date warning:** if any position in the aggregation lacks `purchaseDate`, a small `⚠` notice is shown below the table noting how many — these are treated as the oldest in FIFO order.
 
 ## Summary (Cross-Portfolio)
 
@@ -323,7 +364,7 @@ When valid cached data exists for the selected tickers, tables render instantly.
 
 Available via dropdown menu → ANALYTICS for individual portfolios and Summary.
 
-Shows the portfolio breakdown by **CATEGORY**, **REGION**, **SECTOR**, or **CURRENCY** — four buttons to switch between them. Currency uses the actual position currency from Yahoo Finance (no manual input needed). Each row shows the group name, value (with FX conversion to base currency), weight %, and a horizontal bar chart scaled to the largest group. Positions with qty=0 are excluded. Positions without a value in the selected field appear in the **Other** group.
+Shows the portfolio breakdown by **CATEGORY**, **REGION**, **SECTOR**, **CURRENCY**, or **BROKER** — five buttons to switch between them. Currency uses the actual position currency from Yahoo Finance (no manual input needed). Broker uses the position's `broker` field, falling back to the current default broker when empty (see [Brokers](#brokers)). Each row shows the group name, value (with FX conversion to base currency), weight %, and a horizontal bar chart scaled to the largest group. Positions with qty=0 are excluded. Positions without a value in the selected field appear in the **Other** group.
 
 ### Position classification fields
 
@@ -331,7 +372,7 @@ Each position has three classification fields: **category**, **region**, **secto
 
 **Setting values:** open the ✎ edit form for any position. Each field shows a custom dropdown — tap/click to open a list of all values in that dictionary. Select a value, or choose **+ new...** to add a new value inline: a text input appears with ✓ (confirm) and ✕ (cancel) buttons. Confirming adds the value to the dictionary and selects it.
 
-**Dictionaries** (Settings → DICTIONARIES): three buttons — CATEGORIES, REGIONS, SECTORS. Tap a button to expand the list of values for that dictionary. Each value has a ✕ button to delete it from the dictionary. Deleting a value from the dictionary does not remove it from existing positions.
+**Dictionaries** (Settings → DICTIONARIES): five buttons — CATEGORIES, REGIONS, SECTORS, BROKERS, CASH CAT. Tap a button to expand the list of values for that dictionary. Each value has a ✕ button to delete it from the dictionary. Deleting a value from the dictionary does not remove it from existing positions — except for BROKERS, where deletion is rejected while any position still references the broker (see [Brokers](#brokers)).
 
 **On first run after upgrade:** existing category/region/sector values found in positions are automatically migrated into the dictionaries. No manual action required.
 
@@ -374,14 +415,17 @@ Tapping/clicking the **ticker name** in any market-style view toggles an expanda
 
 ### Position metadata
 
-The first three lines always show position metadata:
+The first four lines always show position metadata:
 
 ```
+BROKER  ETrade        BUY DATE  2024-08-19
   CAT  AI & Semi    REG  US    SEC  Technology
 NOTE  Bought on dip after earnings  ✎
 ALERTS  > 920  ✕    [>] [price] [+]
 ```
 
+- **BROKER** — the broker tagged on this position, or the current default broker if none is explicitly set (see [Brokers](#brokers)). If no brokers are defined at all, shows `default`.
+- **BUY DATE** — the position's `purchaseDate` (ISO `YYYY-MM-DD`), or `—` if not set.
 - **CAT / REG / SEC** — classification fields (show `—` if empty).
 - **NOTE** — free-text annotation. Click the ✎ button to edit inline: the value becomes an input field; press **Enter** or click away to save, **Escape** to cancel.
 - **ALERTS** — existing alerts with ✕ delete buttons, plus inline quick-add controls.
@@ -414,8 +458,9 @@ A full-screen overlay with additional Yahoo Finance information, organized into 
 
 ### Behavior in aggregation mode
 
-Expanded rows are enabled for aggregated entries, with the following behavior on the first three lines:
+Expanded rows are enabled for aggregated entries, with the following behavior on the four metadata lines:
 
+- **BROKER / BUY DATE:** BUY DATE is hidden in aggregation mode (positions in a group may have different purchase dates — the breakdown lives in the [aggregation detail modal](#aggregation-detail-modal)). BROKER shows the single broker name if all positions agree, or `N brokers` in dim style if the group spans multiple brokers.
 - **Attributes (CAT / REG / SEC):** the app enforces identical attributes across all instances of the same ticker, so the values are read from any one position in the aggregated group (the first one).
 - **Notes:** non-empty notes from all positions in the group are joined into a single read-only block. Editing is not available in aggregation mode — switch to a non-aggregated view to edit individual notes.
 - **Alerts:** alerts from all positions in the group are merged into a single list. Delete and add controls work as in normal mode; a newly added alert is attached to one position in the group (the first one) — but since all positions of the same ticker resolve to the same price, it doesn't matter which one carries the alert.
@@ -582,9 +627,15 @@ Backup format:
   "version": 1,
   "date": "2026-03-30T...",
   "portfolios": { ... },
+  "bondsDb": [ ... ],
+  "bondPortfolios": { ... },
+  "cashPortfolios": { ... },
   "catDict": ["AI & Semi", "Energy", ...],
   "regDict": ["Europe", "US", ...],
-  "secDict": ["Energy", "Technology", ...]
+  "secDict": ["Energy", "Technology", ...],
+  "cashCatDict": ["Salary", "Dividend", ...],
+  "brokerDict": ["ETrade", "IB", ...],
+  "defaultBroker": "ETrade"
 }
 ```
 
@@ -696,6 +747,8 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
   "qty": 8,
   "entry": 134.00,
   "current": 140.75,
+  "purchaseDate": "2024-08-19",
+  "broker": "ETrade",
   "sold": false,
   "currency": "USD",
   "shortName": "EOG Resources, Inc.",
@@ -710,6 +763,8 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
 }
 ```
 
+- `purchaseDate` — ISO `YYYY-MM-DD` (local timezone). Optional; defaults to today on add. Used for FIFO ordering inside the aggregation detail modal and for display in the [Expanded Row](#expanded-row).
+- `broker` — explicit broker tag for this position. Optional; when absent, `getPositionBroker(p)` resolves to the current default broker at read time. See [Brokers](#brokers).
 - `currency` — position currency code from Yahoo Finance (e.g. `GBP`, `EUR`). Set on add. Used for symbol display and FX conversion in totals/weights.
 - `shortName` — company/ETF name from Yahoo Finance. Displayed in MARKET and WEIGHT views.
 - `instrumentType` — instrument category from Yahoo (`EQUITY`, `ETF`, `INDEX`, `MUTUALFUND`, `CURRENCY`, etc.). Used to filter non-equity tickers out of the [Fundamentals view](#fundamentals). Populated on add and on every refresh; positions stored before this field existed are migrated lazily.
@@ -758,6 +813,8 @@ Primary on-device storage:
 - `pt_cat_dict` — CATEGORY dictionary (sorted array of values)
 - `pt_reg_dict` — REGION dictionary
 - `pt_sec_dict` — SECTOR dictionary
+- `pt_broker_dict` — BROKER dictionary
+- `pt_default_broker` — default broker name (used by `getPositionBroker` when a position has no explicit `broker`); falls back to the first dict entry if the stored value is missing
 - `pt_agg_active`, `pt_agg_archive` — aggregation mode state
 - `pt_cloud_backend` — cloud storage backend: `jsonbin` (default) or `kv`
 - `pt_jbkey` — JSONBin master key
