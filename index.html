@@ -3772,12 +3772,12 @@ function buildExpandedInner(p) {
     + '<span><span style="opacity:0.6">BROKER</span> <span style="color:var(--bright)">' + (getPositionBroker(p) || 'default') + '</span></span>'
     + '<span><span style="opacity:0.6">BUY DATE</span> <span style="color:var(--bright)">' + (p.purchaseDate || '—') + '</span></span>'
     + '</div>'
-    + '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px;margin-top:4px">'
+    + '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px;margin-top:6px">'
     + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (p.category || '—') + '</span></span>'
     + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (p.region || '—') + '</span></span>'
     + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (p.sector || '—') + '</span></span>'
     + '</div>'
-    + '<div style="margin-top:8px;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
+    + '<div style="margin-top:6px;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
     + '<span style="opacity:0.6">NOTE</span>'
     + (editNoteId === p.id
       ? '<input id="noteEditInput" type="text" value="' + (p.note || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;') + '" style="font-size:10px;font-family:var(--font);background:var(--bg);border:1px solid var(--border);color:var(--bright);padding:1px 4px;width:200px;box-sizing:border-box" onkeydown="if(event.key===\'Enter\'){event.preventDefault();saveNoteInline(' + p.id + ');}else if(event.key===\'Escape\'){event.preventDefault();cancelNoteEdit();}" onblur="saveNoteInline(' + p.id + ')">'
@@ -3816,13 +3816,13 @@ function buildExpandedInnerAgg(p, group) {
   var html = '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px">'
     + '<span><span style="opacity:0.6">BROKER</span> ' + brokerValueHtml + '</span>'
     + '</div>'
-    + '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px;margin-top:4px">'
+    + '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px;margin-top:6px">'
     + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (first.category || '—') + '</span></span>'
     + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (first.region || '—') + '</span></span>'
     + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (first.sector || '—') + '</span></span>'
     + '</div>';
   var notes = group.map(function(g) { return g.note || ''; }).filter(Boolean).join(' • ');
-  html += '<div style="margin-top:8px;font-size:10px;color:var(--dim);letter-spacing:1px">'
+  html += '<div style="margin-top:6px;font-size:10px;color:var(--dim);letter-spacing:1px">'
     + '<span style="opacity:0.6">NOTE</span> '
     + '<span style="color:var(--bright);white-space:pre-line">' + (notes || '—') + '</span>'
     + '</div>';
@@ -4883,7 +4883,7 @@ function showAggDetail(ticker, soldFlag) {
   // column headers row, position rows, subtotal row. Repeats per broker.
   function brokerSubgroupHtml(bd, idx) {
     var sellBtn = isSold ? '' :
-      '<button id="aggSellBtn_' + idx + '" class="btn-icon" onclick="showAggSellForm(' + idx + ')" style="font-size:10px;letter-spacing:2px;padding:0 4px;color:var(--bright)">SELL</button>';
+      '<button id="aggSellBtn_' + idx + '" class="btn" onclick="showAggSellForm(' + idx + ')" style="padding:5px 14px;font-size:9px;letter-spacing:1px;border-color:var(--border);color:var(--bright)">SELL</button>';
     // Label is one logical unit (BROKER + name) — wrap in a single span so
     // flex's space-between keeps it pinned to the left whether SELL is
     // present or not (without the wrapper, the two child spans would be
