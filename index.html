@@ -471,6 +471,13 @@
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">DICTIONARIES</div>
   <div id="dictsPanel"></div>
 
+  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">ANALYTICS CSV</div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap">
+    <button class="btn" onclick="openCsvImport()">&uarr; IMPORT CSV</button>
+    <button class="btn" onclick="exportCsv()">&darr; EXPORT CSV</button>
+    <button class="btn" onclick="exportIncompletePositionsCsv()">&darr; INCOMPLETE</button>
+  </div>
+
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">APPEARANCE</div>
   <button class="btn" onclick="openAppearance()">CUSTOMIZE</button>
 
@@ -5810,7 +5817,6 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
   });
 
   var headerHtml = analyticsHeader(breakdown, subview, isRealized);
-  var importExportHtml = isSummary ? '' : '<div style="text-align:right;font-size:11px;color:var(--dim);margin-bottom:8px"><a href="#" onclick="openCsvImport();return false" style="color:var(--dim);margin-right:12px">↑ Import CSV</a><a href="#" onclick="exportCsv();return false" style="color:var(--dim);margin-right:12px">↓ Export CSV</a><a href="#" onclick="exportIncompletePositionsCsv();return false" style="color:var(--dim)">↓ Incomplete</a></div>';
   var contentHtml;
   if (subview === 'pnl') {
     contentHtml = analyticsPnLContent(keys, groupStats, breakdown, baseSym, baseCode, grandVal, grandCost);
@@ -5822,7 +5828,7 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
     contentHtml = analyticsWeightsContent(keys, groupStats, breakdown, baseSym, grandVal);
   }
 
-  return headerHtml + importExportHtml + contentHtml;
+  return headerHtml + contentHtml;
 }
 
 // Two dropdowns: rubric on the left (CATEGORY/REGION/SECTOR/CURRENCY/BROKER),
