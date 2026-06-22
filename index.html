@@ -5651,6 +5651,7 @@ function showAnalyticsDetail(rubric, value) {
     + '<span style="font-size:9px;color:var(--dim);letter-spacing:2px">' + rubricLabel + '&nbsp;</span>'
     + '<span style="font-size:13px;color:var(--bright);font-weight:bold;letter-spacing:1px">' + value + '</span>'
     + '</div>'
+    + '<div style="overflow-x:auto">'
     + '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:0">'
     + '<thead><tr>'
     + '<th style="' + headStyle + ';text-align:left">TICKER</th>'
@@ -5662,6 +5663,7 @@ function showAnalyticsDetail(rubric, value) {
     + '</tr></thead>'
     + '<tbody>' + group.map(positionRow).join('') + '</tbody>'
     + '</table>'
+    + '</div>'
     + totalsHtml
     + '</div>';
   document.body.appendChild(modal);
