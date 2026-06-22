@@ -5591,31 +5591,46 @@ function showAnalyticsDetail(rubric, value) {
   });
   if (!group.length) return;
   // Stable alphabetical-by-ticker order
-  // Aggregate by ticker — analytics doesn't care about per-trade detail.
-  // For each ticker, combine all positions into a single row:
-  //   qty = sum, entry = weighted avg (totalCost/totalQty), current = current
-  //   price (all positions in a ticker share the same live price).
+  // Aggregate by (ticker, sold) — same key as the canonical makeEntry in
+  // aggregatePositions: active and sold positions of one ticker are TWO
+  // separate aggregated rows. For sold groups, current is the weighted
+  // average sell price (sumOf(qty*sellPrice)/sumOf(qty)). For active groups
+  // current is taken from the first position (all share the same live price).
   var tickerGroups = {};
   group.forEach(function(p) {
-    if (!tickerGroups[p.ticker]) tickerGroups[p.ticker] = [];
-    tickerGroups[p.ticker].push(p);
+    var key = p.ticker + ':' + (p.sold ? 'sold' : 'active');
+    if (!tickerGroups[key]) tickerGroups[key] = { ticker: p.ticker, isSold: !!p.sold, positions: [] };
+    tickerGroups[key].positions.push(p);
   });
-  var aggRows = Object.keys(tickerGroups).sort().map(function(ticker) {
-    var positions = tickerGroups[ticker];
-    var sumQty = 0, sumCost = 0;
+  var aggRows = Object.keys(tickerGroups).map(function(key) {
+    var tg = tickerGroups[key];
+    var positions = tg.positions;
+    var sumQty = 0, sumCost = 0, sumSell = 0;
     positions.forEach(function(p) {
       sumQty += p.qty;
       sumCost += p.qty * p.entry;
+      if (tg.isSold) sumSell += p.qty * p.current;
     });
     var first = positions[0];
     return {
-      ticker: ticker,
+      ticker: tg.ticker,
       qty: sumQty,
       entry: sumQty > 0 ? sumCost / sumQty : 0,
-      current: first.current != null ? first.current : 0,
-      currency: first.currency
+      current: tg.isSold
+        ? (sumQty > 0 ? sumSell / sumQty : 0)
+        : (first.current != null ? first.current : 0),
+      currency: first.currency,
+      sold: tg.isSold
     };
   });
+  // Sort by ticker, then active before sold within the same ticker
+  aggRows.sort(function(a, b) {
+    if (a.ticker !== b.ticker) return a.ticker < b.ticker ? -1 : 1;
+    return a.sold ? 1 : -1;
+  });
+  // If every displayed position is sold, switch the column header to SOLD —
+  // matches showAggDetail's convention for sold aggregations.
+  var allSold = group.every(function(p) { return !!p.sold; });
 
   var headStyle = 'padding:6px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;font-weight:normal';
   var tdStyle  = 'padding:6px 8px;white-space:nowrap;text-align:right';
@@ -5679,7 +5694,7 @@ function showAnalyticsDetail(rubric, value) {
     + '<th style="' + headStyle + ';text-align:left">TICKER</th>'
     + '<th style="' + headStyle + ';text-align:right">QTY</th>'
     + '<th style="' + headStyle + ';text-align:right">ENTRY</th>'
-    + '<th style="' + headStyle + ';text-align:right">CURRENT</th>'
+    + '<th style="' + headStyle + ';text-align:right">' + (allSold ? 'SOLD' : 'CURRENT') + '</th>'
     + '<th style="' + headStyle + ';text-align:right">P&amp;L</th>'
     + '<th style="' + headStyle + ';text-align:right">%</th>'
     + '</tr></thead>'
