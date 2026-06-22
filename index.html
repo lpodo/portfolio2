@@ -5591,9 +5591,30 @@ function showAnalyticsDetail(rubric, value) {
   });
   if (!group.length) return;
   // Stable alphabetical-by-ticker order
-  group.sort(function(a, b) {
-    if (a.ticker !== b.ticker) return a.ticker < b.ticker ? -1 : 1;
-    return a.id - b.id;
+  // Aggregate by ticker — analytics doesn't care about per-trade detail.
+  // For each ticker, combine all positions into a single row:
+  //   qty = sum, entry = weighted avg (totalCost/totalQty), current = current
+  //   price (all positions in a ticker share the same live price).
+  var tickerGroups = {};
+  group.forEach(function(p) {
+    if (!tickerGroups[p.ticker]) tickerGroups[p.ticker] = [];
+    tickerGroups[p.ticker].push(p);
+  });
+  var aggRows = Object.keys(tickerGroups).sort().map(function(ticker) {
+    var positions = tickerGroups[ticker];
+    var sumQty = 0, sumCost = 0;
+    positions.forEach(function(p) {
+      sumQty += p.qty;
+      sumCost += p.qty * p.entry;
+    });
+    var first = positions[0];
+    return {
+      ticker: ticker,
+      qty: sumQty,
+      entry: sumQty > 0 ? sumCost / sumQty : 0,
+      current: first.current != null ? first.current : 0,
+      currency: first.currency
+    };
   });
 
   var headStyle = 'padding:6px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;font-weight:normal';
@@ -5617,7 +5638,8 @@ function showAnalyticsDetail(rubric, value) {
   }
 
   // Aggregate totals in base currency using stored fxMap, matching how
-  // buildAnalyticsView itself computes group values.
+  // buildAnalyticsView itself computes group values. (Totals use raw
+  // positions, NOT the ticker-aggregated rows, but the result is the same.)
   var baseSym = _analyticsCtx.baseSym || '$';
   var baseCode = _analyticsCtx.baseCode || 'USD';
   var fxMap = _analyticsCtx.fxMap || {};
@@ -5661,7 +5683,7 @@ function showAnalyticsDetail(rubric, value) {
     + '<th style="' + headStyle + ';text-align:right">P&amp;L</th>'
     + '<th style="' + headStyle + ';text-align:right">%</th>'
     + '</tr></thead>'
-    + '<tbody>' + group.map(positionRow).join('') + '</tbody>'
+    + '<tbody>' + aggRows.map(positionRow).join('') + '</tbody>'
     + '</table>'
     + '</div>'
     + totalsHtml
