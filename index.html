@@ -5423,6 +5423,7 @@ resetFundamentalsState();
 
 
 window.analyticsBreakdown = 'category';
+var _analyticsCtx = null;
 
 function setAnalyticsBreakdown(b) { window.analyticsBreakdown = b; render(); }
 
@@ -5560,8 +5561,113 @@ function buildSummaryAlertsView(area) {
   renderAlertsTable(allPos, area);
 }
 
+function closeAnalyticsDetailModal() {
+  var m = document.getElementById('analyticsDetailModal');
+  if (m) m.remove();
+}
+
+// Show overlay listing all positions that fall into a given analytics
+// rubric value (e.g. broker=FFA or category=Healthcare). Positions can
+// span multiple tickers, so TICKER is added as a first column. Each row
+// shows that position's native currency for ENTRY/CURRENT/P&L.
+function showAnalyticsDetail(rubric, value) {
+  if (!_analyticsCtx || !_analyticsCtx.posns) return;
+  // Re-derive group using the same key logic as buildAnalyticsView so
+  // missing-broker positions follow the "default" substitution, etc.
+  var group = _analyticsCtx.posns.filter(function(p) {
+    if (!p.qty || p.qty <= 0) return false;
+    var key;
+    if (rubric === 'currency') {
+      key = getPositionCurrencyCode(p) || 'Other';
+    } else if (rubric === 'broker') {
+      key = getPositionBroker(p) || 'default';
+    } else {
+      key = ((p[rubric] || '').trim().replace(/\s+/g, ' ')) || 'Other';
+    }
+    return key === value;
+  });
+  if (!group.length) return;
+  // Stable alphabetical-by-ticker order
+  group.sort(function(a, b) {
+    if (a.ticker !== b.ticker) return a.ticker < b.ticker ? -1 : 1;
+    return a.id - b.id;
+  });
+
+  var headStyle = 'padding:6px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;font-weight:normal';
+  var tdStyle  = 'padding:6px 8px;white-space:nowrap;text-align:right';
+  var tdStyleL = 'padding:6px 8px;white-space:nowrap;text-align:left';
+  function positionRow(p) {
+    var sym = CURRENCY_SYMBOLS[p.currency] || p.currency || '';
+    var qty = p.qty;
+    var entry = p.entry;
+    var current = p.current != null ? p.current : 0;
+    var pnlAbs = (current - entry) * qty;
+    var pnlPct = entry > 0 ? ((current / entry) - 1) * 100 : null;
+    return '<tr>'
+      + '<td style="' + tdStyleL + ';color:var(--bright);font-weight:bold">' + p.ticker + '</td>'
+      + '<td style="' + tdStyle + '">' + qty + '</td>'
+      + '<td style="' + tdStyle + '">' + sym + f2(entry) + '</td>'
+      + '<td style="' + tdStyle + '">' + sym + f2(current) + '</td>'
+      + '<td class="' + cls(pnlAbs) + '" style="' + tdStyle + '">' + fSign(pnlAbs) + '</td>'
+      + '<td class="' + cls(pnlPct) + '" style="' + tdStyle + '">' + fPct(pnlPct) + '</td>'
+      + '</tr>';
+  }
+
+  // Aggregate totals in base currency using stored fxMap, matching how
+  // buildAnalyticsView itself computes group values.
+  var baseSym = _analyticsCtx.baseSym || '$';
+  var baseCode = _analyticsCtx.baseCode || 'USD';
+  var fxMap = _analyticsCtx.fxMap || {};
+  var totVal = 0, totCost = 0, totPnL = 0;
+  group.forEach(function(p) {
+    if (p.current == null || p.qty <= 0) return;
+    var pc = getPositionCurrencyCode(p);
+    var rate = pc === baseCode ? 1 : (fxMap[pc + baseCode] || fxMap[pc] || 1);
+    totVal  += p.qty * p.current * rate;
+    totCost += p.qty * p.entry   * rate;
+    totPnL  += p.qty * (p.current - p.entry) * rate;
+  });
+  var totPct = totCost > 0 ? (totPnL / totCost) * 100 : null;
+  var pnlClass = totPnL >= 0 ? 'pos' : 'neg';
+  var totalsHtml = '<div class="totals-bar">'
+    + '<div class="total-block"><div class="total-label">VALUE</div><div class="total-value" style="color:var(--bright)">' + baseSym + f2(totVal) + '</div></div>'
+    + '<div class="total-block"><div class="total-label">P&amp;L</div><div class="total-value ' + pnlClass + '">' + fSign(totPnL) + '</div></div>'
+    + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + pnlClass + '">' + (totPct !== null ? fPct(totPct) : '—') + '</div></div>'
+    + '</div>';
+
+  var rubricLabel = rubric.toUpperCase();
+  var existing = document.getElementById('analyticsDetailModal');
+  if (existing) existing.remove();
+  var modal = document.createElement('div');
+  modal.id = 'analyticsDetailModal';
+  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:400;display:flex;align-items:flex-start;justify-content:center;padding:40px 12px;overflow-y:auto';
+  modal.onclick = function(e) { if (e.target === modal) closeAnalyticsDetailModal(); };
+  modal.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--border);padding:16px 8px 12px;min-width:280px;max-width:600px;width:100%;position:relative">'
+    + '<button class="btn-icon" onclick="closeAnalyticsDetailModal()" style="position:absolute;top:8px;right:8px;font-size:16px">&#10005;</button>'
+    + '<div style="margin:0 8px 12px">'
+    + '<span style="font-size:9px;color:var(--dim);letter-spacing:2px">' + rubricLabel + '&nbsp;</span>'
+    + '<span style="font-size:13px;color:var(--bright);font-weight:bold;letter-spacing:1px">' + value + '</span>'
+    + '</div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:0">'
+    + '<thead><tr>'
+    + '<th style="' + headStyle + ';text-align:left">TICKER</th>'
+    + '<th style="' + headStyle + ';text-align:right">QTY</th>'
+    + '<th style="' + headStyle + ';text-align:right">ENTRY</th>'
+    + '<th style="' + headStyle + ';text-align:right">CURRENT</th>'
+    + '<th style="' + headStyle + ';text-align:right">P&amp;L</th>'
+    + '<th style="' + headStyle + ';text-align:right">%</th>'
+    + '</tr></thead>'
+    + '<tbody>' + group.map(positionRow).join('') + '</tbody>'
+    + '</table>'
+    + totalsHtml
+    + '</div>';
+  document.body.appendChild(modal);
+}
+
 function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
   var breakdown = window.analyticsBreakdown || 'category';
+  // Stash for showAnalyticsDetail (overlay that lists positions in a group)
+  _analyticsCtx = { posns: posns, breakdown: breakdown, baseSym: baseSym, baseCode: baseCode, fxMap: fxMap || {} };
   // Group positions
   var groups = {};
   posns.forEach(function(p) {
@@ -5603,8 +5709,9 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
     var val = groupTotals[key];
     var pct = grandTotal > 0 ? val / grandTotal * 100 : 0;
     var barW = maxVal > 0 ? Math.round(val / maxVal * 100) : 0;
+    var keyEsc = key.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     return '<tr>'
-      + '<td style="text-align:left;padding:7px 4px;white-space:nowrap">' + key + '</td>'
+      + '<td onclick="showAnalyticsDetail(\'' + breakdown + '\',\'' + keyEsc + '\')" style="text-align:left;padding:7px 4px;white-space:nowrap;cursor:pointer">' + key + '</td>'
       + '<td style="text-align:right;padding:7px 4px;white-space:nowrap">' + baseSym + f2(val) + '</td>'
       + '<td style="text-align:right;padding:7px 4px;white-space:nowrap;color:var(--dim)">' + pct.toFixed(1) + '%</td>'
       + '<td style="padding:7px 8px;width:40%;min-width:80px">'
