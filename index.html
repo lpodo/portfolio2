@@ -5426,9 +5426,34 @@ resetFundamentalsState();
 
 
 window.analyticsBreakdown = 'category';
+window.analyticsSubview = (function() {
+  try { return localStorage.getItem('pt_analytics_subview') || 'weights'; } catch (e) { return 'weights'; }
+})();
+window.analyticsRubricOpen = false;
+window.analyticsSubviewOpen = false;
 var _analyticsCtx = null;
 
-function setAnalyticsBreakdown(b) { window.analyticsBreakdown = b; render(); }
+function setAnalyticsBreakdown(b) {
+  window.analyticsBreakdown = b;
+  window.analyticsRubricOpen = false;
+  render();
+}
+function setAnalyticsSubview(s) {
+  window.analyticsSubview = s;
+  try { localStorage.setItem('pt_analytics_subview', s); } catch (e) {}
+  window.analyticsSubviewOpen = false;
+  render();
+}
+function toggleAnalyticsRubricOpen() {
+  window.analyticsRubricOpen = !window.analyticsRubricOpen;
+  window.analyticsSubviewOpen = false;
+  render();
+}
+function toggleAnalyticsSubviewOpen() {
+  window.analyticsSubviewOpen = !window.analyticsSubviewOpen;
+  window.analyticsRubricOpen = false;
+  render();
+}
 
 
 var moversLimit = parseInt(localStorage.getItem('pt_movers_limit') || '10');
@@ -5708,8 +5733,19 @@ function showAnalyticsDetail(rubric, value) {
 
 function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
   var breakdown = window.analyticsBreakdown || 'category';
+  var subview = window.analyticsSubview || 'weights';
+  var isRealized = !isSummary && currentPortfolio() && currentPortfolio().archive;
+  // Realized portfolios: market and chart are not implemented; force a
+  // valid subview if the persisted choice isn't available here.
+  if (isRealized && subview !== 'pnl' && subview !== 'weights') subview = 'weights';
+  // MARKET/CHART are placeholders for now (phase 1 only adds P&L). If the
+  // persisted choice points there, fall back to weights for display while
+  // leaving the stored preference untouched.
+  if (subview === 'market' || subview === 'chart') subview = 'weights';
+
   // Stash for showAnalyticsDetail (overlay that lists positions in a group)
   _analyticsCtx = { posns: posns, breakdown: breakdown, baseSym: baseSym, baseCode: baseCode, fxMap: fxMap || {} };
+
   // Group positions
   var groups = {};
   posns.forEach(function(p) {
@@ -5725,30 +5761,94 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
     if (!groups[key]) groups[key] = [];
     groups[key].push(p);
   });
-  // Calculate values per group with FX conversion
-  var groupTotals = {};
-  var grandTotal = 0;
+
+  // Per-group totals: base-currency value/cost (used for sort, grand total,
+  // and as the row's displayed amount for every rubric except 'currency')
+  // plus native value/cost which is the displayed amount for 'currency'
+  // rubric rows (no FX conversion since all positions in the group share
+  // that currency).
+  var groupStats = {};
+  var grandVal = 0, grandCost = 0;
   Object.keys(groups).forEach(function(key) {
-    var val = 0;
+    var valBase = 0, costBase = 0, valNative = 0, costNative = 0;
     groups[key].forEach(function(p) {
       if (p.current == null || p.qty <= 0) return;
       var pc = getPositionCurrencyCode(p);
       var rate = pc === baseCode ? 1 : (fxMap[pc + baseCode] || fxMap[pc] || 1);
-      val += p.qty * p.current * rate;
+      valBase  += p.qty * p.current * rate;
+      costBase += p.qty * p.entry   * rate;
+      valNative  += p.qty * p.current;
+      costNative += p.qty * p.entry;
     });
-    groupTotals[key] = val;
-    grandTotal += val;
+    groupStats[key] = { valBase: valBase, costBase: costBase, valNative: valNative, costNative: costNative };
+    grandVal  += valBase;
+    grandCost += costBase;
   });
-  // Sort by value desc, Other last
-  var keys = Object.keys(groupTotals).sort(function(a, b) {
+
+  // Sort by base value desc, Other last (stable across subviews so toggling
+  // P&L ↔ Weights doesn't re-order rows).
+  var keys = Object.keys(groupStats).sort(function(a, b) {
     if (a === 'Other') return 1;
     if (b === 'Other') return -1;
-    return groupTotals[b] - groupTotals[a];
+    return groupStats[b].valBase - groupStats[a].valBase;
   });
-  var maxVal = keys.length ? Math.max.apply(null, keys.map(function(k) { return groupTotals[k]; })) : 1;
-  // Build rows
+
+  var headerHtml = analyticsHeader(breakdown, subview, isRealized);
+  var importExportHtml = isSummary ? '' : '<div style="text-align:right;font-size:11px;color:var(--dim);margin-bottom:8px"><a href="#" onclick="openCsvImport();return false" style="color:var(--dim);margin-right:12px">↑ Import CSV</a><a href="#" onclick="exportCsv();return false" style="color:var(--dim);margin-right:12px">↓ Export CSV</a><a href="#" onclick="exportIncompletePositionsCsv();return false" style="color:var(--dim)">↓ Incomplete</a></div>';
+  var contentHtml = subview === 'pnl'
+    ? analyticsPnLContent(keys, groupStats, breakdown, baseSym, baseCode, grandVal, grandCost)
+    : analyticsWeightsContent(keys, groupStats, breakdown, baseSym, grandVal);
+
+  return headerHtml + importExportHtml + contentHtml;
+}
+
+// Two dropdowns: rubric on the left (CATEGORY/REGION/SECTOR/CURRENCY/BROKER),
+// subview on the right (P&L/MARKET/CHART/WEIGHTS — MARKET and CHART are
+// placeholders pending phase 2/3 implementation; in realized portfolios
+// only P&L and WEIGHTS are listed since market/chart make no sense for
+// closed positions).
+function analyticsHeader(breakdown, subview, isRealized) {
+  var rubrics = ['category','region','sector','currency','broker'];
+  var subviews = isRealized ? ['pnl','weights'] : ['pnl','market','chart','weights'];
+  var subviewLabels = { pnl: 'P&L', market: 'MARKET', chart: 'CHART', weights: 'WEIGHTS' };
+
+  function ddItem(value, label, isActive, setCall) {
+    return '<div onclick="' + setCall + '(&apos;' + value + '&apos;)" style="padding:6px 14px;cursor:pointer;white-space:nowrap;color:' + (isActive ? 'var(--green)' : 'var(--bright)') + ';font-size:9px;letter-spacing:1px;font-family:var(--font)">' + label + '</div>';
+  }
+  function dd(currentLabel, openFlag, toggleCall, menuHtml, alignRight) {
+    var chevron = openFlag ? '▴' : '▾';
+    var menu = openFlag
+      ? '<div style="position:absolute;top:100%;' + (alignRight ? 'right:0' : 'left:0') + ';background:var(--bg2);border:1px solid var(--border);z-index:50;min-width:100%;margin-top:2px">' + menuHtml + '</div>'
+      : '';
+    return '<div style="position:relative;display:inline-block">'
+      + '<button onclick="' + toggleCall + '()" style="font-size:9px;letter-spacing:1px;padding:5px 12px;border:1px solid var(--border);background:var(--bg);color:var(--green);cursor:pointer;font-family:var(--font);text-transform:uppercase">'
+      + currentLabel + ' <span style="color:var(--dim);margin-left:6px">' + chevron + '</span>'
+      + '</button>'
+      + menu
+      + '</div>';
+  }
+
+  var rubricMenu = rubrics.map(function(b) {
+    return ddItem(b, b.toUpperCase(), b === breakdown, 'setAnalyticsBreakdown');
+  }).join('');
+  var subviewMenu = subviews.map(function(s) {
+    return ddItem(s, subviewLabels[s], s === subview, 'setAnalyticsSubview');
+  }).join('');
+
+  var leftDd  = dd(breakdown.toUpperCase(), window.analyticsRubricOpen, 'toggleAnalyticsRubricOpen', rubricMenu, false);
+  var rightDd = dd(subviewLabels[subview], window.analyticsSubviewOpen, 'toggleAnalyticsSubviewOpen', subviewMenu, true);
+
+  return '<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 0 12px;gap:6px">'
+    + leftDd + rightDd
+    + '</div>';
+}
+
+// Existing "weights" view, extracted from old buildAnalyticsView. Renders
+// the rubric column + VALUE + WEIGHT% + horizontal bar.
+function analyticsWeightsContent(keys, groupStats, breakdown, baseSym, grandTotal) {
+  var maxVal = keys.length ? Math.max.apply(null, keys.map(function(k) { return groupStats[k].valBase; })) : 1;
   var rows = keys.map(function(key) {
-    var val = groupTotals[key];
+    var val = groupStats[key].valBase;
     var pct = grandTotal > 0 ? val / grandTotal * 100 : 0;
     var barW = maxVal > 0 ? Math.round(val / maxVal * 100) : 0;
     var keyEsc = key.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -5764,14 +5864,7 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
       + '</tr>';
   }).join('');
 
-  var btns = ['category','region','sector','currency','broker'].map(function(b) {
-    var active = breakdown === b;
-    return '<button onclick="setAnalyticsBreakdown(&apos;' + b + '&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 10px;border:1px solid ' + (active ? 'var(--green)' : 'var(--border)') + ';background:' + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font);text-transform:uppercase">' + b + '</button>';
-  }).join('');
-
-  return '<div style="padding:8px 0 12px;display:flex;gap:6px">' + btns + '</div>'
-    + (isSummary ? '' : '<div style="text-align:right;font-size:11px;color:var(--dim);margin-bottom:8px"><a href="#" onclick="openCsvImport();return false" style="color:var(--dim);margin-right:12px">↑ Import CSV</a><a href="#" onclick="exportCsv();return false" style="color:var(--dim);margin-right:12px">↓ Export CSV</a><a href="#" onclick="exportIncompletePositionsCsv();return false" style="color:var(--dim)">↓ Incomplete</a></div>')
-    + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
+  return '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
     + '<thead><tr>'
     + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);text-transform:uppercase">' + breakdown + '</th>'
     + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">VALUE</th>'
@@ -5781,6 +5874,57 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
     + '<tbody>' + rows + '</tbody>'
     + '</table></div>'
     + '<div class="totals-bar"><div class="total-block"><div class="total-label">TOTAL</div><div class="total-value" style="color:var(--bright)">' + baseSym + f2(grandTotal) + '</div></div></div>';
+}
+
+// P&L view: per-group VALUE / P&L / RETURN, totals in baseCode (USD).
+// For 'currency' rubric each row is shown in its own native currency (no
+// FX conversion within the row); grand total still in baseCode with a
+// (USD) suffix to make the unit explicit.
+function analyticsPnLContent(keys, groupStats, breakdown, baseSym, baseCode, grandVal, grandCost) {
+  var isByCurrency = breakdown === 'currency';
+  var rows = keys.map(function(key) {
+    var gs = groupStats[key];
+    var rowVal, rowCost, rowSym;
+    if (isByCurrency && key !== 'Other') {
+      // Group key IS the currency code; show native values without conversion.
+      rowVal  = gs.valNative;
+      rowCost = gs.costNative;
+      rowSym  = CURRENCY_SYMBOLS[key] || key;
+    } else {
+      rowVal  = gs.valBase;
+      rowCost = gs.costBase;
+      rowSym  = baseSym;
+    }
+    var pnl = rowVal - rowCost;
+    var ret = rowCost > 0 ? pnl / rowCost * 100 : null;
+    var c = pnl >= 0 ? 'pos' : 'neg';
+    var keyEsc = key.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return '<tr>'
+      + '<td onclick="showAnalyticsDetail(\'' + breakdown + '\',\'' + keyEsc + '\')" style="text-align:left;padding:7px 4px;white-space:nowrap;cursor:pointer">' + key + '</td>'
+      + '<td style="text-align:right;padding:7px 4px;white-space:nowrap">' + rowSym + f2(rowVal) + '</td>'
+      + '<td class="' + c + '" style="text-align:right;padding:7px 4px;white-space:nowrap">' + fSign(pnl) + '</td>'
+      + '<td class="' + c + '" style="text-align:right;padding:7px 4px;white-space:nowrap">' + (ret !== null ? fPct(ret) : '&mdash;') + '</td>'
+      + '</tr>';
+  }).join('');
+
+  var totPnL = grandVal - grandCost;
+  var totRet = grandCost > 0 ? totPnL / grandCost * 100 : null;
+  var totC = totPnL >= 0 ? 'pos' : 'neg';
+
+  return '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
+    + '<thead><tr>'
+    + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);text-transform:uppercase">' + breakdown + '</th>'
+    + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">VALUE</th>'
+    + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">P&amp;L</th>'
+    + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">RETURN</th>'
+    + '</tr></thead>'
+    + '<tbody>' + rows + '</tbody>'
+    + '</table></div>'
+    + '<div class="totals-bar">'
+    + '<div class="total-block"><div class="total-label">TOTAL VALUE</div><div class="total-value" style="color:var(--bright)">' + baseSym + f2(grandVal) + (isByCurrency ? ' <span style="font-size:10px;color:var(--dim);letter-spacing:1px">(' + baseCode + ')</span>' : '') + '</div></div>'
+    + '<div class="total-block"><div class="total-label">P&amp;L</div><div class="total-value ' + totC + '">' + fSign(totPnL) + '</div></div>'
+    + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + totC + '">' + (totRet !== null ? fPct(totRet) : '&mdash;') + '</div></div>'
+    + '</div>';
 }
 
 // CSV Import
