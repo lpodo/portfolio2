@@ -5738,10 +5738,10 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
   // Realized portfolios: market and chart are not implemented; force a
   // valid subview if the persisted choice isn't available here.
   if (isRealized && subview !== 'pnl' && subview !== 'weights') subview = 'weights';
-  // MARKET/CHART are placeholders for now (phase 1 only adds P&L). If the
-  // persisted choice points there, fall back to weights for display while
-  // leaving the stored preference untouched.
-  if (subview === 'market' || subview === 'chart') subview = 'weights';
+  // CHART is a placeholder for phase 3. If the persisted choice points
+  // there, fall back to weights for display while leaving the stored
+  // preference untouched.
+  if (subview === 'chart') subview = 'weights';
 
   // Stash for showAnalyticsDetail (overlay that lists positions in a group)
   _analyticsCtx = { posns: posns, breakdown: breakdown, baseSym: baseSym, baseCode: baseCode, fxMap: fxMap || {} };
@@ -5795,9 +5795,14 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
 
   var headerHtml = analyticsHeader(breakdown, subview, isRealized);
   var importExportHtml = isSummary ? '' : '<div style="text-align:right;font-size:11px;color:var(--dim);margin-bottom:8px"><a href="#" onclick="openCsvImport();return false" style="color:var(--dim);margin-right:12px">↑ Import CSV</a><a href="#" onclick="exportCsv();return false" style="color:var(--dim);margin-right:12px">↓ Export CSV</a><a href="#" onclick="exportIncompletePositionsCsv();return false" style="color:var(--dim)">↓ Incomplete</a></div>';
-  var contentHtml = subview === 'pnl'
-    ? analyticsPnLContent(keys, groupStats, breakdown, baseSym, baseCode, grandVal, grandCost)
-    : analyticsWeightsContent(keys, groupStats, breakdown, baseSym, grandVal);
+  var contentHtml;
+  if (subview === 'pnl') {
+    contentHtml = analyticsPnLContent(keys, groupStats, breakdown, baseSym, baseCode, grandVal, grandCost);
+  } else if (subview === 'market') {
+    contentHtml = analyticsMarketContent(keys, groups, breakdown, baseSym, baseCode, fxMap);
+  } else {
+    contentHtml = analyticsWeightsContent(keys, groupStats, breakdown, baseSym, grandVal);
+  }
 
   return headerHtml + importExportHtml + contentHtml;
 }
@@ -5921,10 +5926,97 @@ function analyticsPnLContent(keys, groupStats, breakdown, baseSym, baseCode, gra
     + '<tbody>' + rows + '</tbody>'
     + '</table></div>'
     + '<div class="totals-bar">'
-    + '<div class="total-block"><div class="total-label">TOTAL VALUE</div><div class="total-value" style="color:var(--bright)">' + baseSym + f2(grandVal) + (isByCurrency ? ' <span style="font-size:10px;color:var(--dim);letter-spacing:1px">(' + baseCode + ')</span>' : '') + '</div></div>'
+    + '<div class="total-block"><div class="total-label">TOTAL VALUE</div><div class="total-value" style="color:var(--bright)">' + baseSym + f2(grandVal) + '</div></div>'
     + '<div class="total-block"><div class="total-label">P&amp;L</div><div class="total-value ' + totC + '">' + fSign(totPnL) + '</div></div>'
     + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + totC + '">' + (totRet !== null ? fPct(totRet) : '&mdash;') + '</div></div>'
     + '</div>';
+}
+
+// Market view: per-group AT CLOSE / CURRENT / Δ / Δ%. Mirrors summary-market
+// (lines ~8294–8307 in the original code) — close and current prices use the
+// same closeMode/currentMode global toggles and the same sold/historical
+// fallbacks. For 'currency' rubric each row is in its native currency; grand
+// totals always in baseCode. Triggers fetchHistoricalIfNeeded for active
+// tickers; that helper re-renders when historical data arrives.
+function analyticsMarketContent(keys, groups, breakdown, baseSym, baseCode, fxMap) {
+  var isByCurrency = breakdown === 'currency';
+  var totCloseBase = 0, totCurrentBase = 0, hasAny = false;
+  var allTickers = [];
+  var rows = keys.map(function(key) {
+    var grp = groups[key];
+    var closeBase = 0, currentBase = 0, closeNative = 0, currentNative = 0, hasPos = false;
+    grp.forEach(function(p) {
+      if (p.current == null || p.qty <= 0) return;
+      if (!p.sold && allTickers.indexOf(p.ticker) === -1) allTickers.push(p.ticker);
+      var pc = getPositionCurrencyCode(p);
+      var rate = pc === baseCode ? 1 : (fxMap[pc + baseCode] || fxMap[pc] || 1);
+      var closePrice = p.sold ? p.current
+        : (HIST_MODES.indexOf(closeMode) !== -1
+            ? (getHistoricalClose(p.ticker, closeMode) || p.regularMarketPrice || p.current)
+            : (closeMode === 'prev'
+                ? (p.previousClose || p.regularMarketPrice || p.current)
+                : (p.regularMarketPrice || p.current)));
+      var curPrice = p.sold ? p.current
+        : (currentMode === 'reg' ? (p.regularMarketPrice || p.current) : p.current);
+      closeBase     += p.qty * closePrice * rate;
+      currentBase   += p.qty * curPrice   * rate;
+      closeNative   += p.qty * closePrice;
+      currentNative += p.qty * curPrice;
+      hasPos = true;
+    });
+    totCloseBase   += closeBase;
+    totCurrentBase += currentBase;
+    if (hasPos) hasAny = true;
+
+    var keyEsc = key.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    if (!hasPos) {
+      return '<tr>'
+        + '<td onclick="showAnalyticsDetail(\'' + breakdown + '\',\'' + keyEsc + '\')" style="text-align:left;padding:7px 4px;white-space:nowrap;cursor:pointer">' + key + '</td>'
+        + '<td colspan="4" style="color:var(--dim);padding:7px 4px">&mdash;</td>'
+        + '</tr>';
+    }
+    var rowClose, rowCurrent, rowSym;
+    if (isByCurrency && key !== 'Other') {
+      rowClose = closeNative; rowCurrent = currentNative;
+      rowSym = CURRENCY_SYMBOLS[key] || key;
+    } else {
+      rowClose = closeBase; rowCurrent = currentBase;
+      rowSym = baseSym;
+    }
+    var delta = rowCurrent - rowClose;
+    var deltaPct = rowClose > 0 ? delta / rowClose * 100 : null;
+    var dClass = delta >= 0 ? 'pos' : 'neg';
+    return '<tr>'
+      + '<td onclick="showAnalyticsDetail(\'' + breakdown + '\',\'' + keyEsc + '\')" style="text-align:left;padding:7px 4px;white-space:nowrap;cursor:pointer">' + key + '</td>'
+      + '<td style="text-align:right;padding:7px 4px;white-space:nowrap">' + rowSym + f2(rowClose) + '</td>'
+      + '<td style="text-align:right;padding:7px 4px;white-space:nowrap">' + rowSym + f2(rowCurrent) + '</td>'
+      + '<td class="' + dClass + '" style="text-align:right;padding:7px 4px;white-space:nowrap">' + fSign(delta) + '</td>'
+      + '<td class="' + dClass + '" style="text-align:right;padding:7px 4px;white-space:nowrap">' + (deltaPct !== null ? fSign(deltaPct) + '%' : '&mdash;') + '</td>'
+      + '</tr>';
+  }).join('');
+
+  fetchHistoricalIfNeeded(allTickers);
+
+  var totDelta = totCurrentBase - totCloseBase;
+  var totDeltaPct = totCloseBase > 0 ? totDelta / totCloseBase * 100 : null;
+  var tClass = totDelta >= 0 ? 'pos' : 'neg';
+
+  return '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
+    + '<thead><tr>'
+    + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);text-transform:uppercase">' + breakdown + '</th>'
+    + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
+    + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
+    + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">&#916;</th>'
+    + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">&#916;%</th>'
+    + '</tr></thead>'
+    + '<tbody>' + rows + '</tbody>'
+    + '</table></div>'
+    + (hasAny ? '<div class="totals-bar">'
+      + '<div class="total-block"><div class="total-label">AT CLOSE</div><div class="total-value" style="color:var(--bright)">' + baseSym + f2(totCloseBase) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">CURRENT</div><div class="total-value" style="color:var(--bright)">' + baseSym + f2(totCurrentBase) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">&#916;</div><div class="total-value ' + tClass + '">' + fSign(totDelta) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">&#916;%</div><div class="total-value ' + tClass + '">' + (totDeltaPct !== null ? fSign(totDeltaPct) + '%' : '&mdash;') + '</div></div>'
+      + '</div>' : '');
 }
 
 // CSV Import
