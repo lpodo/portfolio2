@@ -5431,6 +5431,7 @@ window.analyticsSubview = (function() {
 })();
 window.analyticsRubricOpen = false;
 window.analyticsSubviewOpen = false;
+window.analyticsChartMode = 'total';
 var _analyticsCtx = null;
 
 function setAnalyticsBreakdown(b) {
@@ -5453,6 +5454,24 @@ function toggleAnalyticsSubviewOpen() {
   window.analyticsSubviewOpen = !window.analyticsSubviewOpen;
   window.analyticsRubricOpen = false;
   render();
+}
+// Analytics chart sub-view: range is shared with main/summary chart
+// (window.chartRange); mode is local — 'total' (single aggregate line) or
+// 'bygroup' (one line per rubric value, normalized as % from start).
+function setAnalyticsChartRange(r) {
+  window.chartRange = r;
+  render();
+}
+function setAnalyticsChartMode(m) {
+  window.analyticsChartMode = m;
+  var menu = document.getElementById('analyticsChartModeMenu');
+  if (menu) menu.style.display = 'none';
+  render();
+}
+function toggleAnalyticsChartModeMenu() {
+  var menu = document.getElementById('analyticsChartModeMenu');
+  if (!menu) return;
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
 }
 
 
@@ -5738,10 +5757,7 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
   // Realized portfolios: market and chart are not implemented; force a
   // valid subview if the persisted choice isn't available here.
   if (isRealized && subview !== 'pnl' && subview !== 'weights') subview = 'weights';
-  // CHART is a placeholder for phase 3. If the persisted choice points
-  // there, fall back to weights for display while leaving the stored
-  // preference untouched.
-  if (subview === 'chart') subview = 'weights';
+  // All four subviews implemented; nothing to fall back from anymore.
 
   // Stash for showAnalyticsDetail (overlay that lists positions in a group)
   _analyticsCtx = { posns: posns, breakdown: breakdown, baseSym: baseSym, baseCode: baseCode, fxMap: fxMap || {} };
@@ -5800,6 +5816,8 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
     contentHtml = analyticsPnLContent(keys, groupStats, breakdown, baseSym, baseCode, grandVal, grandCost);
   } else if (subview === 'market') {
     contentHtml = analyticsMarketContent(keys, groups, breakdown, baseSym, baseCode, fxMap);
+  } else if (subview === 'chart') {
+    contentHtml = analyticsChartContent(groups, breakdown, baseSym, baseCode, fxMap);
   } else {
     contentHtml = analyticsWeightsContent(keys, groupStats, breakdown, baseSym, grandVal);
   }
@@ -6017,6 +6035,172 @@ function analyticsMarketContent(keys, groups, breakdown, baseSym, baseCode, fxMa
       + '<div class="total-block"><div class="total-label">&#916;</div><div class="total-value ' + tClass + '">' + fSign(totDelta) + '</div></div>'
       + '<div class="total-block"><div class="total-label">&#916;%</div><div class="total-value ' + tClass + '">' + (totDeltaPct !== null ? fSign(totDeltaPct) + '%' : '&mdash;') + '</div></div>'
       + '</div>' : '');
+}
+
+// Chart view: range buttons (1D/5D/1M/3M/6M/1Y/5Y) + mode dropdown
+// (TOTAL or BY [RUBRIC]) + chart area. Mirrors summary-chart UI; the
+// loadAnalyticsChartData call is deferred via setTimeout so #chartArea
+// exists in the DOM by then (HTML is assigned by the caller after this
+// function returns).
+function analyticsChartContent(groups, breakdown, baseSym, baseCode, fxMap) {
+  var range = window.chartRange || '1mo';
+  var mode = window.analyticsChartMode || 'total';
+  var bygroupLabel = 'BY ' + breakdown.toUpperCase();
+  var modeLabel = mode === 'total' ? 'TOTAL' : bygroupLabel;
+
+  var html = '<div style="padding:8px 0 4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
+    + ['1d','5d','1mo','3mo','6mo','1y','5y'].map(function(r) {
+        var active = range === r;
+        return '<button onclick="setAnalyticsChartRange(&apos;' + r + '&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 6px;border:1px solid ' + (active ? 'var(--green)' : 'var(--border)') + ';background:' + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">' + r.toUpperCase().replace('MO','M') + '</button>';
+      }).join('')
+    + '<div style="flex:1"></div>'
+    + '<div style="position:relative">'
+    + '<button onclick="toggleAnalyticsChartModeMenu()" style="font-size:9px;letter-spacing:1px;padding:4px 8px;border:1px solid var(--green);background:var(--bg2);color:var(--green);cursor:pointer;font-family:var(--font);text-transform:uppercase">' + modeLabel + '</button>'
+    + '<div id="analyticsChartModeMenu" style="display:none;position:absolute;right:0;top:100%;background:var(--bg2);border:1px solid var(--border);z-index:100;min-width:140px">'
+    + ['total','bygroup'].map(function(m) {
+        var label = m === 'total' ? 'TOTAL' : bygroupLabel;
+        return '<div onclick="setAnalyticsChartMode(&apos;' + m + '&apos;)" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;color:' + (mode === m ? 'var(--green)' : 'var(--bright)') + '">' + label + '</div>';
+      }).join('')
+    + '</div></div>'
+    + '</div>'
+    + '<div id="chartArea" style="min-height:200px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px">Loading...</div>';
+
+  setTimeout(function() { loadAnalyticsChartData(range, mode, groups, breakdown, baseSym, baseCode, fxMap); }, 0);
+
+  return html;
+}
+
+// Loads ticker/FX history for all active positions in the analytics scope,
+// then renders either a single TOTAL line (USD across all groups) or one
+// line per rubric value (normalized % from start). Mirrors loadSummaryChartData
+// structure — only the grouping iteration differs (groups by rubric vs
+// portfolios). When a third grouped-chart caller appears, extract the
+// shared data-fetch and forward-fill into a common helper.
+function loadAnalyticsChartData(range, mode, groups, breakdown, baseSym, baseCode, fxMap) {
+  var el = document.getElementById('chartArea');
+  if (!el) return;
+  if (range === '1d') {
+    el.innerHTML = '<span style="color:var(--dim)">1D is not available in ANALYTICS</span>';
+    return;
+  }
+  var baseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
+  if (!baseUrl) { el.innerHTML = '<span style="color:var(--red)">API URL not set</span>'; return; }
+  var token = getToken();
+  var opts = token ? { headers: { 'X-API-Token': token } } : {};
+
+  // Collect unique tickers and FX codes from active positions across all groups.
+  var groupKeys = Object.keys(groups);
+  var tickerSet = {}, fxSet = {};
+  groupKeys.forEach(function(key) {
+    groups[key].forEach(function(p) {
+      if (p.sold || p.qty <= 0) return;
+      tickerSet[p.ticker] = true;
+      var pc = (p.currency || baseCode || 'USD').toUpperCase();
+      if (pc !== 'USD') fxSet[pc] = true;
+    });
+  });
+  var uniqueTickers = Object.keys(tickerSet);
+  var fxCodes = Object.keys(fxSet);
+  if (uniqueTickers.length === 0) { el.innerHTML = '<span>No active positions</span>'; return; }
+
+  var tickerPromises = uniqueTickers.map(function(t) {
+    var cached = chartCacheGet(t, range);
+    if (cached) return Promise.resolve({ ticker: t, data: { points: cached } });
+    return fetchWithTimeout(baseUrl + '/api/history?ticker=' + encodeURIComponent(t) + '&range=' + range, opts, 12000)
+      .then(function(d) { if (d && d.points) chartCacheSet(t, range, d.points); return { ticker: t, data: d }; })
+      .catch(function() { return { ticker: t, data: null }; });
+  });
+  var fxPromises = fxCodes.map(function(code) {
+    var fxT = code + 'USD=X';
+    var cached = chartCacheGet(fxT, range);
+    if (cached) return Promise.resolve({ code: code, data: { points: cached } });
+    return fetchWithTimeout(baseUrl + '/api/history?ticker=' + encodeURIComponent(fxT) + '&range=' + range, opts, 12000)
+      .then(function(d) { if (d && d.points) chartCacheSet(fxT, range, d.points); return { code: code, data: d }; })
+      .catch(function() { return { code: code, data: null }; });
+  });
+
+  Promise.all(tickerPromises.concat(fxPromises)).then(function(results) {
+    var tickerResults = results.slice(0, uniqueTickers.length);
+    var fxResults = results.slice(uniqueTickers.length);
+    var priceMap = {};
+    tickerResults.forEach(function(tr) {
+      if (!tr.data || !tr.data.points) return;
+      priceMap[tr.ticker] = {};
+      tr.data.points.forEach(function(pt) { priceMap[tr.ticker][dateKey(pt.t)] = pt.c; });
+    });
+    var fxByDate = {};
+    fxResults.forEach(function(fx) {
+      if (!fx.data || !fx.data.points) return;
+      fxByDate[fx.code] = {};
+      fx.data.points.forEach(function(pt) { fxByDate[fx.code][dateKey(pt.t)] = pt.c; });
+    });
+    var allDatesSet = {};
+    tickerResults.forEach(function(tr) {
+      if (!tr.data || !tr.data.points) return;
+      tr.data.points.forEach(function(pt) { allDatesSet[dateKey(pt.t)] = pt.t; });
+    });
+    var allDates = Object.keys(allDatesSet).sort();
+    // Forward-fill: carry last known value through missing dates
+    Object.keys(priceMap).forEach(function(t) {
+      var last = null;
+      allDates.forEach(function(dk) { if (priceMap[t][dk] != null) last = priceMap[t][dk]; else if (last != null) priceMap[t][dk] = last; });
+    });
+    Object.keys(fxByDate).forEach(function(code) {
+      var last = null;
+      allDates.forEach(function(dk) { if (fxByDate[code][dk] != null) last = fxByDate[code][dk]; else if (last != null) fxByDate[code][dk] = last; });
+    });
+
+    if (mode === 'total') {
+      // Single line: aggregate USD value across all groups, daily.
+      var dailyTotal = {};
+      allDates.forEach(function(dk) {
+        var total = 0, complete = true;
+        groupKeys.forEach(function(key) {
+          groups[key].forEach(function(p) {
+            if (p.sold || p.qty <= 0) return;
+            if (!priceMap[p.ticker] || priceMap[p.ticker][dk] == null) { complete = false; return; }
+            var pc = (p.currency || baseCode || 'USD').toUpperCase();
+            var rate = pc === 'USD' ? 1 : (fxByDate[pc] && fxByDate[pc][dk] ? fxByDate[pc][dk] : 1);
+            total += p.qty * priceMap[p.ticker][dk] * rate;
+          });
+        });
+        if (complete) dailyTotal[dk] = { t: allDatesSet[dk], v: total };
+      });
+      var days = Object.keys(dailyTotal).sort();
+      if (days.length < 2) { el.innerHTML = '<span>Not enough data</span>'; return; }
+      renderChart(days.map(function(d) { return dailyTotal[d].t; }), days.map(function(d) { return dailyTotal[d].v; }), '$', 'USD', 'ALL ' + breakdown.toUpperCase() + 'S');
+    } else {
+      // One line per rubric value, normalized as % from first day.
+      var groupLines = [];
+      groupKeys.forEach(function(key, keyIdx) {
+        var grpPos = groups[key].filter(function(p) { return !p.sold && p.qty > 0; });
+        if (!grpPos.length) return;
+        var daily = {};
+        allDates.forEach(function(dk) {
+          var total = 0, complete = true;
+          grpPos.forEach(function(p) {
+            if (!priceMap[p.ticker] || priceMap[p.ticker][dk] == null) { complete = false; return; }
+            var pc = (p.currency || baseCode || 'USD').toUpperCase();
+            var rate = pc === 'USD' ? 1 : (fxByDate[pc] && fxByDate[pc][dk] ? fxByDate[pc][dk] : 1);
+            total += p.qty * priceMap[p.ticker][dk] * rate;
+          });
+          if (complete) daily[dk] = total;
+        });
+        var days2 = Object.keys(daily).sort();
+        if (days2.length < 2) return;
+        var base = daily[days2[0]];
+        if (!base) return;
+        groupLines.push({
+          name: key,
+          color: CHART_COLORS[keyIdx % CHART_COLORS.length],
+          values: days2.map(function(d) { return (daily[d] / base - 1) * 100; }),
+          timestamps: days2.map(function(d) { return allDatesSet[d]; })
+        });
+      });
+      if (!groupLines.length) { el.innerHTML = '<span>Not enough data</span>'; return; }
+      renderMultiChart(groupLines);
+    }
+  });
 }
 
 // CSV Import
