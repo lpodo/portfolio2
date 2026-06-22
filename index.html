@@ -4889,38 +4889,43 @@ function showAggDetail(ticker, soldFlag) {
       + '<td></td>'
       + '</tr>';
   }
-  // Each broker subgroup is self-contained: broker label + SELL button row,
-  // column headers row, position rows, subtotal row. Repeats per broker.
-  function brokerSubgroupHtml(bd, idx) {
+  // Each broker is its own block: header (broker label + SELL) lives outside
+  // any table, so SELL is always aligned to the modal's right edge regardless
+  // of table content width. Below the header sits a horizontally-scrollable
+  // wrapper containing the actual position table. With large numbers the
+  // table grows beyond its container and scrolls horizontally inside the
+  // wrapper, never pushing SELL or the broker label off-screen.
+  function brokerSectionHtml(bd, idx) {
     var sellBtn = isSold ? '' :
       '<button id="aggSellBtn_' + idx + '" class="btn" onclick="showAggSellForm(' + idx + ')" style="padding:5px 14px;font-size:9px;letter-spacing:1px;border-color:var(--border);color:var(--bright)">SELL</button>';
-    // Label is one logical unit (BROKER + name) — wrap in a single span so
-    // flex's space-between keeps it pinned to the left whether SELL is
-    // present or not (without the wrapper, the two child spans would be
-    // split apart by space-between's distribution).
+    // Wrap BROKER + name in one span so flex space-between can't split them.
     var brokerLabel = '<span>'
                     + '<span style="font-size:9px;color:var(--dim);letter-spacing:2px">BROKER&nbsp;</span>'
                     + '<span style="font-size:11px;color:var(--bright);letter-spacing:1px;font-weight:bold">' + bd.broker.replace(/&/g,'&amp;') + '</span>'
                     + '</span>';
-    return '<tr><td colspan="6" style="padding:14px 8px 4px">'
-      + '<div style="display:flex;justify-content:space-between;align-items:center">'
+    return '<div style="margin-top:14px">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;padding:0 8px">'
       + brokerLabel
       + sellBtn
       + '</div>'
-      + '</td></tr>'
-      + '<tr>'
-      + '<td style="' + headStyle + ';text-align:left">QTY</td>'
-      + '<td style="' + headStyle + ';text-align:right">ENTRY</td>'
-      + '<td style="' + headStyle + ';text-align:right">' + (isSold ? 'SOLD' : 'CURRENT') + '</td>'
-      + '<td style="' + headStyle + ';text-align:right">P&amp;L</td>'
-      + '<td style="' + headStyle + ';text-align:right">%</td>'
-      + '<td style="' + headStyle + ';text-align:right">BUY DATE</td>'
-      + '</tr>'
-      + bd.group.map(positionRow).join('')
-      + (bd.group.length > 1 ? subtotalRow(bd.qty, bd.avgEntry, bd.current) : '');
+      + '<div style="overflow-x:auto;margin-top:4px">'
+      + '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:0">'
+      + '<thead><tr>'
+      + '<th style="' + headStyle + ';text-align:left">QTY</th>'
+      + '<th style="' + headStyle + ';text-align:right">ENTRY</th>'
+      + '<th style="' + headStyle + ';text-align:right">' + (isSold ? 'SOLD' : 'CURRENT') + '</th>'
+      + '<th style="' + headStyle + ';text-align:right">P&amp;L</th>'
+      + '<th style="' + headStyle + ';text-align:right">%</th>'
+      + '<th style="' + headStyle + ';text-align:right">BUY DATE</th>'
+      + '</tr></thead>'
+      + '<tbody>' + bd.group.map(positionRow).join('') + '</tbody>'
+      + (bd.group.length > 1 ? '<tfoot>' + subtotalRow(bd.qty, bd.avgEntry, bd.current) + '</tfoot>' : '')
+      + '</table>'
+      + '</div>'
+      + '</div>';
   }
 
-  var tbodyHtml = brokerData.map(function(bd, i) { return brokerSubgroupHtml(bd, i); }).join('');
+  var sectionsHtml = brokerData.map(function(bd, i) { return brokerSectionHtml(bd, i); }).join('');
 
   var warningHtml = missingDateCount > 0
     ? '<div style="margin:10px 8px 0;font-size:10px;color:var(--dim);text-align:left;opacity:0.7">&#9888; ' + missingDateCount + ' position' + (missingDateCount === 1 ? '' : 's') + ' without date (treated as oldest in FIFO)</div>'
@@ -4964,9 +4969,7 @@ function showAggDetail(ticker, soldFlag) {
     + ' <span style="font-size:12px;letter-spacing:1px;color:var(--bright)">&times;' + allPositions.length + '</span>'
     + (isSold ? ' <span style="font-size:10px;color:var(--dim);letter-spacing:2px">SOLD</span>' : '')
     + '</div>'
-    + '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:0">'
-    + '<tbody>' + tbodyHtml + '</tbody>'
-    + '</table>'
+    + sectionsHtml
     + warningHtml
     + actionHtml
     + '</div>';
