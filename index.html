@@ -4313,7 +4313,7 @@ function toggleViewMenu() {
     document.getElementById('vmAlerts').style.display = isArchive ? 'none' : '';
     document.getElementById('vmAlerts').textContent = isSummaryMode ? 'Σ ALERTS' : 'ALERTS';
     document.getElementById('vmChart').style.display = isArchive ? 'none' : '';
-    document.getElementById('vmFundamentals').style.display = isArchive ? 'none' : '';
+    document.getElementById('vmFundamentals').style.display = (isArchive || isSummaryMode) ? 'none' : '';
     document.getElementById('vmAnalytics').style.display = isWL ? 'none' : '';
     document.getElementById('vmAnalytics').textContent = isSummaryMode ? 'Σ ANALYTICS' : 'ANALYTICS';
     menu.style.display = 'block';
