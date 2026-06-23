@@ -149,6 +149,11 @@
   .portfolio-item.active { color: var(--green); }
   .portfolio-item-name { font-size: 13px; font-weight: bold; letter-spacing: 1px; }
   .portfolio-item-count { font-size: 10px; color: var(--dim); }
+  /* Meta-level items in switcher (ALL POSITIONS, Σ SUMMARY, REALIZED
+     SUMMARY, BOND SUMMARY) — smaller font and wider letter-spacing so they
+     read as "category headers" rather than as portfolio names. */
+  .portfolio-item-meta .portfolio-item-name { font-size: 11px; letter-spacing: 3px; }
+  .header-title-btn.meta { font-size: 16px; letter-spacing: 3px; }
   .portfolio-add-row {
     padding: 10px 14px 10px; display: flex; flex-direction: column; gap: 0;
     border-top: 1px solid var(--border);
@@ -620,6 +625,16 @@ function restoreLastView() {
 function setTitleForCurrentView() {
   var t = document.getElementById('portfolioTitle');
   if (!t) return;
+  // Meta context: title is a category label (cross-portfolio aggregates or
+  // bond/realized summaries), not a portfolio name. Apply .meta to the
+  // title button so it gets the smaller-font / wider-letter-spacing styling
+  // (parallel to the .portfolio-item-meta styling in the switcher list).
+  var btn = t.parentNode;
+  if (btn && btn.classList) {
+    var isMeta = isCrossPortfolioContext() || viewMode === 'archive-summary' || viewMode === 'bond-summary';
+    if (isMeta) btn.classList.add('meta');
+    else btn.classList.remove('meta');
+  }
   if (viewMode === 'bonds' && currentBondPortfolioId && bondPortfolios && bondPortfolios[currentBondPortfolioId]) {
     t.textContent = bondPortfolios[currentBondPortfolioId].name;
   } else if (viewMode === 'cash' && currentCashPortfolioId && cashPortfolios && cashPortfolios[currentCashPortfolioId]) {
@@ -2047,7 +2062,7 @@ function renderBondsSwitcher(html, list, summaryActive) {
     var bp = bondPortfolios[id];
     return n + (bp.positions || []).filter(function(pos) { return isBpPositionActive(bp, pos); }).length;
   }, 0);
-  html += '<div class="portfolio-item' + (bondSummaryActive ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:7px 14px" onclick="switchToBondSummary()">'
+  html += '<div class="portfolio-item portfolio-item-meta' + (bondSummaryActive ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:8px 14px" onclick="switchToBondSummary()">'
     + '<div style="flex:1"><span class="portfolio-item-name">&#931; SUMMARY</span> <span class="portfolio-item-count">' + totalAllPos + ' items</span></div>'
     + '</div>';
 
@@ -2534,7 +2549,7 @@ function renderSwitcher() {
         });
       });
       var totalRealized = Object.keys(totalRealizedSeen).length;
-      html += '<div class="portfolio-item' + (isRealizedAllPositions() ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:7px 14px" onclick="switchToRealizedAllPositions()">'
+      html += '<div class="portfolio-item portfolio-item-meta' + (isRealizedAllPositions() ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:8px 14px" onclick="switchToRealizedAllPositions()">'
         + '<div style="flex:1"><span class="portfolio-item-name">ALL POSITIONS</span> <span class="portfolio-item-count">' + totalRealized + ' pos</span></div>'
         + '</div>';
     }
@@ -2585,7 +2600,7 @@ function renderSwitcher() {
     }
 
     // Archive summary
-    html += '<div class="portfolio-item' + (viewMode === 'archive-summary' ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:7px 14px" onclick="switchToArchiveSummary()">'
+    html += '<div class="portfolio-item portfolio-item-meta' + (viewMode === 'archive-summary' ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:8px 14px" onclick="switchToArchiveSummary()">'
       + '<div style="flex:1"><span class="portfolio-item-name">&#931; SUMMARY</span></div>'
       + '</div>';
     list.innerHTML = html;
@@ -2629,19 +2644,19 @@ function renderSwitcher() {
   // work on positions independent of which portfolio they belong to. The
   // position counter (was on Σ Summary) lives here now since these views
   // operate on the count of positions, not portfolios.
-  html += '<div class="portfolio-item' + (isAllPositions() ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:7px 14px" onclick="switchToAllPositions()">'
+  html += '<div class="portfolio-item portfolio-item-meta' + (isAllPositions() ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:8px 14px" onclick="switchToAllPositions()">'
     + '<div style="flex:1"><span class="portfolio-item-name">ALL POSITIONS</span> <span class="portfolio-item-count">' + totalActive + ' pos</span></div>'
     + '</div>';
   // Σ SUMMARY BY PORTFOLIO — per-portfolio aggregate views (P&L, market, chart)
   // work with portfolios as units, not individual positions, hence no counter.
-  html += '<div class="portfolio-item' + (isSummaryByPortfolio() ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:7px 14px" onclick="switchToSummary()">'
+  html += '<div class="portfolio-item portfolio-item-meta' + (isSummaryByPortfolio() ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:8px 14px" onclick="switchToSummary()">'
     + '<div style="flex:1"><span class="portfolio-item-name">&#931; SUMMARY</span></div>'
     + '</div>';
   list.innerHTML = html;
 }
 function switchToArchiveSummary() {
   viewMode = 'archive-summary';
-  document.getElementById('portfolioTitle').textContent = 'REALIZED SUMMARY';
+  setTitleForCurrentView();
   document.getElementById('viewMenuBtn').disabled = true;
   document.getElementById('viewMenuBtn').style.opacity = '0.3';
   var btn = document.getElementById('refreshAllBtn');
@@ -2656,7 +2671,7 @@ function switchToSummary() {
   // remappings that lived here moved to switchToAllPositions; from any
   // non-Σ-Summary view we just land on P&L (summary).
   if (SUMMARY_BY_PORTFOLIO_VIEWS.indexOf(viewMode) === -1) viewMode = 'summary';
-  document.getElementById('portfolioTitle').textContent = 'Σ SUMMARY';
+  setTitleForCurrentView();
   document.getElementById('viewMenuBtn').style.display = '';
   document.getElementById('viewMenuBtn').disabled = false;
   document.getElementById('viewMenuBtn').style.opacity = '';
@@ -2671,7 +2686,7 @@ function switchToAllPositions() {
   // weights, analytics). Default view is MARKET (= summary-movers). If
   // already in an All Positions view, preserve it; otherwise reset to default.
   if (!isAllPositions()) viewMode = 'summary-movers';
-  document.getElementById('portfolioTitle').textContent = 'ALL POSITIONS';
+  setTitleForCurrentView();
   document.getElementById('viewMenuBtn').style.display = '';
   document.getElementById('viewMenuBtn').disabled = false;
   document.getElementById('viewMenuBtn').style.opacity = '';
@@ -2686,7 +2701,7 @@ function switchToRealizedAllPositions() {
   // but scoped to archive portfolios; only WEIGHTS and ANALYTICS are available
   // (no market/alerts for closed positions). Default view is WEIGHTS.
   if (!isRealizedAllPositions()) viewMode = 'realized-weight';
-  document.getElementById('portfolioTitle').textContent = 'ALL POSITIONS';
+  setTitleForCurrentView();
   document.getElementById('viewMenuBtn').style.display = '';
   document.getElementById('viewMenuBtn').disabled = false;
   document.getElementById('viewMenuBtn').style.opacity = '';
