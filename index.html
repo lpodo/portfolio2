@@ -142,7 +142,7 @@
   }
   .portfolio-item {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 10px 14px; cursor: pointer; border-bottom: 1px solid #131720;
+    padding: 6px 14px; cursor: pointer; border-bottom: 1px solid #131720;
     transition: background 0.15s;
   }
   .portfolio-item:hover { background: #131720; }
@@ -232,10 +232,10 @@
       <div onclick="setView('market')" id="vmMarket" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">MARKET</div>
       <div onclick="setView('chart')" id="vmChart" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">CHART</div>
       <div onclick="setView('fundamentals')" id="vmFundamentals" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">FUNDAMENTALS</div>
-      <div onclick="setView('market-total')" id="vmMarketTotal" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">&#931; MARKET</div>
-      <div onclick="setView('weight')" id="vmWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">WEIGHTS</div>
-      <div onclick="setView('global-weight')" id="vmGlobalWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">&#931; WEIGHTS</div>
+      <div onclick="setView('market-total')" id="vmMarketTotal" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">MARKET</div>
       <div onclick="setView('alerts')" id="vmAlerts" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">ALERTS</div>
+      <div onclick="setView('global-weight')" id="vmGlobalWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">WEIGHTS</div>
+      <div onclick="setView('weight')" id="vmWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">WEIGHTS</div>
       <div onclick="setView('analytics')" id="vmAnalytics" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">ANALYTICS</div>
     </div>
   </div>
@@ -569,13 +569,11 @@ function restoreLastView() {
   try { data = JSON.parse(raw); } catch(e) { return { switcherOpen: false }; }
   if (!data || !data.viewMode) return { switcherOpen: false };
 
-  // Collapse sub-views to their primary form (start "calm"):
-  //   stock sub-views → 'main'
-  //   summary sub-views → 'summary'
-  var stockSubs = ['chart','market','analytics','movers','alerts','weight','fundamentals'];
-  var summarySubs = ['summary-chart','summary-market','summary-analytics','summary-movers','summary-alerts'];
-  if (stockSubs.indexOf(data.viewMode) !== -1) data.viewMode = 'main';
-  else if (summarySubs.indexOf(data.viewMode) !== -1) data.viewMode = 'summary';
+  // Only fundamentals must collapse per its no-persistence spec; every
+  // other view (individual portfolio sub-views, Σ Summary sub-views, All
+  // Positions sub-views) is preserved on reload so the user returns to
+  // exactly where they were.
+  if (data.viewMode === 'fundamentals') data.viewMode = 'main';
 
   // Restore portfolio context (validate existence)
   if (data.portfolioId && portfolios[data.portfolioId]) {
@@ -588,9 +586,12 @@ function restoreLastView() {
     currentCashPortfolioId = data.cashPortfolioId;
   }
 
-  // Validate viewMode has the required context; fall back to switcher if missing
+  // Validate viewMode has the required context; fall back to switcher if missing.
+  // Individual portfolio views — main and all sub-views — require a valid
+  // currentPortfolioId. (fundamentals already collapsed to main above.)
   var forceSwitcher = false;
-  if (data.viewMode === 'main') {
+  var individualPortfolioViews = ['main','chart','market','analytics','movers','alerts','weight'];
+  if (individualPortfolioViews.indexOf(data.viewMode) !== -1) {
     if (!currentPortfolioId || !portfolios[currentPortfolioId]) {
       var firstStock = Object.keys(portfolios).find(function(id) { return !portfolios[id].archive; });
       if (firstStock) currentPortfolioId = firstStock;
@@ -627,8 +628,10 @@ function setTitleForCurrentView() {
     t.textContent = 'BOND SUMMARY';
   } else if (viewMode === 'archive-summary') {
     t.textContent = 'REALIZED SUMMARY';
-  } else if (viewMode === 'summary' || viewMode === 'global-weight') {
-    t.textContent = 'SUMMARY';
+  } else if (isAllPositions() || isRealizedAllPositions()) {
+    t.textContent = 'ALL POSITIONS';
+  } else if (isSummaryByPortfolio()) {
+    t.textContent = 'Σ SUMMARY';
   } else if (currentPortfolioId && portfolios[currentPortfolioId]) {
     t.textContent = portfolios[currentPortfolioId].name;
   } else {
@@ -657,6 +660,32 @@ function updateAddForm() {
 }
 function isWatchlist() {
   return !!(currentPortfolio().watchlist);
+}
+
+// View-mode context groups. Used throughout to determine which UI to show.
+//   SUMMARY_BY_PORTFOLIO_VIEWS — aggregate views that work with portfolios
+//     as the unit (P&L per portfolio, market per portfolio, chart per portfolio).
+//   ALL_POSITIONS_VIEWS — cross-portfolio views that work on positions
+//     independent of which portfolio they belong to (movers list, alerts list,
+//     global weights, analytics).
+// Combined, both groups make up the "cross-portfolio context" (not inside any
+// individual portfolio). Bonds/cash/archive-summary are separate contexts and
+// not part of either group.
+var SUMMARY_BY_PORTFOLIO_VIEWS = ['summary', 'summary-market', 'summary-chart'];
+var ALL_POSITIONS_VIEWS = ['summary-movers', 'summary-alerts', 'global-weight', 'summary-analytics'];
+var REALIZED_ALL_POSITIONS_VIEWS = ['realized-weight', 'realized-analytics'];
+
+function isSummaryByPortfolio() {
+  return SUMMARY_BY_PORTFOLIO_VIEWS.indexOf(viewMode) !== -1;
+}
+function isAllPositions() {
+  return ALL_POSITIONS_VIEWS.indexOf(viewMode) !== -1;
+}
+function isRealizedAllPositions() {
+  return REALIZED_ALL_POSITIONS_VIEWS.indexOf(viewMode) !== -1;
+}
+function isCrossPortfolioContext() {
+  return isSummaryByPortfolio() || isAllPositions() || isRealizedAllPositions();
 }
 function getCurrency() {
   var p = currentPortfolio();
@@ -2018,7 +2047,7 @@ function renderBondsSwitcher(html, list, summaryActive) {
     var bp = bondPortfolios[id];
     return n + (bp.positions || []).filter(function(pos) { return isBpPositionActive(bp, pos); }).length;
   }, 0);
-  html += '<div class="portfolio-item' + (bondSummaryActive ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);margin-top:4px;padding-top:4px" onclick="switchToBondSummary()">'
+  html += '<div class="portfolio-item' + (bondSummaryActive ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:7px 14px" onclick="switchToBondSummary()">'
     + '<div style="flex:1"><span class="portfolio-item-name">&#931; SUMMARY</span> <span class="portfolio-item-count">' + totalAllPos + ' items</span></div>'
     + '</div>';
 
@@ -2467,7 +2496,7 @@ function moveCashEntryTo(targetCpid) {
 
 function renderSwitcher() {
   var list = document.getElementById('portfolioList');
-  var summaryActive = ['summary','summary-market','summary-chart','summary-analytics','summary-movers','summary-alerts','global-weight'].indexOf(viewMode) !== -1;
+  var summaryActive = isCrossPortfolioContext();
   var html = '';
   var ids = Object.keys(portfolios);
 
@@ -2494,6 +2523,20 @@ function renderSwitcher() {
     });
     if (archiveIds.length === 0) {
       // Don't show "No archive portfolios" here — wait until we know if bond/cash also empty
+    } else {
+      // ALL POSITIONS — cross-portfolio archive views (WEIGHTS, ANALYTICS).
+      // Placed after the stocks archive block (relates to stocks specifically;
+      // Σ SUMMARY at the bottom aggregates ALL asset types: stocks + bonds + cash).
+      var totalRealizedSeen = {};
+      archiveIds.forEach(function(pid) {
+        (portfolios[pid].positions || []).forEach(function(pos) {
+          if (pos.qty > 0) totalRealizedSeen[pos.ticker] = true;
+        });
+      });
+      var totalRealized = Object.keys(totalRealizedSeen).length;
+      html += '<div class="portfolio-item' + (isRealizedAllPositions() ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:7px 14px" onclick="switchToRealizedAllPositions()">'
+        + '<div style="flex:1"><span class="portfolio-item-name">ALL POSITIONS</span> <span class="portfolio-item-count">' + totalRealized + ' pos</span></div>'
+        + '</div>';
     }
 
     // Bond archive portfolios section (separated)
@@ -2542,7 +2585,7 @@ function renderSwitcher() {
     }
 
     // Archive summary
-    html += '<div class="portfolio-item' + (viewMode === 'archive-summary' ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);margin-top:4px;padding-top:4px" onclick="switchToArchiveSummary()">'
+    html += '<div class="portfolio-item' + (viewMode === 'archive-summary' ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:7px 14px" onclick="switchToArchiveSummary()">'
       + '<div style="flex:1"><span class="portfolio-item-name">&#931; SUMMARY</span></div>'
       + '</div>';
     list.innerHTML = html;
@@ -2582,8 +2625,17 @@ function renderSwitcher() {
     }
   });
   var totalActive = Object.keys(totalSeen).length;
-  html += '<div class="portfolio-item' + (summaryActive ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);margin-top:4px;padding-top:4px" onclick="switchToSummary()">'
-    + '<div style="flex:1"><span class="portfolio-item-name">&#931; SUMMARY</span> <span class="portfolio-item-count">' + totalActive + ' pos</span></div>'
+  // ALL POSITIONS — cross-portfolio views (movers, alerts, weights, analytics)
+  // work on positions independent of which portfolio they belong to. The
+  // position counter (was on Σ Summary) lives here now since these views
+  // operate on the count of positions, not portfolios.
+  html += '<div class="portfolio-item' + (isAllPositions() ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:7px 14px" onclick="switchToAllPositions()">'
+    + '<div style="flex:1"><span class="portfolio-item-name">ALL POSITIONS</span> <span class="portfolio-item-count">' + totalActive + ' pos</span></div>'
+    + '</div>';
+  // Σ SUMMARY BY PORTFOLIO — per-portfolio aggregate views (P&L, market, chart)
+  // work with portfolios as units, not individual positions, hence no counter.
+  html += '<div class="portfolio-item' + (isSummaryByPortfolio() ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:7px 14px" onclick="switchToSummary()">'
+    + '<div style="flex:1"><span class="portfolio-item-name">&#931; SUMMARY</span></div>'
     + '</div>';
   list.innerHTML = html;
 }
@@ -2599,14 +2651,47 @@ function switchToArchiveSummary() {
 }
 
 function switchToSummary() {
-  viewMode = viewMode === 'movers' ? 'summary-movers' : viewMode === 'alerts' ? 'summary-alerts' : 'summary';
-  document.getElementById('portfolioTitle').textContent = 'SUMMARY';
+  // Σ Summary by portfolio = per-portfolio aggregate views only (summary/
+  // summary-market/summary-chart). The summary-movers/summary-alerts
+  // remappings that lived here moved to switchToAllPositions; from any
+  // non-Σ-Summary view we just land on P&L (summary).
+  if (SUMMARY_BY_PORTFOLIO_VIEWS.indexOf(viewMode) === -1) viewMode = 'summary';
+  document.getElementById('portfolioTitle').textContent = 'Σ SUMMARY';
   document.getElementById('viewMenuBtn').style.display = '';
   document.getElementById('viewMenuBtn').disabled = false;
   document.getElementById('viewMenuBtn').style.opacity = '';
   document.getElementById('refreshAllBtn').style.display = '';
   closeSwitcher();
   if (getApiKey()) refreshAllPortfolios();
+  render();
+}
+
+function switchToAllPositions() {
+  // ALL POSITIONS = cross-portfolio position-level views (movers, alerts,
+  // weights, analytics). Default view is MARKET (= summary-movers). If
+  // already in an All Positions view, preserve it; otherwise reset to default.
+  if (!isAllPositions()) viewMode = 'summary-movers';
+  document.getElementById('portfolioTitle').textContent = 'ALL POSITIONS';
+  document.getElementById('viewMenuBtn').style.display = '';
+  document.getElementById('viewMenuBtn').disabled = false;
+  document.getElementById('viewMenuBtn').style.opacity = '';
+  document.getElementById('refreshAllBtn').style.display = '';
+  closeSwitcher();
+  if (getApiKey()) refreshAllPortfolios();
+  render();
+}
+
+function switchToRealizedAllPositions() {
+  // ALL POSITIONS for realized portfolios — same concept as switchToAllPositions
+  // but scoped to archive portfolios; only WEIGHTS and ANALYTICS are available
+  // (no market/alerts for closed positions). Default view is WEIGHTS.
+  if (!isRealizedAllPositions()) viewMode = 'realized-weight';
+  document.getElementById('portfolioTitle').textContent = 'ALL POSITIONS';
+  document.getElementById('viewMenuBtn').style.display = '';
+  document.getElementById('viewMenuBtn').disabled = false;
+  document.getElementById('viewMenuBtn').style.opacity = '';
+  document.getElementById('refreshAllBtn').style.display = '';
+  closeSwitcher();
   render();
 }
 
@@ -2757,7 +2842,7 @@ function deletePortfolio(id) {
     localStorage.setItem('pt_current', currentPortfolioId);
     loadLocal();
     editId = null; expandedId = null; editNoteId = null; loadingSet = {};
-    document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
+    setTitleForCurrentView();
     render();
   }
   renderSwitcher();
@@ -2950,7 +3035,7 @@ function restoreData(event) {
       localStorage.setItem('pt_cloud_ts', '');
       loadLocal();
       render();
-      document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
+      setTitleForCurrentView();
       renderSwitcher();
       if (getCloudBackend() === 'kv') cloudSaveKV(); else cloudSave();
       var el = document.getElementById('backupStatus');
@@ -3177,7 +3262,7 @@ function cloudLoadKV(callback) {
           savePortfolios();
           if (!portfolios[currentPortfolioId]) { currentPortfolioId = Object.keys(portfolios)[0]; localStorage.setItem('pt_current', currentPortfolioId); }
           loadLocal();
-          document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
+          setTitleForCurrentView();
           updateJbStatus('✓ Loaded from KV', 'var(--green)');
           showCloudOverlay('✓ Loaded from KV', 'var(--green)');
           setTimeout(dismissCloudOverlay, 800);
@@ -3279,7 +3364,7 @@ function cloudLoad(callback) {
           localStorage.setItem('pt_current', currentPortfolioId);
         }
         loadLocal();
-        document.getElementById('portfolioTitle').textContent = currentPortfolio().name;
+        setTitleForCurrentView();
         localStorage.setItem('pt_cloud_ts', res.metadata && res.metadata.updatedAt ? res.metadata.updatedAt : new Date().toISOString());
         updateJbStatus('✓ Loaded from cloud', 'var(--green)');
         showCloudOverlay('✓ Loaded from cloud', 'var(--green)');
@@ -4129,6 +4214,8 @@ function refreshAll() {
 
     if (smNonUSD.length === 0) {
       buildSummaryMarketStats({});
+      btn.innerHTML = '&#8635; Refresh';
+      btn.disabled = false;
     } else {
       var smBaseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
       var smToken = getToken();
@@ -4137,7 +4224,10 @@ function refreshAll() {
           if (rate) smFxRates[code] = rate;
         });
       });
-      Promise.all(smFxP).then(function() { buildSummaryMarketStats(smFxRates); });
+      Promise.all(smFxP).then(function() { buildSummaryMarketStats(smFxRates); }).finally(function() {
+        btn.innerHTML = '&#8635; Refresh';
+        btn.disabled = false;
+      });
     }
     return;
   }
@@ -4309,20 +4399,31 @@ function getWatchlistSorted(items) {
 function toggleViewMenu() {
   var menu = document.getElementById('viewMenu');
   if (menu.style.display === 'none') {
-    var isSummaryMode = ['summary','summary-market','summary-chart','summary-analytics','summary-movers','summary-alerts','global-weight'].indexOf(viewMode) !== -1;
-    var isWL = !isSummaryMode && currentPortfolio() && currentPortfolio().watchlist;
-    var isArchive = !isSummaryMode && !isWL && currentPortfolio() && currentPortfolio().archive;
-    document.getElementById('vmMain').style.display = isWL ? 'none' : '';
-    document.getElementById('vmMarket').style.display = isArchive ? 'none' : '';
-    document.getElementById('vmMarketTotal').style.display = isSummaryMode ? '' : 'none';
-    document.getElementById('vmWeight').style.display = (isSummaryMode || isWL) ? 'none' : '';
-    document.getElementById('vmGlobalWeight').style.display = isSummaryMode ? '' : 'none';
-    document.getElementById('vmAlerts').style.display = isArchive ? 'none' : '';
-    document.getElementById('vmAlerts').textContent = isSummaryMode ? 'Σ ALERTS' : 'ALERTS';
-    document.getElementById('vmChart').style.display = isArchive ? 'none' : '';
-    document.getElementById('vmFundamentals').style.display = (isArchive || isSummaryMode) ? 'none' : '';
-    document.getElementById('vmAnalytics').style.display = isWL ? 'none' : '';
-    document.getElementById('vmAnalytics').textContent = isSummaryMode ? 'Σ ANALYTICS' : 'ANALYTICS';
+    // Four visibility contexts:
+    //   inAllPositions — show only cross-portfolio position-level views
+    //     (vmMarketTotal/vmAlerts/vmGlobalWeight/vmAnalytics)
+    //   inSummaryByPortfolio — show only per-portfolio aggregate views
+    //     (vmMain/vmMarket/vmChart)
+    //   individual portfolio (regular/watchlist/archive) — show portfolio
+    //     views with WL/archive sub-restrictions preserved from before
+    // vmMarketTotal/vmGlobalWeight static label is now "MARKET"/"WEIGHTS"
+    // (no Σ) since they only appear in All Positions; vmAlerts/vmAnalytics
+    // labels are static "ALERTS"/"ANALYTICS" for the same reason.
+    var inAllPositions = isAllPositions();
+    var inSummaryByPortfolio = isSummaryByPortfolio();
+    var inRealizedAllPositions = isRealizedAllPositions();
+    var isCrossPortfolio = inAllPositions || inSummaryByPortfolio || inRealizedAllPositions;
+    var isWL = !isCrossPortfolio && currentPortfolio() && currentPortfolio().watchlist;
+    var isArchive = !isCrossPortfolio && !isWL && currentPortfolio() && currentPortfolio().archive;
+    document.getElementById('vmMain').style.display = (inAllPositions || inRealizedAllPositions || isWL) ? 'none' : '';
+    document.getElementById('vmMarket').style.display = (inAllPositions || inRealizedAllPositions || isArchive) ? 'none' : '';
+    document.getElementById('vmChart').style.display = (inAllPositions || inRealizedAllPositions || isArchive) ? 'none' : '';
+    document.getElementById('vmFundamentals').style.display = (isCrossPortfolio || isArchive) ? 'none' : '';
+    document.getElementById('vmMarketTotal').style.display = inAllPositions ? '' : 'none';
+    document.getElementById('vmAlerts').style.display = (inSummaryByPortfolio || inRealizedAllPositions || isArchive) ? 'none' : '';
+    document.getElementById('vmGlobalWeight').style.display = (inAllPositions || inRealizedAllPositions) ? '' : 'none';
+    document.getElementById('vmWeight').style.display = (isCrossPortfolio || isWL) ? 'none' : '';
+    document.getElementById('vmAnalytics').style.display = (inSummaryByPortfolio || isWL) ? 'none' : '';
     menu.style.display = 'block';
   } else {
     menu.style.display = 'none';
@@ -4331,13 +4432,30 @@ function toggleViewMenu() {
 function setView(mode) {
   // Reset fundamentals view state on entry (no persistence per spec)
   if (mode === 'fundamentals') resetFundamentalsState();
-  // In summary context, market → summary-market, main → summary
-  var isSummaryContext = ['summary','summary-market','summary-chart','summary-analytics','summary-movers','summary-alerts','global-weight'].indexOf(viewMode) !== -1;
-  if (isSummaryContext) {
-    viewMode = mode === 'market' ? 'summary-market' : mode === 'chart' ? 'summary-chart' : mode === 'analytics' ? 'summary-analytics' : mode === 'market-total' ? 'summary-movers' : mode === 'alerts' ? 'summary-alerts' : mode === 'global-weight' ? 'global-weight' : 'summary';
+  // Context-specific remapping. Each context's view menu shows only a
+  // restricted subset of mode strings (enforced by toggleViewMenu's
+  // visibility), so the off-list cases here are defensive fallbacks.
+  if (isSummaryByPortfolio()) {
+    // Σ Summary by portfolio: P&L / MARKET / CHART
+    viewMode = mode === 'market' ? 'summary-market' :
+               mode === 'chart'  ? 'summary-chart'  :
+               'summary';
     if (mode === 'market') marketSort = { key: null, dir: -1 };
-    if (mode === 'market-total') marketSort = { key: 'absdelta', dir: -1 };
+  } else if (isAllPositions()) {
+    // All Positions: MARKET (movers) / ALERTS / WEIGHTS / ANALYTICS
+    viewMode = mode === 'alerts'        ? 'summary-alerts' :
+               mode === 'analytics'     ? 'summary-analytics' :
+               mode === 'global-weight' ? 'global-weight' :
+               'summary-movers';
+    if (mode === 'market-total')  marketSort = { key: 'absdelta', dir: -1 };
+    if (mode === 'global-weight') weightSort = { key: 'weight',   dir: -1 };
+  } else if (isRealizedAllPositions()) {
+    // ALL POSITIONS (realized): WEIGHTS / ANALYTICS only — no movers/alerts
+    // since these are closed positions. WEIGHTS is the default.
+    viewMode = mode === 'analytics' ? 'realized-analytics' : 'realized-weight';
+    if (mode === 'global-weight') weightSort = { key: 'weight', dir: -1 };
   } else {
+    // Individual portfolio (regular/WL/archive)
     viewMode = mode;
     if (mode === 'weight' || mode === 'global-weight') weightSort = { key: 'weight', dir: -1 };
     if (mode === 'market') marketSort = { key: null, dir: -1 };
@@ -4345,7 +4463,7 @@ function setView(mode) {
   ['vmMain','vmMarket','vmMarketTotal','vmWeight','vmGlobalWeight','vmChart','vmFundamentals','vmAnalytics','vmAlerts'].forEach(function(id) {
     document.getElementById(id).style.color = '';
   });
-  var activeId = viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMarketTotal' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'summary-alerts' ? 'vmAlerts' : viewMode === 'summary' ? 'vmMain' : viewMode === 'global-weight' ? 'vmGlobalWeight' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'fundamentals' ? 'vmFundamentals' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMarket' : viewMode === 'alerts' ? 'vmAlerts' : 'vmMarket';
+  var activeId = viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMarketTotal' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'realized-analytics' ? 'vmAnalytics' : viewMode === 'summary-alerts' ? 'vmAlerts' : viewMode === 'summary' ? 'vmMain' : viewMode === 'global-weight' ? 'vmGlobalWeight' : viewMode === 'realized-weight' ? 'vmGlobalWeight' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'fundamentals' ? 'vmFundamentals' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMarket' : viewMode === 'alerts' ? 'vmAlerts' : 'vmMarket';
   document.getElementById(activeId).style.color = 'var(--green)';
   document.getElementById('viewMenu').style.display = 'none';
   // Refresh prices when entering chart view (updates today's point)
@@ -5737,7 +5855,7 @@ function showAnalyticsDetail(rubric, value) {
     + '<button class="btn-icon" onclick="closeAnalyticsDetailModal()" style="position:absolute;top:8px;right:8px;font-size:16px">&#10005;</button>'
     + '<div style="margin:0 8px 12px">'
     + '<span style="font-size:9px;color:var(--dim);letter-spacing:2px">' + rubricLabel + '&nbsp;</span>'
-    + '<span style="font-size:13px;color:var(--bright);font-weight:bold;letter-spacing:1px">' + value + '</span>'
+    + '<span style="font-size:13px;color:var(--bright);font-weight:bold;letter-spacing:1px">' + formatRubricKey(value) + '</span>'
     + '</div>'
     + '<div style="overflow-x:auto">'
     + '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:0">'
@@ -5757,10 +5875,18 @@ function showAnalyticsDetail(rubric, value) {
   document.body.appendChild(modal);
 }
 
+// Wrap a rubric key in a dim span when it's the "Other" fallback (used
+// when a position lacks the attribute being grouped by). Without this
+// "Other" reads visually as a normal attribute value just named "Other",
+// rather than signaling "no value set".
+function formatRubricKey(key) {
+  return key === 'Other' ? '<span style="color:var(--dim)">Other</span>' : key;
+}
+
 function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
   var breakdown = window.analyticsBreakdown || 'category';
   var subview = window.analyticsSubview || 'weights';
-  var isRealized = !isSummary && currentPortfolio() && currentPortfolio().archive;
+  var isRealized = isRealizedAllPositions() || (!isSummary && currentPortfolio() && currentPortfolio().archive);
   // Realized portfolios: market and chart are not implemented; force a
   // valid subview if the persisted choice isn't available here.
   if (isRealized && subview !== 'pnl' && subview !== 'weights') subview = 'weights';
@@ -5882,7 +6008,7 @@ function analyticsWeightsContent(keys, groupStats, breakdown, baseSym, grandTota
     var barW = maxVal > 0 ? Math.round(val / maxVal * 100) : 0;
     var keyEsc = key.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     return '<tr>'
-      + '<td onclick="showAnalyticsDetail(\'' + breakdown + '\',\'' + keyEsc + '\')" style="text-align:left;padding:7px 4px;white-space:nowrap;cursor:pointer">' + key + '</td>'
+      + '<td onclick="showAnalyticsDetail(\'' + breakdown + '\',\'' + keyEsc + '\')" style="text-align:left;padding:7px 4px;white-space:nowrap;cursor:pointer">' + formatRubricKey(key) + '</td>'
       + '<td style="text-align:right;padding:7px 4px;white-space:nowrap">' + baseSym + f2(val) + '</td>'
       + '<td style="text-align:right;padding:7px 4px;white-space:nowrap;color:var(--dim)">' + pct.toFixed(1) + '%</td>'
       + '<td style="padding:7px 8px;width:40%;min-width:80px">'
@@ -5929,7 +6055,7 @@ function analyticsPnLContent(keys, groupStats, breakdown, baseSym, baseCode, gra
     var c = pnl >= 0 ? 'pos' : 'neg';
     var keyEsc = key.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     return '<tr>'
-      + '<td onclick="showAnalyticsDetail(\'' + breakdown + '\',\'' + keyEsc + '\')" style="text-align:left;padding:7px 4px;white-space:nowrap;cursor:pointer">' + key + '</td>'
+      + '<td onclick="showAnalyticsDetail(\'' + breakdown + '\',\'' + keyEsc + '\')" style="text-align:left;padding:7px 4px;white-space:nowrap;cursor:pointer">' + formatRubricKey(key) + '</td>'
       + '<td style="text-align:right;padding:7px 4px;white-space:nowrap">' + rowSym + f2(rowVal) + '</td>'
       + '<td class="' + c + '" style="text-align:right;padding:7px 4px;white-space:nowrap">' + fSign(pnl) + '</td>'
       + '<td class="' + c + '" style="text-align:right;padding:7px 4px;white-space:nowrap">' + (ret !== null ? fPct(ret) : '&mdash;') + '</td>'
@@ -5995,7 +6121,7 @@ function analyticsMarketContent(keys, groups, breakdown, baseSym, baseCode, fxMa
     var keyEsc = key.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     if (!hasPos) {
       return '<tr>'
-        + '<td onclick="showAnalyticsDetail(\'' + breakdown + '\',\'' + keyEsc + '\')" style="text-align:left;padding:7px 4px;white-space:nowrap;cursor:pointer">' + key + '</td>'
+        + '<td onclick="showAnalyticsDetail(\'' + breakdown + '\',\'' + keyEsc + '\')" style="text-align:left;padding:7px 4px;white-space:nowrap;cursor:pointer">' + formatRubricKey(key) + '</td>'
         + '<td colspan="4" style="color:var(--dim);padding:7px 4px">&mdash;</td>'
         + '</tr>';
     }
@@ -6011,7 +6137,7 @@ function analyticsMarketContent(keys, groups, breakdown, baseSym, baseCode, fxMa
     var deltaPct = rowClose > 0 ? delta / rowClose * 100 : null;
     var dClass = delta >= 0 ? 'pos' : 'neg';
     return '<tr>'
-      + '<td onclick="showAnalyticsDetail(\'' + breakdown + '\',\'' + keyEsc + '\')" style="text-align:left;padding:7px 4px;white-space:nowrap;cursor:pointer">' + key + '</td>'
+      + '<td onclick="showAnalyticsDetail(\'' + breakdown + '\',\'' + keyEsc + '\')" style="text-align:left;padding:7px 4px;white-space:nowrap;cursor:pointer">' + formatRubricKey(key) + '</td>'
       + '<td style="text-align:right;padding:7px 4px;white-space:nowrap">' + rowSym + f2(rowClose) + '</td>'
       + '<td style="text-align:right;padding:7px 4px;white-space:nowrap">' + rowSym + f2(rowCurrent) + '</td>'
       + '<td class="' + dClass + '" style="text-align:right;padding:7px 4px;white-space:nowrap">' + fSign(delta) + '</td>'
@@ -7075,8 +7201,9 @@ function renderMultiChart(lines) {
 function updateViewMenuBtn() {
   var btn = document.getElementById('viewMenuBtn');
   if (!btn) return;
-  var labels = { 'main': 'P&L', 'weight': 'WEIGHTS', 'global-weight': 'Σ WEIGHTS', 'market': 'MARKET', 'movers': 'MARKET', 'chart': 'CHART', 'fundamentals': 'FUNDAMENTALS', 'analytics': 'ANALYTICS', 'alerts': 'ALERTS',
-    'summary': 'P&L', 'summary-market': 'MARKET', 'summary-chart': 'CHART', 'summary-analytics': 'Σ ANALYTICS', 'summary-movers': 'Σ MARKET', 'summary-alerts': 'Σ ALERTS' };
+  var labels = { 'main': 'P&L', 'weight': 'WEIGHTS', 'global-weight': 'WEIGHTS', 'market': 'MARKET', 'movers': 'MARKET', 'chart': 'CHART', 'fundamentals': 'FUNDAMENTALS', 'analytics': 'ANALYTICS', 'alerts': 'ALERTS',
+    'summary': 'P&L', 'summary-market': 'MARKET', 'summary-chart': 'CHART', 'summary-analytics': 'ANALYTICS', 'summary-movers': 'MARKET', 'summary-alerts': 'ALERTS',
+    'realized-weight': 'WEIGHTS', 'realized-analytics': 'ANALYTICS' };
   var label = labels[viewMode] || 'P&L';
   if (viewMode === 'main' && currentPortfolio() && currentPortfolio().watchlist) label = 'MARKET';
   btn.textContent = label;
@@ -7211,7 +7338,7 @@ function render() {
   saveLastView();
   updateViewMenuBtn();
   var stockForm = document.getElementById('stockAddForm');
-  if (stockForm) stockForm.style.display = (['bonds','bond-summary','cash','summary','summary-market','summary-chart','summary-analytics','archive-summary','global-weight'].indexOf(viewMode) !== -1) ? 'none' : '';
+  if (stockForm) stockForm.style.display = (isCrossPortfolioContext() || ['bonds','bond-summary','cash','archive-summary'].indexOf(viewMode) !== -1) ? 'none' : '';
   var area = document.getElementById('tableArea');
 
   // Analytics view (single portfolio)
@@ -7314,10 +7441,16 @@ function render() {
     return;
   }
 
-  // Summary analytics view
-  if (viewMode === 'summary-analytics') {
+  // Summary analytics view (also handles realized-analytics: same code but
+  // archive-scoped instead of active-scoped portfolios)
+  if (viewMode === 'summary-analytics' || viewMode === 'realized-analytics') {
+    var saIsRealized = viewMode === 'realized-analytics';
     var saNonUSD = [];
-    var saPids = Object.keys(portfolios).filter(function(pid) { return !portfolios[pid].watchlist && !portfolios[pid].archive; });
+    var saPids = Object.keys(portfolios).filter(function(pid) {
+      return saIsRealized
+        ? portfolios[pid].archive
+        : (!portfolios[pid].watchlist && !portfolios[pid].archive);
+    });
     var allSaPos = [];
     saPids.forEach(function(pid) {
       (portfolios[pid].positions || []).forEach(function(pos) {
@@ -9122,12 +9255,17 @@ function render() {
     return;
   }
 
-  // All-portfolios global weights view
-  if (viewMode === 'global-weight') {
+  // All-portfolios global weights view (also handles realized-weight:
+  // same code but archive-scoped instead of active-scoped portfolios; for
+  // realized, sold positions ARE included since that's the whole point).
+  if (viewMode === 'global-weight' || viewMode === 'realized-weight') {
+    var gwIsRealized = viewMode === 'realized-weight';
     var gwFxRates = {};
     var gwNonUSD = [];
     var gwPids = Object.keys(portfolios).filter(function(pid) {
-      return !portfolios[pid].watchlist && !portfolios[pid].archive;
+      return gwIsRealized
+        ? portfolios[pid].archive
+        : (!portfolios[pid].watchlist && !portfolios[pid].archive);
     });
     gwPids.forEach(function(pid) {
       (portfolios[pid].positions || []).forEach(function(pos) {
@@ -9140,7 +9278,8 @@ function render() {
       var tickerMap = {};
       gwPids.forEach(function(pid) {
         (portfolios[pid].positions || []).forEach(function(pos) {
-          if (!pos.qty || pos.qty <= 0 || pos.current == null || pos.sold) return;
+          if (!pos.qty || pos.qty <= 0 || pos.current == null) return;
+          if (!gwIsRealized && pos.sold) return;
           var posCur = pos.currency || portfolios[pid].currencyCode || 'USD';
           var rateToUSD = posCur === 'USD' ? 1 : (fxRates[posCur] || 1);
           var valUSD = pos.qty * pos.current * rateToUSD;
