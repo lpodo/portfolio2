@@ -18,7 +18,8 @@ A PWA stock portfolio tracker with a Cloudflare Worker backend. Supports all maj
   - [Positions](#positions)
   - [Prices & P&L](#prices--pl)
   - [View Modes](#view-modes)
-  - [Summary (Cross-Portfolio)](#summary-cross-portfolio)
+  - [Summary](#summary)
+  - [All Positions](#all-positions)
   - [Price Alerts](#price-alerts)
   - [Charts](#charts)
   - [Position sets](#position-sets)
@@ -57,9 +58,9 @@ A PWA stock portfolio tracker with a Cloudflare Worker backend. Supports all maj
 
 The portfolio switcher has three tabs:
 
-- **STOCKS** — regular equity portfolios, watchlists, and Σ SUMMARY.
+- **STOCKS** — regular equity portfolios, watchlists, plus two cross-portfolio meta-items at the bottom: [ALL POSITIONS](#all-positions) (position-level union across all stock portfolios) and Σ SUMMARY (portfolio-level totals).
 - **BONDS** — bond and deposit portfolios, plus their Σ SUMMARY (see [Bonds & Deposits](#bonds--deposits)).
-- **REALIZED** — realized portfolios for both stocks and bonds, listed together and separated by a divider. Cash portfolios appear at the bottom of the same tab.
+- **REALIZED** — realized portfolios for both stocks and bonds, listed together and separated by a divider. Cash portfolios appear next, then two cross-portfolio meta-items: ALL POSITIONS (realized) and Σ SUMMARY.
 
 ### Multi-currency portfolios
 
@@ -227,16 +228,31 @@ Positions without a `broker` field land in the subgroup of the current default b
 
 **Missing-date warning:** if any position in the aggregation lacks `purchaseDate`, a small `⚠` notice is shown below the table noting how many — these are treated as the oldest in FIFO order.
 
-## Summary (Cross-Portfolio)
+## Summary
 
-Selected from the portfolio switcher (Σ SUMMARY at the bottom). Shows all non-watchlist portfolios: NAME / VALUE (in native currency) / P&L / RETURN / SHARE%. The total row is always in USD with live FX conversion. Clicking a portfolio name switches to it. Refresh on Summary updates all portfolios.
+Selected from the portfolio switcher (**Σ SUMMARY** at the bottom of the STOCKS, BONDS, or REALIZED tab). Portfolio-level cross-portfolio view: each row is a portfolio, with totals computed across the portfolios in scope. Refresh on Summary updates all portfolios in scope.
 
-In Summary, the ⋮ dropdown menu shows Summary-specific views (marked with the Σ prefix):
+The ⋮ dropdown menu shows three views:
 
-- **Σ MARKET** — cross-portfolio market view. Collects all non-sold positions from all non-realized portfolios, deduplicates by ticker, and shows them in a single table. Same CLOSE/CURRENT menus and Δ% sort cycle as the regular MARKET view (including historical period comparison).
-- **Σ WEIGHTS** — cross-portfolio weights view. Aggregates all active positions from all non-realized portfolios by ticker. Columns: TICKER / VALUE (native currency, dimmed) / VALUE (\$) (USD-converted) / WEIGHT % / NAME. All non-USD values converted using live FX rates. Sortable by TICKER, VALUE (\$), or WEIGHT.
-- **Σ ALERTS** — alerts across all portfolios (see [Price Alerts](#price-alerts)).
-- **Σ ANALYTICS** — analytics across all portfolios (see [Analytics](#analytics)).
+- **P&L** (default) — NAME / VALUE (in native currency) / P&L / RETURN / SHARE%. The total row is always in USD with live FX conversion. Clicking a portfolio name switches to it.
+- **MARKET** — per-portfolio aggregates: PORTFOLIO / [close] / [current] / Δ / Δ%. Uses the same CLOSE/CURRENT mode menus as the regular MARKET view (including historical periods 5D/1M/3M/6M/1Y/5Y); the value in each row is the portfolio's total at the chosen price.
+- **CHART** — see [Summary Chart](#summary-chart) — TOTAL or BY PORTFOLIO modes.
+
+## All Positions
+
+A cross-portfolio view at the **position** level — the union of positions from all stock (or all realized) portfolios, deduplicated by ticker, rendered as a single table. Selected from the portfolio switcher (**ALL POSITIONS** meta-item):
+
+- In the **STOCKS** tab — collects positions from all regular equity portfolios and watchlists.
+- In the **REALIZED** tab — collects sold positions from all stock realized portfolios.
+
+The ⋮ dropdown shows four views in the STOCKS context and two in REALIZED:
+
+- **MARKET** (stocks default) — same columns and CLOSE/CURRENT menus as the regular [MARKET](#market) view, but built from all positions across portfolios. Default sort: Δ% absolute descending (biggest movers first).
+- **ALERTS** (stocks only) — MARKET filtered to positions that have at least one alert set. See [ALERTS view](#alerts-view).
+- **WEIGHTS** (realized default) — TICKER / VALUE (native currency, dimmed) / VALUE (\$) (USD-converted) / WEIGHT % / NAME. All non-USD values converted using live FX rates. Sortable by TICKER, VALUE (\$), or WEIGHT.
+- **ANALYTICS** — same two-dropdown layout as the per-portfolio [Analytics](#analytics) view, but data is aggregated across all positions in the context. In REALIZED only the P&L and WEIGHTS subviews are available.
+
+ALL POSITIONS is excluded from FUNDAMENTALS, CHART, and P&L views (those operate on a single portfolio or aggregate by portfolio, not by position across portfolios).
 
 ## Price Alerts
 
@@ -273,19 +289,25 @@ A colored dot `●` appears after the ticker name when any alert on that positio
 
 When **multiple** alerts in the same direction are triggered for a ticker, the corresponding dot **blinks** — a single triggered alert renders as a solid dot. The blink speed progresses with the number of triggered alerts: 2 alerts blink at the user's base period, 3+ alerts step one level faster per extra alert, clamped at the fastest level. The base period (slow / med / fast) is configurable in Settings → **APPEARANCE**.
 
-Each color is shown at most once per ticker, regardless of how many alerts in that direction have triggered. The dots are visible in all views that show tickers: P&L, MARKET, WEIGHTS, Σ MARKET, Σ WEIGHTS, ALERTS.
+Each color is shown at most once per ticker, regardless of how many alerts in that direction have triggered. The dots are visible in all views that show tickers: P&L, MARKET, WEIGHTS, ALERTS, and the ALL POSITIONS views.
 
 ### ALERTS view
 
-Available via ⋮ menu → **ALERTS** for individual portfolios, watchlists, and Summary. Not available for realized portfolios.
+Available via ⋮ menu → **ALERTS** for individual portfolios, watchlists, and the ALL POSITIONS meta-view. Not available for realized portfolios or Summary.
 
-Shows all positions that have at least one alert set (sold positions excluded), sorted by Δ% descending (biggest gainers first, biggest losers last). Same columns as the MARKET view. Tap a ticker to expand.
+Structurally a [MARKET](#market) view filtered to positions that have at least one alert set (sold positions excluded). Inherits everything from MARKET: column layout, the CLOSE/CURRENT mode menus, the Δ% sort cycle, the per-row expand. The difference is purely scope — the rows are the positions you're actively watching.
 
-- **Individual portfolio**: shows positions from the current portfolio only.
-- **Summary (Σ ALERTS)**: collects all positions with alerts from regular and watchlist portfolios, deduplicated by ticker.
-- Empty state: displays "NO ALERTS SET".
+The default sort on entry depends on context:
 
-This view is useful as a single dashboard of everything being watched — you see current prices and conditions without visiting each portfolio individually.
+- **Individual portfolio / watchlist**: portfolio order (matches MARKET's default).
+- **ALL POSITIONS → ALERTS**: |Δ%| descending — biggest movers among alerted positions first.
+
+Source of rows:
+
+- **Individual portfolio**: positions from the current portfolio.
+- **ALL POSITIONS → ALERTS**: positions with alerts collected from all stock portfolios and watchlists, deduplicated by ticker.
+
+Empty state: `NO ALERTS SET`.
 
 ## Charts
 
@@ -362,9 +384,21 @@ When valid cached data exists for the selected tickers, tables render instantly.
 
 ## Analytics
 
-Available via dropdown menu → ANALYTICS for individual portfolios and Summary.
+Available via dropdown menu → ANALYTICS for individual portfolios and the ALL POSITIONS meta-view (both stock and realized contexts).
 
-Shows the portfolio breakdown by **CATEGORY**, **REGION**, **SECTOR**, **CURRENCY**, or **BROKER** — five buttons to switch between them. Currency uses the actual position currency from Yahoo Finance (no manual input needed). Broker uses the position's `broker` field, falling back to the current default broker when empty (see [Brokers](#brokers)). Each row shows the group name, value (with FX conversion to base currency), weight %, and a horizontal bar chart scaled to the largest group. Positions with qty=0 are excluded. Positions without a value in the selected field appear in the **Other** group.
+Two dropdowns at the top of the view drive what's shown:
+
+- **Rubric** (left): **CATEGORY** / **REGION** / **SECTOR** / **CURRENCY** / **BROKER**. Determines how positions are grouped. Currency uses the actual position currency from Yahoo Finance (no manual input needed). Broker uses the position's `broker` field, falling back to the current default broker when empty (see [Brokers](#brokers)). Positions with qty=0 are excluded. Positions without a value in the selected field appear in the **Other** group.
+- **Subview** (right): determines what's shown per group. Four options — **P&L**, **MARKET**, **CHART**, **WEIGHTS**. Realized contexts only have **P&L** and **WEIGHTS** (MARKET and CHART make no sense for closed positions).
+
+Subviews:
+
+- **P&L** — VALUE / P&L / RETURN per group, plus grand totals. For the CURRENCY rubric, each row is shown in its native currency (no within-row conversion); grand totals always in the base currency.
+- **MARKET** — per-group AT CLOSE / CURRENT / Δ / Δ%, mirroring the regular MARKET view. Uses the same CLOSE/CURRENT mode menus including historical periods.
+- **CHART** — one normalized % line per group, each starting at 0% on the first available date. Color-coded with a legend showing the final % change.
+- **WEIGHTS** — group name, value (with FX conversion to base currency), weight %, and a horizontal bar chart scaled to the largest group.
+
+Row order is stable across subview switches — groups are sorted by base value descending, with **Other** always last — so toggling between subviews doesn't shuffle the table. The rubric and subview selections persist in localStorage (`pt_analytics_subview`).
 
 ### Position classification fields
 
@@ -411,7 +445,7 @@ Tickers may appear multiple times across portfolios — all matching positions a
 
 ## Expanded Row
 
-Tapping/clicking the **ticker name** in any market-style view toggles an expandable sub-row. Available in: **P&L**, **MARKET**, **Σ MARKET**, **ALERTS**, and **watchlist** views. Tap the ticker again to collapse. The expanded state resets when switching portfolios.
+Tapping/clicking the **ticker name** in any market-style view toggles an expandable sub-row. Available in: **P&L**, **MARKET**, **ALERTS**, **watchlist** views, and the **ALL POSITIONS → MARKET / ALERTS / WEIGHTS** views. Tap the ticker again to collapse. The expanded state resets when switching portfolios.
 
 ### Position metadata
 
@@ -826,6 +860,7 @@ Primary on-device storage:
 - `pt_blink_period` — APPEARANCE base blink period for triggered alerts (`slow` / `med` / `fast`); default `med`
 - `pt_close_mode` — close column mode: `prev` (Prev.Close), `reg` (Reg.Price), or a historical period (`5d`, `1mo`, `3mo`, `6mo`, `1y`, `5y`); default `prev`
 - `pt_current_mode` — current column mode: `cur` (Current) or `reg` (Reg.Price); default `cur`
+- `pt_analytics_subview` — Analytics subview: `pnl` / `market` / `chart` / `weights`; default `weights`
 - `pt_chart_set_{portfolioId}` — currently selected set in the Chart view (a set ID or the string `portfolio` for PORTFOLIO mode)
 - `pt_fund_set_{portfolioId}` — currently selected set in the Fundamentals view (a set ID, or absent for "no selection")
 - `chart_hist_{ticker}_{range}` — historical price cache (daily TTL)
