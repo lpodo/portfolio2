@@ -152,8 +152,8 @@
   /* Meta-level items in switcher (ALL POSITIONS, Σ SUMMARY, REALIZED
      SUMMARY, BOND SUMMARY) — smaller font and wider letter-spacing so they
      read as "category headers" rather than as portfolio names. */
-  .portfolio-item-meta .portfolio-item-name { font-size: 11px; letter-spacing: 3px; }
-  .header-title-btn.meta { font-size: 16px; letter-spacing: 3px; }
+  .portfolio-item-meta .portfolio-item-name { font-size: 10px; letter-spacing: 3px; }
+  .header-title-btn.meta { font-size: 13px; letter-spacing: 3px; }
   .portfolio-add-row {
     padding: 10px 14px 10px; display: flex; flex-direction: column; gap: 0;
     border-top: 1px solid var(--border);
@@ -235,10 +235,10 @@
     <div id="viewMenu" style="display:none;position:absolute;right:0;top:110%;background:var(--bg2);border:1px solid var(--border);z-index:200;min-width:110px">
       <div onclick="setView('main')" id="vmMain" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">P&amp;L</div>
       <div onclick="setView('market')" id="vmMarket" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">MARKET</div>
-      <div onclick="setView('chart')" id="vmChart" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">CHART</div>
-      <div onclick="setView('fundamentals')" id="vmFundamentals" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">FUNDAMENTALS</div>
       <div onclick="setView('market-total')" id="vmMarketTotal" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">MARKET</div>
       <div onclick="setView('alerts')" id="vmAlerts" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">ALERTS</div>
+      <div onclick="setView('chart')" id="vmChart" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">CHART</div>
+      <div onclick="setView('fundamentals')" id="vmFundamentals" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">FUNDAMENTALS</div>
       <div onclick="setView('global-weight')" id="vmGlobalWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">WEIGHTS</div>
       <div onclick="setView('weight')" id="vmWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">WEIGHTS</div>
       <div onclick="setView('analytics')" id="vmAnalytics" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">ANALYTICS</div>
@@ -2754,7 +2754,7 @@ function switchPortfolio(id) {
     btn.style.display = ''; btn.disabled = false; btn.style.opacity = '';
     refreshBtn.style.display = '';
   }
-  document.getElementById('portfolioTitle').textContent = portfolios[id].name;
+  setTitleForCurrentView();
   updateAddForm();
   closeSwitcher();
   render();
@@ -4467,7 +4467,9 @@ function setView(mode) {
                mode === 'analytics'     ? 'summary-analytics' :
                mode === 'global-weight' ? 'global-weight' :
                'summary-movers';
-    if (mode === 'market-total')  marketSort = { key: 'absdelta', dir: -1 };
+    // MARKET (movers) and ALERTS share the same sort state; both default
+    // to absdelta desc on entry (largest movers first / most-moved alerts first).
+    if (mode === 'market-total' || mode === 'alerts')  marketSort = { key: 'absdelta', dir: -1 };
     if (mode === 'global-weight') weightSort = { key: 'weight',   dir: -1 };
   } else if (isRealizedAllPositions()) {
     // ALL POSITIONS (realized): WEIGHTS / ANALYTICS only — no movers/alerts
@@ -4478,7 +4480,8 @@ function setView(mode) {
     // Individual portfolio (regular/WL/archive)
     viewMode = mode;
     if (mode === 'weight' || mode === 'global-weight') weightSort = { key: 'weight', dir: -1 };
-    if (mode === 'market') marketSort = { key: null, dir: -1 };
+    // MARKET and ALERTS share marketSort; both default to portfolio order on entry.
+    if (mode === 'market' || mode === 'alerts') marketSort = { key: null, dir: -1 };
   }
   ['vmMain','vmMarket','vmMarketTotal','vmWeight','vmGlobalWeight','vmChart','vmFundamentals','vmAnalytics','vmAlerts'].forEach(function(id) {
     document.getElementById(id).style.color = '';
@@ -4716,9 +4719,12 @@ function resetCustomizeIcons() {
   renderCustomizeIconsRows();
   if (typeof render === 'function') render();
 }
-function buildMarketTotals(fxMap, baseCode, baseSym) {
+function buildMarketTotals(fxMap, baseCode, baseSym, srcArr) {
+  // srcArr — optional positions array (e.g. alerts subset). Defaults to
+  // all sorted positions, so existing market-view callers keep behaviour.
+  var src = srcArr || getSorted();
   var mktTotClose = 0, mktTotCurrent = 0, mktHasAny = false;
-  getSorted().forEach(function(p) {
+  src.forEach(function(p) {
     if (p.current != null && p.qty > 0) {
       var closeVal = p.sold ? p.current : (HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(p.ticker, closeMode) || p.regularMarketPrice || p.current) : (closeMode === 'prev' ? (p.previousClose || p.regularMarketPrice || p.current) : (p.regularMarketPrice || p.current)));
       var curVal   = p.sold ? p.current : (currentMode === 'reg' ? (p.regularMarketPrice || p.current) : p.current);
@@ -5628,7 +5634,13 @@ function setMoversLimit(n) {
   render();
 }
 
-function buildMoversView(area) {
+// Renders cross-portfolio MARKET view (across non-archive portfolios,
+// deduplicated by ticker, sortable via marketSort). With opts.alertsOnly,
+// becomes the cross-portfolio ALERTS view — strict subset filtered to
+// positions with at least one alert set.
+function buildMoversView(area, opts) {
+  opts = opts || {};
+  var bmvAlertsOnly = !!opts.alertsOnly;
   // Collect all positions from regular + watchlist (not archive), not sold
   var seen = {}, allPos = [];
   Object.keys(portfolios).forEach(function(pid) {
@@ -5636,9 +5648,15 @@ function buildMoversView(area) {
     if (p.archive) return;
     (p.positions || []).forEach(function(pos) {
       if (pos.sold) return;
+      if (bmvAlertsOnly && (!pos.alerts || !pos.alerts.length)) return;
       if (!seen[pos.ticker]) { seen[pos.ticker] = true; allPos.push(pos); }
     });
   });
+
+  if (bmvAlertsOnly && allPos.length === 0) {
+    area.innerHTML = '<div style="padding:20px 0;color:var(--dim);font-size:11px;letter-spacing:1px">NO ALERTS SET</div>';
+    return;
+  }
 
   // Compute delta% for each using closeMode/currentMode
   var withDelta = allPos.map(function(p) {
@@ -5691,66 +5709,6 @@ function buildMoversView(area) {
     + '</table></div>';
 
   fetchHistoricalIfNeeded(allPos.map(function(p) { return p.ticker; }));
-}
-
-function renderAlertsTable(posArr, area) {
-  var withDelta = posArr.map(function(p) {
-    var close = closeMode === 'prev' ? (p.previousClose || p.regularMarketPrice || null) : (p.regularMarketPrice || null);
-    var cur = currentMode === 'reg' ? (p.regularMarketPrice || null) : (p.current || null);
-    var delta = (close && cur) ? (cur - close) / close * 100 : null;
-    return { pos: p, close: close, cur: cur, delta: delta };
-  });
-  withDelta.sort(function(a, b) {
-    if (a.delta === null && b.delta === null) return 0;
-    if (a.delta === null) return 1;
-    if (b.delta === null) return -1;
-    return b.delta - a.delta;
-  });
-  if (!withDelta.length) {
-    area.innerHTML = '<div style="padding:20px 0;color:var(--dim);font-size:11px;letter-spacing:1px">NO ALERTS SET</div>';
-    return;
-  }
-  var rows = withDelta.map(function(x) {
-    var p = x.pos; var sym = getPositionCurrencySymbol(p);
-    var cls = x.delta !== null ? (x.delta >= 0 ? 'pos' : 'neg') : '';
-    var dimStyle = p.qty === 0 ? 'font-style:italic;opacity:0.5' : '';
-    var isExpanded = expandedId === p.id;
-    var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtml(p.alerts) + '</span>';
-    return '<tr style="' + dimStyle + '">'
-      + '<td style="text-align:left;white-space:nowrap">' + tickerCell + '</td>'
-      + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.close ? x.close.toFixed(2) : '—') + '</td>'
-      + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.cur ? x.cur.toFixed(2) : '—') + '</td>'
-      + '<td style="text-align:right;padding:5px 4px;white-space:nowrap" class="' + cls + '">' + (x.delta !== null ? (x.delta >= 0 ? '+' : '') + x.delta.toFixed(2) + '%' : '—') + '</td>'
-      + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(p.marketState) + '</td>'
-      + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
-      + '</tr>'
-      + (isExpanded ? '<tr><td colspan="6" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>' : '');
-  }).join('');
-  area.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
-    + '<thead><tr>'
-    + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">TICKER</th>'
-    + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
-    + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
-    + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">&#916;%</th>'
-    + '<th style="width:16px;border-bottom:1px solid var(--border)"></th>'
-    + '<th style="text-align:left;padding:5px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">NAME</th>'
-    + '</tr></thead>'
-    + '<tbody>' + rows + '</tbody>'
-    + '</table></div>';
-}
-
-function buildSummaryAlertsView(area) {
-  var seen = {}, allPos = [];
-  Object.keys(portfolios).forEach(function(pid) {
-    var port = portfolios[pid];
-    if (port.archive) return;
-    (port.positions || []).forEach(function(pos) {
-      if (pos.sold) return;
-      if (!pos.alerts || !pos.alerts.length) return;
-      if (!seen[pos.ticker]) { seen[pos.ticker] = true; allPos.push(pos); }
-    });
-  });
-  renderAlertsTable(allPos, area);
 }
 
 function closeAnalyticsDetailModal() {
@@ -7448,16 +7406,10 @@ function render() {
     return;
   }
 
-  // Alerts view
-  if (viewMode === 'alerts') {
-    var alertsPos = positions.filter(function(p) { return !p.sold && p.alerts && p.alerts.length; });
-    renderAlertsTable(alertsPos, area);
-    return;
-  }
-
-  // Summary alerts view
+  // Summary alerts view — strict subset of summary-movers (cross-portfolio
+  // MARKET) filtered to positions with at least one alert set.
   if (viewMode === 'summary-alerts') {
-    buildSummaryAlertsView(area);
+    buildMoversView(area, { alertsOnly: true });
     return;
   }
 
@@ -8912,10 +8864,20 @@ function render() {
   // can't reach them if this watchlist branch fires first when currentPortfolio
   // is still a watchlist — e.g. after switching from WL to ALL POSITIONS).
   if (isWatchlist() && !isCrossPortfolioContext() && viewMode !== 'chart' && viewMode !== 'fundamentals') {
+    // ALERTS in WL is a strict subset of WL MARKET — same render (watchlistSort,
+    // same columns), filtered to positions with at least one alert set.
+    var wlIsAlerts = viewMode === 'alerts';
+    var wlSource = wlIsAlerts
+      ? positions.filter(function(p) { return p.alerts && p.alerts.length; })
+      : positions;
+    if (wlIsAlerts && wlSource.length === 0) {
+      area.innerHTML = '<div style="padding:20px 0;color:var(--dim);font-size:11px;letter-spacing:1px">NO ALERTS SET</div>';
+      return;
+    }
     var wlRows = '';
     var wlTickerArrow = watchlistSort.key === 'ticker' ? (watchlistSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
     var wlDeltaArrow = watchlistSort.key === 'absdelta' ? ' &#177;&#9660;' : watchlistSort.key === 'delta' ? (watchlistSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
-    getWatchlistSorted(positions).forEach(function(p) {
+    getWatchlistSorted(wlSource).forEach(function(p) {
       var close = getCloseForMode(p);
       var price = currentMode === 'reg' ? (p.regularMarketPrice || null) : (p.current || null);
       var delta = (close && price) ? (price - close) / close * 100 : null;
@@ -8948,17 +8910,27 @@ function render() {
       + '</tr></thead>'
       + '<tbody>' + wlRows + '</tbody>'
       + '</table></div>';
-    fetchHistoricalIfNeeded(positions.map(function(p) { return p.ticker; }));
+    fetchHistoricalIfNeeded(wlSource.map(function(p) { return p.ticker; }));
     return;
   }
 
-  // Market view
-  if (viewMode === 'market') {
+  // Market view (also handles ALERTS as a strict subset of MARKET — same
+  // render, sort modes via marketSort, totals, FX — filtered to positions
+  // with at least one alert set).
+  if (viewMode === 'market' || viewMode === 'alerts') {
+    var isAlertsView = viewMode === 'alerts';
+    var mktSourceArr = isAlertsView
+      ? getSorted().filter(function(p) { return p.alerts && p.alerts.length; })
+      : getSorted();
+    if (isAlertsView && mktSourceArr.length === 0) {
+      area.innerHTML = '<div style="padding:20px 0;color:var(--dim);font-size:11px;letter-spacing:1px">NO ALERTS SET</div>';
+      return;
+    }
     // Deduplicate by ticker for market view
     var marketPositions = (function() {
       var seen = {};
       var result = [];
-      getMarketSorted(getSorted()).forEach(function(p) {
+      getMarketSorted(mktSourceArr).forEach(function(p) {
         if (!seen[p.ticker]) {
           seen[p.ticker] = { pos: p, hasActive: !p.sold && p.qty > 0, group: [p] };
           result.push(p.ticker);
@@ -9016,11 +8988,11 @@ function render() {
     });
     // Fetch FX for market totals if needed
     var mktFxNeeded = [];
-    getSorted().forEach(function(p) {
+    mktSourceArr.forEach(function(p) {
       var pc = getPositionCurrencyCode(p);
       if (pc !== baseCode && mktFxNeeded.indexOf(pc) === -1) mktFxNeeded.push(pc);
     });
-    var mktTotalsHtml = buildMarketTotals({}, baseCode, baseSym);
+    var mktTotalsHtml = buildMarketTotals({}, baseCode, baseSym, mktSourceArr);
 
     var mkTickerArrow = marketSort.key === 'ticker' ? (marketSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
     var mkDeltaArrow = marketSort.key === 'absdelta' ? ' &#177;&#9660;' : marketSort.key === 'delta' ? (marketSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
@@ -9050,7 +9022,7 @@ function render() {
       });
       Promise.all(mktFxP).then(function() {
         var slot = document.getElementById('mktTotalsSlot');
-        if (slot) slot.innerHTML = buildMarketTotals(mktFxMap, baseCode, baseSym);
+        if (slot) slot.innerHTML = buildMarketTotals(mktFxMap, baseCode, baseSym, mktSourceArr);
       });
     }
     return;
