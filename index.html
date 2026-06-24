@@ -521,11 +521,97 @@
 var portfolios = {};  // { id: { name, positions } }
 var currentPortfolioId = null;
 
+// Ticker-level alert registry. Single source of truth for alerts — keyed by
+// ticker rather than by position, since alerts are about price movement of
+// the ticker, not about a specific position holding. Same ticker held in
+// multiple portfolios / brokers / watchlists shares the same alert set.
+// Shape: { 'AAPL': [alertObj, ...], 'NVDA': [...] }. Tickers with no alerts
+// are removed from the object (no empty-array clutter).
+var tickerAlerts = {};
+
+function getTickerAlerts(ticker) {
+  if (!ticker) return [];
+  var a = tickerAlerts[ticker];
+  return (a && a.length) ? a : [];
+}
+function setTickerAlerts(ticker, arr) {
+  if (!ticker) return;
+  if (arr && arr.length) tickerAlerts[ticker] = arr;
+  else delete tickerAlerts[ticker];
+}
+function addTickerAlert(ticker, alertObj) {
+  if (!ticker || !alertObj) return;
+  if (!tickerAlerts[ticker]) tickerAlerts[ticker] = [];
+  tickerAlerts[ticker].push(alertObj);
+}
+function removeTickerAlert(ticker, id) {
+  if (!ticker || !tickerAlerts[ticker]) return;
+  tickerAlerts[ticker] = tickerAlerts[ticker].filter(function(a) { return a.id !== id; });
+  if (!tickerAlerts[ticker].length) delete tickerAlerts[ticker];
+}
+
 function getPortfolios() {
   try { return JSON.parse(localStorage.getItem('pt_portfolios') || '{}'); } catch(e) { return {}; }
 }
 function savePortfolios() {
   try { localStorage.setItem('pt_portfolios', JSON.stringify(portfolios)); } catch(e) {}
+}
+function loadTickerAlertsLS() {
+  try { tickerAlerts = JSON.parse(localStorage.getItem('pt_ticker_alerts') || '{}'); } catch(e) { tickerAlerts = {}; }
+}
+function saveTickerAlertsLS() {
+  try { localStorage.setItem('pt_ticker_alerts', JSON.stringify(tickerAlerts)); } catch(e) {}
+}
+// Migration sweep: legacy data stored alerts on each position (pos.alerts).
+// New model: ticker-level registry. This function moves any remaining
+// pos.alerts into tickerAlerts and strips the field. Idempotent — runs on
+// every load. Becomes a no-op once all clients have written through the new
+// path (and the bin/cloud no longer contains pos.alerts anywhere).
+//
+// Rule for archive: positions in archive portfolios just get pos.alerts
+// stripped, NOT merged. Archive alerts are stale closed history; if the
+// same ticker reappears in a new active position later, those old alerts
+// shouldn't resurrect themselves.
+function newAlertId() {
+  return String(Date.now()) + '_' + Math.random().toString(36).slice(2, 8);
+}
+function ensureTickerAlertsModel() {
+  var didChange = false;
+  Object.keys(portfolios).forEach(function(pid) {
+    var port = portfolios[pid];
+    var isArchive = !!port.archive;
+    (port.positions || []).forEach(function(pos) {
+      if (!pos.alerts) return;
+      if (pos.alerts.length && !isArchive) {
+        var existing = tickerAlerts[pos.ticker] || [];
+        var existingIds = {};
+        existing.forEach(function(a) { if (a && a.id != null) existingIds[a.id] = true; });
+        pos.alerts.forEach(function(a) {
+          if (!a) return;
+          if (a.id == null) a.id = newAlertId();
+          if (!existingIds[a.id]) {
+            existing.push(a);
+            existingIds[a.id] = true;
+          }
+        });
+        if (existing.length) tickerAlerts[pos.ticker] = existing;
+      }
+      delete pos.alerts;
+      didChange = true;
+    });
+  });
+  // Also assign IDs to any existing alerts in tickerAlerts that lack them
+  // (defensive — covers the case where pre-id alerts were already migrated).
+  Object.keys(tickerAlerts).forEach(function(t) {
+    var arr = tickerAlerts[t] || [];
+    arr.forEach(function(a) {
+      if (a && a.id == null) { a.id = newAlertId(); didChange = true; }
+    });
+  });
+  if (didChange) {
+    savePortfolios();
+    saveTickerAlertsLS();
+  }
 }
 function initPortfolios() {
   portfolios = getPortfolios();
@@ -537,6 +623,9 @@ function initPortfolios() {
     portfolios[id] = { name: 'MY PORTFOLIO', positions: legacy };
     savePortfolios();
   }
+  // Load + migrate ticker-level alerts (idempotent)
+  loadTickerAlertsLS();
+  ensureTickerAlertsModel();
   // Restore last active portfolio
   currentPortfolioId = localStorage.getItem('pt_current');
   if (!currentPortfolioId || !portfolios[currentPortfolioId]) {
@@ -3049,6 +3138,8 @@ function restoreData(event) {
       if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
       if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
       if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
+      tickerAlerts = (data.tickerAlerts && typeof data.tickerAlerts === 'object') ? data.tickerAlerts : {};
+      ensureTickerAlertsModel();
       saveDicts();
       currentPortfolioId = Object.keys(portfolios)[0];
       localStorage.setItem('pt_current', currentPortfolioId);
@@ -3278,6 +3369,9 @@ function cloudLoadKV(callback) {
           if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
           if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
           if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
+          tickerAlerts = (data.tickerAlerts && typeof data.tickerAlerts === 'object') ? data.tickerAlerts : {};
+          ensureTickerAlertsModel();
+          saveTickerAlertsLS();
           saveDicts();
           savePortfolios();
           if (!portfolios[currentPortfolioId]) { currentPortfolioId = Object.keys(portfolios)[0]; localStorage.setItem('pt_current', currentPortfolioId); }
@@ -3314,7 +3408,7 @@ function cloudSaveKV() {
   var token = getToken();
   var kvKey = getKvKey();
   if (!baseUrl || !kvKey) return;
-  var payload = { portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, brokerDict: brokerDict, defaultBroker: _defaultBroker || null };
+  var payload = { portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerAlerts: tickerAlerts };
   var encKey = getEncKey();
   function doSave(body) {
     fetch(baseUrl + '/api/kv', {
@@ -3377,6 +3471,9 @@ function cloudLoad(callback) {
         if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
         if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
         if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
+        tickerAlerts = (data.tickerAlerts && typeof data.tickerAlerts === 'object') ? data.tickerAlerts : {};
+        ensureTickerAlertsModel();
+        saveTickerAlertsLS();
         saveDicts();
         savePortfolios();
         if (!portfolios[currentPortfolioId]) {
@@ -3823,31 +3920,23 @@ function findPortfolioForPosition(posId) {
   return null;
 }
 
-function deleteAlert(posId, alertIdx) {
-  var port = findPortfolioForPosition(posId);
-  if (!port) return;
-  port.positions = port.positions.map(function(p) {
-    if (p.id !== posId) return p;
-    var alerts = (p.alerts || []).filter(function(_, i) { return i !== alertIdx; });
-    return Object.assign({}, p, { alerts: alerts });
-  });
-  if (port === portfolios[currentPortfolioId]) positions = port.positions;
-  save(); render();
+function deleteAlert(ticker, alertId) {
+  if (!ticker) return;
+  removeTickerAlert(ticker, alertId);
+  saveTickerAlertsLS();
+  save();
+  render();
 }
 
-function addAlert(posId) {
+function addAlert(ticker) {
+  if (!ticker) return;
   var cond = _alertCondEdit;
   var val = parseFloat(document.getElementById('alertVal').value);
   if (isNaN(val) || val <= 0) return;
-  var port = findPortfolioForPosition(posId);
-  if (!port) return;
-  port.positions = port.positions.map(function(p) {
-    if (p.id !== posId) return p;
-    var alerts = (p.alerts || []).concat([{ condition: cond, value: val, triggered: false }]);
-    return Object.assign({}, p, { alerts: alerts });
-  });
-  if (port === portfolios[currentPortfolioId]) positions = port.positions;
-  save(); render();
+  addTickerAlert(ticker, { id: newAlertId(), condition: cond, value: val, triggered: false });
+  saveTickerAlertsLS();
+  save();
+  render();
 }
 
 // Color for a triggered alert based on its condition direction.
@@ -3908,14 +3997,17 @@ function buildExpandedInner(p) {
     + '</div>'
     + '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
     + '<span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
-    + ((p.alerts && p.alerts.length) ? p.alerts.map(function(a, i) {
-        var color = a.triggered ? alertColorForCond(a.condition) : 'var(--bright)';
-        return '<span style="font-size:10px;color:' + color + '">' + a.condition + ' ' + a.value + '</span>'
-          + '<span onclick="deleteAlert(' + p.id + ',' + i + ')" style="cursor:pointer;font-size:11px;color:var(--dim);margin-left:-6px">&#10005;</span>';
-      }).join('') : '')
+    + (function() {
+        var alerts = getTickerAlerts(p.ticker);
+        return alerts.length ? alerts.map(function(a) {
+          var color = a.triggered ? alertColorForCond(a.condition) : 'var(--bright)';
+          return '<span style="font-size:10px;color:' + color + '">' + a.condition + ' ' + a.value + '</span>'
+            + '<span onclick="deleteAlert(\'' + p.ticker + '\',\'' + a.id + '\')" style="cursor:pointer;font-size:11px;color:var(--dim);margin-left:-6px">&#10005;</span>';
+        }).join('') : '';
+      })()
     + '<span onclick="toggleAlertCondQuick(this)" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;min-width:20px;background:var(--bg);border:1px solid var(--border);color:var(--dim);font-family:var(--font);font-size:11px;padding:1px 5px;user-select:none">' + _alertCondQuick + '</span>'
     + '<input type="number" id="quickAlertVal" placeholder="price" step="any" min="0" style="width:65px;font-size:11px;padding:2px 4px;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font)">'
-    + '<span onclick="quickAddAlert(' + p.id + ')" style="cursor:pointer;font-size:11px;color:var(--green);border:1px solid var(--green);padding:1px 5px">+</span>'
+    + '<span onclick="quickAddAlert(\'' + p.ticker + '\')" style="cursor:pointer;font-size:11px;color:var(--green);border:1px solid var(--green);padding:1px 5px">+</span>'
     + '</div>'
     + buildFundamentalsRows(p.ticker);
 }
@@ -3948,21 +4040,17 @@ function buildExpandedInnerAgg(p, group) {
     + '<span style="opacity:0.6">NOTE</span> '
     + '<span style="color:var(--bright);white-space:pre-line">' + (notes || '—') + '</span>'
     + '</div>';
-  var allAlerts = [];
-  group.forEach(function(g) {
-    (g.alerts || []).forEach(function(a, i) { allAlerts.push({ alert: a, posId: g.id, alertIdx: i }); });
-  });
+  var allAlerts = getTickerAlerts(p.ticker);
   html += '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
     + '<span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
-    + allAlerts.map(function(item) {
-        var a = item.alert;
+    + allAlerts.map(function(a) {
         var color = a.triggered ? alertColorForCond(a.condition) : 'var(--bright)';
         return '<span style="font-size:10px;color:' + color + '">' + a.condition + ' ' + a.value + '</span>'
-          + '<span onclick="deleteAlert(' + item.posId + ',' + item.alertIdx + ')" style="cursor:pointer;font-size:11px;color:var(--dim);margin-left:-6px">&#10005;</span>';
+          + '<span onclick="deleteAlert(\'' + p.ticker + '\',\'' + a.id + '\')" style="cursor:pointer;font-size:11px;color:var(--dim);margin-left:-6px">&#10005;</span>';
       }).join('')
     + '<span onclick="toggleAlertCondQuick(this)" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;min-width:20px;background:var(--bg);border:1px solid var(--border);color:var(--dim);font-family:var(--font);font-size:11px;padding:1px 5px;user-select:none">' + _alertCondQuick + '</span>'
     + '<input type="number" id="quickAlertVal" placeholder="price" step="any" min="0" style="width:65px;font-size:11px;padding:2px 4px;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font)">'
-    + '<span onclick="quickAddAlert(' + first.id + ')" style="cursor:pointer;font-size:11px;color:var(--green);border:1px solid var(--green);padding:1px 5px">+</span>'
+    + '<span onclick="quickAddAlert(\'' + p.ticker + '\')" style="cursor:pointer;font-size:11px;color:var(--green);border:1px solid var(--green);padding:1px 5px">+</span>'
     + '</div>';
   return html + buildFundamentalsRows(p.ticker);
 }
@@ -3982,21 +4070,17 @@ function buildExpandedInnerLite(p, group) {
     + '<span style="opacity:0.6">NOTE</span> '
     + '<span style="color:var(--bright);white-space:pre-line">' + (notes || '—') + '</span>'
     + '</div>';
-  var allAlerts = [];
-  group.forEach(function(g) {
-    (g.alerts || []).forEach(function(a, i) { allAlerts.push({ alert: a, posId: g.id, alertIdx: i }); });
-  });
+  var allAlerts = getTickerAlerts(p.ticker);
   html += '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
     + '<span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
-    + allAlerts.map(function(item) {
-        var a = item.alert;
+    + allAlerts.map(function(a) {
         var color = a.triggered ? alertColorForCond(a.condition) : 'var(--bright)';
         return '<span style="font-size:10px;color:' + color + '">' + a.condition + ' ' + a.value + '</span>'
-          + '<span onclick="deleteAlert(' + item.posId + ',' + item.alertIdx + ')" style="cursor:pointer;font-size:11px;color:var(--dim);margin-left:-6px">&#10005;</span>';
+          + '<span onclick="deleteAlert(\'' + p.ticker + '\',\'' + a.id + '\')" style="cursor:pointer;font-size:11px;color:var(--dim);margin-left:-6px">&#10005;</span>';
       }).join('')
     + '<span onclick="toggleAlertCondQuick(this)" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;min-width:20px;background:var(--bg);border:1px solid var(--border);color:var(--dim);font-family:var(--font);font-size:11px;padding:1px 5px;user-select:none">' + _alertCondQuick + '</span>'
     + '<input type="number" id="quickAlertVal" placeholder="price" step="any" min="0" style="width:65px;font-size:11px;padding:2px 4px;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font)">'
-    + '<span onclick="quickAddAlert(' + first.id + ')" style="cursor:pointer;font-size:11px;color:var(--green);border:1px solid var(--green);padding:1px 5px">+</span>'
+    + '<span onclick="quickAddAlert(\'' + p.ticker + '\')" style="cursor:pointer;font-size:11px;color:var(--green);border:1px solid var(--green);padding:1px 5px">+</span>'
     + '</div>';
   // 4th row: just the [›] More button, left-aligned
   var t = p.ticker.replace(/'/g, "\\'");
@@ -4006,19 +4090,15 @@ function buildExpandedInnerLite(p, group) {
   return html;
 }
 
-function quickAddAlert(posId) {
+function quickAddAlert(ticker) {
+  if (!ticker) return;
   var cond = _alertCondQuick;
   var val = parseFloat(document.getElementById('quickAlertVal').value);
   if (isNaN(val) || val <= 0) return;
-  var port = findPortfolioForPosition(posId);
-  if (!port) return;
-  port.positions = port.positions.map(function(p) {
-    if (p.id !== posId) return p;
-    var alerts = (p.alerts || []).concat([{ condition: cond, value: val, triggered: false }]);
-    return Object.assign({}, p, { alerts: alerts });
-  });
-  if (port === portfolios[currentPortfolioId]) positions = port.positions;
-  save(); render();
+  addTickerAlert(ticker, { id: newAlertId(), condition: cond, value: val, triggered: false });
+  saveTickerAlertsLS();
+  save();
+  render();
 }
 
 var _alertCondEdit = '>';
@@ -4065,7 +4145,7 @@ function saveEdit(id) {
   var broker   = broEl ? (broEl.value.trim() || null) : (pos ? pos.broker : null);
   var syncTicker = (newTicker || (pos ? pos.ticker : '')).toUpperCase();
   positions = positions.map(function(p) {
-    return p.id === id ? Object.assign({}, p, { ticker: newTicker || p.ticker, qty: qty, entry: entry, current: current, category: category, region: region, sector: sector, note: note, purchaseDate: purchaseDate, broker: broker, alerts: p.alerts || [] }) : p;
+    return p.id === id ? Object.assign({}, p, { ticker: newTicker || p.ticker, qty: qty, entry: entry, current: current, category: category, region: region, sector: sector, note: note, purchaseDate: purchaseDate, broker: broker }) : p;
   });
   portfolios[currentPortfolioId].positions = positions;
   Object.keys(portfolios).forEach(function(pid) {
@@ -4095,13 +4175,19 @@ function refreshPrice(id) {
   return fetchPrice(pos.ticker).then(function(price) {
     positions = positions.map(function(p) {
       if (p.id === id) {
-        var updatedAlerts = (p.alerts || []).map(function(a) {
-          return Object.assign({}, a, { triggered: a.condition === '>' ? price > a.value : price < a.value });
-        });
-        return Object.assign({}, p, { current: price, priceType: __priceType, marketState: __marketState, regularMarketPrice: __regularMarketPrice, previousClose: __previousClose, currency: __currency, shortName: __shortName, instrumentType: __instrumentType || p.instrumentType, alerts: updatedAlerts });
+        return Object.assign({}, p, { current: price, priceType: __priceType, marketState: __marketState, regularMarketPrice: __regularMarketPrice, previousClose: __previousClose, currency: __currency, shortName: __shortName, instrumentType: __instrumentType || p.instrumentType });
       }
       return p;
     });
+    // Update triggered state for this ticker's alerts (ticker-level registry)
+    var tAlerts = getTickerAlerts(pos.ticker);
+    if (tAlerts.length) {
+      var updated = tAlerts.map(function(a) {
+        return Object.assign({}, a, { triggered: a.condition === '>' ? price > a.value : price < a.value });
+      });
+      setTickerAlerts(pos.ticker, updated);
+      saveTickerAlertsLS();
+    }
     saveLocal();
   }).catch(function(e) {
     positions = positions.map(function(p) {
@@ -4130,15 +4216,21 @@ function refreshAllPortfolios() {
         p.regularMarketPrice = __regularMarketPrice;
         p.previousClose = __previousClose;
         if (__instrumentType) p.instrumentType = __instrumentType;
-        p.alerts = (p.alerts || []).map(function(a) {
-          return Object.assign({}, a, { triggered: a.condition === '>' ? price > a.value : price < a.value });
-        });
+        // Update triggered state for this ticker's alerts. Multiple positions
+        // of same ticker re-run this redundantly per position; idempotent.
+        var tAlerts = getTickerAlerts(p.ticker);
+        if (tAlerts.length) {
+          setTickerAlerts(p.ticker, tAlerts.map(function(a) {
+            return Object.assign({}, a, { triggered: a.condition === '>' ? price > a.value : price < a.value });
+          }));
+        }
       }).catch(function() {});
       allPromises.push(promise);
     });
   });
   return Promise.all(allPromises).then(function() {
     savePortfolios();
+    saveTickerAlertsLS();
     loadLocal();
     render();
   });
@@ -5648,7 +5740,7 @@ function buildMoversView(area, opts) {
     if (p.archive) return;
     (p.positions || []).forEach(function(pos) {
       if (pos.sold) return;
-      if (bmvAlertsOnly && (!pos.alerts || !pos.alerts.length)) return;
+      if (bmvAlertsOnly && !getTickerAlerts(pos.ticker).length) return;
       if (!seen[pos.ticker]) { seen[pos.ticker] = true; allPos.push(pos); }
     });
   });
@@ -5684,7 +5776,7 @@ function buildMoversView(area, opts) {
     var cls = x.delta >= 0 ? 'pos' : 'neg';
     var dimStyle = p.qty === 0 ? 'font-style:italic;opacity:0.5' : '';
     var isExpanded = expandedId === p.id;
-    var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtml(p.alerts) + '</span>';
+    var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtml(getTickerAlerts(p.ticker)) + '</span>';
     return '<tr style="' + dimStyle + '">'
       + '<td style="text-align:left;white-space:nowrap">' + tickerCell + '</td>'
       + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.close ? ('' + x.close.toFixed(2)) : '—') + '</td>'
@@ -7371,7 +7463,7 @@ function render() {
       var cls = x.delta >= 0 ? 'pos' : 'neg';
       var dimStyle = p.qty === 0 ? 'font-style:italic;opacity:0.5' : '';
       var isExpanded = expandedId === p.id;
-      var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtml(p.alerts) + '</span>';
+      var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtml(getTickerAlerts(p.ticker)) + '</span>';
       return '<tr style="' + dimStyle + '">'
         + '<td style="text-align:left;white-space:nowrap">' + tickerCell + '</td>'
         + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.close ? x.close.toFixed(2) : '—') + '</td>'
@@ -7526,9 +7618,7 @@ function render() {
     }
 
     var isExpanded = expandedId === p.id;
-    var alertSrc = isEdit ? [] : (isAgg
-      ? (aggGroup || []).reduce(function(acc, gp) { return acc.concat(gp.alerts || []); }, [])
-      : (p.alerts || []));
+    var alertSrc = isEdit ? [] : getTickerAlerts(p.ticker);
     var tickerCell = isEdit
       ? '<input class="edit-input" id="editTicker" type="text" value="' + p.ticker + '" style="width:60px;text-transform:uppercase">'
       : '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtml(alertSrc) + '</span>';
@@ -7560,14 +7650,17 @@ function render() {
         + '<div style="margin-top:8px">'
         + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:6px">ALERTS</div>'
         + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
-        + ((p.alerts && p.alerts.length) ? p.alerts.map(function(a, i) {
-            var color = a.triggered ? alertColorForCond(a.condition) : 'var(--bright)';
-            return '<span style="font-size:12px;color:' + color + '">' + a.condition + ' ' + a.value + '</span>'
-              + '<span onclick="deleteAlert(' + p.id + ',' + i + ')" style="cursor:pointer;font-size:13px;color:var(--dim);margin-left:-6px">&#10005;</span>';
-          }).join('') : '')
+        + (function() {
+            var alerts = getTickerAlerts(p.ticker);
+            return alerts.length ? alerts.map(function(a) {
+              var color = a.triggered ? alertColorForCond(a.condition) : 'var(--bright)';
+              return '<span style="font-size:12px;color:' + color + '">' + a.condition + ' ' + a.value + '</span>'
+                + '<span onclick="deleteAlert(\'' + p.ticker + '\',\'' + a.id + '\')" style="cursor:pointer;font-size:13px;color:var(--dim);margin-left:-6px">&#10005;</span>';
+            }).join('') : '';
+          })()
         + '<span onclick="toggleAlertCondEdit(this)" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;min-width:28px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:13px;padding:4px 8px;user-select:none">' + _alertCondEdit + '</span>'
         + '<input type="number" id="alertVal" placeholder="price" step="any" min="0" style="width:90px;box-sizing:border-box">'
-        + '<span onclick="addAlert(' + p.id + ')" style="cursor:pointer;font-size:13px;color:var(--green);border:1px solid var(--green);padding:2px 6px">+</span>'
+        + '<span onclick="addAlert(\'' + p.ticker + '\')" style="cursor:pointer;font-size:13px;color:var(--green);border:1px solid var(--green);padding:2px 6px">+</span>'
         + '</div>'
         + '</div>'
         + '<div style="margin-top:12px;display:flex;gap:8px">'
@@ -8868,7 +8961,7 @@ function render() {
     // same columns), filtered to positions with at least one alert set.
     var wlIsAlerts = viewMode === 'alerts';
     var wlSource = wlIsAlerts
-      ? positions.filter(function(p) { return p.alerts && p.alerts.length; })
+      ? positions.filter(function(p) { return getTickerAlerts(p.ticker).length; })
       : positions;
     if (wlIsAlerts && wlSource.length === 0) {
       area.innerHTML = '<div style="padding:20px 0;color:var(--dim);font-size:11px;letter-spacing:1px">NO ALERTS SET</div>';
@@ -8883,7 +8976,7 @@ function render() {
       var delta = (close && price) ? (price - close) / close * 100 : null;
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
       var isExpanded = expandedId === p.id;
-      var wlTickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtml(p.alerts) + '</span>';
+      var wlTickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtml(getTickerAlerts(p.ticker)) + '</span>';
       wlRows += '<tr>'
         + '<td style="text-align:left;white-space:nowrap">' + wlTickerCell + '</td>'
         + '<td style="white-space:nowrap">' + (close ? getPositionCurrencySymbol(p) + f2(close) : '&mdash;') + '</td>'
@@ -8920,7 +9013,7 @@ function render() {
   if (viewMode === 'market' || viewMode === 'alerts') {
     var isAlertsView = viewMode === 'alerts';
     var mktSourceArr = isAlertsView
-      ? getSorted().filter(function(p) { return p.alerts && p.alerts.length; })
+      ? getSorted().filter(function(p) { return getTickerAlerts(p.ticker).length; })
       : getSorted();
     if (isAlertsView && mktSourceArr.length === 0) {
       area.innerHTML = '<div style="padding:20px 0;color:var(--dim);font-size:11px;letter-spacing:1px">NO ALERTS SET</div>';
@@ -8946,8 +9039,7 @@ function render() {
       var p = entry.pos;
       var allWatchlist = !entry.hasActive;
       var isExpanded = expandedId === p.id;
-      var groupAlerts = [];
-      entry.group.forEach(function(gp) { if (gp.alerts) Array.prototype.push.apply(groupAlerts, gp.alerts); });
+      var groupAlerts = getTickerAlerts(p.ticker);
       var mktTickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtml(groupAlerts) + '</span>';
       var mktExpandedRow = isExpanded
         ? '<tr><td colspan="6" style="padding:4px 8px 8px;background:var(--bg2)">' + (entry.group.length > 1 ? buildExpandedInnerAgg(p, entry.group) : buildExpandedInner(p)) + '</td></tr>'
