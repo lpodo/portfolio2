@@ -1642,10 +1642,15 @@ function buildFundamentalsRatingsTable(tickers) {
   // All columns same fixed width — narrow; long headers wrap onto multiple lines.
   var COL_W_PX = 50;
   var COL_W = COL_W_PX + 'px';
-  var TBL_W = (COL_W_PX * 7) + 'px';
+  // 7 columns × 50px + 10px extra left padding on AVG = 360px total.
+  var TBL_W = (COL_W_PX * 7 + 10) + 'px';
   // Header styles: allow wrap, vertical-align center for visual balance with single-word headers.
   var TH_DIM = 'text-align:right;padding:6px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);vertical-align:middle;width:' + COL_W;
   var TH_TICKER = 'text-align:left;padding:6px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);vertical-align:middle;width:' + COL_W;
+  // AVG column gets extra left padding so its header doesn't visually collide
+  // with the wrapped "STRONG SELL" label next to it.
+  var TH_AVG = 'text-align:right;padding:6px 4px 6px 14px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);vertical-align:middle;width:' + COL_W;
+  var TD_AVG = 'text-align:right;padding:6px 4px 6px 14px;font-size:11px;color:var(--bright);white-space:nowrap;width:' + COL_W;
   // Body cells: numbers never wrap, stay on one line.
   var TD     = 'text-align:right;padding:6px 4px;font-size:11px;color:var(--bright);white-space:nowrap;width:' + COL_W;
   var TD_TICKER = 'text-align:left;padding:6px 4px;font-size:11px;color:var(--bright);white-space:nowrap;width:' + COL_W;
@@ -1657,7 +1662,7 @@ function buildFundamentalsRatingsTable(tickers) {
     + '<th style="' + TH_DIM + '">HOLD</th>'
     + '<th style="' + TH_DIM + '">SELL</th>'
     + '<th style="' + TH_DIM + '">STRONG SELL</th>'
-    + '<th style="' + TH_DIM + '">AVG</th>'
+    + '<th style="' + TH_AVG + '">AVG</th>'
     + '</tr></thead>';
 
   var rows = '';
@@ -1683,8 +1688,8 @@ function buildFundamentalsRatingsTable(tickers) {
 
     var ratingAvg = fundComputeRatingAvg(cached);
     var avgCell = ratingAvg !== null
-      ? '<td style="' + TD + '">' + ratingAvg.toFixed(1) + '</td>'
-      : '<td style="' + TD + '"><span style="color:var(--dim)">&mdash;</span></td>';
+      ? '<td style="' + TD_AVG + '">' + ratingAvg.toFixed(1) + '</td>'
+      : '<td style="' + TD_AVG + '"><span style="color:var(--dim)">&mdash;</span></td>';
 
     rows += '<tr>'
       + cellInfo.tdCell

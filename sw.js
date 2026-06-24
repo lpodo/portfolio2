@@ -1,7 +1,7 @@
 // Bump this when the install pre-cache list changes or when you want to
 // force a full cache wipe. For routine content updates (index.html, fundamentals.js)
 // the stale-while-revalidate strategy below picks them up automatically.
-var CACHE = 'portfolio-v389';
+var CACHE = 'portfolio-v390';
 
 self.addEventListener('install', function(e) {
   e.waitUntil(
@@ -26,6 +26,16 @@ self.addEventListener('activate', function(e) {
 
 // Stale-while-revalidate: serve cached response immediately (fast first paint),
 // fetch fresh in background and update cache for next time.
+//
+// IMPORTANT: the background fetch uses {cache:'no-cache'} to bypass the
+// browser's HTTP cache. Without this flag, fetch(e.request) respects the
+// original request's cache mode — and GitHub Pages serves with
+// Cache-Control: max-age=600, so the browser HTTP cache returns the OLD
+// copy to the SW's "fresh" fetch, which gets stored back into the SW cache.
+// Net effect: stale-while-revalidate quietly re-caches the stale version
+// for 10 minutes. {cache:'no-cache'} sends a conditional request
+// (If-Modified-Since / ETag) so the origin can return 304 (unchanged, no
+// body) or 200 (with the fresh body), bypassing HTTP cache entirely.
 self.addEventListener('fetch', function(e) {
   // Never cache API requests
   if (e.request.url.includes('workers.dev') ||
@@ -39,8 +49,10 @@ self.addEventListener('fetch', function(e) {
   e.respondWith(
     caches.open(CACHE).then(function(cache) {
       return cache.match(e.request).then(function(cached) {
-        // Always fetch fresh in parallel; update cache on success
-        var networkPromise = fetch(e.request).then(function(resp) {
+        // Always fetch fresh in parallel; update cache on success.
+        // {cache:'no-cache'} forces conditional revalidation past the
+        // browser HTTP cache so we actually see new deployments.
+        var networkPromise = fetch(e.request, { cache: 'no-cache' }).then(function(resp) {
           if (resp && resp.status === 200) {
             // Clone before caching — body can only be read once
             cache.put(e.request, resp.clone());
