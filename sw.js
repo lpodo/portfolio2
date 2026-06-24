@@ -1,12 +1,22 @@
 // Bump this when the install pre-cache list changes or when you want to
 // force a full cache wipe. For routine content updates (index.html, fundamentals.js)
 // the stale-while-revalidate strategy below picks them up automatically.
-var CACHE = 'portfolio-v390';
+var CACHE = 'portfolio-v391';
 
 self.addEventListener('install', function(e) {
+  // Pre-cache with cache:'reload' on each Request — forces network bypass of
+  // browser HTTP cache. Without this, addAll() respects Cache-Control max-age
+  // from GitHub Pages (10 min default), and a brand-new SW install would
+  // simply repopulate its cache with the same stale files the disk cache
+  // still has — defeating the whole point of bumping the version.
   e.waitUntil(
     caches.open(CACHE).then(function(c) {
-      return c.addAll(['./index.html', './manifest.json', './icon-192.png', './fundamentals.js']);
+      return c.addAll([
+        new Request('./index.html',     { cache: 'reload' }),
+        new Request('./manifest.json',  { cache: 'reload' }),
+        new Request('./icon-192.png',   { cache: 'reload' }),
+        new Request('./fundamentals.js',{ cache: 'reload' })
+      ]);
     })
   );
   self.skipWaiting();
