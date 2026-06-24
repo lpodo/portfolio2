@@ -350,6 +350,12 @@ function buildFundamentalsRows(ticker) {
         ? '<span><span style="' + DIM + '">' + fundEsc(k) + '</span> <span style="' + BRT + '">' + fundEsc(String(v)) + '</span></span>'
         : null;
     }).filter(Boolean);
+    // Append our own computed average — labeled lowercase to match the
+    // other vote keys; one decimal place is enough resolution for the 1..5 scale.
+    var avgVal = fundComputeRatingAvg(trend);
+    if (avgVal !== null) {
+      votes.push('<span><span style="' + DIM + '">avg</span> <span style="' + BRT + '">' + fundEsc(avgVal.toFixed(1)) + '</span></span>');
+    }
     if (votes.length) {
       html += '<div style="display:flex;flex-wrap:wrap;gap:3px 10px;margin-top:5px;font-size:10px;letter-spacing:1px">'
         + votes.join('') + '</div>';
@@ -1612,6 +1618,22 @@ function fundFmtCount(v) {
   return String(Math.round(v));
 }
 
+// Compute weighted average analyst rating from vote counts.
+// Yahoo Finance convention: Strong Buy = 1, Buy = 2, Hold = 3, Sell = 4,
+// Strong Sell = 5 — lower number means more bullish consensus.
+// Returns null when there are no votes (so caller can skip rendering).
+function fundComputeRatingAvg(c) {
+  if (!c) return null;
+  var sb = +c.strongBuy  || 0;
+  var b  = +c.buy        || 0;
+  var h  = +c.hold       || 0;
+  var s  = +c.sell       || 0;
+  var ss = +c.strongSell || 0;
+  var total = sb + b + h + s + ss;
+  if (total === 0) return null;
+  return (1 * sb + 2 * b + 3 * h + 4 * s + 5 * ss) / total;
+}
+
 function buildFundamentalsRatingsTable(tickers) {
   if (!fundWorkerBase() || !fundWorkerToken()) {
     return '<div style="padding:36px 0;text-align:center;color:var(--dim);font-size:11px;letter-spacing:2px">CONFIGURE WORKER URL/TOKEN TO LOAD FUNDAMENTALS</div>';
@@ -1620,7 +1642,7 @@ function buildFundamentalsRatingsTable(tickers) {
   // All columns same fixed width — narrow; long headers wrap onto multiple lines.
   var COL_W_PX = 50;
   var COL_W = COL_W_PX + 'px';
-  var TBL_W = (COL_W_PX * 6) + 'px';
+  var TBL_W = (COL_W_PX * 7) + 'px';
   // Header styles: allow wrap, vertical-align center for visual balance with single-word headers.
   var TH_DIM = 'text-align:right;padding:6px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);vertical-align:middle;width:' + COL_W;
   var TH_TICKER = 'text-align:left;padding:6px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);vertical-align:middle;width:' + COL_W;
@@ -1635,12 +1657,13 @@ function buildFundamentalsRatingsTable(tickers) {
     + '<th style="' + TH_DIM + '">HOLD</th>'
     + '<th style="' + TH_DIM + '">SELL</th>'
     + '<th style="' + TH_DIM + '">STRONG SELL</th>'
+    + '<th style="' + TH_DIM + '">AVG</th>'
     + '</tr></thead>';
 
   var rows = '';
   for (var i = 0; i < tickers.length; i++) {
     var ticker = tickers[i];
-    var cellInfo = fundTickerCellAndExpanded(ticker, TD_TICKER, 6);
+    var cellInfo = fundTickerCellAndExpanded(ticker, TD_TICKER, 7);
     var cached = fundCacheGet(ticker);
 
     if (!cached) {
@@ -1652,11 +1675,16 @@ function buildFundamentalsRatingsTable(tickers) {
       }
       rows += '<tr>'
         + cellInfo.tdCell
-        + '<td colspan="5" style="text-align:center;padding:6px 4px;font-size:11px;color:var(--dim)">&hellip;</td>'
+        + '<td colspan="6" style="text-align:center;padding:6px 4px;font-size:11px;color:var(--dim)">&hellip;</td>'
         + '</tr>'
         + cellInfo.expandedRow;
       continue;
     }
+
+    var ratingAvg = fundComputeRatingAvg(cached);
+    var avgCell = ratingAvg !== null
+      ? '<td style="' + TD + '">' + ratingAvg.toFixed(1) + '</td>'
+      : '<td style="' + TD + '"><span style="color:var(--dim)">&mdash;</span></td>';
 
     rows += '<tr>'
       + cellInfo.tdCell
@@ -1665,6 +1693,7 @@ function buildFundamentalsRatingsTable(tickers) {
       + '<td style="' + TD + '">' + fundFmtCount(cached.hold) + '</td>'
       + '<td style="' + TD + '">' + fundFmtCount(cached.sell) + '</td>'
       + '<td style="' + TD + '">' + fundFmtCount(cached.strongSell) + '</td>'
+      + avgCell
       + '</tr>'
       + cellInfo.expandedRow;
   }
