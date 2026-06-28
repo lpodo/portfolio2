@@ -3973,7 +3973,7 @@ function getAlertDotsHtml(alerts) {
 // and apply to any active sibling, but the sold row itself shouldn't show them).
 function getAlertDotsHtmlForPosition(p) {
   if (!p || p.sold) return '';
-  return getAlertDotsHtmlForPosition(p);
+  return getAlertDotsHtml(getTickerAlerts(p.ticker));
 }
 
 function buildExpandedInner(p) {
