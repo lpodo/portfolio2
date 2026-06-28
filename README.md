@@ -140,7 +140,7 @@ The ⇨ button moves any position to another active portfolio, preserving all fi
 
 ### Brokers
 
-Each position can be tagged with a **broker** — useful when the same ticker is held at multiple brokerages and needs to be tracked separately. Brokers are managed as a per-user dictionary (Settings → DICTIONARIES → BROKERS); set on a position via the dropdown in the Add or ✎ Edit form.
+Each position can be tagged with a **broker** — useful when the same ticker is held at multiple brokerages and needs to be tracked separately. Brokers are managed as a dictionary (Settings → DICTIONARIES → BROKERS); set on a position via the dropdown in the Add or ✎ Edit form.
 
 **Default broker:** one entry in the dictionary is marked as default. To set the default, open Settings → BROKERS and click a broker name (a small `(default)` tag appears next to it). When a position has no explicit broker set, `getPositionBroker(p)` substitutes the current default at read time — so changing the default reassigns every still-default position retroactively. The first broker added to an empty dictionary auto-becomes the default.
 
@@ -256,7 +256,9 @@ ALL POSITIONS is excluded from FUNDAMENTALS, CHART, and P&L views (those operate
 
 ## Price Alerts
 
-Each position can have one or more price alerts. Alerts are checked on every price refresh and shown across all market-style views.
+Each **ticker** can have one or more price alerts. Alerts live in a registry keyed by ticker, so the same ticker held in multiple portfolios, brokers, or watchlists shares one alert set. Alerts are checked on every price refresh and shown across all market-style views.
+
+An alert set persists while at least one **live** position of the ticker exists — meaning a non-sold position in a regular portfolio, or any position in a watchlist (including qty=0 candidates). When the last live position is removed (sold, moved to a realized portfolio, deleted, or its portfolio is deleted), the ticker's alerts are dropped automatically. Realized portfolios don't keep alerts alive.
 
 ### Setting alerts
 
@@ -281,7 +283,7 @@ On every price refresh, each alert is re-evaluated:
 
 ### Indicators
 
-A colored dot `●` appears after the ticker name when any alert on that position is triggered. The color depends on the direction of the triggered alert:
+A colored dot `●` appears after the ticker name when any alert on that ticker is triggered. The color depends on the direction of the triggered alert:
 
 - Yellow `●` — at least one `>` alert is triggered (price crossed above target).
 - Sky-blue `●` — at least one `<` alert is triggered (price crossed below target).
@@ -295,7 +297,7 @@ Each color is shown at most once per ticker, regardless of how many alerts in th
 
 Available via ⋮ menu → **ALERTS** for individual portfolios, watchlists, and the ALL POSITIONS meta-view. Not available for realized portfolios or Summary.
 
-Structurally a [MARKET](#market) view filtered to positions that have at least one alert set (sold positions excluded). Inherits everything from MARKET: column layout, the CLOSE/CURRENT mode menus, the Δ% sort cycle, the per-row expand. The difference is purely scope — the rows are the positions you're actively watching.
+Structurally a [MARKET](#market) view filtered to positions whose ticker has at least one alert set (sold positions excluded). Inherits everything from MARKET: column layout, the CLOSE/CURRENT mode menus, the Δ% sort cycle, the per-row expand. The difference is purely scope — the rows are the positions you're actively watching.
 
 The default sort on entry depends on context:
 
@@ -497,7 +499,7 @@ Expanded rows are enabled for aggregated entries, with the following behavior on
 - **BROKER / BUY DATE:** BUY DATE is hidden in aggregation mode (positions in a group may have different purchase dates — the breakdown lives in the [aggregation detail modal](#aggregation-detail-modal)). BROKER shows the single broker name if all positions agree, or `N brokers` in dim style if the group spans multiple brokers.
 - **Attributes (CAT / REG / SEC):** the app enforces identical attributes across all instances of the same ticker, so the values are read from any one position in the aggregated group (the first one).
 - **Notes:** non-empty notes from all positions in the group are joined into a single read-only block. Editing is not available in aggregation mode — switch to a non-aggregated view to edit individual notes.
-- **Alerts:** alerts from all positions in the group are merged into a single list. Delete and add controls work as in normal mode; a newly added alert is attached to one position in the group (the first one) — but since all positions of the same ticker resolve to the same price, it doesn't matter which one carries the alert.
+- **Alerts:** all positions in the group share the same alert set — alerts are keyed by ticker, not by position. The list shown in the aggregated row's expansion is the same set you'd see on any individual row of the same ticker. Delete and add controls work as in normal mode.
 
 The dot indicators (yellow / sky-blue) appear if any position in the aggregated group has a triggered alert of the corresponding direction, following the same rules as for individual positions. The Yahoo fundamentals lines and the **More** button appear in aggregated rows just as in regular ones.
 
@@ -664,6 +666,7 @@ Backup format:
   "bondsDb": [ ... ],
   "bondPortfolios": { ... },
   "cashPortfolios": { ... },
+  "tickerAlerts": { ... },
   "catDict": ["AI & Semi", "Energy", ...],
   "regDict": ["Europe", "US", ...],
   "secDict": ["Energy", "Technology", ...],
@@ -807,7 +810,8 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
 - `category`, `region`, `sector` — classification fields for the Analytics view. Selected from per-field dictionaries; free text is not allowed.
 - `note` — optional free-text annotation. Visible only in the expanded position row and edit form.
 - `priceTimestamp` — Unix timestamp of last price from `regularMarketTime`; used to align the "today's point" in charts.
-- `alerts` — array of price alert objects: `[{ condition: ">" | "<", value: 134.5, triggered: true|false }]`. Checked on every price refresh. The `triggered` flag is runtime-only and is not persisted to storage; the array itself is included in cloud sync.
+
+Price alerts are not a position field — they live in a separate ticker-keyed registry (see [Ticker alerts registry](#ticker-alerts-registry) below).
 
 `qty=0` is allowed — used for watchlist candidates. P&L $ shows `—`, P&L % is calculated if entry > 0. Entry=0 is allowed only when qty=0 (pure price tracking). Excluded from WEIGHTS and Analytics totals.
 
@@ -829,6 +833,28 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
 - `archive: true` — realized portfolio (all positions sold, no Refresh, excluded from the main Summary).
 - `positionSets` — array of named ticker subsets for use by Chart and Fundamentals views: `[{ id: "set_<timestamp>", name: "AI BASKET", tickers: ["NVDA", "ASML.AS"] }]`. Tickers are stored as symbols, not IDs, so re-adding a removed position keeps it in any set it belonged to. See [Position sets](#position-sets).
 
+### Ticker alerts registry
+
+Price alerts live in a separate registry keyed by ticker — independent of any specific position — so the same ticker held in multiple portfolios/brokers/watchlists shares one alert set. See [Price Alerts](#price-alerts) for the user-facing behavior.
+
+```json
+{
+  "AAPL": [
+    { "id": "1735420800123_a7k9x2", "condition": ">", "value": 250.00, "triggered": false }
+  ],
+  "NVDA": [
+    { "id": "1735420800124_b3m1z5", "condition": "<", "value": 100.00, "triggered": true }
+  ]
+}
+```
+
+- Keyed by uppercase ticker symbol.
+- Tickers with no alerts are absent from the object (no empty-array clutter).
+- Alert `id` is `Date.now()` + `_` + a short random suffix.
+- `triggered` is recomputed on every price refresh and saved alongside the rest. It does survive reloads (the dot stays lit between sessions until the next refresh re-evaluates).
+- The registry is cloud-synced as a top-level field `tickerAlerts` alongside `portfolios` and the dictionaries.
+- Cleanup hook `cleanupAlertsForTickerIfUnused(ticker)` runs after operations that may orphan a ticker (sell, delete, move-to-archive, ticker rename, portfolio delete). If no live position remains, the ticker's entry is removed; otherwise nothing happens. The hook is idempotent.
+
 ## Local Storage
 
 Primary on-device storage:
@@ -838,6 +864,7 @@ Primary on-device storage:
 - `pt_bond_portfolios` — bond portfolios and positions (also used by deposit portfolios)
 - `pt_cash_portfolios` — cash portfolios and entries
 - `pt_cash_cat_dict` — shared dictionary of cash entry categories
+- `pt_ticker_alerts` — ticker-keyed price alerts registry (see [Ticker alerts registry](#ticker-alerts-registry))
 - `pt_current` — active portfolio ID
 - `pt_finnhub` — Cloudflare Worker URL
 - `pt_token` — API token for Cloudflare Worker
@@ -874,7 +901,7 @@ Cross-device sync via two supported backends (selected in Settings):
 - **JSONBin.io** — direct browser-to-API requests; requires a Master Key and Bin ID.
 - **Cloudflare KV** — routed through the Worker; requires only a user-defined KV Key. More reliable and no extra API keys needed.
 
-Bond, deposit, and cash data (`bondsDb`, `bondPortfolios`, `cashPortfolios`, stored in `pt_bonds_db`, `pt_bond_portfolios`, and `pt_cash_portfolios`) is included in cloud sync alongside equity portfolios, in the same cloud storage record, regardless of backend.
+Bond, deposit, cash, and ticker-alerts data (`bondsDb`, `bondPortfolios`, `cashPortfolios`, `tickerAlerts`, stored in `pt_bonds_db`, `pt_bond_portfolios`, `pt_cash_portfolios`, and `pt_ticker_alerts`) is included in cloud sync alongside equity portfolios, in the same cloud storage record, regardless of backend.
 
 ### Structural data vs live prices
 

@@ -588,77 +588,8 @@ function loadTickerAlertsLS() {
 function saveTickerAlertsLS() {
   try { localStorage.setItem('pt_ticker_alerts', JSON.stringify(tickerAlerts)); } catch(e) {}
 }
-// Migration sweep: legacy data stored alerts on each position (pos.alerts).
-// New model: ticker-level registry. This function moves any remaining
-// pos.alerts into tickerAlerts and strips the field. Idempotent — runs on
-// every load. Becomes a no-op once all clients have written through the new
-// path (and the bin/cloud no longer contains pos.alerts anywhere).
-//
-// Rule for archive: positions in archive portfolios just get pos.alerts
-// stripped, NOT merged. Archive alerts are stale closed history; if the
-// same ticker reappears in a new active position later, those old alerts
-// shouldn't resurrect themselves.
 function newAlertId() {
   return String(Date.now()) + '_' + Math.random().toString(36).slice(2, 8);
-}
-function ensureTickerAlertsModel() {
-  var didChange = false;
-  // Pass 1: migrate any legacy pos.alerts into the ticker registry.
-  // Dedup uses both id (defensive) AND content key (condition+value) since
-  // legacy alerts had no ids — a pure id-based check let semantically
-  // identical alerts from multiple positions of the same ticker accumulate
-  // as duplicates after each got assigned a fresh id.
-  Object.keys(portfolios).forEach(function(pid) {
-    var port = portfolios[pid];
-    var isArchive = !!port.archive;
-    (port.positions || []).forEach(function(pos) {
-      if (!pos.alerts) return;
-      if (pos.alerts.length && !isArchive) {
-        var existing = tickerAlerts[pos.ticker] || [];
-        var seenIds = {};
-        var seenContent = {};
-        existing.forEach(function(a) {
-          if (!a) return;
-          if (a.id != null) seenIds[a.id] = true;
-          seenContent[a.condition + ':' + a.value] = true;
-        });
-        pos.alerts.forEach(function(a) {
-          if (!a) return;
-          var ck = a.condition + ':' + a.value;
-          if (seenContent[ck]) return;
-          if (a.id == null) a.id = newAlertId();
-          if (seenIds[a.id]) return;
-          existing.push(a);
-          seenIds[a.id] = true;
-          seenContent[ck] = true;
-        });
-        if (existing.length) tickerAlerts[pos.ticker] = existing;
-      }
-      delete pos.alerts;
-      didChange = true;
-    });
-  });
-  // Pass 2: assign ids to any alerts in tickerAlerts that lack them.
-  // Pass 3 (same loop): dedup by content — cleans up any duplicates that
-  // earlier migration runs may have created with id-only dedup.
-  Object.keys(tickerAlerts).forEach(function(t) {
-    var arr = tickerAlerts[t] || [];
-    var seenContent = {};
-    var deduped = [];
-    arr.forEach(function(a) {
-      if (!a) return;
-      if (a.id == null) { a.id = newAlertId(); didChange = true; }
-      var ck = a.condition + ':' + a.value;
-      if (seenContent[ck]) { didChange = true; return; }
-      seenContent[ck] = true;
-      deduped.push(a);
-    });
-    if (deduped.length !== arr.length) tickerAlerts[t] = deduped;
-  });
-  if (didChange) {
-    savePortfolios();
-    saveTickerAlertsLS();
-  }
 }
 function initPortfolios() {
   portfolios = getPortfolios();
@@ -670,9 +601,8 @@ function initPortfolios() {
     portfolios[id] = { name: 'MY PORTFOLIO', positions: legacy };
     savePortfolios();
   }
-  // Load + migrate ticker-level alerts (idempotent)
+  // Load ticker-level alerts from localStorage
   loadTickerAlertsLS();
-  ensureTickerAlertsModel();
   // Restore last active portfolio
   currentPortfolioId = localStorage.getItem('pt_current');
   if (!currentPortfolioId || !portfolios[currentPortfolioId]) {
@@ -3200,7 +3130,6 @@ function restoreData(event) {
       if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
       if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
       tickerAlerts = (data.tickerAlerts && typeof data.tickerAlerts === 'object') ? data.tickerAlerts : {};
-      ensureTickerAlertsModel();
       saveTickerAlertsLS();
       saveDicts();
       currentPortfolioId = Object.keys(portfolios)[0];
@@ -3432,7 +3361,6 @@ function cloudLoadKV(callback) {
           if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
           if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
           tickerAlerts = (data.tickerAlerts && typeof data.tickerAlerts === 'object') ? data.tickerAlerts : {};
-          ensureTickerAlertsModel();
           saveTickerAlertsLS();
           saveDicts();
           savePortfolios();
@@ -3534,7 +3462,6 @@ function cloudLoad(callback) {
         if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
         if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
         tickerAlerts = (data.tickerAlerts && typeof data.tickerAlerts === 'object') ? data.tickerAlerts : {};
-        ensureTickerAlertsModel();
         saveTickerAlertsLS();
         saveDicts();
         savePortfolios();
@@ -4039,6 +3966,14 @@ function getAlertDotsHtml(alerts) {
   if (downCount > 0) html += dot('#5bd1f6', downCount);
   if (upCount > 0)   html += dot('#f6c15b', upCount);
   return html;
+}
+
+// Dots for a specific position — wrapped in a sold check so closed positions
+// don't display alert indicators (the alerts still live at the ticker level
+// and apply to any active sibling, but the sold row itself shouldn't show them).
+function getAlertDotsHtmlForPosition(p) {
+  if (!p || p.sold) return '';
+  return getAlertDotsHtmlForPosition(p);
 }
 
 function buildExpandedInner(p) {
@@ -5859,7 +5794,7 @@ function buildMoversView(area, opts) {
     var cls = x.delta >= 0 ? 'pos' : 'neg';
     var dimStyle = p.qty === 0 ? 'font-style:italic;opacity:0.5' : '';
     var isExpanded = expandedId === p.id;
-    var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtml(getTickerAlerts(p.ticker)) + '</span>';
+    var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtmlForPosition(p) + '</span>';
     return '<tr style="' + dimStyle + '">'
       + '<td style="text-align:left;white-space:nowrap">' + tickerCell + '</td>'
       + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.close ? ('' + x.close.toFixed(2)) : '—') + '</td>'
@@ -7546,7 +7481,7 @@ function render() {
       var cls = x.delta >= 0 ? 'pos' : 'neg';
       var dimStyle = p.qty === 0 ? 'font-style:italic;opacity:0.5' : '';
       var isExpanded = expandedId === p.id;
-      var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtml(getTickerAlerts(p.ticker)) + '</span>';
+      var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtmlForPosition(p) + '</span>';
       return '<tr style="' + dimStyle + '">'
         + '<td style="text-align:left;white-space:nowrap">' + tickerCell + '</td>'
         + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.close ? x.close.toFixed(2) : '—') + '</td>'
@@ -7701,10 +7636,9 @@ function render() {
     }
 
     var isExpanded = expandedId === p.id;
-    var alertSrc = isEdit ? [] : getTickerAlerts(p.ticker);
     var tickerCell = isEdit
       ? '<input class="edit-input" id="editTicker" type="text" value="' + p.ticker + '" style="width:60px;text-transform:uppercase">'
-      : '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtml(alertSrc) + '</span>';
+      : '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + (isEdit ? '' : getAlertDotsHtmlForPosition(p)) + '</span>';
     var soldStyle = (p.sold || p.qty === 0) ? 'font-style:italic;opacity:0.5' : '';
     rows += '<tr style="' + soldStyle + '">'
       + '<td style="white-space:nowrap">' + tickerCell + '</td>'
@@ -9061,7 +8995,7 @@ function render() {
       var delta = (close && price) ? (price - close) / close * 100 : null;
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
       var isExpanded = expandedId === p.id;
-      var wlTickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtml(getTickerAlerts(p.ticker)) + '</span>';
+      var wlTickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtmlForPosition(p) + '</span>';
       wlRows += '<tr>'
         + '<td style="text-align:left;white-space:nowrap">' + wlTickerCell + '</td>'
         + '<td style="white-space:nowrap">' + (close ? getPositionCurrencySymbol(p) + f2(close) : '&mdash;') + '</td>'
@@ -9124,8 +9058,7 @@ function render() {
       var p = entry.pos;
       var allWatchlist = !entry.hasActive;
       var isExpanded = expandedId === p.id;
-      var groupAlerts = getTickerAlerts(p.ticker);
-      var mktTickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtml(groupAlerts) + '</span>';
+      var mktTickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtmlForPosition(p) + '</span>';
       var mktExpandedRow = isExpanded
         ? '<tr><td colspan="6" style="padding:4px 8px 8px;background:var(--bg2)">' + (entry.group.length > 1 ? buildExpandedInnerAgg(p, entry.group) : buildExpandedInner(p)) + '</td></tr>'
         : '';
