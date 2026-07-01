@@ -190,6 +190,26 @@ export default {
       }
     }
 
+    // ISIN lookup: /api/isin?ticker=AAPL&shortName=Apple+Inc
+    // Yahoo doesn't return ISIN in any quoteSummary module (licensing —
+    // ISIN belongs to ANNA/Bloomberg, not Yahoo's quote provider). We
+    // proxy Business Insider's public suggest endpoint, which returns a
+    // pipe-delimited text blob like `"TICKER|ISIN|...|FIGI|SYMBOL"`.
+    // shortName gives higher hit rate: BI indexes by company name, and
+    // Yahoo's exchange-suffixed tickers (NESN.SW, CJPU.L) often don't
+    // match BI's cleaner ticker column directly.
+    if (url.pathname === '/api/isin') {
+      const t = url.searchParams.get('ticker');
+      const shortName = url.searchParams.get('shortName') || t;
+      if (!t) return json({ error: 'ticker is required' }, 400);
+      try {
+        const isin = await fetchIsinFromBI(t, shortName);
+        return json({ isin });
+      } catch (e) {
+        return json({ isin: null, error: String(e?.message || e) }, 500);
+      }
+    }
+
     if (url.pathname !== '/api/quote') {
       return json({ error: 'Not found' }, 404);
     }
@@ -428,4 +448,56 @@ async function fetchQuoteSummary(ticker, modules) {
   return anySuccess
     ? { quoteSummary: { result: [merged], error: null } }
     : combined;
+}
+
+// ── ISIN lookup via Business Insider ───────────────────────────────────────
+// Their SearchController_Suggest endpoint returns a JS-array-formatted text
+// blob (mmSuggestDeliver(...)) rather than JSON. Each result row includes a
+// pipe-delimited IDs field with the ticker's ISIN in position 2:
+//     "TICKER|ISIN|WKN|FIGI|SYMBOL"
+//
+// The algorithm mirrors yfinance's approach:
+//  1. Search by shortName (company name) which BI indexes cleanly
+//  2. Look for a result row containing `"TICKER|` (exact ticker match)
+//  3. If not found, fall back to first result — its IDs field starts with
+//     `"|` (empty ticker column when BI's ticker differs from Yahoo's)
+//  4. Extract the ISIN — validate it against ISIN structure (2 letters + 10 alnum)
+//
+// Returns the ISIN string on success, null on "we asked but nothing matched".
+async function fetchIsinFromBI(ticker, shortName) {
+  const q = shortName || ticker;
+  const searchUrl = `https://markets.businessinsider.com/ajax/SearchController_Suggest?max_results=25&query=${encodeURIComponent(q)}`;
+  const r = await fetch(searchUrl, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'text/plain,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.5',
+    },
+  });
+  if (!r.ok) throw new Error(`BI HTTP ${r.status}`);
+  const text = await r.text();
+
+  // Try exact ticker match: `"TICKER|ISIN|`
+  let isin = extractIsinAfterMarker(text, `"${ticker.toUpperCase()}|`);
+  // Fallback: BI uses different ticker but shortName still matches → `"|ISIN|`
+  // (empty ticker column) — see yfinance base.py for the same fallback pattern
+  if (!isin) isin = extractIsinAfterMarker(text, '"|');
+  return isValidIsin(isin) ? isin : null;
+}
+
+function extractIsinAfterMarker(text, marker) {
+  const idx = text.indexOf(marker);
+  if (idx === -1) return null;
+  const after = text.substring(idx + marker.length);
+  const end = after.indexOf('|');
+  if (end === -1) return null;
+  return after.substring(0, end).trim();
+}
+
+// ISIN format: 2 uppercase letters + 10 alphanumeric (last is check digit,
+// we don't verify the checksum since some markets emit non-standard codes
+// and BI's data is generally trustworthy enough — bad data is better than
+// silent misses for our use case).
+function isValidIsin(v) {
+  return typeof v === 'string' && /^[A-Z]{2}[A-Z0-9]{10}$/.test(v);
 }

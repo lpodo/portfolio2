@@ -538,10 +538,11 @@ var currentPortfolioId = null;
 // position. Same ticker held across multiple portfolios / brokers / watchlists
 // shares one entry. Fields:
 //   .alerts — array of alert objects (may be absent)
-//   .isin   — string ISIN | 'UNRESOLVED' | absent
-// Absent field means "no data" (falsy); UNRESOLVED means "we asked Yahoo and
-// nothing came back — don't re-ask" (for isin). Entries with no fields at all
-// are removed from the object (no empty-object clutter).
+//   .isin   — string ISIN | 'UNRESOLVED_<PROVIDER>' marker | absent
+// Absent field means "no data" (falsy); UNRESOLVED_<PROVIDER> means "we
+// asked <PROVIDER> and nothing came back — don't re-ask this provider"
+// (for isin). Entries with no fields at all are removed from the object
+// (no empty-object clutter).
 var tickerData = {};
 
 // ── Alerts (thin wrappers over tickerData[ticker].alerts) ───────────────────
@@ -575,7 +576,7 @@ function removeTickerAlert(ticker, id) {
   }
 }
 // ── ISIN (thin wrappers over tickerData[ticker].isin) ──────────────────────
-// Three states: string ISIN | 'UNRESOLVED' | absent (falsy).
+// Three states: string ISIN | 'UNRESOLVED*' marker | absent (falsy).
 // Yahoo lookup fires only when falsy — UNRESOLVED and known ISIN don't re-query.
 function getTickerIsin(ticker) {
   if (!ticker) return undefined;
@@ -591,6 +592,12 @@ function setTickerIsin(ticker, v) {
     delete tickerData[ticker].isin;
     if (!Object.keys(tickerData[ticker]).length) delete tickerData[ticker];
   }
+}
+// True when v is a real ISIN string, not a provider "we tried" marker.
+// Any string starting with 'UNRESOLVED' is treated as a marker (works for
+// current 'UNRESOLVED_BI' and any future 'UNRESOLVED_<PROVIDER>').
+function isKnownIsin(v) {
+  return !!(v && typeof v === 'string' && v.length >= 2 && v.indexOf('UNRESOLVED') !== 0);
 }
 // ── Prune orphaned ticker data ─────────────────────────────────────────────
 // Called after operations that could orphan a ticker (sell, delete, ticker
@@ -3796,18 +3803,21 @@ function fetchPrice(ticker) {
   });
 }
 
-// Fetch ISIN for a ticker via Yahoo quoteSummary (module `quoteType` sometimes
-// contains an `isin` field — undocumented, coverage is partial: usually
-// present for EU/UK/CH/JP tickers, usually absent for US and ADR). Returns
-// the ISIN string on success, null on "no isin in response" (Yahoo answered
-// but the field wasn't there), or throws on network/HTTP errors.
-function fetchIsin(ticker) {
+// Fetch ISIN for a ticker via the worker's /api/isin endpoint, which proxies
+// Business Insider's suggest search (Yahoo doesn't return ISIN in any of its
+// quoteSummary modules — Yahoo licenses quote data separately from ID data).
+// Passing shortName gives BI better hits for tickers whose exchange suffix
+// differs between providers (e.g. NESN.SW on Yahoo vs NESN on BI). Returns
+// the ISIN string on success, null on "we asked but nothing matched", or
+// throws on network/HTTP errors.
+function fetchIsin(ticker, shortName) {
   if (!ticker) return Promise.resolve(null);
   var baseUrl = getApiKey();
   if (!baseUrl) return Promise.reject(new Error('no_key'));
   baseUrl = baseUrl.replace(/\/+$/, '');
   var token = getToken();
-  var url = baseUrl + '/api/quotesummary?ticker=' + encodeURIComponent(ticker) + '&modules=quoteType';
+  var url = baseUrl + '/api/isin?ticker=' + encodeURIComponent(ticker);
+  if (shortName) url += '&shortName=' + encodeURIComponent(shortName);
   var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
   var timer = controller ? setTimeout(function() { controller.abort(); }, 15000) : null;
   var opts = controller ? { signal: controller.signal } : {};
@@ -3817,9 +3827,8 @@ function fetchIsin(ticker) {
     if (!r.ok) throw new Error('http_' + r.status);
     return r.json();
   }).then(function(data) {
-    if (!data || data.error || data._error) return null;
-    var qt = data.quoteSummary && data.quoteSummary.result && data.quoteSummary.result[0] && data.quoteSummary.result[0].quoteType;
-    return (qt && qt.isin) || null;
+    if (!data || data.error) return null;
+    return data.isin || null;
   });
 }
 
@@ -3963,7 +3972,7 @@ function tryAutofillIsinInAddForm() {
   var t = tickerEl.value.trim().toUpperCase();
   if (!t) return;
   var known = getTickerIsin(t);
-  if (known && known !== 'UNRESOLVED') isinEl.value = known;
+  if (isKnownIsin(known)) isinEl.value = known;
 }
 
 // Persist the ISIN input's value against the given ticker. Uniform rules
@@ -3982,7 +3991,7 @@ function applyIsinInput(ticker, inputEl) {
   var val = (inputEl.value || '').trim().toUpperCase();
   var existing = getTickerIsin(ticker);
   if (val === '') {
-    if (existing && existing !== 'UNRESOLVED') {
+    if (isKnownIsin(existing)) {
       if (!confirm('Reset ISIN for ' + ticker + '?')) return;
       setTickerIsin(ticker, null);
       saveTickerDataLS();
@@ -4421,13 +4430,17 @@ function refreshTicker(ticker) {
       }));
       saveTickerDataLS();
     }
-    // ISIN — fire-and-forget lookup when we have no value yet. Falsy states
-    // ('', null, undefined) all trigger a re-fetch; UNRESOLVED and a real
-    // ISIN string are truthy so they don't re-query. Manual override in the
-    // Edit form always wins because it writes a real string.
-    if (!getTickerIsin(ticker)) {
-      fetchIsin(ticker).then(function(isin) {
-        setTickerIsin(ticker, isin || 'UNRESOLVED');
+    // ISIN — fire-and-forget lookup via the current provider (Business
+    // Insider). Retry fires when we have no value yet (falsy) OR when a
+    // previous provider left a bare 'UNRESOLVED' legacy marker from the
+    // Yahoo attempt. Once BI has answered we write 'UNRESOLVED_BI' on miss,
+    // which stays past the isKnownIsin check but also isn't a bare
+    // 'UNRESOLVED' — so it won't be retried on subsequent refreshes with
+    // this provider. Manual override in Edit form always wins.
+    var currentIsin = getTickerIsin(ticker);
+    if (!currentIsin || currentIsin === 'UNRESOLVED') {
+      fetchIsin(ticker, __shortName).then(function(isin) {
+        setTickerIsin(ticker, isin || 'UNRESOLVED_BI');
         saveTickerDataLS();
         render();
       }).catch(function() { /* leave falsy, next refreshTicker will retry */ });
@@ -6103,7 +6116,7 @@ function showAnalyticsDetail(rubric, value) {
       key = getPositionBroker(p) || 'default';
     } else if (rubric === 'isin') {
       var isin = getTickerIsin(p.ticker);
-      key = (isin && isin !== 'UNRESOLVED' && isin.length >= 2) ? isin.substring(0, 2).toUpperCase() : 'Unknown';
+      key = isKnownIsin(isin) ? isin.substring(0, 2).toUpperCase() : 'Unknown';
     } else {
       key = ((p[rubric] || '').trim().replace(/\s+/g, ' ')) || 'Other';
     }
@@ -6262,7 +6275,7 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
       // missing entries both fold into a single 'Unknown' bucket. Clicking
       // through to the group shows which tickers still lack an ISIN.
       var isin = getTickerIsin(p.ticker);
-      key = (isin && isin !== 'UNRESOLVED' && isin.length >= 2) ? isin.substring(0, 2).toUpperCase() : 'Unknown';
+      key = isKnownIsin(isin) ? isin.substring(0, 2).toUpperCase() : 'Unknown';
     } else {
       key = ((p[breakdown] || '').trim().replace(/\s+/g, ' ')) || 'Other';
     }
@@ -7928,7 +7941,7 @@ function render() {
         + '<div class="field"><label>BUY DATE</label><input type="date" id="editDate" value="' + (p.purchaseDate || '') + '" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;box-sizing:border-box;width:130px"></div>'
         + (function() {
             var known = getTickerIsin(p.ticker);
-            var initialVal = (known && known !== 'UNRESOLVED') ? known : '';
+            var initialVal = isKnownIsin(known) ? known : '';
             return '<div class="field"><label>ISIN</label><input type="text" id="editIsin" value="' + initialVal + '" placeholder="US0378331005" maxlength="12" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" style="width:130px" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,\'\')"></div>';
           })()
         + '</div>'
