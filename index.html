@@ -106,7 +106,7 @@
   }
   input:focus { border-color: var(--dim); }
   .edit-input { background: var(--bg); border: 1px solid var(--border); color: var(--bright); font-family: var(--font); font-size: 13px; padding: 5px 7px; width: 70px; }
-  .fetch-btn { border: 1px solid var(--dim); color: var(--dim); font-family: var(--font); font-size: 10px; padding: 2px 7px; cursor: pointer; background: transparent; }
+
   .err { color: var(--red); font-size: 11px; margin-top: 7px; }
   .note { margin-top: 16px; font-size: 10px; color: var(--dim); line-height: 1.6; }
   .dict-trigger { cursor:pointer; background:var(--bg); border:1px solid var(--border); color:var(--bright); font-family:var(--font); font-size:11px; padding:3px 6px; display:flex; justify-content:space-between; align-items:center; user-select:none; box-sizing:border-box; }
@@ -748,6 +748,53 @@ function isWatchlist() {
 // silently affect active positions of the same ticker, which is surprising.
 function isArchiveContext() {
   return !!(currentPortfolio() && currentPortfolio().archive);
+}
+
+// ── Price staleness ─────────────────────────────────────────────────────────
+// In-memory only. Cleared on page reload — the first refresh after load
+// populates the state. Set when fetchPrice fails for a ticker (global
+// refresh keeps the previous pos.current value so user isn't left with no
+// data, but we mark it so the UI can show "this may be stale").
+var staleTickers = {};
+
+function markPriceStale(ticker)  { if (ticker) staleTickers[ticker] = true; }
+function markPriceFresh(ticker)  { if (ticker) delete staleTickers[ticker]; }
+function isPriceStale(ticker)    { return !!staleTickers[ticker]; }
+
+// Returns the HTML for the inline ⚠ icon when a position's price is stale.
+// The icon is a clickable button — tapping triggers refreshPrice for this
+// position, which refreshes ALL positions of the same ticker across all
+// non-archive portfolios (see refreshPrice for details).
+// Sold positions always return empty (their `current` is intentionally not
+// refreshed — it's the sell price, frozen by design).
+function staleIconHtml(p) {
+  if (!p || p.sold || !isPriceStale(p.ticker)) return '';
+  return '<span onclick="refreshPrice(' + p.id + ')" style="color:#9070b8;font-size:11px;cursor:pointer;user-select:none" title="last fetch failed — tap to retry">&#9888;&#65038;</span>';
+}
+
+// Standard cell wrapper. Zero-width when no icon, expands when needed.
+function staleColHtml(p) {
+  return '<td style="width:0;padding:0 2px 0 0;text-align:left">' + staleIconHtml(p) + '</td>';
+}
+
+// True if any active (non-sold) position in the portfolio has stale price.
+// Used by per-portfolio summary rows to surface aggregate staleness.
+function isPortfolioStale(pid) {
+  var port = portfolios[pid];
+  if (!port || port.archive) return false;
+  var poss = port.positions || [];
+  for (var i = 0; i < poss.length; i++) {
+    if (poss[i].sold) continue;
+    if (isPriceStale(poss[i].ticker)) return true;
+  }
+  return false;
+}
+function stalePortfolioIconHtml(pid) {
+  if (!isPortfolioStale(pid)) return '';
+  return '<span onclick="event.stopPropagation();refreshStaleInPortfolio(&apos;' + pid + '&apos;)" style="color:#9070b8;font-size:11px;cursor:pointer;user-select:none" title="tap to refresh stale positions in this portfolio">&#9888;&#65038;</span>';
+}
+function stalePortfolioColHtml(pid) {
+  return '<td style="width:0;padding:0 2px 0 0;text-align:left">' + stalePortfolioIconHtml(pid) + '</td>';
 }
 
 // View-mode context groups. Used throughout to determine which UI to show.
@@ -3763,7 +3810,7 @@ function addPosition() {
     document.getElementById('fDate').value = todayLocalISO();
     renderAddBrokerSlot(); // refresh dropdown + reset to current default
     render();
-    if (!isSold && !isWatchlist()) refreshPrice(pos.id);
+    if (!isSold) refreshPrice(pos.id);
   }
 
   // Verify ticker via Yahoo for all portfolio types
@@ -4178,43 +4225,79 @@ function saveEdit(id) {
   savePortfolios(); if (getCloudBackend() === 'kv') cloudSaveKV(); else cloudSave(); editId = null; render();
 }
 
-function refreshPrice(id) {
-  var pos = null;
-  for (var i = 0; i < positions.length; i++) { if (positions[i].id === id) { pos = positions[i]; break; } }
-  if (!pos) return Promise.resolve();
-  if (pos.sold) return Promise.resolve();
+// Fetch a ticker's price and apply it to all non-sold positions of that
+// ticker across all non-archive portfolios. Ticker-level operation —
+// matches the semantics of tickerAlerts and staleTickers.
+function refreshTicker(ticker) {
+  if (!ticker) return Promise.resolve();
   if (!getApiKey()) { document.getElementById('apiKeyInput').focus(); return Promise.resolve(); }
-  // Clear fetchErr before retrying
-  positions = positions.map(function(p) {
-    if (p.id === id) { var q = Object.assign({}, p); delete q.fetchErr; return q; }
-    return p;
-  });
-  loadingSet[id] = true; render();
-  return fetchPrice(pos.ticker).then(function(price) {
-    positions = positions.map(function(p) {
-      if (p.id === id) {
-        return Object.assign({}, p, { current: price, priceType: __priceType, marketState: __marketState, regularMarketPrice: __regularMarketPrice, previousClose: __previousClose, currency: __currency, shortName: __shortName, instrumentType: __instrumentType || p.instrumentType });
-      }
-      return p;
+  // Loading spinner on every affected position id
+  var affectedIds = [];
+  Object.keys(portfolios).forEach(function(pid) {
+    var port = portfolios[pid];
+    if (port.archive) return;
+    (port.positions || []).forEach(function(p) {
+      if (p.ticker === ticker && !p.sold) affectedIds.push(p.id);
     });
-    // Update triggered state for this ticker's alerts (ticker-level registry)
-    var tAlerts = getTickerAlerts(pos.ticker);
-    if (tAlerts.length) {
-      var updated = tAlerts.map(function(a) {
-        return Object.assign({}, a, { triggered: a.condition === '>' ? price > a.value : price < a.value });
+  });
+  affectedIds.forEach(function(id) { loadingSet[id] = true; });
+  render();
+  return fetchPrice(ticker).then(function(price) {
+    markPriceFresh(ticker);
+    Object.keys(portfolios).forEach(function(pid) {
+      var port = portfolios[pid];
+      if (port.archive) return;
+      port.positions = (port.positions || []).map(function(p) {
+        if (p.ticker !== ticker || p.sold) return p;
+        return Object.assign({}, p, { current: price, priceType: __priceType, marketState: __marketState, regularMarketPrice: __regularMarketPrice, previousClose: __previousClose, currency: __currency, shortName: __shortName, instrumentType: __instrumentType || p.instrumentType });
       });
-      setTickerAlerts(pos.ticker, updated);
+    });
+    positions = (portfolios[currentPortfolioId] && portfolios[currentPortfolioId].positions) || positions;
+    var tAlerts = getTickerAlerts(ticker);
+    if (tAlerts.length) {
+      setTickerAlerts(ticker, tAlerts.map(function(a) {
+        return Object.assign({}, a, { triggered: a.condition === '>' ? price > a.value : price < a.value });
+      }));
       saveTickerAlertsLS();
     }
-    saveLocal();
-  }).catch(function(e) {
-    positions = positions.map(function(p) {
-      if (p.id === id) { return Object.assign({}, p, { fetchErr: true }); }
-      return p;
-    });
+    savePortfolios();
+  }).catch(function() {
+    markPriceStale(ticker);
   }).finally(function() {
-    delete loadingSet[id];
+    affectedIds.forEach(function(id) { delete loadingSet[id]; });
     render();
+  });
+}
+
+// Wrapper that takes a position id (from a UI click). Searches across ALL
+// non-archive portfolios — clicks may originate from cross-portfolio views
+// (All Positions / Σ SUMMARY) where the target position isn't in the current
+// portfolio's `positions`.
+function refreshPrice(id) {
+  var pos = null;
+  var pids = Object.keys(portfolios);
+  for (var i = 0; i < pids.length && !pos; i++) {
+    var port = portfolios[pids[i]];
+    if (port.archive) continue;
+    var arr = port.positions || [];
+    for (var j = 0; j < arr.length; j++) {
+      if (arr[j].id === id) { pos = arr[j]; break; }
+    }
+  }
+  if (!pos || pos.sold) return Promise.resolve();
+  return refreshTicker(pos.ticker);
+}
+
+// Batch retry from a summary row: refresh every stale ticker in the target
+// portfolio. Fires one fetch per ticker (deduped by name), each applied
+// across all portfolios via refreshTicker.
+function refreshStaleInPortfolio(pid) {
+  var port = portfolios[pid];
+  if (!port || port.archive) return;
+  var seen = {};
+  (port.positions || []).forEach(function(p) {
+    if (p.sold || seen[p.ticker]) return;
+    if (isPriceStale(p.ticker)) { seen[p.ticker] = true; refreshTicker(p.ticker); }
   });
 }
 
@@ -4228,6 +4311,7 @@ function refreshAllPortfolios() {
     portfolio.positions.forEach(function(p) {
       if (p.sold) return;
       var promise = fetchPrice(p.ticker).then(function(price) {
+        markPriceFresh(p.ticker);
         p.current = price;
         p.priceType = __priceType;
         p.marketState = __marketState;
@@ -4242,7 +4326,9 @@ function refreshAllPortfolios() {
             return Object.assign({}, a, { triggered: a.condition === '>' ? price > a.value : price < a.value });
           }));
         }
-      }).catch(function() {});
+      }).catch(function() {
+        markPriceStale(p.ticker);
+      });
       allPromises.push(promise);
     });
   });
@@ -4299,7 +4385,7 @@ function refreshAll() {
           }
         });
         if (!hasPos) {
-          rows += '<tr><td style="text-align:left;white-space:nowrap">' + p.name + '</td><td colspan="4" style="color:var(--dim)">—</td></tr>';
+          rows += '<tr><td style="text-align:left;white-space:nowrap">' + p.name + '</td>' + stalePortfolioColHtml(pid) + '<td colspan="4" style="color:var(--dim)">—</td></tr>';
           return;
         }
         var delta = currentVal - closeVal;
@@ -4308,6 +4394,7 @@ function refreshAll() {
         totCloseUSD += closeUSD; totCurrentUSD += currentUSD; hasAny = true;
         rows += '<tr>'
           + '<td style="text-align:left;white-space:nowrap;cursor:pointer" onclick="switchPortfolio(&apos;' + pid + '&apos;)">' + p.name + '</td>'
+          + stalePortfolioColHtml(pid)
           + '<td>' + baseSym2 + f2(closeVal) + '</td>'
           + '<td>' + baseSym2 + f2(currentVal) + '</td>'
           + '<td class="' + dClass + '">' + fSign(delta) + '</td>'
@@ -4320,6 +4407,7 @@ function refreshAll() {
       area.innerHTML = '<div class="table-wrap"><table>'
         + '<thead><tr>'
         + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO</th>'
+        + '<th style="width:0;padding:0;border-bottom:1px solid var(--border)"></th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">&#916;</th>'
@@ -5800,10 +5888,10 @@ function buildMoversView(area, opts) {
       + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.close ? ('' + x.close.toFixed(2)) : '—') + '</td>'
       + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.cur ? ('' + x.cur.toFixed(2)) : '—') + '</td>'
       + '<td style="text-align:right;padding:5px 4px;white-space:nowrap" class="' + cls + '">' + (x.delta >= 0 ? '+' : '') + x.delta.toFixed(2) + '%</td>'
-      + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(p.marketState) + '</td>'
+      + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(p.marketState) + '</td>' + staleColHtml(p)
       + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
       + '</tr>'
-      + (isExpanded ? '<tr><td colspan="6" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>' : '');
+      + (isExpanded ? '<tr><td colspan="7" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>' : '');
   }).join('');
 
   area.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
@@ -5812,7 +5900,7 @@ function buildMoversView(area, opts) {
     + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
     + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
     + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortMarket(&apos;delta&apos;)">&#916;%' + smDeltaArrow + '</th>'
-    + '<th style="width:16px;border-bottom:1px solid var(--border)"></th>'
+    + '<th style="width:16px;border-bottom:1px solid var(--border)"></th>' + '<th style="width:0;padding:0;border-bottom:1px solid var(--border)"></th>'
     + '<th style="text-align:left;padding:5px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">NAME</th>'
     + '</tr></thead>'
     + '<tbody>' + rows + '</tbody>'
@@ -7487,10 +7575,10 @@ function render() {
         + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.close ? x.close.toFixed(2) : '—') + '</td>'
         + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.cur ? x.cur.toFixed(2) : '—') + '</td>'
         + '<td style="text-align:right;padding:5px 4px;white-space:nowrap" class="' + cls + '">' + (x.delta >= 0 ? '+' : '') + x.delta.toFixed(2) + '%</td>'
-        + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(p.marketState) + '</td>'
+        + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(p.marketState) + '</td>' + staleColHtml(p)
         + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
         + '</tr>'
-        + (isExpanded ? '<tr><td colspan="6" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>' : '');
+        + (isExpanded ? '<tr><td colspan="7" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>' : '');
     }).join('');
     var limitInput2 = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
       + '<span style="font-size:9px;color:var(--dim);letter-spacing:1px">SHOW TOP</span>'
@@ -7503,7 +7591,7 @@ function render() {
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">&#916;%</th>'
-      + '<th style="width:16px;border-bottom:1px solid var(--border)"></th>'
+      + '<th style="width:16px;border-bottom:1px solid var(--border)"></th>' + '<th style="width:0;padding:0;border-bottom:1px solid var(--border)"></th>'
       + '<th style="text-align:left;padding:5px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">NAME</th>'
       + '</tr></thead><tbody>' + rowsSingle + '</tbody></table></div>';
     fetchHistoricalIfNeeded(moversPos.map(function(p) { return p.ticker; }));
@@ -7602,12 +7690,10 @@ function render() {
     var curCell;
     if (isLoading) {
       curCell = '<span class="muted">...</span>';
-    } else if (p.fetchErr) {
-      curCell = '<button class="fetch-btn" style="color:var(--red);border-color:var(--red)" onclick="refreshPrice(' + p.id + ')">ERR ↻</button>';
     } else if (p.current !== null && p.current !== undefined) {
       curCell = getPositionCurrencySymbol(p) + f2(p.current);
     } else {
-      curCell = '<button class="fetch-btn" onclick="refreshPrice(' + p.id + ')">FETCH</button>';
+      curCell = '<span class="muted">&mdash;</span>';
     }
 
     var qtyCell = isEdit ? '<input class="edit-input" id="editQty" type="number" value="' + p.qty + '">' : (p.qty === 0 ? '<span style="color:var(--dim)">&mdash;</span>' : (Number.isInteger(p.qty) ? p.qty : p.qty.toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:4})));
@@ -7647,7 +7733,7 @@ function render() {
       + '<td>' + curEditCell + '</td>'
       + '<td class="' + cls(pnl) + '">' + (p.qty === 0 ? '<span style="color:var(--dim)">&mdash;</span>' : fSign(pnl !== null ? pnl * p.qty : null)) + '</td>'
       + '<td class="' + cls(pnlPct) + '">' + fPct(pnlPct) + '</td>'
-      + '<td style="width:16px;padding:0 2px;text-align:center">' + (p.sold ? '<span style="color:#7090b0;font-size:13px">&#8960;</span>' : marketIcon(p.marketState)) + '</td>'
+      + '<td style="width:16px;padding:0 2px;text-align:center">' + (p.sold ? '<span style="color:#7090b0;font-size:13px">&#8960;</span>' : marketIcon(p.marketState)) + '</td>' + staleColHtml(p)
       + '<td style="white-space:nowrap;text-align:left">' + sellAction + '</td>'
       + '<td style="white-space:nowrap;text-align:center">' + moveBtn + '</td>'
       + '<td style="white-space:nowrap;text-align:center">' + editBtn + '</td>'
@@ -8806,7 +8892,7 @@ function render() {
           }
         });
         if (!hasPos) {
-          rows += '<tr><td style="text-align:left;white-space:nowrap">' + p.name + '</td><td colspan="4" style="color:var(--dim)">—</td></tr>';
+          rows += '<tr><td style="text-align:left;white-space:nowrap">' + p.name + '</td>' + stalePortfolioColHtml(pid) + '<td colspan="4" style="color:var(--dim)">—</td></tr>';
           return;
         }
         var delta = currentVal - closeVal;
@@ -8815,6 +8901,7 @@ function render() {
         totCloseUSD += closeUSD; totCurrentUSD += currentUSD; hasAny = true;
         rows += '<tr>'
           + '<td style="text-align:left;white-space:nowrap;cursor:pointer" onclick="switchPortfolio(&apos;' + pid + '&apos;)">' + p.name + '</td>'
+          + stalePortfolioColHtml(pid)
           + '<td>' + baseSym2 + f2(closeVal) + '</td>'
           + '<td>' + baseSym2 + f2(currentVal) + '</td>'
           + '<td class="' + dClass + '">' + fSign(delta) + '</td>'
@@ -8827,6 +8914,7 @@ function render() {
       area.innerHTML = '<div class="table-wrap"><table>'
         + '<thead><tr>'
         + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO</th>'
+        + '<th style="width:0;padding:0;border-bottom:1px solid var(--border)"></th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">&#916;</th>'
@@ -8921,6 +9009,7 @@ function render() {
         var c = pnl === null ? '' : (pnl >= 0 ? 'pos' : 'neg');
         summaryRows += '<tr>'
         + '<td style="text-align:left;white-space:nowrap;cursor:pointer" onclick="switchPortfolio(&apos;' + s.id + '&apos;)">' + s.name + '</td>'
+        + stalePortfolioColHtml(s.id)
         + '<td>' + (s.val !== null ? (CURRENCY_SYMBOLS[s.currencyCode] || s.currencyCode) + f2(s.val) : '&mdash;') + '</td>'
         + '<td class="' + c + '">' + (pnl !== null ? fSign(pnl) : '&mdash;') + '</td>'
         + '<td class="' + c + '">' + (ret !== null ? fPct(ret) : '&mdash;') + '</td>'
@@ -8936,6 +9025,7 @@ function render() {
       + '<table>'
       + '<thead><tr>'
       + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO</th>'
+        + '<th style="width:0;padding:0;border-bottom:1px solid var(--border)"></th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">VALUE</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">P&amp;L</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">RETURN</th>'
@@ -9001,13 +9091,13 @@ function render() {
         + '<td style="white-space:nowrap">' + (close ? getPositionCurrencySymbol(p) + f2(close) : '&mdash;') + '</td>'
         + '<td style="white-space:nowrap">' + (price ? getPositionCurrencySymbol(p) + f2(price) : '&mdash;') + '</td>'
         + '<td class="' + deltaClass + '" style="white-space:nowrap">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
-        + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(p.marketState) + '</td>'
+        + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(p.marketState) + '</td>' + staleColHtml(p)
         + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
         + '<td style="white-space:nowrap">'
           + '<button class="btn-icon" onclick="removePosition(' + p.id + ')" style="color:var(--red)">&#10005;</button>'
         + '</td>'
         + '</tr>'
-        + (isExpanded ? '<tr><td colspan="7" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>' : '');
+        + (isExpanded ? '<tr><td colspan="8" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>' : '');
     });
     area.innerHTML = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
       + '<table style="border-collapse:collapse;font-size:13px">'
@@ -9016,7 +9106,7 @@ function render() {
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortWatchlist(&apos;delta&apos;)">&#916;%' + wlDeltaArrow + '</th>'
-      + '<th style="width:16px;border-bottom:1px solid var(--border)"></th>'
+      + '<th style="width:16px;border-bottom:1px solid var(--border)"></th>' + '<th style="width:0;padding:0;border-bottom:1px solid var(--border)"></th>'
       + '<th style="text-align:left;padding:5px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">NAME</th>'
       + '<th style="border-bottom:1px solid var(--border)"></th>'
       + '</tr></thead>'
@@ -9060,7 +9150,7 @@ function render() {
       var isExpanded = expandedId === p.id;
       var mktTickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtmlForPosition(p) + '</span>';
       var mktExpandedRow = isExpanded
-        ? '<tr><td colspan="6" style="padding:4px 8px 8px;background:var(--bg2)">' + (entry.group.length > 1 ? buildExpandedInnerAgg(p, entry.group) : buildExpandedInner(p)) + '</td></tr>'
+        ? '<tr><td colspan="7" style="padding:4px 8px 8px;background:var(--bg2)">' + (entry.group.length > 1 ? buildExpandedInnerAgg(p, entry.group) : buildExpandedInner(p)) + '</td></tr>'
         : '';
       if (p.current == null) {
         marketRows += '<tr>'
@@ -9069,6 +9159,7 @@ function render() {
           + '<td style="padding:5px 4px"><span class="muted">&mdash;</span></td>'
           + '<td style="padding:5px 4px"><span class="muted">&mdash;</span></td>'
           + '<td style="width:16px;padding:0 2px;text-align:center"></td>'
+          + '<td style="width:0;padding:0"></td>'
           + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px"></td>'
           + '</tr>'
           + mktExpandedRow;
@@ -9091,7 +9182,7 @@ function render() {
         + '<td style="text-align:right;padding:5px 4px">' + (regPrice !== null ? getPositionCurrencySymbol(p) + f2(regPrice) : '&mdash;') + '</td>'
         + '<td style="text-align:right;padding:5px 4px">' + getPositionCurrencySymbol(p) + f2(mktCurrent) + '</td>'
         + '<td style="text-align:right;padding:5px 4px" class="' + deltaClass + '">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
-        + '<td style="width:16px;padding:0 2px;text-align:center">' + (p.sold ? '<span style="color:#7090b0;font-size:13px">&#8960;</span>' : marketIcon(p.marketState)) + '</td>'
+        + '<td style="width:16px;padding:0 2px;text-align:center">' + (p.sold ? '<span style="color:#7090b0;font-size:13px">&#8960;</span>' : marketIcon(p.marketState)) + '</td>' + staleColHtml(p)
         + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
         + '</tr>'
         + mktExpandedRow;
@@ -9113,7 +9204,7 @@ function render() {
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortMarket(&apos;delta&apos;)">&#916;%' + mkDeltaArrow + '</th>'
-      + '<th style="width:16px;padding:0"></th>'
+      + '<th style="width:16px;padding:0"></th>' + '<th style="width:0;padding:0"></th>'
       + '<th style="text-align:left;padding:5px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">NAME</th>'
       + '</tr></thead>'
       + '<tbody>' + marketRows + '</tbody>'
@@ -9460,7 +9551,7 @@ function render() {
     + thBtn('current', currentPortfolio().archive ? 'SELL PRICE' : 'CURRENT')
     + thBtn('pnl', 'P&amp;L')
     + thBtn('pnlpct', 'P&amp;L %')
-    + '<th style="width:16px;padding:0"></th>'
+    + '<th style="width:16px;padding:0"></th>' + '<th style="width:0;padding:0"></th>'
     + '<th style="text-align:left;padding:5px 4px;border-bottom:1px solid var(--border)"><span onclick="toggleAggregated()" title="Toggle aggregation" style="cursor:pointer;font-size:14px;color:' + (isAggregated() ? 'var(--green)' : 'var(--dim)') + '">&#8801;</span></th>'
     + '<th style="border-bottom:1px solid var(--border)"></th>'
     + '<th style="border-bottom:1px solid var(--border)"></th>'
@@ -9538,6 +9629,12 @@ document.addEventListener('click', function(e) {
     drop.style.display = 'none';
     _openDictDrop = null;
   }
+});
+// Refresh prices when the app returns to the foreground (mobile / PWA
+// background → foreground). Without this, the user sees prices from
+// whenever the app was last in focus, possibly hours old.
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState === 'visible' && getApiKey()) refreshAll();
 });
 </script>
 <script>
