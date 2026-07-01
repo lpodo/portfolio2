@@ -9233,11 +9233,21 @@ function render() {
   if (viewMode === 'chart') {
     var chartRange = window.chartRange || '1mo';
     var sets = getPositionSets();
-    var selSetId = isWatchlist() ? (sets[0] ? sets[0].id : null) : getChartSelectedSet();
-    // Validate: if selected set was deleted, fall back to portfolio
-    if (selSetId !== 'portfolio' && selSetId && !sets.find(function(s) { return s.id === selSetId; })) {
-      selSetId = isWatchlist() ? null : 'portfolio';
-      if (!isWatchlist()) setChartSelectedSet('portfolio');
+    var selSetId = getChartSelectedSet();
+    // Watchlist: 'portfolio' pseudo-value doesn't apply (WL has no aggregate
+    // "portfolio" concept, only individual sets). If the saved selection is
+    // 'portfolio' or points to a deleted set, fall back to the first set.
+    if (isWatchlist()) {
+      var invalid = selSetId === 'portfolio'
+        || (selSetId && !sets.find(function(s) { return s.id === selSetId; }));
+      if (invalid) {
+        selSetId = sets[0] ? sets[0].id : null;
+        if (selSetId) setChartSelectedSet(selSetId);
+      }
+    } else if (selSetId !== 'portfolio' && selSetId && !sets.find(function(s) { return s.id === selSetId; })) {
+      // Regular: deleted set → fall back to portfolio aggregate
+      selSetId = 'portfolio';
+      setChartSelectedSet('portfolio');
     }
     var selSet = (selSetId && selSetId !== 'portfolio') ? sets.find(function(s) { return s.id === selSetId; }) : null;
     var chartHasSel = selSetId === 'portfolio' || !!selSet;
