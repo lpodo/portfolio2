@@ -260,8 +260,9 @@
             inputmode="text" autocomplete="off" autocorrect="off"
             autocapitalize="characters" spellcheck="false"
             style="flex:1;min-width:0"
-            oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9.\-^=]/g,'')"
-            onkeydown="if(event.key==='Enter'){document.getElementById('fQty').focus()}">
+            oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9.\-^=]/g,'');var i=document.getElementById('fIsin');if(i)i.value=''"
+            onblur="tryAutofillIsinInAddForm()"
+            onkeydown="if(event.key==='Enter'){tryAutofillIsinInAddForm();document.getElementById('fQty').focus()}">
           <button class="btn-icon" onclick="pastePosition()" id="pasteBtn" title="Paste" style="font-size:16px;padding:4px 6px;color:var(--dim);flex:none">&#10697;</button>
           <button class="btn-icon" onclick="clearAddForm()" title="Clear" style="font-size:14px;padding:4px 6px;color:var(--dim);flex:none">&#10005;</button>
         </div>
@@ -286,6 +287,12 @@
       <div class="field">
         <label>BUY DATE</label>
         <input type="date" id="fDate" style="width:130px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;box-sizing:border-box">
+      </div>
+      <div class="field">
+        <label>ISIN</label>
+        <input type="text" id="fIsin" placeholder="US0378331005" maxlength="12"
+          autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false"
+          style="width:130px" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')">
       </div>
     </div>
     <div style="display:flex;align-items:center;margin-top:8px">
@@ -527,53 +534,92 @@ var currentPortfolioId = null;
 // multiple portfolios / brokers / watchlists shares the same alert set.
 // Shape: { 'AAPL': [alertObj, ...], 'NVDA': [...] }. Tickers with no alerts
 // are removed from the object (no empty-array clutter).
-var tickerAlerts = {};
+// Per-ticker registry. Consolidates all data keyed by ticker rather than by
+// position. Same ticker held across multiple portfolios / brokers / watchlists
+// shares one entry. Fields:
+//   .alerts — array of alert objects (may be absent)
+//   .isin   — string ISIN | 'UNRESOLVED' | absent
+// Absent field means "no data" (falsy); UNRESOLVED means "we asked Yahoo and
+// nothing came back — don't re-ask" (for isin). Entries with no fields at all
+// are removed from the object (no empty-object clutter).
+var tickerData = {};
 
+// ── Alerts (thin wrappers over tickerData[ticker].alerts) ───────────────────
 function getTickerAlerts(ticker) {
   if (!ticker) return [];
-  var a = tickerAlerts[ticker];
-  return (a && a.length) ? a : [];
+  var d = tickerData[ticker];
+  return (d && d.alerts && d.alerts.length) ? d.alerts : [];
 }
 function setTickerAlerts(ticker, arr) {
   if (!ticker) return;
-  if (arr && arr.length) tickerAlerts[ticker] = arr;
-  else delete tickerAlerts[ticker];
+  if (arr && arr.length) {
+    if (!tickerData[ticker]) tickerData[ticker] = {};
+    tickerData[ticker].alerts = arr;
+  } else if (tickerData[ticker]) {
+    delete tickerData[ticker].alerts;
+    if (!Object.keys(tickerData[ticker]).length) delete tickerData[ticker];
+  }
 }
 function addTickerAlert(ticker, alertObj) {
   if (!ticker || !alertObj) return;
-  if (!tickerAlerts[ticker]) tickerAlerts[ticker] = [];
-  tickerAlerts[ticker].push(alertObj);
+  if (!tickerData[ticker]) tickerData[ticker] = {};
+  if (!tickerData[ticker].alerts) tickerData[ticker].alerts = [];
+  tickerData[ticker].alerts.push(alertObj);
 }
 function removeTickerAlert(ticker, id) {
-  if (!ticker || !tickerAlerts[ticker]) return;
-  tickerAlerts[ticker] = tickerAlerts[ticker].filter(function(a) { return a.id !== id; });
-  if (!tickerAlerts[ticker].length) delete tickerAlerts[ticker];
+  if (!ticker || !tickerData[ticker] || !tickerData[ticker].alerts) return;
+  tickerData[ticker].alerts = tickerData[ticker].alerts.filter(function(a) { return a.id !== id; });
+  if (!tickerData[ticker].alerts.length) {
+    delete tickerData[ticker].alerts;
+    if (!Object.keys(tickerData[ticker]).length) delete tickerData[ticker];
+  }
 }
-// Drop the alert registry entry for a ticker when no active (non-sold) or
-// watchlist positions of it remain anywhere — archive positions don't keep
-// alerts alive (their prices aren't tracked, the alerts are stale closed
-// history). Called after operations that could orphan a ticker: sell,
-// delete, move-to-archive, ticker rename, portfolio delete. Idempotent —
-// safely callable for any ticker, no-op if alerts don't exist or live
-// positions remain.
-function cleanupAlertsForTickerIfUnused(ticker) {
-  if (!ticker || !tickerAlerts[ticker]) return;
-  var hasLive = false;
+// ── ISIN (thin wrappers over tickerData[ticker].isin) ──────────────────────
+// Three states: string ISIN | 'UNRESOLVED' | absent (falsy).
+// Yahoo lookup fires only when falsy — UNRESOLVED and known ISIN don't re-query.
+function getTickerIsin(ticker) {
+  if (!ticker) return undefined;
+  var d = tickerData[ticker];
+  return d ? d.isin : undefined;
+}
+function setTickerIsin(ticker, v) {
+  if (!ticker) return;
+  if (v) {
+    if (!tickerData[ticker]) tickerData[ticker] = {};
+    tickerData[ticker].isin = v;
+  } else if (tickerData[ticker]) {
+    delete tickerData[ticker].isin;
+    if (!Object.keys(tickerData[ticker]).length) delete tickerData[ticker];
+  }
+}
+// ── Prune orphaned ticker data ─────────────────────────────────────────────
+// Called after operations that could orphan a ticker (sell, delete, ticker
+// rename, portfolio delete). Different fields have different retention rules:
+//   .alerts — dropped when no live (non-sold, non-archive) or watchlist
+//             positions of the ticker remain (archive doesn't keep alerts alive)
+//   .isin   — dropped when NO positions of the ticker exist anywhere at all,
+//             including archive (realized positions still want their ISIN
+//             remembered for tax/reporting purposes)
+// If both fields end up empty, the whole ticker entry is removed.
+// Idempotent — safely callable for any ticker.
+function pruneTickerData(ticker) {
+  if (!ticker || !tickerData[ticker]) return;
+  var hasLiveOrWL = false;
+  var hasAnywhere = false;
   Object.keys(portfolios).forEach(function(pid) {
-    if (hasLive) return;
     var port = portfolios[pid];
-    if (port.archive) return;
     (port.positions || []).forEach(function(pos) {
-      if (hasLive) return;
       if (pos.ticker !== ticker) return;
-      if (port.watchlist) { hasLive = true; return; }
-      if (!pos.sold) hasLive = true;
+      hasAnywhere = true;
+      if (port.archive) return;
+      if (port.watchlist) { hasLiveOrWL = true; return; }
+      if (!pos.sold) hasLiveOrWL = true;
     });
   });
-  if (!hasLive) {
-    delete tickerAlerts[ticker];
-    saveTickerAlertsLS();
-  }
+  if (!hasLiveOrWL && tickerData[ticker].alerts) delete tickerData[ticker].alerts;
+  if (!hasAnywhere && tickerData[ticker].isin) delete tickerData[ticker].isin;
+  if (!Object.keys(tickerData[ticker]).length) delete tickerData[ticker];
+  saveTickerDataLS();
 }
 
 function getPortfolios() {
@@ -582,11 +628,50 @@ function getPortfolios() {
 function savePortfolios() {
   try { localStorage.setItem('pt_portfolios', JSON.stringify(portfolios)); } catch(e) {}
 }
-function loadTickerAlertsLS() {
-  try { tickerAlerts = JSON.parse(localStorage.getItem('pt_ticker_alerts') || '{}'); } catch(e) { tickerAlerts = {}; }
+// Loads from new key; one-time migration from legacy pt_ticker_alerts (flat
+// { ticker: [alerts] } shape) into new nested { ticker: { alerts: [...] } }.
+// Migration is destructive on the LS side — after successful move, the old
+// key is deleted so subsequent loads skip this path.
+function loadTickerDataLS() {
+  try { tickerData = JSON.parse(localStorage.getItem('pt_ticker_data') || '{}'); } catch(e) { tickerData = {}; }
+  // One-time migration from legacy per-ticker alerts key
+  try {
+    var legacyRaw = localStorage.getItem('pt_ticker_alerts');
+    if (legacyRaw) {
+      var legacy = JSON.parse(legacyRaw);
+      Object.keys(legacy || {}).forEach(function(t) {
+        var arr = legacy[t];
+        if (arr && arr.length) {
+          if (!tickerData[t]) tickerData[t] = {};
+          if (!tickerData[t].alerts) tickerData[t].alerts = arr;
+        }
+      });
+      localStorage.removeItem('pt_ticker_alerts');
+      saveTickerDataLS();
+    }
+  } catch(e) {}
 }
-function saveTickerAlertsLS() {
-  try { localStorage.setItem('pt_ticker_alerts', JSON.stringify(tickerAlerts)); } catch(e) {}
+function saveTickerDataLS() {
+  try { localStorage.setItem('pt_ticker_data', JSON.stringify(tickerData)); } catch(e) {}
+}
+// When cloud payload contains legacy `tickerAlerts` (flat) but not `tickerData`,
+// merge the alerts into the nested structure. Used by all cloud/backup readers.
+function migrateLegacyTickerAlertsFromCloud(data) {
+  if (!data) return;
+  if (data.tickerData && typeof data.tickerData === 'object') {
+    tickerData = data.tickerData;
+  } else {
+    tickerData = {};
+  }
+  if (data.tickerAlerts && typeof data.tickerAlerts === 'object') {
+    Object.keys(data.tickerAlerts).forEach(function(t) {
+      var arr = data.tickerAlerts[t];
+      if (arr && arr.length) {
+        if (!tickerData[t]) tickerData[t] = {};
+        if (!tickerData[t].alerts) tickerData[t].alerts = arr;
+      }
+    });
+  }
 }
 function newAlertId() {
   return String(Date.now()) + '_' + Math.random().toString(36).slice(2, 8);
@@ -602,7 +687,7 @@ function initPortfolios() {
     savePortfolios();
   }
   // Load ticker-level alerts from localStorage
-  loadTickerAlertsLS();
+  loadTickerDataLS();
   // Restore last active portfolio
   currentPortfolioId = localStorage.getItem('pt_current');
   if (!currentPortfolioId || !portfolios[currentPortfolioId]) {
@@ -2980,7 +3065,7 @@ function deletePortfolio(id) {
   var portfolioTickers = {};
   (p.positions || []).forEach(function(pos) { if (pos.ticker) portfolioTickers[pos.ticker] = true; });
   delete portfolios[id];
-  Object.keys(portfolioTickers).forEach(cleanupAlertsForTickerIfUnused);
+  Object.keys(portfolioTickers).forEach(pruneTickerData);
   savePortfolios();
   save();
   if (currentPortfolioId === id) {
@@ -3133,7 +3218,7 @@ function backupData() {
     cashCatDict: cashCatDict,
     brokerDict: brokerDict,
     defaultBroker: _defaultBroker || null,
-    tickerAlerts: tickerAlerts
+    tickerData: tickerData
   };
   var json = JSON.stringify(data, null, 2);
   var blob = new Blob([json], { type: 'application/json' });
@@ -3176,8 +3261,8 @@ function restoreData(event) {
       if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
       if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
       if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
-      tickerAlerts = (data.tickerAlerts && typeof data.tickerAlerts === 'object') ? data.tickerAlerts : {};
-      saveTickerAlertsLS();
+      migrateLegacyTickerAlertsFromCloud(data);
+      saveTickerDataLS();
       saveDicts();
       currentPortfolioId = Object.keys(portfolios)[0];
       localStorage.setItem('pt_current', currentPortfolioId);
@@ -3315,7 +3400,7 @@ function cloudSave() {
 }
 
 function _doCloudSave(key, binId) {
-  var plaintext = JSON.stringify({ portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerAlerts: tickerAlerts });
+  var plaintext = JSON.stringify({ portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerData: tickerData });
   var encKey = getEncKey();
 
   function doSend(body) {
@@ -3407,8 +3492,8 @@ function cloudLoadKV(callback) {
           if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
           if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
           if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
-          tickerAlerts = (data.tickerAlerts && typeof data.tickerAlerts === 'object') ? data.tickerAlerts : {};
-          saveTickerAlertsLS();
+          migrateLegacyTickerAlertsFromCloud(data);
+          saveTickerDataLS();
           saveDicts();
           savePortfolios();
           if (!portfolios[currentPortfolioId]) { currentPortfolioId = Object.keys(portfolios)[0]; localStorage.setItem('pt_current', currentPortfolioId); }
@@ -3445,7 +3530,7 @@ function cloudSaveKV() {
   var token = getToken();
   var kvKey = getKvKey();
   if (!baseUrl || !kvKey) return;
-  var payload = { portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerAlerts: tickerAlerts };
+  var payload = { portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerData: tickerData };
   var encKey = getEncKey();
   function doSave(body) {
     fetch(baseUrl + '/api/kv', {
@@ -3508,8 +3593,8 @@ function cloudLoad(callback) {
         if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
         if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
         if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
-        tickerAlerts = (data.tickerAlerts && typeof data.tickerAlerts === 'object') ? data.tickerAlerts : {};
-        saveTickerAlertsLS();
+        migrateLegacyTickerAlertsFromCloud(data);
+        saveTickerDataLS();
         saveDicts();
         savePortfolios();
         if (!portfolios[currentPortfolioId]) {
@@ -3711,6 +3796,33 @@ function fetchPrice(ticker) {
   });
 }
 
+// Fetch ISIN for a ticker via Yahoo quoteSummary (module `quoteType` sometimes
+// contains an `isin` field — undocumented, coverage is partial: usually
+// present for EU/UK/CH/JP tickers, usually absent for US and ADR). Returns
+// the ISIN string on success, null on "no isin in response" (Yahoo answered
+// but the field wasn't there), or throws on network/HTTP errors.
+function fetchIsin(ticker) {
+  if (!ticker) return Promise.resolve(null);
+  var baseUrl = getApiKey();
+  if (!baseUrl) return Promise.reject(new Error('no_key'));
+  baseUrl = baseUrl.replace(/\/+$/, '');
+  var token = getToken();
+  var url = baseUrl + '/api/quotesummary?ticker=' + encodeURIComponent(ticker) + '&modules=quoteType';
+  var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  var timer = controller ? setTimeout(function() { controller.abort(); }, 15000) : null;
+  var opts = controller ? { signal: controller.signal } : {};
+  if (token) opts.headers = { 'X-API-Token': token };
+  return fetch(url, opts).then(function(r) {
+    if (timer) clearTimeout(timer);
+    if (!r.ok) throw new Error('http_' + r.status);
+    return r.json();
+  }).then(function(data) {
+    if (!data || data.error || data._error) return null;
+    var qt = data.quoteSummary && data.quoteSummary.result && data.quoteSummary.result[0] && data.quoteSummary.result[0].quoteType;
+    return (qt && qt.isin) || null;
+  });
+}
+
 // YYYY-MM-DD in local timezone, used as default purchaseDate for new positions
 function todayLocalISO() {
   return new Date().toLocaleDateString('en-CA');
@@ -3805,8 +3917,14 @@ function addPosition() {
     var pos = Object.assign({ id: Date.now(), ticker: ticker, qty: qty, entry: entry, current: current }, inherited, extraFields);
     if (isSold) pos.sold = true;
     positions.push(pos);
+    // ISIN: uniform "empty = reset, non-empty = save" semantics with Edit.
+    // The user's actual intent is captured via dataset.userTouched (any input
+    // event) — combined with save-start autofill, an untouched empty field
+    // means "we had no data to prefill" (no reset needed), while a touched
+    // empty field means "user actively cleared" (reset).
+    applyIsinInput(ticker, document.getElementById('fIsin'));
     save();
-    ['fTicker','fQty','fEntry','fCurrent'].forEach(function(id) { document.getElementById(id).value = ''; });
+    ['fTicker','fQty','fEntry','fCurrent','fIsin'].forEach(function(id) { document.getElementById(id).value = ''; });
     document.getElementById('fDate').value = todayLocalISO();
     renderAddBrokerSlot(); // refresh dropdown + reset to current default
     render();
@@ -3833,8 +3951,50 @@ function addPosition() {
   });
 }
 
+// Called on blur/Enter of the ticker input in the Add form. Prefills the
+// ISIN field from tickerData when we already know the ticker's ISIN — but
+// only if the ISIN input is empty (never overwrites what the user typed).
+// UNRESOLVED state leaves the input empty so user may enter manually.
+function tryAutofillIsinInAddForm() {
+  var isinEl = document.getElementById('fIsin');
+  if (!isinEl || isinEl.value.trim()) return;
+  var tickerEl = document.getElementById('fTicker');
+  if (!tickerEl) return;
+  var t = tickerEl.value.trim().toUpperCase();
+  if (!t) return;
+  var known = getTickerIsin(t);
+  if (known && known !== 'UNRESOLVED') isinEl.value = known;
+}
+
+// Persist the ISIN input's value against the given ticker. Uniform rules
+// across Add and Edit forms:
+//   empty field AND ticker has real ISIN → confirm("Reset ISIN?")
+//     Yes → drop entry (next refreshTicker will Yahoo-fetch again)
+//     No  → keep existing untouched
+//   empty field AND ticker has UNRESOLVED / no data → no-op
+//   non-empty field differs from existing → manual override wins
+//   non-empty field matches existing → no-op
+// The confirm dialog is the only safety against accidental reset — no more
+// dataset flag tracking. Simpler and more robust: if the user really cleared
+// the field intentionally, one extra tap answers the confirm.
+function applyIsinInput(ticker, inputEl) {
+  if (!ticker || !inputEl) return;
+  var val = (inputEl.value || '').trim().toUpperCase();
+  var existing = getTickerIsin(ticker);
+  if (val === '') {
+    if (existing && existing !== 'UNRESOLVED') {
+      if (!confirm('Reset ISIN for ' + ticker + '?')) return;
+      setTickerIsin(ticker, null);
+      saveTickerDataLS();
+    }
+  } else if (val !== existing) {
+    setTickerIsin(ticker, val);
+    saveTickerDataLS();
+  }
+}
+
 function clearAddForm() {
-  ['fTicker','fQty','fEntry','fCurrent'].forEach(function(id) {
+  ['fTicker','fQty','fEntry','fCurrent','fIsin'].forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.value = '';
   });
@@ -3915,7 +4075,7 @@ function confirmSell(id) {
   // Save positions back to portfolios before cleanup so the orphan check
   // sees the updated state.
   portfolios[currentPortfolioId].positions = positions;
-  cleanupAlertsForTickerIfUnused(pos.ticker);
+  pruneTickerData(pos.ticker);
   save();
   render();
 }
@@ -3928,7 +4088,7 @@ function removePosition(id) {
   }
   positions = positions.filter(function(p) { return p.id !== id; });
   portfolios[currentPortfolioId].positions = positions;
-  if (pos) cleanupAlertsForTickerIfUnused(pos.ticker);
+  if (pos) pruneTickerData(pos.ticker);
   save(); render();
 }
 
@@ -3945,7 +4105,7 @@ function removeAggPositions(ticker, soldFlag) {
   group.forEach(function(gp) { groupIds[gp.id] = true; });
   positions = positions.filter(function(p) { return !(p.id in groupIds); });
   portfolios[currentPortfolioId].positions = positions;
-  cleanupAlertsForTickerIfUnused(ticker);
+  pruneTickerData(ticker);
   save();
   render();
 }
@@ -3967,7 +4127,7 @@ function findPortfolioForPosition(posId) {
 function deleteAlert(ticker, alertId) {
   if (!ticker) return;
   removeTickerAlert(ticker, alertId);
-  saveTickerAlertsLS();
+  saveTickerDataLS();
   save();
   render();
 }
@@ -3978,7 +4138,7 @@ function addAlert(ticker) {
   var val = parseFloat(document.getElementById('alertVal').value);
   if (isNaN(val) || val <= 0) return;
   addTickerAlert(ticker, { id: newAlertId(), condition: cond, value: val, triggered: false });
-  saveTickerAlertsLS();
+  saveTickerDataLS();
   save();
   render();
 }
@@ -4154,7 +4314,7 @@ function quickAddAlert(ticker) {
   var val = parseFloat(document.getElementById('quickAlertVal').value);
   if (isNaN(val) || val <= 0) return;
   addTickerAlert(ticker, { id: newAlertId(), condition: cond, value: val, triggered: false });
-  saveTickerAlertsLS();
+  saveTickerDataLS();
   save();
   render();
 }
@@ -4216,18 +4376,19 @@ function saveEdit(id) {
     });
   });
   positions = portfolios[currentPortfolioId].positions;
+  // ISIN — uniform semantics with Add form via applyIsinInput
+  applyIsinInput(syncTicker, document.getElementById('editIsin'));
   // If ticker was renamed and the old one no longer has live positions
-  // anywhere, drop its alerts so they don't sit around for a ticker that
-  // isn't being watched.
+  // anywhere, drop its data so orphan entries don't accumulate.
   if (oldTicker && newTicker && newTicker !== oldTicker) {
-    cleanupAlertsForTickerIfUnused(oldTicker);
+    pruneTickerData(oldTicker);
   }
   savePortfolios(); if (getCloudBackend() === 'kv') cloudSaveKV(); else cloudSave(); editId = null; render();
 }
 
 // Fetch a ticker's price and apply it to all non-sold positions of that
 // ticker across all non-archive portfolios. Ticker-level operation —
-// matches the semantics of tickerAlerts and staleTickers.
+// matches the semantics of tickerData and staleTickers.
 function refreshTicker(ticker) {
   if (!ticker) return Promise.resolve();
   if (!getApiKey()) { document.getElementById('apiKeyInput').focus(); return Promise.resolve(); }
@@ -4258,7 +4419,18 @@ function refreshTicker(ticker) {
       setTickerAlerts(ticker, tAlerts.map(function(a) {
         return Object.assign({}, a, { triggered: a.condition === '>' ? price > a.value : price < a.value });
       }));
-      saveTickerAlertsLS();
+      saveTickerDataLS();
+    }
+    // ISIN — fire-and-forget lookup when we have no value yet. Falsy states
+    // ('', null, undefined) all trigger a re-fetch; UNRESOLVED and a real
+    // ISIN string are truthy so they don't re-query. Manual override in the
+    // Edit form always wins because it writes a real string.
+    if (!getTickerIsin(ticker)) {
+      fetchIsin(ticker).then(function(isin) {
+        setTickerIsin(ticker, isin || 'UNRESOLVED');
+        saveTickerDataLS();
+        render();
+      }).catch(function() { /* leave falsy, next refreshTicker will retry */ });
     }
     savePortfolios();
   }).catch(function() {
@@ -4334,7 +4506,7 @@ function refreshAllPortfolios() {
   });
   return Promise.all(allPromises).then(function() {
     savePortfolios();
-    saveTickerAlertsLS();
+    saveTickerDataLS();
     loadLocal();
     render();
   });
@@ -5929,6 +6101,9 @@ function showAnalyticsDetail(rubric, value) {
       key = getPositionCurrencyCode(p) || 'Other';
     } else if (rubric === 'broker') {
       key = getPositionBroker(p) || 'default';
+    } else if (rubric === 'isin') {
+      var isin = getTickerIsin(p.ticker);
+      key = (isin && isin !== 'UNRESOLVED' && isin.length >= 2) ? isin.substring(0, 2).toUpperCase() : 'Unknown';
     } else {
       key = ((p[rubric] || '').trim().replace(/\s+/g, ' ')) || 'Other';
     }
@@ -6056,7 +6231,9 @@ function showAnalyticsDetail(rubric, value) {
 // "Other" reads visually as a normal attribute value just named "Other",
 // rather than signaling "no value set".
 function formatRubricKey(key) {
-  return key === 'Other' ? '<span style="color:var(--dim)">Other</span>' : key;
+  if (key === 'Other')   return '<span style="color:var(--dim)">Other</span>';
+  if (key === 'Unknown') return '<span style="color:var(--dim)">Unknown</span>';
+  return key;
 }
 
 function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
@@ -6080,6 +6257,12 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
       key = getPositionCurrencyCode(p) || 'Other';
     } else if (breakdown === 'broker') {
       key = getPositionBroker(p) || 'default';
+    } else if (breakdown === 'isin') {
+      // ISO country code = first two letters of the ISIN. UNRESOLVED and
+      // missing entries both fold into a single 'Unknown' bucket. Clicking
+      // through to the group shows which tickers still lack an ISIN.
+      var isin = getTickerIsin(p.ticker);
+      key = (isin && isin !== 'UNRESOLVED' && isin.length >= 2) ? isin.substring(0, 2).toUpperCase() : 'Unknown';
     } else {
       key = ((p[breakdown] || '').trim().replace(/\s+/g, ' ')) || 'Other';
     }
@@ -6139,7 +6322,7 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
 // only P&L and WEIGHTS are listed since market/chart make no sense for
 // closed positions).
 function analyticsHeader(breakdown, subview, isRealized) {
-  var rubrics = ['category','region','sector','currency','broker'];
+  var rubrics = ['category','region','sector','currency','broker','isin'];
   var subviews = isRealized ? ['pnl','weights'] : ['pnl','market','chart','weights'];
   var subviewLabels = { pnl: 'P&L', market: 'MARKET', chart: 'CHART', weights: 'WEIGHTS' };
 
@@ -7723,7 +7906,7 @@ function render() {
 
     var isExpanded = expandedId === p.id;
     var tickerCell = isEdit
-      ? '<input class="edit-input" id="editTicker" type="text" value="' + p.ticker + '" style="width:60px;text-transform:uppercase">'
+      ? '<input class="edit-input" id="editTicker" type="text" value="' + p.ticker + '" oninput="var i=document.getElementById(\'editIsin\');if(i)i.value=\'\'" style="width:60px;text-transform:uppercase">'
       : '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + (isEdit ? '' : getAlertDotsHtmlForPosition(p)) + '</span>';
     var soldStyle = (p.sold || p.qty === 0) ? 'font-style:italic;opacity:0.5' : '';
     rows += '<tr style="' + soldStyle + '">'
@@ -7743,6 +7926,11 @@ function render() {
         + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">'
         + buildDictSelectHtml('bro', brokerDict, p.broker || null, 'BROKER', '115px')
         + '<div class="field"><label>BUY DATE</label><input type="date" id="editDate" value="' + (p.purchaseDate || '') + '" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;box-sizing:border-box;width:130px"></div>'
+        + (function() {
+            var known = getTickerIsin(p.ticker);
+            var initialVal = (known && known !== 'UNRESOLVED') ? known : '';
+            return '<div class="field"><label>ISIN</label><input type="text" id="editIsin" value="' + initialVal + '" placeholder="US0378331005" maxlength="12" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" style="width:130px" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,\'\')"></div>';
+          })()
         + '</div>'
         + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">'
         + buildDictSelectHtml('cat', catDict, p.category || null, 'CATEGORY', '115px')
