@@ -593,9 +593,10 @@ function setTickerIsin(ticker, v) {
     if (!Object.keys(tickerData[ticker]).length) delete tickerData[ticker];
   }
 }
-// True when v is a real ISIN string, not a provider "we tried" marker.
-// Any string starting with 'UNRESOLVED' is treated as a marker (works for
-// current 'UNRESOLVED_BI' and any future 'UNRESOLVED_<PROVIDER>').
+// True when v is a real ISIN string, not a "we tried" marker. Any string
+// starting with 'UNRESOLVED' is treated as a marker — the current one is
+// the bare 'UNRESOLVED'; any future provider-specific variant (e.g.
+// 'UNRESOLVED_V2') is covered by the same prefix check.
 function isKnownIsin(v) {
   return !!(v && typeof v === 'string' && v.length >= 2 && v.indexOf('UNRESOLVED') !== 0);
 }
@@ -3818,20 +3819,19 @@ function fetchPrice(ticker) {
   });
 }
 
-// Fetch ISIN for a ticker via the worker's /api/isin endpoint, which now
-// proxies Twelve Data's /stocks endpoint. Returns the ISIN string on
-// success, null on "we asked but nothing matched" (or symbol requires a
-// higher tier), or throws on network/HTTP errors so the frontend retries
-// on the next refresh cycle. shortName is kept in the URL for forward
-// compatibility with providers that need it — Twelve Data ignores it.
-function fetchIsin(ticker, shortName) {
+// Fetch ISIN for a ticker via the worker's /api/isin endpoint. Currently the
+// worker returns { isin: null } for everything — no free provider supplies
+// ISIN data (see worker comment). The pipeline stays intact so users can
+// enter ISINs manually and a real provider can be wired into the worker
+// later without touching the frontend. Returns the ISIN string on success,
+// null when unavailable, or throws on network/HTTP errors.
+function fetchIsin(ticker) {
   if (!ticker) return Promise.resolve(null);
   var baseUrl = getApiKey();
   if (!baseUrl) return Promise.reject(new Error('no_key'));
   baseUrl = baseUrl.replace(/\/+$/, '');
   var token = getToken();
   var url = baseUrl + '/api/isin?ticker=' + encodeURIComponent(ticker);
-  if (shortName) url += '&shortName=' + encodeURIComponent(shortName);
   var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
   var timer = controller ? setTimeout(function() { controller.abort(); }, 15000) : null;
   var opts = controller ? { signal: controller.signal } : {};
@@ -4458,28 +4458,28 @@ function refreshTicker(ticker) {
       }));
       saveTickerDataLS();
     }
-    // ISIN — fire-and-forget lookup via the current provider (Twelve Data).
-    // Only performed for real securities (EQUITY/ETF). Other instrument
+    // ISIN — fire-and-forget lookup via the worker's /api/isin endpoint.
+    // Only performed for real securities (EQUITY/ETF); other instrument
     // types (indices, futures, crypto, currencies) have no meaningful ISIN
-    // and are skipped entirely — no request, no UNRESOLVED marker written.
-    // If Yahoo hasn't classified the ticker yet (__instrumentType null),
-    // we conservatively skip too — one more refresh cycle will pick it up
-    // once the instrument type is known.
+    // and are skipped entirely. If Yahoo hasn't classified the ticker yet
+    // (__instrumentType null) we also skip — a later refresh picks it up.
     //
-    // Retry fires when we have no value yet OR when the cached marker is
-    // from a different (older) provider — this way, when we swap providers,
-    // all previously-cached "we tried" entries get re-queried automatically.
-    // Real ISIN strings (12 chars, starts with country code) are never a
-    // marker so they don't trigger a re-query. Manual override in Edit form
-    // always wins because it writes a real string.
-    var CURRENT_ISIN_MARKER = 'UNRESOLVED_TD';
+    // The worker currently returns null for everything (no free ISIN
+    // provider), so a real lookup resolves to the 'UNRESOLVED' marker on
+    // first refresh and isn't retried afterward. Manual entry in Add/Edit
+    // always wins because it writes a real ISIN string.
+    //
+    // If a real provider is wired into the worker later, bump this marker
+    // (e.g. 'UNRESOLVED_V2') — the isOtherProviderMarker check will then
+    // auto-requery every ticker still carrying the old 'UNRESOLVED' value.
+    var CURRENT_ISIN_MARKER = 'UNRESOLVED';
     var currentIsin = getTickerIsin(ticker);
     var isOtherProviderMarker = currentIsin && typeof currentIsin === 'string'
       && currentIsin.indexOf('UNRESOLVED') === 0
       && currentIsin !== CURRENT_ISIN_MARKER;
     var isEligibleForIsin = __instrumentType === 'EQUITY' || __instrumentType === 'ETF';
     if (isEligibleForIsin && (!currentIsin || isOtherProviderMarker)) {
-      fetchIsin(ticker, __shortName).then(function(isin) {
+      fetchIsin(ticker).then(function(isin) {
         setTickerIsin(ticker, isin || CURRENT_ISIN_MARKER);
         saveTickerDataLS();
         render();

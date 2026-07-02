@@ -190,62 +190,20 @@ export default {
       }
     }
 
-    // ISIN lookup: /api/isin?ticker=AAPL&shortName=Apple+Inc
-    // Uses Twelve Data (twelvedata.com) — free tier covers US equities,
-    // forex, crypto. Non-US requires paid plan (Grow $79/mo). For our
-    // free-tier use case, US tickers resolve automatically, others get
-    // manually entered via Edit form. shortName is unused (we keep it
-    // in the URL for future provider swaps without frontend changes).
-    //
-    // Requires env var TWELVEDATA_API_KEY (set via wrangler secret put).
-    // Missing key → returns { isin: null } silently — behavior indistinguishable
-    // from "symbol not found" so the app degrades gracefully.
+    // ISIN lookup: /api/isin?ticker=AAPL
+    // STUB — always returns { isin: null }. No free provider supplies ISIN:
+    //   - Yahoo doesn't return it in any quoteSummary module
+    //   - Business Insider's scrape is unreliable (mismatched/garbage rows)
+    //   - Twelve Data gates isin/cusip behind a paid add-on on every tier
+    //     (free responses return the literal "request_access_via_add_ons")
+    // The frontend keeps the full ISIN pipeline (per-ticker storage, Add/Edit
+    // fields, analytics rubric) — users enter ISINs manually. This endpoint
+    // stays so the frontend contract is unchanged and a real provider can be
+    // wired in later by editing only this handler.
     if (url.pathname === '/api/isin') {
       const t = url.searchParams.get('ticker');
       if (!t) return json({ error: 'ticker is required' }, 400);
-      const tdKey = env.TWELVEDATA_API_KEY;
-      if (!tdKey) return json({ isin: null });
-      try {
-        const isin = await fetchIsinFromTD(t, tdKey);
-        return json({ isin });
-      } catch (e) {
-        return json({ isin: null, error: String(e?.message || e) }, 500);
-      }
-    }
-
-    // TEMP DEBUG — remove after ISIN provider is validated.
-    // /api/isindebug?ticker=AAPL — returns raw Twelve Data response plus
-    // diagnostics (whether the key is present, the exact URL called minus
-    // the key, HTTP status, and the parsed rows) so we can see exactly why
-    // a ticker resolves or doesn't.
-    if (url.pathname === '/api/isindebug') {
-      const t = url.searchParams.get('ticker');
-      if (!t) return json({ error: 'ticker is required' }, 400);
-      const tdKey = env.TWELVEDATA_API_KEY;
-      const diag = {
-        ticker: t,
-        keyPresent: !!tdKey,
-        keyLength: tdKey ? tdKey.length : 0,
-      };
-      if (!tdKey) return json(Object.assign(diag, { note: 'TWELVEDATA_API_KEY env var is empty/unset' }));
-      try {
-        const tdUrl = `https://api.twelvedata.com/stocks?symbol=${encodeURIComponent(t)}&apikey=${encodeURIComponent(tdKey)}`;
-        const r = await fetch(tdUrl);
-        diag.httpStatus = r.status;
-        const raw = await r.text();
-        diag.rawResponse = raw.slice(0, 2000); // cap size
-        try {
-          const parsed = JSON.parse(raw);
-          diag.parsedStatus = parsed.status || null;
-          diag.rowCount = Array.isArray(parsed.data) ? parsed.data.length : 0;
-          diag.firstRow = (Array.isArray(parsed.data) && parsed.data[0]) || null;
-        } catch (pe) {
-          diag.parseError = String(pe?.message || pe);
-        }
-        return json(diag);
-      } catch (e) {
-        return json(Object.assign(diag, { fetchError: String(e?.message || e) }), 500);
-      }
+      return json({ isin: null });
     }
 
     if (url.pathname !== '/api/quote') {
@@ -486,44 +444,4 @@ async function fetchQuoteSummary(ticker, modules) {
   return anySuccess
     ? { quoteSummary: { result: [merged], error: null } }
     : combined;
-}
-
-// ── ISIN lookup via Twelve Data ────────────────────────────────────────────
-// Their /stocks?symbol=X endpoint returns a JSON record for the ticker with
-// an `isin` field alongside other reference data (name, exchange, CUSIP,
-// FIGI). Documented, stable, no scraping.
-//
-// Free ("Basic") tier covers US equities. Non-US tickers return
-// { status: "error", message: "You do not have access to this symbol" }
-// which we translate to null — user can enter manually or upgrade the plan.
-//
-// Rate limit on Basic is 8 req/min, 800/day. 429 responses (rate-limited)
-// throw so the frontend .catch leaves the field unset → next refresh retries.
-// All other errors (symbol not found, plan restriction, malformed response)
-// return null so the frontend caches as UNRESOLVED_TD and doesn't spam.
-async function fetchIsinFromTD(ticker, apiKey) {
-  const url = `https://api.twelvedata.com/stocks?symbol=${encodeURIComponent(ticker)}&apikey=${encodeURIComponent(apiKey)}`;
-  const r = await fetch(url);
-  if (r.status === 429) throw new Error('TD rate limit');
-  if (!r.ok) throw new Error(`TD HTTP ${r.status}`);
-  const data = await r.json();
-  if (!data || data.status === 'error') return null;
-  const rows = Array.isArray(data.data) ? data.data : [];
-  // Multiple listings possible (e.g. dual-listed shares). Pick the first
-  // row whose symbol matches exactly — Twelve Data returns them in relevance
-  // order but a strict match avoids picking a cross-listed variant.
-  const upTicker = ticker.toUpperCase();
-  const exactMatch = rows.find(function(row) {
-    return row && (row.symbol || '').toUpperCase() === upTicker;
-  }) || rows[0];
-  if (!exactMatch || !exactMatch.isin) return null;
-  return isValidIsin(exactMatch.isin) ? exactMatch.isin : null;
-}
-
-// ISIN format: 2 uppercase letters + 10 alphanumeric (last is check digit,
-// we don't verify the checksum since some markets emit non-standard codes
-// and BI's data is generally trustworthy enough — bad data is better than
-// silent misses for our use case).
-function isValidIsin(v) {
-  return typeof v === 'string' && /^[A-Z]{2}[A-Z0-9]{10}$/.test(v);
 }
