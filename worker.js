@@ -213,6 +213,41 @@ export default {
       }
     }
 
+    // TEMP DEBUG — remove after ISIN provider is validated.
+    // /api/isindebug?ticker=AAPL — returns raw Twelve Data response plus
+    // diagnostics (whether the key is present, the exact URL called minus
+    // the key, HTTP status, and the parsed rows) so we can see exactly why
+    // a ticker resolves or doesn't.
+    if (url.pathname === '/api/isindebug') {
+      const t = url.searchParams.get('ticker');
+      if (!t) return json({ error: 'ticker is required' }, 400);
+      const tdKey = env.TWELVEDATA_API_KEY;
+      const diag = {
+        ticker: t,
+        keyPresent: !!tdKey,
+        keyLength: tdKey ? tdKey.length : 0,
+      };
+      if (!tdKey) return json(Object.assign(diag, { note: 'TWELVEDATA_API_KEY env var is empty/unset' }));
+      try {
+        const tdUrl = `https://api.twelvedata.com/stocks?symbol=${encodeURIComponent(t)}&apikey=${encodeURIComponent(tdKey)}`;
+        const r = await fetch(tdUrl);
+        diag.httpStatus = r.status;
+        const raw = await r.text();
+        diag.rawResponse = raw.slice(0, 2000); // cap size
+        try {
+          const parsed = JSON.parse(raw);
+          diag.parsedStatus = parsed.status || null;
+          diag.rowCount = Array.isArray(parsed.data) ? parsed.data.length : 0;
+          diag.firstRow = (Array.isArray(parsed.data) && parsed.data[0]) || null;
+        } catch (pe) {
+          diag.parseError = String(pe?.message || pe);
+        }
+        return json(diag);
+      } catch (e) {
+        return json(Object.assign(diag, { fetchError: String(e?.message || e) }), 500);
+      }
+    }
+
     if (url.pathname !== '/api/quote') {
       return json({ error: 'Not found' }, 404);
     }
