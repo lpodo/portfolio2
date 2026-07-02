@@ -599,6 +599,17 @@ function setTickerIsin(ticker, v) {
 function isKnownIsin(v) {
   return !!(v && typeof v === 'string' && v.length >= 2 && v.indexOf('UNRESOLVED') !== 0);
 }
+
+// True if the position is an equity or ETF — the only instrument types
+// that carry meaningful company-level metadata (CAT/REG/SEC/ISIN). Everything
+// else (indices, futures, crypto, currencies, options) has no such meta:
+// their CAT/REG/SEC/ISIN rows are hidden in expanded views, and ISIN
+// lookups are skipped. Returns false while instrumentType is unknown (never
+// refreshed yet) — the safe default; one Yahoo refresh fixes the state.
+function isRealSecurity(p) {
+  var t = p && p.instrumentType;
+  return t === 'EQUITY' || t === 'ETF';
+}
 // ── Prune orphaned ticker data ─────────────────────────────────────────────
 // Called after operations that could orphan a ticker (sell, delete, ticker
 // rename, portfolio delete). Different fields have different retention rules:
@@ -1952,6 +1963,7 @@ function moveToPortfolio(targetPid) {
       sector: pos.sector || null,
       purchaseDate: pos.purchaseDate || undefined,
       instrumentType: pos.instrumentType || undefined,
+      exchangeName: pos.exchangeName || undefined,
       broker: pos.broker || undefined
     });
   });
@@ -2037,6 +2049,7 @@ function moveToArchive(archivePid) {
       sector: pos.sector || null,
       purchaseDate: pos.purchaseDate || undefined,
       instrumentType: pos.instrumentType || undefined,
+      exchangeName: pos.exchangeName || undefined,
       broker: pos.broker || undefined
     });
   });
@@ -3773,6 +3786,7 @@ var __previousClose = null;
 var __currency = null;
 var __shortName = null;
 var __instrumentType = null;
+var __exchangeName = null;
 function fetchPrice(ticker) {
   var baseUrl = getApiKey();
   if (!baseUrl) return Promise.reject(new Error('no_key'));
@@ -3799,17 +3813,17 @@ function fetchPrice(ticker) {
     __currency = data.currency || null;
     __shortName = data.shortName || null;
     __instrumentType = data.instrumentType || null;
+    __exchangeName = data.exchangeName || null;
     return data.price;
   });
 }
 
-// Fetch ISIN for a ticker via the worker's /api/isin endpoint, which proxies
-// Business Insider's suggest search (Yahoo doesn't return ISIN in any of its
-// quoteSummary modules — Yahoo licenses quote data separately from ID data).
-// Passing shortName gives BI better hits for tickers whose exchange suffix
-// differs between providers (e.g. NESN.SW on Yahoo vs NESN on BI). Returns
-// the ISIN string on success, null on "we asked but nothing matched", or
-// throws on network/HTTP errors.
+// Fetch ISIN for a ticker via the worker's /api/isin endpoint, which now
+// proxies Twelve Data's /stocks endpoint. Returns the ISIN string on
+// success, null on "we asked but nothing matched" (or symbol requires a
+// higher tier), or throws on network/HTTP errors so the frontend retries
+// on the next refresh cycle. shortName is kept in the URL for forward
+// compatibility with providers that need it — Twelve Data ignores it.
 function fetchIsin(ticker, shortName) {
   if (!ticker) return Promise.resolve(null);
   var baseUrl = getApiKey();
@@ -3953,8 +3967,18 @@ function addPosition() {
       errEl.textContent = '✗ Unknown ticker: ' + ticker;
       return;
     }
+    // Regular and archive portfolios accept EQUITY and ETF only. Watchlists
+    // stay permissive — indices/futures/crypto are common WL entries.
+    // Strict mode: null instrumentType (Yahoo didn't classify) also blocks,
+    // to keep the invariant iron-clad. Rare legitimate edge cases (mostly
+    // small OTC tickers) get pushed to WL instead.
+    if (!isWatchlist() && d.instrumentType !== 'EQUITY' && d.instrumentType !== 'ETF') {
+      var typeMsg = d.instrumentType ? ('is ' + d.instrumentType) : 'has unknown type';
+      errEl.textContent = '✗ ' + ticker + ' ' + typeMsg + '. Portfolios accept only EQUITY/ETF';
+      return;
+    }
     errEl.textContent = '';
-    doAddPosition({ currency: d.currency || null, shortName: d.shortName || null, instrumentType: d.instrumentType || null, purchaseDate: purchaseDate, broker: broker });
+    doAddPosition({ currency: d.currency || null, shortName: d.shortName || null, instrumentType: d.instrumentType || null, exchangeName: d.exchangeName || null, purchaseDate: purchaseDate, broker: broker });
   }).catch(function() {
     errEl.textContent = '✗ Ticker check failed';
   });
@@ -4193,23 +4217,42 @@ function getAlertDotsHtmlForPosition(p) {
 }
 
 function buildExpandedInner(p) {
-  // For watchlist-style positions (qty=0) the broker/buy-date row isn't
-  // meaningful — neither field describes a real trade.
-  var showTradeMeta = p.qty > 0;
-  var row1Html = showTradeMeta
-    ? '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px">'
-      + '<span><span style="opacity:0.6">BROKER</span> <span style="color:var(--bright)">' + (getPositionBroker(p) || 'default') + '</span></span>'
-      + '<span><span style="opacity:0.6">BUY DATE</span> <span style="color:var(--bright)">' + (p.purchaseDate || '—') + '</span></span>'
+  // First two rows (broker/date/ISIN + CAT/REG/SEC) only appear for real
+  // securities (EQUITY/ETF). For indices/futures/crypto/currencies these
+  // fields are semantically meaningless — see isRealSecurity() docs.
+  // Sold positions in active portfolios are still securities: they keep
+  // their instrumentType from purchase-time refresh.
+  var isSecurity = isRealSecurity(p);
+  var isinRaw = getTickerIsin(p.ticker);
+  var isinDisplay = isKnownIsin(isinRaw) ? isinRaw : '—';
+  // Row 1: three shapes
+  //   security + qty>0 (real trade) → BROKER · BUY DATE · ISIN
+  //   security + qty=0 (watchlist)  → ISIN only (for verification)
+  //   not a security                → hidden
+  var row1Html = '';
+  if (isSecurity) {
+    if (p.qty > 0) {
+      row1Html = '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px">'
+        + '<span><span style="opacity:0.6">BROKER</span> <span style="color:var(--bright)">' + (getPositionBroker(p) || 'default') + '</span></span>'
+        + '<span><span style="opacity:0.6">BUY DATE</span> <span style="color:var(--bright)">' + (p.purchaseDate || '—') + '</span></span>'
+        + '<span><span style="opacity:0.6">ISIN</span> <span style="color:var(--bright)">' + isinDisplay + '</span></span>'
+        + '</div>';
+    } else {
+      row1Html = '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px">'
+        + '<span><span style="opacity:0.6">ISIN</span> <span style="color:var(--bright)">' + isinDisplay + '</span></span>'
+        + '</div>';
+    }
+  }
+  var row2Html = isSecurity
+    ? '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px;' + (row1Html ? 'margin-top:6px' : '') + '">'
+      + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (p.category || '—') + '</span></span>'
+      + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (p.region || '—') + '</span></span>'
+      + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (p.sector || '—') + '</span></span>'
       + '</div>'
     : '';
-  var row2MarginTop = showTradeMeta ? 'margin-top:6px' : '';
   return row1Html
-    + '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px;' + row2MarginTop + '">'
-    + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (p.category || '—') + '</span></span>'
-    + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (p.region || '—') + '</span></span>'
-    + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (p.sector || '—') + '</span></span>'
-    + '</div>'
-    + '<div style="margin-top:6px;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
+    + row2Html
+    + '<div style="' + (row2Html ? 'margin-top:6px;' : '') + 'font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
     + '<span style="opacity:0.6">NOTE</span>'
     + (editNoteId === p.id
       ? '<input id="noteEditInput" type="text" value="' + (p.note || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;') + '" style="font-size:10px;font-family:var(--font);background:var(--bg);border:1px solid var(--border);color:var(--bright);padding:1px 4px;width:200px;box-sizing:border-box" onkeydown="if(event.key===\'Enter\'){event.preventDefault();saveNoteInline(' + p.id + ');}else if(event.key===\'Escape\'){event.preventDefault();cancelNoteEdit();}" onblur="saveNoteInline(' + p.id + ')">'
@@ -4242,6 +4285,10 @@ function buildExpandedInnerAgg(p, group) {
   // show count like "2 brokers" in dim — clearly a meta-description, not
   // a real broker name. BUY DATE is intentionally hidden for aggregations:
   // it varies across positions and isn't informative at the group level.
+  // First two rows (BROKER+ISIN + CAT/REG/SEC) only for real securities —
+  // same rule as buildExpandedInner. All positions in the agg share the
+  // same ticker so any one of them determines the security kind.
+  var isSecurity = isRealSecurity(p);
   var brokerSet = {};
   group.forEach(function(g) {
     brokerSet[getPositionBroker(g) || 'default'] = true;
@@ -4250,16 +4297,22 @@ function buildExpandedInnerAgg(p, group) {
   var brokerValueHtml = brokerKeys.length === 1
     ? '<span style="color:var(--bright)">' + brokerKeys[0] + '</span>'
     : '<span style="color:var(--dim)">' + brokerKeys.length + ' brokers</span>';
-  var html = '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px">'
-    + '<span><span style="opacity:0.6">BROKER</span> ' + brokerValueHtml + '</span>'
-    + '</div>'
-    + '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px;margin-top:6px">'
-    + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (first.category || '—') + '</span></span>'
-    + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (first.region || '—') + '</span></span>'
-    + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (first.sector || '—') + '</span></span>'
-    + '</div>';
+  var isinRaw = getTickerIsin(p.ticker);
+  var isinDisplay = isKnownIsin(isinRaw) ? isinRaw : '—';
+  var html = '';
+  if (isSecurity) {
+    html += '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px">'
+      + '<span><span style="opacity:0.6">BROKER</span> ' + brokerValueHtml + '</span>'
+      + '<span><span style="opacity:0.6">ISIN</span> <span style="color:var(--bright)">' + isinDisplay + '</span></span>'
+      + '</div>'
+      + '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px;margin-top:6px">'
+      + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (first.category || '—') + '</span></span>'
+      + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (first.region || '—') + '</span></span>'
+      + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (first.sector || '—') + '</span></span>'
+      + '</div>';
+  }
   var notes = group.map(function(g) { return g.note || ''; }).filter(Boolean).join(' • ');
-  html += '<div style="margin-top:6px;font-size:10px;color:var(--dim);letter-spacing:1px">'
+  html += '<div style="' + (isSecurity ? 'margin-top:6px;' : '') + 'font-size:10px;color:var(--dim);letter-spacing:1px">'
     + '<span style="opacity:0.6">NOTE</span> '
     + '<span style="color:var(--bright);white-space:pre-line">' + (notes || '—') + '</span>'
     + '</div>';
@@ -4280,41 +4333,16 @@ function buildExpandedInnerAgg(p, group) {
   return html + buildFundamentalsRows(p.ticker);
 }
 
-// Lite expanded inner used in Fundamentals view: same first 3 rows as Agg, but
-// the 4th row contains only the [›] More button (right-aligned) — no fundamentals
-// data rows, since those are already in the comparison table on screen.
+// Lite expanded inner used in Fundamentals view: just the [›] More button.
+// Everything else (cat/reg/sec, notes, alerts) is redundant here — the
+// comparison table shows fundamentals inline, and other views expose the
+// meta-fields with proper editing. Group param kept for signature parity
+// with the non-lite variant.
 function buildExpandedInnerLite(p, group) {
-  var first = group[0];
-  var html = '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px">'
-    + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (first.category || '—') + '</span></span>'
-    + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (first.region || '—') + '</span></span>'
-    + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (first.sector || '—') + '</span></span>'
-    + '</div>';
-  var notes = group.map(function(g) { return g.note || ''; }).filter(Boolean).join(' • ');
-  html += '<div style="margin-top:8px;font-size:10px;color:var(--dim);letter-spacing:1px">'
-    + '<span style="opacity:0.6">NOTE</span> '
-    + '<span style="color:var(--bright);white-space:pre-line">' + (notes || '—') + '</span>'
-    + '</div>';
-  if (!isArchiveContext()) {
-    var allAlerts = getTickerAlerts(p.ticker);
-    html += '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
-      + '<span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
-      + allAlerts.map(function(a) {
-          var color = a.triggered ? alertColorForCond(a.condition) : 'var(--bright)';
-          return '<span style="font-size:10px;color:' + color + '">' + a.condition + ' ' + a.value + '</span>'
-            + '<span onclick="deleteAlert(\'' + p.ticker + '\',\'' + a.id + '\')" style="cursor:pointer;font-size:11px;color:var(--dim);margin-left:-6px">&#10005;</span>';
-        }).join('')
-      + '<span onclick="toggleAlertCondQuick(this)" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;min-width:20px;background:var(--bg);border:1px solid var(--border);color:var(--dim);font-family:var(--font);font-size:11px;padding:1px 5px;user-select:none">' + _alertCondQuick + '</span>'
-      + '<input type="number" id="quickAlertVal" placeholder="price" step="any" min="0" style="width:65px;font-size:11px;padding:2px 4px;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font)">'
-      + '<span onclick="quickAddAlert(\'' + p.ticker + '\')" style="cursor:pointer;font-size:11px;color:var(--green);border:1px solid var(--green);padding:1px 5px">+</span>'
-      + '</div>';
-  }
-  // 4th row: just the [›] More button, left-aligned
   var t = p.ticker.replace(/'/g, "\\'");
-  html += '<div style="margin-top:8px;display:flex;justify-content:flex-start">'
+  return '<div style="display:flex;justify-content:flex-start">'
     + '<span onclick="openMore(\'' + t + '\')" style="cursor:pointer;font-size:10px;color:#5b9cf6;border:1px solid #5b9cf6;padding:1px 6px;font-family:var(--font);user-select:none">&#8250;</span>'
     + '</div>';
-  return html;
 }
 
 function quickAddAlert(ticker) {
@@ -4419,7 +4447,7 @@ function refreshTicker(ticker) {
       if (port.archive) return;
       port.positions = (port.positions || []).map(function(p) {
         if (p.ticker !== ticker || p.sold) return p;
-        return Object.assign({}, p, { current: price, priceType: __priceType, marketState: __marketState, regularMarketPrice: __regularMarketPrice, previousClose: __previousClose, currency: __currency, shortName: __shortName, instrumentType: __instrumentType || p.instrumentType });
+        return Object.assign({}, p, { current: price, priceType: __priceType, marketState: __marketState, regularMarketPrice: __regularMarketPrice, previousClose: __previousClose, currency: __currency, shortName: __shortName, instrumentType: __instrumentType || p.instrumentType, exchangeName: __exchangeName || p.exchangeName });
       });
     });
     positions = (portfolios[currentPortfolioId] && portfolios[currentPortfolioId].positions) || positions;
@@ -4430,17 +4458,29 @@ function refreshTicker(ticker) {
       }));
       saveTickerDataLS();
     }
-    // ISIN — fire-and-forget lookup via the current provider (Business
-    // Insider). Retry fires when we have no value yet (falsy) OR when a
-    // previous provider left a bare 'UNRESOLVED' legacy marker from the
-    // Yahoo attempt. Once BI has answered we write 'UNRESOLVED_BI' on miss,
-    // which stays past the isKnownIsin check but also isn't a bare
-    // 'UNRESOLVED' — so it won't be retried on subsequent refreshes with
-    // this provider. Manual override in Edit form always wins.
+    // ISIN — fire-and-forget lookup via the current provider (Twelve Data).
+    // Only performed for real securities (EQUITY/ETF). Other instrument
+    // types (indices, futures, crypto, currencies) have no meaningful ISIN
+    // and are skipped entirely — no request, no UNRESOLVED marker written.
+    // If Yahoo hasn't classified the ticker yet (__instrumentType null),
+    // we conservatively skip too — one more refresh cycle will pick it up
+    // once the instrument type is known.
+    //
+    // Retry fires when we have no value yet OR when the cached marker is
+    // from a different (older) provider — this way, when we swap providers,
+    // all previously-cached "we tried" entries get re-queried automatically.
+    // Real ISIN strings (12 chars, starts with country code) are never a
+    // marker so they don't trigger a re-query. Manual override in Edit form
+    // always wins because it writes a real string.
+    var CURRENT_ISIN_MARKER = 'UNRESOLVED_TD';
     var currentIsin = getTickerIsin(ticker);
-    if (!currentIsin || currentIsin === 'UNRESOLVED') {
+    var isOtherProviderMarker = currentIsin && typeof currentIsin === 'string'
+      && currentIsin.indexOf('UNRESOLVED') === 0
+      && currentIsin !== CURRENT_ISIN_MARKER;
+    var isEligibleForIsin = __instrumentType === 'EQUITY' || __instrumentType === 'ETF';
+    if (isEligibleForIsin && (!currentIsin || isOtherProviderMarker)) {
       fetchIsin(ticker, __shortName).then(function(isin) {
-        setTickerIsin(ticker, isin || 'UNRESOLVED_BI');
+        setTickerIsin(ticker, isin || CURRENT_ISIN_MARKER);
         saveTickerDataLS();
         render();
       }).catch(function() { /* leave falsy, next refreshTicker will retry */ });
@@ -4503,6 +4543,7 @@ function refreshAllPortfolios() {
         p.regularMarketPrice = __regularMarketPrice;
         p.previousClose = __previousClose;
         if (__instrumentType) p.instrumentType = __instrumentType;
+        if (__exchangeName) p.exchangeName = __exchangeName;
         // Update triggered state for this ticker's alerts. Multiple positions
         // of same ticker re-run this redundantly per position; idempotent.
         var tAlerts = getTickerAlerts(p.ticker);
@@ -6114,6 +6155,8 @@ function showAnalyticsDetail(rubric, value) {
       key = getPositionCurrencyCode(p) || 'Other';
     } else if (rubric === 'broker') {
       key = getPositionBroker(p) || 'default';
+    } else if (rubric === 'exchange') {
+      key = p.exchangeName || 'Other';
     } else if (rubric === 'isin') {
       var isin = getTickerIsin(p.ticker);
       key = isKnownIsin(isin) ? isin.substring(0, 2).toUpperCase() : 'Unknown';
@@ -6270,6 +6313,12 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
       key = getPositionCurrencyCode(p) || 'Other';
     } else if (breakdown === 'broker') {
       key = getPositionBroker(p) || 'default';
+    } else if (breakdown === 'exchange') {
+      // Yahoo returns fullExchangeName in worker's /api/quote response.
+      // Missing (sold positions never refreshed, or added before this field
+      // was captured) folds into Other bucket; refreshTicker populates on
+      // next foreground refresh.
+      key = p.exchangeName || 'Other';
     } else if (breakdown === 'isin') {
       // ISO country code = first two letters of the ISIN. UNRESOLVED and
       // missing entries both fold into a single 'Unknown' bucket. Clicking
@@ -6335,7 +6384,7 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
 // only P&L and WEIGHTS are listed since market/chart make no sense for
 // closed positions).
 function analyticsHeader(breakdown, subview, isRealized) {
-  var rubrics = ['category','region','sector','currency','broker','isin'];
+  var rubrics = ['category','region','sector','currency','exchange','isin','broker'];
   var subviews = isRealized ? ['pnl','weights'] : ['pnl','market','chart','weights'];
   var subviewLabels = { pnl: 'P&L', market: 'MARKET', chart: 'CHART', weights: 'WEIGHTS' };
 
@@ -6836,6 +6885,11 @@ function processPositionCsv(text) {
       .then(function(d) {
         if (!d.price || d.price <= 0) {
           errors.push(row.ticker + ' — unknown ticker');
+        } else if (!isWatchlist() && d.instrumentType !== 'EQUITY' && d.instrumentType !== 'ETF') {
+          // Same invariant as addPosition: only EQUITY/ETF in non-WL portfolios,
+          // including reject-on-unknown for strict enforcement.
+          var typeMsg = d.instrumentType || 'unknown type';
+          errors.push(row.ticker + ' — ' + typeMsg + ' (only EQUITY/ETF)');
         } else {
           var inherited = {};
           Object.keys(portfolios).forEach(function(pid) {
@@ -6854,7 +6908,9 @@ function processPositionCsv(text) {
             entry: row.entry,
             current: row.current || d.price,
             currency: d.currency || null,
-            shortName: d.shortName || null
+            shortName: d.shortName || null,
+            instrumentType: d.instrumentType || null,
+            exchangeName: d.exchangeName || null
           }, inherited);
           if (row.sold) pos.sold = true;
           positions.push(pos);
