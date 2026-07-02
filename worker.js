@@ -191,19 +191,22 @@ export default {
     }
 
     // ISIN lookup: /api/isin?ticker=AAPL&shortName=Apple+Inc
-    // Yahoo doesn't return ISIN in any quoteSummary module (licensing —
-    // ISIN belongs to ANNA/Bloomberg, not Yahoo's quote provider). We
-    // proxy Business Insider's public suggest endpoint, which returns a
-    // pipe-delimited text blob like `"TICKER|ISIN|...|FIGI|SYMBOL"`.
-    // shortName gives higher hit rate: BI indexes by company name, and
-    // Yahoo's exchange-suffixed tickers (NESN.SW, CJPU.L) often don't
-    // match BI's cleaner ticker column directly.
+    // Uses Twelve Data (twelvedata.com) — free tier covers US equities,
+    // forex, crypto. Non-US requires paid plan (Grow $79/mo). For our
+    // free-tier use case, US tickers resolve automatically, others get
+    // manually entered via Edit form. shortName is unused (we keep it
+    // in the URL for future provider swaps without frontend changes).
+    //
+    // Requires env var TWELVEDATA_API_KEY (set via wrangler secret put).
+    // Missing key → returns { isin: null } silently — behavior indistinguishable
+    // from "symbol not found" so the app degrades gracefully.
     if (url.pathname === '/api/isin') {
       const t = url.searchParams.get('ticker');
-      const shortName = url.searchParams.get('shortName') || t;
       if (!t) return json({ error: 'ticker is required' }, 400);
+      const tdKey = env.TWELVEDATA_API_KEY;
+      if (!tdKey) return json({ isin: null });
       try {
-        const isin = await fetchIsinFromBI(t, shortName);
+        const isin = await fetchIsinFromTD(t, tdKey);
         return json({ isin });
       } catch (e) {
         return json({ isin: null, error: String(e?.message || e) }, 500);
@@ -450,48 +453,36 @@ async function fetchQuoteSummary(ticker, modules) {
     : combined;
 }
 
-// ── ISIN lookup via Business Insider ───────────────────────────────────────
-// Their SearchController_Suggest endpoint returns a JS-array-formatted text
-// blob (mmSuggestDeliver(...)) rather than JSON. Each result row includes a
-// pipe-delimited IDs field with the ticker's ISIN in position 2:
-//     "TICKER|ISIN|WKN|FIGI|SYMBOL"
+// ── ISIN lookup via Twelve Data ────────────────────────────────────────────
+// Their /stocks?symbol=X endpoint returns a JSON record for the ticker with
+// an `isin` field alongside other reference data (name, exchange, CUSIP,
+// FIGI). Documented, stable, no scraping.
 //
-// The algorithm mirrors yfinance's approach:
-//  1. Search by shortName (company name) which BI indexes cleanly
-//  2. Look for a result row containing `"TICKER|` (exact ticker match)
-//  3. If not found, fall back to first result — its IDs field starts with
-//     `"|` (empty ticker column when BI's ticker differs from Yahoo's)
-//  4. Extract the ISIN — validate it against ISIN structure (2 letters + 10 alnum)
+// Free ("Basic") tier covers US equities. Non-US tickers return
+// { status: "error", message: "You do not have access to this symbol" }
+// which we translate to null — user can enter manually or upgrade the plan.
 //
-// Returns the ISIN string on success, null on "we asked but nothing matched".
-async function fetchIsinFromBI(ticker, shortName) {
-  const q = shortName || ticker;
-  const searchUrl = `https://markets.businessinsider.com/ajax/SearchController_Suggest?max_results=25&query=${encodeURIComponent(q)}`;
-  const r = await fetch(searchUrl, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Accept': 'text/plain,*/*;q=0.8',
-      'Accept-Language': 'en-US,en;q=0.5',
-    },
-  });
-  if (!r.ok) throw new Error(`BI HTTP ${r.status}`);
-  const text = await r.text();
-
-  // Try exact ticker match: `"TICKER|ISIN|`
-  let isin = extractIsinAfterMarker(text, `"${ticker.toUpperCase()}|`);
-  // Fallback: BI uses different ticker but shortName still matches → `"|ISIN|`
-  // (empty ticker column) — see yfinance base.py for the same fallback pattern
-  if (!isin) isin = extractIsinAfterMarker(text, '"|');
-  return isValidIsin(isin) ? isin : null;
-}
-
-function extractIsinAfterMarker(text, marker) {
-  const idx = text.indexOf(marker);
-  if (idx === -1) return null;
-  const after = text.substring(idx + marker.length);
-  const end = after.indexOf('|');
-  if (end === -1) return null;
-  return after.substring(0, end).trim();
+// Rate limit on Basic is 8 req/min, 800/day. 429 responses (rate-limited)
+// throw so the frontend .catch leaves the field unset → next refresh retries.
+// All other errors (symbol not found, plan restriction, malformed response)
+// return null so the frontend caches as UNRESOLVED_TD and doesn't spam.
+async function fetchIsinFromTD(ticker, apiKey) {
+  const url = `https://api.twelvedata.com/stocks?symbol=${encodeURIComponent(ticker)}&apikey=${encodeURIComponent(apiKey)}`;
+  const r = await fetch(url);
+  if (r.status === 429) throw new Error('TD rate limit');
+  if (!r.ok) throw new Error(`TD HTTP ${r.status}`);
+  const data = await r.json();
+  if (!data || data.status === 'error') return null;
+  const rows = Array.isArray(data.data) ? data.data : [];
+  // Multiple listings possible (e.g. dual-listed shares). Pick the first
+  // row whose symbol matches exactly — Twelve Data returns them in relevance
+  // order but a strict match avoids picking a cross-listed variant.
+  const upTicker = ticker.toUpperCase();
+  const exactMatch = rows.find(function(row) {
+    return row && (row.symbol || '').toUpperCase() === upTicker;
+  }) || rows[0];
+  if (!exactMatch || !exactMatch.isin) return null;
+  return isValidIsin(exactMatch.isin) ? exactMatch.isin : null;
 }
 
 // ISIN format: 2 uppercase letters + 10 alphanumeric (last is check digit,
