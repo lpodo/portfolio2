@@ -873,7 +873,7 @@ function isPriceStale(ticker)    { return !!staleTickers[ticker]; }
 // refreshed — it's the sell price, frozen by design).
 function staleIconHtml(p) {
   if (!p || p.sold || !isPriceStale(p.ticker)) return '';
-  return '<span onclick="refreshPrice(' + p.id + ')" style="color:#9070b8;font-size:11px;cursor:pointer;user-select:none" title="last fetch failed — tap to retry">&#9888;&#65038;</span>';
+  return '<span onclick="refreshPrice(' + p.id + ')" style="color:#c77dff;font-size:11px;cursor:pointer;user-select:none" title="last fetch failed — tap to retry">&#9888;&#65038;</span>';
 }
 
 // Standard cell wrapper. Zero-width when no icon, expands when needed.
@@ -895,7 +895,7 @@ function isPortfolioStale(pid) {
 }
 function stalePortfolioIconHtml(pid) {
   if (!isPortfolioStale(pid)) return '';
-  return '<span onclick="event.stopPropagation();refreshStaleInPortfolio(&apos;' + pid + '&apos;)" style="color:#9070b8;font-size:11px;cursor:pointer;user-select:none" title="tap to refresh stale positions in this portfolio">&#9888;&#65038;</span>';
+  return '<span onclick="event.stopPropagation();refreshStaleInPortfolio(&apos;' + pid + '&apos;)" style="color:#c77dff;font-size:11px;cursor:pointer;user-select:none" title="tap to refresh stale positions in this portfolio">&#9888;&#65038;</span>';
 }
 function stalePortfolioColHtml(pid) {
   return '<td style="width:0;padding:0 2px 0 0;text-align:left">' + stalePortfolioIconHtml(pid) + '</td>';
@@ -3926,6 +3926,13 @@ function addPosition() {
   var isSold = !!(currentPortfolio().archive);
 
   function doAddPosition(extraFields) {
+    // ISIN first: if the user is overwriting/removing a real ISIN and cancels
+    // the confirm, abort the whole add — the field is restored inside
+    // applyIsinInput and the form stays open for review.
+    if (!applyIsinInput(ticker, document.getElementById('fIsin'))) {
+      document.getElementById('addErr').textContent = '';
+      return;
+    }
     // Inherit category/region/sector from any existing position with same ticker
     var inherited = {};
     Object.keys(portfolios).forEach(function(pid) {
@@ -3940,12 +3947,6 @@ function addPosition() {
     var pos = Object.assign({ id: Date.now(), ticker: ticker, qty: qty, entry: entry, current: current }, inherited, extraFields);
     if (isSold) pos.sold = true;
     positions.push(pos);
-    // ISIN: uniform "empty = reset, non-empty = save" semantics with Edit.
-    // The user's actual intent is captured via dataset.userTouched (any input
-    // event) — combined with save-start autofill, an untouched empty field
-    // means "we had no data to prefill" (no reset needed), while a touched
-    // empty field means "user actively cleared" (reset).
-    applyIsinInput(ticker, document.getElementById('fIsin'));
     save();
     ['fTicker','fQty','fEntry','fCurrent','fIsin'].forEach(function(id) { document.getElementById(id).value = ''; });
     document.getElementById('fDate').value = todayLocalISO();
@@ -3999,31 +4000,42 @@ function tryAutofillIsinInAddForm() {
   if (isKnownIsin(known)) isinEl.value = known;
 }
 
-// Persist the ISIN input's value against the given ticker. Uniform rules
-// across Add and Edit forms:
-//   empty field AND ticker has real ISIN → confirm("Reset ISIN?")
-//     Yes → drop entry (next refreshTicker will Yahoo-fetch again)
-//     No  → keep existing untouched
-//   empty field AND ticker has UNRESOLVED / no data → no-op
-//   non-empty field differs from existing → manual override wins
-//   non-empty field matches existing → no-op
-// The confirm dialog is the only safety against accidental reset — no more
-// dataset flag tracking. Simpler and more robust: if the user really cleared
-// the field intentionally, one extra tap answers the confirm.
+// Persist the ISIN input's value against the given ticker. Uniform across
+// Add and Edit. Any change that overwrites or removes an EXISTING real ISIN
+// requires confirmation — changing an ISIN is a serious action. Returns:
+//   true  → caller may proceed with the save
+//   false → user cancelled; field has been restored, caller must abort and
+//           leave the form open so the user can review/fix
+// Cases:
+//   val === existing                    → no-op, proceed
+//   no real existing ISIN, val empty    → no-op, proceed
+//   no real existing ISIN, val present  → write silently, proceed
+//   real existing, val differs/empty    → confirm; on OK write, on Cancel
+//                                         restore field + return false
 function applyIsinInput(ticker, inputEl) {
-  if (!ticker || !inputEl) return;
+  if (!ticker || !inputEl) return true;
   var val = (inputEl.value || '').trim().toUpperCase();
   var existing = getTickerIsin(ticker);
-  if (val === '') {
-    if (isKnownIsin(existing)) {
-      if (!confirm('Reset ISIN for ' + ticker + '?')) return;
-      setTickerIsin(ticker, null);
-      saveTickerDataLS();
-    }
-  } else if (val !== existing) {
-    setTickerIsin(ticker, val);
+  var existingReal = isKnownIsin(existing) ? existing : '';
+  // Nothing meaningful changes → proceed without touching anything.
+  if (val === (existingReal || '')) return true;
+  if (!existingReal) {
+    // No real ISIN to lose. Write a new one (or nothing) silently.
+    setTickerIsin(ticker, val || null);
     saveTickerDataLS();
+    return true;
   }
+  // A real ISIN exists and the new value differs (changed or cleared).
+  var msg = val
+    ? 'Change ISIN for ' + ticker + ' from ' + existingReal + ' to ' + val + '?'
+    : 'Remove ISIN ' + existingReal + ' for ' + ticker + '?';
+  if (!confirm(msg)) {
+    inputEl.value = existingReal; // restore so the user doesn't lose it
+    return false;
+  }
+  setTickerIsin(ticker, val || null);
+  saveTickerDataLS();
+  return true;
 }
 
 function clearAddForm() {
@@ -4383,43 +4395,43 @@ function saveNoteInline(posId) {
   save(); render();
 }
 function saveEdit(id) {
-  var newTicker = (document.getElementById('editTicker').value || '').trim().toUpperCase();
+  var pos = null;
+  for (var i = 0; i < positions.length; i++) { if (positions[i].id === id) { pos = positions[i]; break; } }
+  if (!pos) return;
+  // Ticker is a readonly identity field — it never changes here. We read it
+  // straight from the position rather than the input.
+  var ticker = pos.ticker;
   var qty = document.getElementById('editQty').value.trim() === '' ? null : parseFloat(document.getElementById('editQty').value);
   var entry = parseFloat(document.getElementById('editEntry').value);
   var curRaw = document.getElementById('editCurrent').value.trim();
-  var pos = null;
-  for (var i = 0; i < positions.length; i++) { if (positions[i].id === id) { pos = positions[i]; break; } }
-  var current = curRaw ? parseFloat(curRaw) : (pos ? pos.current : null);
+  var current = curRaw ? parseFloat(curRaw) : pos.current;
   if (qty === null || isNaN(qty) || qty < 0 || (qty > 0 && entry <= 0)) return;
+  // ISIN first: overwriting/removing a real ISIN needs confirmation. On
+  // cancel, applyIsinInput restores the field and we abort with the edit
+  // form still open — nothing else has been mutated yet.
+  if (!applyIsinInput(ticker, document.getElementById('editIsin'))) return;
   var catEl = document.getElementById('editCategory'); var regEl = document.getElementById('editRegion'); var secEl = document.getElementById('editSector'); var noteEl = document.getElementById('editNote'); var dateEl = document.getElementById('editDate'); var broEl = document.getElementById('editBroker');
-  var category = catEl ? (catEl.value.trim() || null) : (pos ? pos.category : null);
-  var region   = regEl ? (regEl.value.trim() || null) : (pos ? pos.region   : null);
-  var sector   = secEl ? (secEl.value.trim() || null) : (pos ? pos.sector   : null);
-  var note     = noteEl ? (noteEl.value.trim() || null) : (pos ? pos.note    : null);
-  var purchaseDate = dateEl ? (dateEl.value.trim() || null) : (pos ? pos.purchaseDate : null);
-  var broker   = broEl ? (broEl.value.trim() || null) : (pos ? pos.broker : null);
-  var syncTicker = (newTicker || (pos ? pos.ticker : '')).toUpperCase();
-  var oldTicker = pos ? pos.ticker : null;
+  var category = catEl ? (catEl.value.trim() || null) : pos.category;
+  var region   = regEl ? (regEl.value.trim() || null) : pos.region;
+  var sector   = secEl ? (secEl.value.trim() || null) : pos.sector;
+  var note     = noteEl ? (noteEl.value.trim() || null) : pos.note;
+  var purchaseDate = dateEl ? (dateEl.value.trim() || null) : pos.purchaseDate;
+  var broker   = broEl ? (broEl.value.trim() || null) : pos.broker;
   positions = positions.map(function(p) {
-    return p.id === id ? Object.assign({}, p, { ticker: newTicker || p.ticker, qty: qty, entry: entry, current: current, category: category, region: region, sector: sector, note: note, purchaseDate: purchaseDate, broker: broker }) : p;
+    return p.id === id ? Object.assign({}, p, { qty: qty, entry: entry, current: current, category: category, region: region, sector: sector, note: note, purchaseDate: purchaseDate, broker: broker }) : p;
   });
   portfolios[currentPortfolioId].positions = positions;
+  // Propagate category/region/sector to all other positions of the same
+  // ticker (these are ticker-level attributes, kept in sync everywhere).
   Object.keys(portfolios).forEach(function(pid) {
     portfolios[pid].positions = (portfolios[pid].positions || []).map(function(p) {
-      if (p.ticker.toUpperCase() === syncTicker && (pid !== currentPortfolioId || p.id !== id)) {
+      if (p.ticker.toUpperCase() === ticker.toUpperCase() && (pid !== currentPortfolioId || p.id !== id)) {
         return Object.assign({}, p, { category: category, region: region, sector: sector });
       }
       return p;
     });
   });
   positions = portfolios[currentPortfolioId].positions;
-  // ISIN — uniform semantics with Add form via applyIsinInput
-  applyIsinInput(syncTicker, document.getElementById('editIsin'));
-  // If ticker was renamed and the old one no longer has live positions
-  // anywhere, drop its data so orphan entries don't accumulate.
-  if (oldTicker && newTicker && newTicker !== oldTicker) {
-    pruneTickerData(oldTicker);
-  }
   savePortfolios(); if (getCloudBackend() === 'kv') cloudSaveKV(); else cloudSave(); editId = null; render();
 }
 
@@ -7975,7 +7987,7 @@ function render() {
 
     var isExpanded = expandedId === p.id;
     var tickerCell = isEdit
-      ? '<input class="edit-input" id="editTicker" type="text" value="' + p.ticker + '" oninput="var i=document.getElementById(\'editIsin\');if(i)i.value=\'\'" style="width:60px;text-transform:uppercase">'
+      ? '<input class="edit-input" id="editTicker" type="text" value="' + p.ticker + '" readonly title="Ticker can\'t be changed — delete and re-add to use a different ticker" style="width:60px;text-transform:uppercase;opacity:0.6;cursor:not-allowed">'
       : '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + (isEdit ? '' : getAlertDotsHtmlForPosition(p)) + '</span>';
     var soldStyle = (p.sold || p.qty === 0) ? 'font-style:italic;opacity:0.5' : '';
     rows += '<tr style="' + soldStyle + '">'
