@@ -4438,7 +4438,7 @@ function saveEdit(id) {
 // Fetch a ticker's price and apply it to all non-sold positions of that
 // ticker across all non-archive portfolios. Ticker-level operation —
 // matches the semantics of tickerData and staleTickers.
-function refreshTicker(ticker) {
+function refreshTicker(ticker, silent) {
   if (!ticker) return Promise.resolve();
   if (!getApiKey()) { document.getElementById('apiKeyInput').focus(); return Promise.resolve(); }
   // Loading spinner on every affected position id
@@ -4451,7 +4451,11 @@ function refreshTicker(ticker) {
     });
   });
   affectedIds.forEach(function(id) { loadingSet[id] = true; });
-  render();
+  // In silent (batch) mode the caller renders once for all tickers — both
+  // the spinner-on render here and the result render in .finally are skipped,
+  // as are the per-ticker savePortfolios and the ISIN-resolution render. This
+  // turns N full re-renders (2 per ticker) into a single render by the caller.
+  if (!silent) render();
   return fetchPrice(ticker).then(function(price) {
     markPriceFresh(ticker);
     Object.keys(portfolios).forEach(function(pid) {
@@ -4468,7 +4472,7 @@ function refreshTicker(ticker) {
       setTickerAlerts(ticker, tAlerts.map(function(a) {
         return Object.assign({}, a, { triggered: a.condition === '>' ? price > a.value : price < a.value });
       }));
-      saveTickerDataLS();
+      if (!silent) saveTickerDataLS();
     }
     // ISIN — fire-and-forget lookup via the worker's /api/isin endpoint.
     // Only performed for real securities (EQUITY/ETF); other instrument
@@ -4494,15 +4498,15 @@ function refreshTicker(ticker) {
       fetchIsin(ticker).then(function(isin) {
         setTickerIsin(ticker, isin || CURRENT_ISIN_MARKER);
         saveTickerDataLS();
-        render();
+        if (!silent) render();
       }).catch(function() { /* leave falsy, next refreshTicker will retry */ });
     }
-    savePortfolios();
+    if (!silent) savePortfolios();
   }).catch(function() {
     markPriceStale(ticker);
   }).finally(function() {
     affectedIds.forEach(function(id) { delete loadingSet[id]; });
-    render();
+    if (!silent) render();
   });
 }
 
@@ -4510,7 +4514,7 @@ function refreshTicker(ticker) {
 // non-archive portfolios — clicks may originate from cross-portfolio views
 // (All Positions / Σ SUMMARY) where the target position isn't in the current
 // portfolio's `positions`.
-function refreshPrice(id) {
+function refreshPrice(id, silent) {
   var pos = null;
   var pids = Object.keys(portfolios);
   for (var i = 0; i < pids.length && !pos; i++) {
@@ -4522,7 +4526,7 @@ function refreshPrice(id) {
     }
   }
   if (!pos || pos.sold) return Promise.resolve();
-  return refreshTicker(pos.ticker);
+  return refreshTicker(pos.ticker, silent);
 }
 
 // Batch retry from a summary row: refresh every stale ticker in the target
@@ -4695,12 +4699,29 @@ function refreshAll() {
     });
     return;
   }
-  var promises = positions.map(function(p) { return refreshPrice(p.id); });
+  // Default (single-portfolio) view: refresh each unique ticker once in
+  // silent mode, so the whole batch produces just one spinner render up front
+  // and one result render at the end — instead of 2 renders per ticker.
+  var seenTickers = {};
+  var uniqueTickers = [];
+  positions.forEach(function(p) {
+    if (p.sold || seenTickers[p.ticker]) return;
+    seenTickers[p.ticker] = true;
+    uniqueTickers.push(p.ticker);
+  });
+  // Each refreshTicker(silent) synchronously populates loadingSet before its
+  // fetch; launching the batch first, then rendering once, shows all spinners
+  // together.
+  var promises = uniqueTickers.map(function(t) { return refreshTicker(t, true); });
+  render();
   Promise.all(promises).then(function() {
+    savePortfolios();
+    saveTickerDataLS();
   }).catch(function() {
   }).finally(function() {
     btn.innerHTML = '&#8635; Refresh';
     btn.disabled = false;
+    render();
   });
 }
 
