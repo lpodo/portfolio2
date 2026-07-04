@@ -3714,18 +3714,37 @@ function loadCloudDirty() {
 }
 // Record one field change. from = value before this change, to = value after.
 // First change for a ticker+field fixes `from`; later ones only update `to`.
+// If a field's value returns to its original `from` (e.g. exchange went
+// A→B→A across refreshes), the net change is zero — the record is dropped,
+// and if that empties the ticker (and then all tickers), the dirty flag is
+// cleared. This "back to original" case is invisible to a plain counter and
+// is exactly what per-field from/to tracking buys us.
 function recordCloudDirty(ticker, field, from, to) {
   if (!ticker || !field) return;
   if (!cloudDirtyChanges[ticker]) cloudDirtyChanges[ticker] = {};
-  if (cloudDirtyChanges[ticker][field]) {
-    cloudDirtyChanges[ticker][field].to = to;
+  var existing = cloudDirtyChanges[ticker][field];
+  var origin = existing ? existing.from : from; // the value at the last cloud sync
+  if (to === origin) {
+    // Net zero — remove this field, and cascade-clean empty containers.
+    if (existing) {
+      delete cloudDirtyChanges[ticker][field];
+      if (!Object.keys(cloudDirtyChanges[ticker]).length) delete cloudDirtyChanges[ticker];
+    }
+  } else if (existing) {
+    existing.to = to;
   } else {
     cloudDirtyChanges[ticker][field] = { from: from, to: to };
   }
-  cloudDirty = true;
+  var stillDirty = Object.keys(cloudDirtyChanges).length > 0;
+  cloudDirty = stillDirty;
   try {
-    localStorage.setItem('pt_cloud_dirty', '1');
-    localStorage.setItem('pt_cloud_dirty_changes', JSON.stringify(cloudDirtyChanges));
+    if (stillDirty) {
+      localStorage.setItem('pt_cloud_dirty', '1');
+      localStorage.setItem('pt_cloud_dirty_changes', JSON.stringify(cloudDirtyChanges));
+    } else {
+      localStorage.removeItem('pt_cloud_dirty');
+      localStorage.removeItem('pt_cloud_dirty_changes');
+    }
   } catch(e) {}
   updateCloudDirtyIcon();
 }
