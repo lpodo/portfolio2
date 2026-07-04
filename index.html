@@ -515,7 +515,9 @@
 <!-- Cloud-dirty modal: prompts to push unsaved metadata to cloud -->
 <div class="overlay" id="cloudDirtyOverlay" onclick="closeCloudDirtyModal()" style="z-index:170"></div>
 <div id="cloudDirtyModal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:20px;z-index:171;width:calc(100% - 48px);max-width:340px;box-sizing:border-box">
-  <div style="font-size:12px;color:var(--bright);line-height:1.5;margin-bottom:16px" id="cloudDirtyText"></div>
+  <div style="font-size:12px;color:var(--bright);line-height:1.5;margin-bottom:10px" id="cloudDirtyText"></div>
+  <div id="cloudDirtyList" style="font-size:11px;color:var(--dim);line-height:1.5;max-height:220px;overflow-y:auto;margin-bottom:12px;font-family:var(--font)"></div>
+  <div style="font-size:12px;color:var(--bright);margin-bottom:14px">Overwrite cloud with local data?</div>
   <div style="display:flex;gap:8px">
     <button class="btn" onclick="closeCloudDirtyModal()" style="flex:1;padding:9px;font-size:11px;letter-spacing:1px">CANCEL</button>
     <button class="btn btn-green" onclick="cloudDirtyOverwrite()" style="flex:1;padding:9px;font-size:11px;letter-spacing:1px">&#8593; OVERWRITE</button>
@@ -3691,32 +3693,53 @@ function autoCloudLoad(callback) {
 // alerts[].triggered is deliberately NOT tracked — it's derived from price and
 // would light the flag almost every refresh.
 var cloudDirty = false;
-var cloudDirtyTickers = {}; // set of tickers whose metadata changed since last sync
+// Per-ticker, per-field record of what changed since the last cloud sync:
+//   { AAPL: { exchange: {from:'NasdaqGS', to:'NASDAQ'}, isin: {from:null, to:'UNRESOLVED'} } }
+// 'from' is captured once (the value at the first change since last sync);
+// 'to' is refreshed on every subsequent change, so the modal always shows the
+// net "was → now" without intermediate noise. Field labels shown in the modal
+// are friendly names (see CLOUD_DIRTY_FIELD_LABELS).
+var cloudDirtyChanges = {};
+var CLOUD_DIRTY_FIELD_LABELS = {
+  currency: 'currency',
+  shortName: 'name',
+  instrumentType: 'type',
+  exchangeName: 'exchange',
+  isin: 'isin'
+};
 function loadCloudDirty() {
   cloudDirty = localStorage.getItem('pt_cloud_dirty') === '1';
-  try { cloudDirtyTickers = JSON.parse(localStorage.getItem('pt_cloud_dirty_tickers') || '{}'); } catch(e) { cloudDirtyTickers = {}; }
+  try { cloudDirtyChanges = JSON.parse(localStorage.getItem('pt_cloud_dirty_changes') || '{}'); } catch(e) { cloudDirtyChanges = {}; }
   updateCloudDirtyIcon();
 }
-function markCloudDirty(ticker) {
-  if (ticker) cloudDirtyTickers[ticker] = true;
+// Record one field change. from = value before this change, to = value after.
+// First change for a ticker+field fixes `from`; later ones only update `to`.
+function recordCloudDirty(ticker, field, from, to) {
+  if (!ticker || !field) return;
+  if (!cloudDirtyChanges[ticker]) cloudDirtyChanges[ticker] = {};
+  if (cloudDirtyChanges[ticker][field]) {
+    cloudDirtyChanges[ticker][field].to = to;
+  } else {
+    cloudDirtyChanges[ticker][field] = { from: from, to: to };
+  }
   cloudDirty = true;
   try {
     localStorage.setItem('pt_cloud_dirty', '1');
-    localStorage.setItem('pt_cloud_dirty_tickers', JSON.stringify(cloudDirtyTickers));
+    localStorage.setItem('pt_cloud_dirty_changes', JSON.stringify(cloudDirtyChanges));
   } catch(e) {}
   updateCloudDirtyIcon();
 }
 function clearCloudDirty() {
   cloudDirty = false;
-  cloudDirtyTickers = {};
+  cloudDirtyChanges = {};
   try {
     localStorage.removeItem('pt_cloud_dirty');
-    localStorage.removeItem('pt_cloud_dirty_tickers');
+    localStorage.removeItem('pt_cloud_dirty_changes');
   } catch(e) {}
   updateCloudDirtyIcon();
 }
 function cloudDirtyCount() {
-  return Object.keys(cloudDirtyTickers).length;
+  return Object.keys(cloudDirtyChanges).length;
 }
 function updateCloudDirtyIcon() {
   var el = document.getElementById('cloudDirtyIcon');
@@ -3724,8 +3747,24 @@ function updateCloudDirtyIcon() {
 }
 function openCloudDirtyModal() {
   var n = cloudDirtyCount();
-  var txt = document.getElementById('cloudDirtyText');
-  if (txt) txt.textContent = 'Local metadata has changed since last cloud sync in ' + n + ' ticker' + (n === 1 ? '' : 's') + '. Overwrite cloud with local data?';
+  var head = document.getElementById('cloudDirtyText');
+  if (head) head.textContent = 'Local metadata changed since last cloud sync (' + n + ' ticker' + (n === 1 ? '' : 's') + '):';
+  var listEl = document.getElementById('cloudDirtyList');
+  if (listEl) {
+    var fmt = function(v) { return (v === null || v === undefined || v === '') ? '(none)' : String(v); };
+    var rows = [];
+    Object.keys(cloudDirtyChanges).sort().forEach(function(t) {
+      var fields = cloudDirtyChanges[t];
+      Object.keys(fields).forEach(function(f) {
+        var label = CLOUD_DIRTY_FIELD_LABELS[f] || f;
+        var ch = fields[f];
+        rows.push('<div style="margin-bottom:3px"><span style="color:var(--bright)">' + t + '</span>'
+          + ' &middot; <span style="color:var(--dim)">' + label + ':</span> '
+          + fmt(ch.from) + ' &rarr; <span style="color:var(--bright)">' + fmt(ch.to) + '</span></div>');
+      });
+    });
+    listEl.innerHTML = rows.join('');
+  }
   document.getElementById('cloudDirtyOverlay').style.display = 'block';
   document.getElementById('cloudDirtyModal').style.display = 'block';
 }
@@ -4622,12 +4661,13 @@ function refreshTicker(ticker, silent) {
       });
     });
     // Metadata changed → local state is ahead of cloud. Price refreshes don't
-    // auto-save to cloud, so flag it for manual sync (icon by SETTINGS).
+    // auto-save to cloud, so record each changed field (with from/to) for the
+    // manual-sync modal. Compare the effective post-refresh value per field.
     if (metaBefore) {
       var metaAfter = { currency: __currency || null, shortName: __shortName || null, instrumentType: __instrumentType || metaBefore.instrumentType || null, exchangeName: __exchangeName || metaBefore.exchangeName || null };
-      if (metaAfter.currency !== metaBefore.currency || metaAfter.shortName !== metaBefore.shortName || metaAfter.instrumentType !== metaBefore.instrumentType || metaAfter.exchangeName !== metaBefore.exchangeName) {
-        markCloudDirty(ticker);
-      }
+      ['currency', 'shortName', 'instrumentType', 'exchangeName'].forEach(function(f) {
+        if (metaAfter[f] !== metaBefore[f]) recordCloudDirty(ticker, f, metaBefore[f], metaAfter[f]);
+      });
     }
     positions = (portfolios[currentPortfolioId] && portfolios[currentPortfolioId].positions) || positions;
     var tAlerts = getTickerAlerts(ticker);
@@ -4663,10 +4703,10 @@ function refreshTicker(ticker, silent) {
         var before = getTickerIsin(ticker);
         setTickerIsin(ticker, newVal);
         saveTickerDataLS();
-        // isin is persistent ticker metadata — if it actually changed, the
-        // local state is now ahead of the cloud. Flag for manual sync (the
-        // refresh path itself never writes to the cloud).
-        if (newVal !== before) markCloudDirty(ticker);
+        // isin is persistent ticker metadata — if it actually changed, record
+        // the change so it reaches the cloud on manual sync (the refresh path
+        // itself never writes to the cloud).
+        if (newVal !== before) recordCloudDirty(ticker, 'isin', before, newVal);
         if (!silent) render();
       }).catch(function() { /* leave falsy, next refreshTicker will retry */ });
     }
