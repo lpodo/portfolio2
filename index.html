@@ -499,7 +499,21 @@
 <!-- Settings toggle button -->
 <div style="position:fixed;bottom:0;left:0;right:0;background:var(--bg2);border-top:1px solid var(--border);padding:10px 18px;display:flex;justify-content:space-between;align-items:center;z-index:98">
   <span style="font-size:10px;color:var(--dim)" id="providerLabel"></span>
-  <button class="btn btn-green" onclick="toggleSettings()" style="font-size:11px;padding:6px 14px">&#9881; SETTINGS</button>
+  <div style="display:flex;align-items:center;gap:4px">
+    <span id="cloudDirtyIcon" onclick="openCloudDirtyModal()" title="Local metadata not synced to cloud"
+      style="display:none;align-items:center;justify-content:center;width:40px;height:36px;cursor:pointer;color:#c77dff;font-size:20px;user-select:none">&#9729;&#65039;</span>
+    <button class="btn btn-green" onclick="toggleSettings()" style="font-size:11px;padding:6px 14px">&#9881; SETTINGS</button>
+  </div>
+</div>
+
+<!-- Cloud-dirty modal: prompts to push unsaved metadata to cloud -->
+<div class="overlay" id="cloudDirtyOverlay" onclick="closeCloudDirtyModal()" style="z-index:170"></div>
+<div id="cloudDirtyModal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:20px;z-index:171;width:calc(100% - 48px);max-width:340px;box-sizing:border-box">
+  <div style="font-size:12px;color:var(--bright);line-height:1.5;margin-bottom:16px" id="cloudDirtyText"></div>
+  <div style="display:flex;gap:8px">
+    <button class="btn" onclick="closeCloudDirtyModal()" style="flex:1;padding:9px;font-size:11px;letter-spacing:1px">CANCEL</button>
+    <button class="btn btn-green" onclick="cloudDirtyOverwrite()" style="flex:1;padding:9px;font-size:11px;letter-spacing:1px">&#8593; OVERWRITE</button>
+  </div>
 </div>
 
 <!-- Customize icons overlay (z-index above settings) -->
@@ -3400,6 +3414,7 @@ function syncFromCloud() {
 
 
 function migrateToCloud() {
+  if (!confirm('Overwrite cloud with local data? This replaces the entire cloud copy with what\u2019s on this device.')) return;
   if (getCloudBackend() === 'kv') {
     if (!getApiKey()) { updateJbStatus('✗ Backend URL required', 'var(--red)'); return; }
     if (!getKvKey()) { updateJbStatus('✗ KV Key required', 'var(--red)'); return; }
@@ -3509,6 +3524,7 @@ function _doCloudSave(key, binId) {
         localStorage.setItem('pt_jbbin', id);
         localStorage.setItem('pt_cloud_ts', res.metadata.updatedAt || new Date().toISOString());
         document.getElementById('jbBinInput').value = id;
+        clearCloudDirty();
         updateJbStatus('✓ Cloud: bin created and saved', 'var(--green)');
       }).catch(function() { updateJbStatus('✗ Failed to create bin', 'var(--red)'); });
     } else {
@@ -3521,6 +3537,7 @@ function _doCloudSave(key, binId) {
         return r.json();
       }).then(function(res) {
         localStorage.setItem('pt_cloud_ts', res.metadata && res.metadata.updatedAt ? res.metadata.updatedAt : new Date().toISOString());
+        clearCloudDirty();
         updateJbStatus('✓ Cloud: saved ' + new Date().toLocaleTimeString(), 'var(--green)');
       }).catch(function(e) {
         var msg = '✗ Save error';
@@ -3637,6 +3654,7 @@ function cloudSaveKV() {
       return r.json();
     }).then(function(res) {
       localStorage.setItem('pt_cloud_ts', res.updatedAt || new Date().toISOString());
+      clearCloudDirty();
       updateJbStatus('✓ Saved to KV', 'var(--green)');
     }).catch(function(e) {
       var hint = String(e && e.message || '');
@@ -3652,6 +3670,66 @@ function cloudSaveKV() {
 function autoCloudLoad(callback) {
   if (getCloudBackend() === 'kv') cloudLoadKV(callback);
   else cloudLoad(callback);
+}
+
+// ── Cloud-dirty tracking ────────────────────────────────────────────────────
+// Price refreshes never write to the cloud (by design — prices change every
+// refresh). But a refresh can also bring NEW persistent metadata: a ticker's
+// instrumentType/exchangeName/currency/shortName getting filled in, or its
+// ISIN marker being set. Those SHOULD reach the cloud, yet they ride the
+// refresh path, so they don't. This flag bridges the gap: any metadata change
+// during refresh marks the local state "ahead of cloud" and lights an icon by
+// SETTINGS. The user reviews and pushes manually (semi-manual sync). Any
+// successful cloud save (from any mutation or the modal's Overwrite) clears it,
+// since cloudSaveKV/cloudSave upload the full state including metadata.
+// alerts[].triggered is deliberately NOT tracked — it's derived from price and
+// would light the flag almost every refresh.
+var cloudDirty = false;
+var cloudDirtyTickers = {}; // set of tickers whose metadata changed since last sync
+function loadCloudDirty() {
+  cloudDirty = localStorage.getItem('pt_cloud_dirty') === '1';
+  try { cloudDirtyTickers = JSON.parse(localStorage.getItem('pt_cloud_dirty_tickers') || '{}'); } catch(e) { cloudDirtyTickers = {}; }
+  updateCloudDirtyIcon();
+}
+function markCloudDirty(ticker) {
+  if (ticker) cloudDirtyTickers[ticker] = true;
+  cloudDirty = true;
+  try {
+    localStorage.setItem('pt_cloud_dirty', '1');
+    localStorage.setItem('pt_cloud_dirty_tickers', JSON.stringify(cloudDirtyTickers));
+  } catch(e) {}
+  updateCloudDirtyIcon();
+}
+function clearCloudDirty() {
+  cloudDirty = false;
+  cloudDirtyTickers = {};
+  try {
+    localStorage.removeItem('pt_cloud_dirty');
+    localStorage.removeItem('pt_cloud_dirty_tickers');
+  } catch(e) {}
+  updateCloudDirtyIcon();
+}
+function cloudDirtyCount() {
+  return Object.keys(cloudDirtyTickers).length;
+}
+function updateCloudDirtyIcon() {
+  var el = document.getElementById('cloudDirtyIcon');
+  if (el) el.style.display = cloudDirty ? 'inline-flex' : 'none';
+}
+function openCloudDirtyModal() {
+  var n = cloudDirtyCount();
+  var txt = document.getElementById('cloudDirtyText');
+  if (txt) txt.textContent = 'Local metadata has changed since last cloud sync in ' + n + ' ticker' + (n === 1 ? '' : 's') + '. Overwrite cloud with local data?';
+  document.getElementById('cloudDirtyOverlay').style.display = 'block';
+  document.getElementById('cloudDirtyModal').style.display = 'block';
+}
+function closeCloudDirtyModal() {
+  document.getElementById('cloudDirtyOverlay').style.display = 'none';
+  document.getElementById('cloudDirtyModal').style.display = 'none';
+}
+function cloudDirtyOverwrite() {
+  closeCloudDirtyModal();
+  if (getCloudBackend() === 'kv') cloudSaveKV(); else cloudSave();
 }
 
 function cloudLoad(callback) {
@@ -4518,6 +4596,17 @@ function refreshTicker(ticker, silent) {
   if (!silent) render();
   return fetchPrice(ticker).then(function(price) {
     markPriceFresh(ticker);
+    // Capture pre-update metadata from any one live position of this ticker,
+    // to detect whether this refresh changed persistent metadata (which must
+    // reach the cloud) vs. only price (which must not trigger a cloud write).
+    var metaBefore = null;
+    Object.keys(portfolios).some(function(pid) {
+      var port = portfolios[pid];
+      if (port.archive) return false;
+      var hit = (port.positions || []).filter(function(p) { return p.ticker === ticker && !p.sold; })[0];
+      if (hit) { metaBefore = { currency: hit.currency || null, shortName: hit.shortName || null, instrumentType: hit.instrumentType || null, exchangeName: hit.exchangeName || null }; return true; }
+      return false;
+    });
     Object.keys(portfolios).forEach(function(pid) {
       var port = portfolios[pid];
       if (port.archive) return;
@@ -4526,6 +4615,14 @@ function refreshTicker(ticker, silent) {
         return Object.assign({}, p, { current: price, priceType: __priceType, marketState: __marketState, regularMarketPrice: __regularMarketPrice, previousClose: __previousClose, currency: __currency, shortName: __shortName, instrumentType: __instrumentType || p.instrumentType, exchangeName: __exchangeName || p.exchangeName });
       });
     });
+    // Metadata changed → local state is ahead of cloud. Price refreshes don't
+    // auto-save to cloud, so flag it for manual sync (icon by SETTINGS).
+    if (metaBefore) {
+      var metaAfter = { currency: __currency || null, shortName: __shortName || null, instrumentType: __instrumentType || metaBefore.instrumentType || null, exchangeName: __exchangeName || metaBefore.exchangeName || null };
+      if (metaAfter.currency !== metaBefore.currency || metaAfter.shortName !== metaBefore.shortName || metaAfter.instrumentType !== metaBefore.instrumentType || metaAfter.exchangeName !== metaBefore.exchangeName) {
+        markCloudDirty(ticker);
+      }
+    }
     positions = (portfolios[currentPortfolioId] && portfolios[currentPortfolioId].positions) || positions;
     var tAlerts = getTickerAlerts(ticker);
     if (tAlerts.length) {
@@ -4556,8 +4653,14 @@ function refreshTicker(ticker, silent) {
     var isEligibleForIsin = __instrumentType === 'EQUITY' || __instrumentType === 'ETF';
     if (isEligibleForIsin && (!currentIsin || isOtherProviderMarker)) {
       fetchIsin(ticker).then(function(isin) {
-        setTickerIsin(ticker, isin || CURRENT_ISIN_MARKER);
+        var newVal = isin || CURRENT_ISIN_MARKER;
+        var before = getTickerIsin(ticker);
+        setTickerIsin(ticker, newVal);
         saveTickerDataLS();
+        // isin is persistent ticker metadata — if it actually changed, the
+        // local state is now ahead of the cloud. Flag for manual sync (the
+        // refresh path itself never writes to the cloud).
+        if (newVal !== before) markCloudDirty(ticker);
         if (!silent) render();
       }).catch(function() { /* leave falsy, next refreshTicker will retry */ });
     }
@@ -9946,6 +10049,7 @@ function render() {
 
 initPortfolios();
 applyAppearancePrefs();
+loadCloudDirty();
 loadLocal();
 loadDicts();
 migrateDicts();
