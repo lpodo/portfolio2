@@ -1,7 +1,7 @@
 // Bump this when the install pre-cache list changes or when you want to
 // force a full cache wipe. For routine content updates (index.html, fundamentals.js)
 // the stale-while-revalidate strategy below picks them up automatically.
-var CACHE = 'portfolio-v392';
+var CACHE = 'portfolio-v393';
 
 self.addEventListener('install', function(e) {
   // Pre-cache with cache:'reload' on each Request — forces network bypass of
