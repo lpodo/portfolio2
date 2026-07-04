@@ -575,6 +575,52 @@ function removeTickerAlert(ticker, id) {
     if (!Object.keys(tickerData[ticker]).length) delete tickerData[ticker];
   }
 }
+// ── Ticker-level attributes: category / region / sector ────────────────────
+// These describe the security, not the trade, so they live on the ticker
+// (like isin/alerts) rather than being copied across every position. One
+// ticker → one value, shared by all its positions in every portfolio.
+function getTickerAttr(ticker, field) {
+  if (!ticker) return null;
+  var d = tickerData[ticker];
+  return (d && d[field]) || null;
+}
+function setTickerAttr(ticker, field, val) {
+  if (!ticker) return;
+  var v = val && String(val).trim();
+  if (v) {
+    if (!tickerData[ticker]) tickerData[ticker] = {};
+    tickerData[ticker][field] = v;
+  } else if (tickerData[ticker]) {
+    delete tickerData[ticker][field];
+    if (!Object.keys(tickerData[ticker]).length) delete tickerData[ticker];
+  }
+}
+
+// Rubric → source dispatcher for analytics / weights grouping. As attributes
+// migrate from positions into tickerData, only this table changes — the
+// grouping code calls rubricValue() and stays agnostic. Today category/
+// region/sector/isin live on the ticker; currency/exchange still live on the
+// position (slated to move to the ticker later); broker stays on the position
+// permanently (it's genuinely per-lot). 'ticker' rubrics read tickerData,
+// 'position' rubrics read the position object.
+var RUBRIC_SOURCE = {
+  category: 'ticker',
+  region:   'ticker',
+  sector:   'ticker',
+  isin:     'ticker',
+  currency: 'position',
+  exchange: 'position',
+  broker:   'position'
+};
+// Returns the grouping value for a position under the given rubric, reading
+// from whichever source RUBRIC_SOURCE dictates. Callers still special-case
+// the display/formatting (e.g. isin → country code, broker → default label);
+// this only resolves the raw value.
+function rubricRawValue(p, rubric) {
+  if (RUBRIC_SOURCE[rubric] === 'ticker') return getTickerAttr(p.ticker, rubric);
+  return p[rubric] || null;
+}
+
 // ── ISIN (thin wrappers over tickerData[ticker].isin) ──────────────────────
 // Three states: string ISIN | 'UNRESOLVED*' marker | absent (falsy).
 // Yahoo lookup fires only when falsy — UNRESOLVED and known ISIN don't re-query.
@@ -616,10 +662,10 @@ function isRealSecurity(p) {
 // rename, portfolio delete). Different fields have different retention rules:
 //   .alerts — dropped when no live (non-sold, non-archive) or watchlist
 //             positions of the ticker remain (archive doesn't keep alerts alive)
-//   .isin   — dropped when NO positions of the ticker exist anywhere at all,
-//             including archive (realized positions still want their ISIN
-//             remembered for tax/reporting purposes)
-// If both fields end up empty, the whole ticker entry is removed.
+//   .isin / .category / .region / .sector — dropped when NO positions of the
+//             ticker exist anywhere at all, including archive (realized
+//             positions still want their metadata for reporting/analytics)
+// If all fields end up empty, the whole ticker entry is removed.
 // Idempotent — safely callable for any ticker.
 function pruneTickerData(ticker) {
   if (!ticker || !tickerData[ticker]) return;
@@ -636,7 +682,12 @@ function pruneTickerData(ticker) {
     });
   });
   if (!hasLiveOrWL && tickerData[ticker].alerts) delete tickerData[ticker].alerts;
-  if (!hasAnywhere && tickerData[ticker].isin) delete tickerData[ticker].isin;
+  if (!hasAnywhere) {
+    delete tickerData[ticker].isin;
+    delete tickerData[ticker].category;
+    delete tickerData[ticker].region;
+    delete tickerData[ticker].sector;
+  }
   if (!Object.keys(tickerData[ticker]).length) delete tickerData[ticker];
   saveTickerDataLS();
 }
@@ -707,10 +758,38 @@ function initPortfolios() {
   }
   // Load ticker-level alerts from localStorage
   loadTickerDataLS();
+  // Lift any position-level category/region/sector into tickerData and strip
+  // them from positions. Idempotent and cheap — safe to run every startup;
+  // this also cleans up stray null attribute keys left by older versions.
+  liftAttrsFromPositions();
   // Restore last active portfolio
   currentPortfolioId = localStorage.getItem('pt_current');
   if (!currentPortfolioId || !portfolios[currentPortfolioId]) {
     currentPortfolioId = Object.keys(portfolios)[0];
+  }
+}
+// The actual lift+strip, reusable for both LS init and cloud loads. Idempotent:
+// if positions carry no attribute fields (already migrated), it does nothing.
+// A field is stripped whenever it's PRESENT on the position — including when
+// its value is null (older positions stored empty attrs as null; a truthy
+// guard would leave those null keys behind and they'd show up in backups).
+// The value is lifted into tickerData only when it's actually meaningful.
+function liftAttrsFromPositions() {
+  var changed = false;
+  Object.keys(portfolios).forEach(function(pid) {
+    (portfolios[pid].positions || []).forEach(function(pos) {
+      ['category', 'region', 'sector'].forEach(function(f) {
+        if (f in pos) {
+          if (pos[f] && !getTickerAttr(pos.ticker, f)) setTickerAttr(pos.ticker, f, pos[f]);
+          delete pos[f];
+          changed = true;
+        }
+      });
+    });
+  });
+  if (changed) {
+    saveTickerDataLS();
+    savePortfolios();
   }
 }
 
@@ -1055,12 +1134,11 @@ function addToDict(dict, value) {
 }
 function migrateDicts() {
   if (localStorage.getItem('pt_cat_dict') !== null) return;
-  Object.keys(portfolios).forEach(function(pid) {
-    (portfolios[pid].positions || []).forEach(function(pos) {
-      if (pos.category) addToDict(catDict, pos.category);
-      if (pos.region)   addToDict(regDict, pos.region);
-      if (pos.sector)   addToDict(secDict, pos.sector);
-    });
+  Object.keys(tickerData).forEach(function(t) {
+    var d = tickerData[t];
+    if (d.category) addToDict(catDict, d.category);
+    if (d.region)   addToDict(regDict, d.region);
+    if (d.sector)   addToDict(secDict, d.sector);
   });
   saveDicts();
 }
@@ -1959,9 +2037,6 @@ function moveToPortfolio(targetPid) {
       regularMarketPrice: pos.regularMarketPrice,
       marketState: pos.marketState,
       priceType: pos.priceType,
-      category: pos.category || null,
-      region: pos.region || null,
-      sector: pos.sector || null,
       purchaseDate: pos.purchaseDate || undefined,
       instrumentType: pos.instrumentType || undefined,
       exchangeName: pos.exchangeName || undefined,
@@ -2045,9 +2120,6 @@ function moveToArchive(archivePid) {
       sold: true,
       currency: pos.currency,
       shortName: pos.shortName,
-      category: pos.category || null,
-      region: pos.region || null,
-      sector: pos.sector || null,
       purchaseDate: pos.purchaseDate || undefined,
       instrumentType: pos.instrumentType || undefined,
       exchangeName: pos.exchangeName || undefined,
@@ -3283,6 +3355,7 @@ function restoreData(event) {
       if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
       if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
       migrateLegacyTickerAlertsFromCloud(data);
+      liftAttrsFromPositions();
       saveTickerDataLS();
       saveDicts();
       currentPortfolioId = Object.keys(portfolios)[0];
@@ -3514,6 +3587,7 @@ function cloudLoadKV(callback) {
           if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
           if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
           migrateLegacyTickerAlertsFromCloud(data);
+          liftAttrsFromPositions();
           saveTickerDataLS();
           saveDicts();
           savePortfolios();
@@ -3615,6 +3689,7 @@ function cloudLoad(callback) {
         if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
         if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
         migrateLegacyTickerAlertsFromCloud(data);
+        liftAttrsFromPositions();
         saveTickerDataLS();
         saveDicts();
         savePortfolios();
@@ -3933,18 +4008,10 @@ function addPosition() {
       document.getElementById('addErr').textContent = '';
       return;
     }
-    // Inherit category/region/sector from any existing position with same ticker
-    var inherited = {};
-    Object.keys(portfolios).forEach(function(pid) {
-      (portfolios[pid].positions || []).forEach(function(p) {
-        if (p.ticker === ticker && (p.category || p.region || p.sector)) {
-          if (!inherited.category && p.category) inherited.category = p.category;
-          if (!inherited.region && p.region) inherited.region = p.region;
-          if (!inherited.sector && p.sector) inherited.sector = p.sector;
-        }
-      });
-    });
-    var pos = Object.assign({ id: Date.now(), ticker: ticker, qty: qty, entry: entry, current: current }, inherited, extraFields);
+    // Category/region/sector are ticker-level (in tickerData) — no need to
+    // copy them onto the new position; it inherits them automatically at
+    // render time from whatever the ticker already has.
+    var pos = Object.assign({ id: Date.now(), ticker: ticker, qty: qty, entry: entry, current: current }, extraFields);
     if (isSold) pos.sold = true;
     positions.push(pos);
     save();
@@ -4257,9 +4324,9 @@ function buildExpandedInner(p) {
   }
   var row2Html = isSecurity
     ? '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px;' + (row1Html ? 'margin-top:6px' : '') + '">'
-      + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (p.category || '—') + '</span></span>'
-      + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (p.region || '—') + '</span></span>'
-      + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (p.sector || '—') + '</span></span>'
+      + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'category') || '—') + '</span></span>'
+      + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'region') || '—') + '</span></span>'
+      + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'sector') || '—') + '</span></span>'
       + '</div>'
     : '';
   return row1Html
@@ -4318,9 +4385,9 @@ function buildExpandedInnerAgg(p, group) {
       + '<span><span style="opacity:0.6">ISIN</span> <span style="color:var(--bright)">' + isinDisplay + '</span></span>'
       + '</div>'
       + '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px;margin-top:6px">'
-      + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (first.category || '—') + '</span></span>'
-      + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (first.region || '—') + '</span></span>'
-      + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (first.sector || '—') + '</span></span>'
+      + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'category') || '—') + '</span></span>'
+      + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'region') || '—') + '</span></span>'
+      + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'sector') || '—') + '</span></span>'
       + '</div>';
   }
   var notes = group.map(function(g) { return g.note || ''; }).filter(Boolean).join(' • ');
@@ -4411,27 +4478,20 @@ function saveEdit(id) {
   // form still open — nothing else has been mutated yet.
   if (!applyIsinInput(ticker, document.getElementById('editIsin'))) return;
   var catEl = document.getElementById('editCategory'); var regEl = document.getElementById('editRegion'); var secEl = document.getElementById('editSector'); var noteEl = document.getElementById('editNote'); var dateEl = document.getElementById('editDate'); var broEl = document.getElementById('editBroker');
-  var category = catEl ? (catEl.value.trim() || null) : pos.category;
-  var region   = regEl ? (regEl.value.trim() || null) : pos.region;
-  var sector   = secEl ? (secEl.value.trim() || null) : pos.sector;
   var note     = noteEl ? (noteEl.value.trim() || null) : pos.note;
   var purchaseDate = dateEl ? (dateEl.value.trim() || null) : pos.purchaseDate;
   var broker   = broEl ? (broEl.value.trim() || null) : pos.broker;
+  // Category/region/sector are ticker-level — write straight to tickerData.
+  // Every position of this ticker (in any portfolio) picks up the change at
+  // render time, so there's no per-position copy or cross-portfolio sync.
+  if (catEl) setTickerAttr(ticker, 'category', catEl.value.trim() || null);
+  if (regEl) setTickerAttr(ticker, 'region',   regEl.value.trim() || null);
+  if (secEl) setTickerAttr(ticker, 'sector',   secEl.value.trim() || null);
   positions = positions.map(function(p) {
-    return p.id === id ? Object.assign({}, p, { qty: qty, entry: entry, current: current, category: category, region: region, sector: sector, note: note, purchaseDate: purchaseDate, broker: broker }) : p;
+    return p.id === id ? Object.assign({}, p, { qty: qty, entry: entry, current: current, note: note, purchaseDate: purchaseDate, broker: broker }) : p;
   });
   portfolios[currentPortfolioId].positions = positions;
-  // Propagate category/region/sector to all other positions of the same
-  // ticker (these are ticker-level attributes, kept in sync everywhere).
-  Object.keys(portfolios).forEach(function(pid) {
-    portfolios[pid].positions = (portfolios[pid].positions || []).map(function(p) {
-      if (p.ticker.toUpperCase() === ticker.toUpperCase() && (pid !== currentPortfolioId || p.id !== id)) {
-        return Object.assign({}, p, { category: category, region: region, sector: sector });
-      }
-      return p;
-    });
-  });
-  positions = portfolios[currentPortfolioId].positions;
+  saveTickerDataLS();
   savePortfolios(); if (getCloudBackend() === 'kv') cloudSaveKV(); else cloudSave(); editId = null; render();
 }
 
@@ -6194,7 +6254,7 @@ function showAnalyticsDetail(rubric, value) {
       var isin = getTickerIsin(p.ticker);
       key = isKnownIsin(isin) ? isin.substring(0, 2).toUpperCase() : 'Unknown';
     } else {
-      key = ((p[rubric] || '').trim().replace(/\s+/g, ' ')) || 'Other';
+      key = ((rubricRawValue(p, rubric) || '').trim().replace(/\s+/g, ' ')) || 'Other';
     }
     return key === value;
   });
@@ -6359,7 +6419,7 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
       var isin = getTickerIsin(p.ticker);
       key = isKnownIsin(isin) ? isin.substring(0, 2).toUpperCase() : 'Unknown';
     } else {
-      key = ((p[breakdown] || '').trim().replace(/\s+/g, ' ')) || 'Other';
+      key = ((rubricRawValue(p, breakdown) || '').trim().replace(/\s+/g, ' ')) || 'Other';
     }
     if (!groups[key]) groups[key] = [];
     groups[key].push(p);
@@ -6791,15 +6851,11 @@ function loadAnalyticsChartData(range, mode, groups, breakdown, baseSym, baseCod
 
 // CSV Import
 function exportCsv() {
-  var seen = {};
   var rows = ['ticker,category,region,sector'];
-  Object.keys(portfolios).forEach(function(pid) {
-    (portfolios[pid].positions || []).forEach(function(pos) {
-      if (!seen[pos.ticker]) {
-        seen[pos.ticker] = true;
-        rows.push([pos.ticker, pos.category || '', pos.region || '', pos.sector || ''].join(','));
-      }
-    });
+  Object.keys(tickerData).sort().forEach(function(t) {
+    var d = tickerData[t];
+    if (!d.category && !d.region && !d.sector) return;
+    rows.push([t, d.category || '', d.region || '', d.sector || ''].join(','));
   });
   var blob = new Blob([rows.join('\n')], { type: 'text/csv' });
   var a = document.createElement('a');
@@ -6817,15 +6873,15 @@ function exportIncompletePositionsCsv() {
     (p.positions || []).forEach(function(pos) {
       if (seen[pos.ticker]) return;
       seen[pos.ticker] = true;
-      if (!pos.category || !pos.region || !pos.sector) {
-        incomplete.push(pos);
+      if (!getTickerAttr(pos.ticker, 'category') || !getTickerAttr(pos.ticker, 'region') || !getTickerAttr(pos.ticker, 'sector')) {
+        incomplete.push(pos.ticker);
       }
     });
   });
   if (!incomplete.length) { alert('All tickers have complete analytics fields'); return; }
   var rows = [['ticker','category','region','sector']];
-  incomplete.forEach(function(pos) {
-    rows.push([pos.ticker, pos.category || '', pos.region || '', pos.sector || '']);
+  incomplete.forEach(function(t) {
+    rows.push([t, getTickerAttr(t, 'category') || '', getTickerAttr(t, 'region') || '', getTickerAttr(t, 'sector') || '']);
   });
   var csv = rows.map(function(r) { return r.join(','); }).join('\n');
   var blob = new Blob([csv], { type: 'text/csv' });
@@ -6849,9 +6905,9 @@ function exportPositionsCsv() {
       pos.current !== null ? pos.current : '',
       pnl,
       pnlPct,
-      pos.category || '',
-      pos.region || '',
-      pos.sector || '',
+      getTickerAttr(pos.ticker, 'category') || '',
+      getTickerAttr(pos.ticker, 'region') || '',
+      getTickerAttr(pos.ticker, 'sector') || '',
       getPositionCurrencyCode(pos)
     ]);
   });
@@ -6924,17 +6980,9 @@ function processPositionCsv(text) {
           var typeMsg = d.instrumentType || 'unknown type';
           errors.push(row.ticker + ' — ' + typeMsg + ' (only EQUITY/ETF)');
         } else {
-          var inherited = {};
-          Object.keys(portfolios).forEach(function(pid) {
-            (portfolios[pid].positions || []).forEach(function(p) {
-              if (p.ticker === row.ticker && (p.category || p.region || p.sector)) {
-                if (!inherited.category && p.category) inherited.category = p.category;
-                if (!inherited.region && p.region) inherited.region = p.region;
-                if (!inherited.sector && p.sector) inherited.sector = p.sector;
-              }
-            });
-          });
-          var pos = Object.assign({
+          // Category/region/sector are ticker-level (tickerData) — the new
+          // position inherits them automatically at render time.
+          var pos = {
             id: Date.now() + Math.random(),
             ticker: row.ticker,
             qty: row.qty,
@@ -6944,7 +6992,7 @@ function processPositionCsv(text) {
             shortName: d.shortName || null,
             instrumentType: d.instrumentType || null,
             exchangeName: d.exchangeName || null
-          }, inherited);
+          };
           if (row.sold) pos.sold = true;
           positions.push(pos);
           added++;
@@ -6998,17 +7046,24 @@ function processCsvImport(text) {
       sector:   secIdx !== -1 ? cols[secIdx] || null : undefined
     };
   }
-  // Apply to all portfolios
-  var updated = 0;
+  // Apply to tickerData for every ticker that exists in at least one position
+  // (don't create orphan tickerData entries for tickers we don't hold). Since
+  // attributes are ticker-level, each CSV row updates one ticker once.
+  var existingTickers = {};
   Object.keys(portfolios).forEach(function(pid) {
     (portfolios[pid].positions || []).forEach(function(pos) {
-      var m = map[pos.ticker.toUpperCase()];
-      if (!m) return;
-      if (m.category !== undefined) pos.category = m.category;
-      if (m.region !== undefined)   pos.region   = m.region;
-      if (m.sector !== undefined)   pos.sector   = m.sector;
-      updated++;
+      existingTickers[pos.ticker.toUpperCase()] = pos.ticker;
     });
+  });
+  var updated = 0;
+  Object.keys(map).forEach(function(upperTicker) {
+    var realTicker = existingTickers[upperTicker];
+    if (!realTicker) return; // ticker not held — skip
+    var m = map[upperTicker];
+    if (m.category !== undefined) setTickerAttr(realTicker, 'category', m.category);
+    if (m.region !== undefined)   setTickerAttr(realTicker, 'region',   m.region);
+    if (m.sector !== undefined)   setTickerAttr(realTicker, 'sector',   m.sector);
+    updated++;
   });
   Object.keys(map).forEach(function(ticker) {
     var m = map[ticker];
@@ -7017,8 +7072,9 @@ function processCsvImport(text) {
     if (m.sector)   addToDict(secDict, m.sector);
   });
   saveDicts();
+  saveTickerDataLS();
   savePortfolios(); if (getCloudBackend() === 'kv') cloudSaveKV(); else cloudSave();
-  alert('Updated ' + updated + ' position(s)');
+  alert('Updated ' + updated + ' ticker(s)');
   render();
 }
 
@@ -8035,9 +8091,9 @@ function render() {
           })()
         + '</div>'
         + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">'
-        + buildDictSelectHtml('cat', catDict, p.category || null, 'CATEGORY', '115px')
-        + buildDictSelectHtml('reg', regDict, p.region || null, 'REGION', '80px')
-        + buildDictSelectHtml('sec', secDict, p.sector || null, 'SECTOR', '120px')
+        + buildDictSelectHtml('cat', catDict, getTickerAttr(p.ticker, 'category'), 'CATEGORY', '115px')
+        + buildDictSelectHtml('reg', regDict, getTickerAttr(p.ticker, 'region'), 'REGION', '80px')
+        + buildDictSelectHtml('sec', secDict, getTickerAttr(p.ticker, 'sector'), 'SECTOR', '120px')
         + '</div>'
         + '<div style="margin-top:6px"><div class="field" style="width:100%"><label>NOTE</label><input type="text" id="editNote" value="' + (p.note || '') + '" placeholder="optional note..." style="width:100%;box-sizing:border-box" autocomplete="off" autocorrect="off"></div></div>'
         + (isArchiveContext() ? '' : (
