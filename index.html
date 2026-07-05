@@ -1039,6 +1039,17 @@ function getPositionCurrencySymbol(pos) {
 function getPositionCurrencyCode(pos) {
   return pos.currency || currentPortfolio().currencyCode || 'USD';
 }
+// Price of a position for display and P&L math. For a sold position this is
+// the sale price; for an active one it's the latest market price. Today both
+// read pos.current, but the branch is explicit so later stages can migrate
+// each side independently: Stage 1 points the sold branch at pos.sellPrice,
+// Stage 3 points the active branch at the ticker-level current in tickerData.
+// Returns null when no price is available.
+function getPositionCurrent(pos) {
+  if (!pos) return null;
+  if (pos.sold) return pos.current != null ? pos.current : null;
+  return pos.current != null ? pos.current : null;
+}
 function currentPortfolio() {
   return portfolios[currentPortfolioId] || { name: 'MY PORTFOLIO', positions: [] };
 }
@@ -4976,9 +4987,9 @@ function getSorted() {
     if (sortKey === 'ticker') { var cmp = sortDir * a.ticker.localeCompare(b.ticker); if (cmp !== 0) return cmp; return (a.sold ? 0 : 1) - (b.sold ? 0 : 1); }
     if (sortKey === 'qty')    { va = a.qty; vb = b.qty; }
     if (sortKey === 'entry')  { va = a.entry; vb = b.entry; }
-    if (sortKey === 'current'){ va = a.current !== null ? a.current : -Infinity; vb = b.current !== null ? b.current : -Infinity; }
-    if (sortKey === 'pnl')    { va = (a.current !== null) ? (a.current - a.entry) * a.qty : -Infinity; vb = (b.current !== null) ? (b.current - b.entry) * b.qty : -Infinity; }
-    if (sortKey === 'pnlpct') { va = (a.current !== null && a.entry) ? (a.current - a.entry) / a.entry : -Infinity; vb = (b.current !== null && b.entry) ? (b.current - b.entry) / b.entry : -Infinity; }
+    if (sortKey === 'current'){ var ac0 = getPositionCurrent(a), bc0 = getPositionCurrent(b); va = ac0 !== null ? ac0 : -Infinity; vb = bc0 !== null ? bc0 : -Infinity; }
+    if (sortKey === 'pnl')    { var ac1 = getPositionCurrent(a), bc1 = getPositionCurrent(b); va = (ac1 !== null) ? (ac1 - a.entry) * a.qty : -Infinity; vb = (bc1 !== null) ? (bc1 - b.entry) * b.qty : -Infinity; }
+    if (sortKey === 'pnlpct') { var ac2 = getPositionCurrent(a), bc2 = getPositionCurrent(b); va = (ac2 !== null && a.entry) ? (ac2 - a.entry) / a.entry : -Infinity; vb = (bc2 !== null && b.entry) ? (bc2 - b.entry) / b.entry : -Infinity; }
     return sortDir * (va > vb ? 1 : va < vb ? -1 : 0);
   });
 }
@@ -4995,9 +5006,9 @@ function getSortedForRender() {
     if (sortKey === 'ticker') { var cmp = sortDir * pa.ticker.localeCompare(pb.ticker); if (cmp !== 0) return cmp; return (pa.sold ? 0 : 1) - (pb.sold ? 0 : 1); }
     if (sortKey === 'qty')    { va = pa.qty; vb = pb.qty; }
     if (sortKey === 'entry')  { va = pa.entry; vb = pb.entry; }
-    if (sortKey === 'current'){ va = pa.current !== null ? pa.current : -Infinity; vb = pb.current !== null ? pb.current : -Infinity; }
-    if (sortKey === 'pnl')    { va = (pa.current !== null) ? (pa.current - pa.entry) * pa.qty : -Infinity; vb = (pb.current !== null) ? (pb.current - pb.entry) * pb.qty : -Infinity; }
-    if (sortKey === 'pnlpct') { va = (pa.current !== null && pa.entry) ? (pa.current - pa.entry) / pa.entry : -Infinity; vb = (pb.current !== null && pb.entry) ? (pb.current - pb.entry) / pb.entry : -Infinity; }
+    if (sortKey === 'current'){ var pac0 = getPositionCurrent(pa), pbc0 = getPositionCurrent(pb); va = pac0 !== null ? pac0 : -Infinity; vb = pbc0 !== null ? pbc0 : -Infinity; }
+    if (sortKey === 'pnl')    { var pac1 = getPositionCurrent(pa), pbc1 = getPositionCurrent(pb); va = (pac1 !== null) ? (pac1 - pa.entry) * pa.qty : -Infinity; vb = (pbc1 !== null) ? (pbc1 - pb.entry) * pb.qty : -Infinity; }
+    if (sortKey === 'pnlpct') { var pac2 = getPositionCurrent(pa), pbc2 = getPositionCurrent(pb); va = (pac2 !== null && pa.entry) ? (pac2 - pa.entry) / pa.entry : -Infinity; vb = (pbc2 !== null && pb.entry) ? (pbc2 - pb.entry) / pb.entry : -Infinity; }
     return sortDir * (va > vb ? 1 : va < vb ? -1 : 0);
   });
 }
@@ -5015,11 +5026,13 @@ function getWeightSorted(items, totVal) {
     var va, vb;
     if (weightSort.key === 'ticker') { va = a.ticker; vb = b.ticker; return weightSort.dir * va.localeCompare(vb); }
     if (weightSort.key === 'value') {
-      va = (a.current !== null && a.qty > 0) ? a.qty * a.current : -Infinity;
-      vb = (b.current !== null && b.qty > 0) ? b.qty * b.current : -Infinity;
+      var wac0 = getPositionCurrent(a), wbc0 = getPositionCurrent(b);
+      va = (wac0 !== null && a.qty > 0) ? a.qty * wac0 : -Infinity;
+      vb = (wbc0 !== null && b.qty > 0) ? b.qty * wbc0 : -Infinity;
     } else { // weight same as value
-      va = (a.current !== null && a.qty > 0) ? a.qty * a.current : -Infinity;
-      vb = (b.current !== null && b.qty > 0) ? b.qty * b.current : -Infinity;
+      var wac1 = getPositionCurrent(a), wbc1 = getPositionCurrent(b);
+      va = (wac1 !== null && a.qty > 0) ? a.qty * wac1 : -Infinity;
+      vb = (wbc1 !== null && b.qty > 0) ? b.qty * wbc1 : -Infinity;
     }
     return weightSort.dir * (va > vb ? 1 : va < vb ? -1 : 0);
   });
