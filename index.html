@@ -5065,8 +5065,9 @@ function getMarketSorted(items) {
     // delta% — use previousClose same as render
     var aBase = HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(a.ticker, closeMode) || a.previousClose || a.regularMarketPrice) : ((a.marketState === 'REGULAR') ? (a.previousClose || a.regularMarketPrice) : ((closeMode === 'prev' ? a.previousClose : a.regularMarketPrice) || a.regularMarketPrice));
     var bBase = HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(b.ticker, closeMode) || b.previousClose || b.regularMarketPrice) : ((b.marketState === 'REGULAR') ? (b.previousClose || b.regularMarketPrice) : ((closeMode === 'prev' ? b.previousClose : b.regularMarketPrice) || b.regularMarketPrice));
-    va = (a.current != null && aBase) ? (a.current - aBase) / aBase * 100 : null;
-    vb = (b.current != null && bBase) ? (b.current - bBase) / bBase * 100 : null;
+    var acur = getPositionCurrent(a), bcur = getPositionCurrent(b);
+    va = (acur != null && aBase) ? (acur - aBase) / aBase * 100 : null;
+    vb = (bcur != null && bBase) ? (bcur - bBase) / bBase * 100 : null;
     if (marketSort.key === 'absdelta') {
       va = va !== null ? Math.abs(va) : -Infinity;
       vb = vb !== null ? Math.abs(vb) : -Infinity;
@@ -5101,8 +5102,9 @@ function getWatchlistSorted(items) {
     if (watchlistSort.key === 'ticker') return watchlistSort.dir * a.ticker.localeCompare(b.ticker);
     var aBase = a.previousClose || a.regularMarketPrice;
     var bBase = b.previousClose || b.regularMarketPrice;
-    var va = (a.current != null && aBase) ? (a.current - aBase) / aBase * 100 : null;
-    var vb = (b.current != null && bBase) ? (b.current - bBase) / bBase * 100 : null;
+    var acur = getPositionCurrent(a), bcur = getPositionCurrent(b);
+    var va = (acur != null && aBase) ? (acur - aBase) / aBase * 100 : null;
+    var vb = (bcur != null && bBase) ? (bcur - bBase) / bBase * 100 : null;
     if (watchlistSort.key === 'absdelta') {
       va = va !== null ? Math.abs(va) : -Infinity;
       vb = vb !== null ? Math.abs(vb) : -Infinity;
@@ -5423,9 +5425,10 @@ function buildMarketTotals(fxMap, baseCode, baseSym, srcArr) {
   var src = srcArr || getSorted();
   var mktTotClose = 0, mktTotCurrent = 0, mktHasAny = false;
   src.forEach(function(p) {
-    if (p.current != null && p.qty > 0) {
-      var closeVal = p.sold ? p.current : (HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(p.ticker, closeMode) || p.regularMarketPrice || p.current) : (closeMode === 'prev' ? (p.previousClose || p.regularMarketPrice || p.current) : (p.regularMarketPrice || p.current)));
-      var curVal   = p.sold ? p.current : (currentMode === 'reg' ? (p.regularMarketPrice || p.current) : p.current);
+    var pcur = getPositionCurrent(p);
+    if (pcur != null && p.qty > 0) {
+      var closeVal = p.sold ? pcur : (HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(p.ticker, closeMode) || p.regularMarketPrice || pcur) : (closeMode === 'prev' ? (p.previousClose || p.regularMarketPrice || pcur) : (p.regularMarketPrice || pcur)));
+      var curVal   = p.sold ? pcur : (currentMode === 'reg' ? (p.regularMarketPrice || pcur) : pcur);
       var pc = getPositionCurrencyCode(p);
       var rate = pc !== baseCode ? (fxMap[pc + baseCode] || fxMap[pc] || 1) : 1;
       mktTotClose   += p.qty * closeVal * rate;
@@ -5682,12 +5685,12 @@ function showAggDetail(ticker, soldFlag) {
     group.forEach(function(p) {
       sQty += p.qty;
       sCost += p.qty * p.entry;
-      if (isSold) sSell += p.qty * p.current;
+      if (isSold) sSell += p.qty * getPositionCurrent(p);
     });
     var sAvgEntry = sQty > 0 ? sCost / sQty : 0;
     var sCurrent = isSold
       ? (sQty > 0 ? sSell / sQty : 0)
-      : (group[0].current != null ? group[0].current : 0);
+      : (getPositionCurrent(group[0]) != null ? getPositionCurrent(group[0]) : 0);
     totalQty += sQty;
     totalCost += sCost;
     totalSell += sSell;
@@ -5696,7 +5699,7 @@ function showAggDetail(ticker, soldFlag) {
   var grandAvgEntry = totalQty > 0 ? totalCost / totalQty : 0;
   var grandCurrent = isSold
     ? (totalQty > 0 ? totalSell / totalQty : 0)
-    : (allPositions[0].current != null ? allPositions[0].current : 0);
+    : (getPositionCurrent(allPositions[0]) != null ? getPositionCurrent(allPositions[0]) : 0);
   var missingDateCount = allPositions.filter(function(p) { return !p.purchaseDate; }).length;
 
   _aggOverlayState = { ticker: ticker, isSold: isSold, brokerData: brokerData };
@@ -5708,7 +5711,7 @@ function showAggDetail(ticker, soldFlag) {
   function positionRow(p) {
     var qty = p.qty;
     var entry = p.entry;
-    var current = p.current != null ? p.current : 0;
+    var current = getPositionCurrent(p) != null ? getPositionCurrent(p) : 0;
     var pnlAbs = (current - entry) * qty;
     var pnlPct = entry > 0 ? ((current / entry) - 1) * 100 : null;
     var dateCell;
