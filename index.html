@@ -1032,12 +1032,18 @@ function getCurrency() {
   var code = p.currencyCode || 'USD';
   return CURRENCY_SYMBOLS[code] || code;
 }
-function getPositionCurrencySymbol(pos) {
-  var code = pos.currency || currentPortfolio().currencyCode || 'USD';
+// Currency of a position. Optional fallbackCode lets cross-portfolio callers
+// pass the OWNER portfolio's currency (not the current one) for the rare case
+// pos.currency is null (position added offline / before first refresh, or a
+// legacy record). Single-portfolio callers omit it and fall back to the
+// current portfolio. Post-migration (Stage 4) this reads tickerData for the
+// ticker (sold → frozen sellCurrency); the fallback stays as the null guard.
+function getPositionCurrencySymbol(pos, fallbackCode) {
+  var code = pos.currency || fallbackCode || currentPortfolio().currencyCode || 'USD';
   return CURRENCY_SYMBOLS[code] || code;
 }
-function getPositionCurrencyCode(pos) {
-  return pos.currency || currentPortfolio().currencyCode || 'USD';
+function getPositionCurrencyCode(pos, fallbackCode) {
+  return pos.currency || fallbackCode || currentPortfolio().currencyCode || 'USD';
 }
 // Price of a position for display and P&L math. For a sold position this is
 // the sale price; for an active one it's the latest market price. Today both
@@ -4836,7 +4842,7 @@ function refreshAll() {
       var base = (p.currencyCode || 'USD').toUpperCase();
       if (base !== 'USD' && smNonUSD.indexOf(base) === -1) smNonUSD.push(base);
       (p.positions || []).forEach(function(pos) {
-        var c = pos.currency || base;
+        var c = getPositionCurrencyCode(pos, base);
         if (c !== 'USD' && smNonUSD.indexOf(c) === -1) smNonUSD.push(c);
       });
     });
@@ -4852,7 +4858,7 @@ function refreshAll() {
         (p.positions || []).forEach(function(pos) {
           var pcur = getPositionCurrent(pos);
           if (pcur != null && pos.qty > 0) {
-            var pc = pos.currency || base;
+            var pc = getPositionCurrencyCode(pos, base);
             var rateToUSD = pc === 'USD' ? 1 : (fxRates[pc] || fxRates[pc + 'USD'] || 1);
             var rateBaseToUSD = base === 'USD' ? 1 : (fxRates[base] || fxRates[base + 'USD'] || 1);
             var closePrice = pos.sold ? pcur : (HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(pos.ticker, closeMode) || pos.regularMarketPrice || pcur) : (closeMode === 'prev' ? (pos.previousClose || pos.regularMarketPrice || pcur) : (pos.regularMarketPrice || pcur)));
@@ -5673,7 +5679,7 @@ function showAggDetail(ticker, soldFlag) {
     return a.localeCompare(b);
   });
 
-  var currSym = CURRENCY_SYMBOLS[allPositions[0].currency] || allPositions[0].currency || '';
+  var currSym = getPositionCurrencySymbol(allPositions[0]);
   var totalQty = 0, totalCost = 0, totalSell = 0;
   var brokerData = brokerKeys.map(function(broker) {
     var group = brokerGroups[broker].slice().sort(function(a, b) {
@@ -6490,7 +6496,7 @@ function showAnalyticsDetail(rubric, value) {
   var tdStyle  = 'padding:6px 8px;white-space:nowrap;text-align:right';
   var tdStyleL = 'padding:6px 8px;white-space:nowrap;text-align:left';
   function positionRow(p) {
-    var sym = CURRENCY_SYMBOLS[p.currency] || p.currency || '';
+    var sym = getPositionCurrencySymbol(p, _analyticsCtx.baseCode);
     var qty = p.qty;
     var entry = p.entry;
     var current = getPositionCurrent(p) != null ? getPositionCurrent(p) : 0;
@@ -6929,7 +6935,7 @@ function loadAnalyticsChartData(range, mode, groups, breakdown, baseSym, baseCod
     groups[key].forEach(function(p) {
       if (p.sold || p.qty <= 0) return;
       tickerSet[p.ticker] = true;
-      var pc = (p.currency || baseCode || 'USD').toUpperCase();
+      var pc = getPositionCurrencyCode(p, baseCode).toUpperCase();
       if (pc !== 'USD') fxSet[pc] = true;
     });
   });
@@ -6993,7 +6999,7 @@ function loadAnalyticsChartData(range, mode, groups, breakdown, baseSym, baseCod
           groups[key].forEach(function(p) {
             if (p.sold || p.qty <= 0) return;
             if (!priceMap[p.ticker] || priceMap[p.ticker][dk] == null) { complete = false; return; }
-            var pc = (p.currency || baseCode || 'USD').toUpperCase();
+            var pc = getPositionCurrencyCode(p, baseCode).toUpperCase();
             var rate = pc === 'USD' ? 1 : (fxByDate[pc] && fxByDate[pc][dk] ? fxByDate[pc][dk] : 1);
             total += p.qty * priceMap[p.ticker][dk] * rate;
           });
@@ -7014,7 +7020,7 @@ function loadAnalyticsChartData(range, mode, groups, breakdown, baseSym, baseCod
           var total = 0, complete = true;
           grpPos.forEach(function(p) {
             if (!priceMap[p.ticker] || priceMap[p.ticker][dk] == null) { complete = false; return; }
-            var pc = (p.currency || baseCode || 'USD').toUpperCase();
+            var pc = getPositionCurrencyCode(p, baseCode).toUpperCase();
             var rate = pc === 'USD' ? 1 : (fxByDate[pc] && fxByDate[pc][dk] ? fxByDate[pc][dk] : 1);
             total += p.qty * priceMap[p.ticker][dk] * rate;
           });
@@ -7710,7 +7716,7 @@ function loadSummaryChartData(range, mode) {
     (portfolios[pid].positions || []).filter(function(p) { return !p.sold && p.qty > 0; }).forEach(function(pos) {
       if (!allTickers[pos.ticker]) allTickers[pos.ticker] = [];
       allTickers[pos.ticker].push({ pid: pid, pos: pos });
-      var pc = (pos.currency || baseCur).toUpperCase();
+      var pc = getPositionCurrencyCode(pos, baseCur).toUpperCase();
       if (pc !== 'USD') allFxNeeded[pc] = true;
     });
   });
@@ -7771,7 +7777,7 @@ function loadSummaryChartData(range, mode) {
         activePids.forEach(function(pid) {
           (portfolios[pid].positions || []).filter(function(p) { return !p.sold && p.qty > 0; }).forEach(function(pos) {
             if (!priceMap[pos.ticker] || priceMap[pos.ticker][dk] == null) { complete = false; return; }
-            var pc = pos.currency || (portfolios[pid].currencyCode || 'USD').toUpperCase();
+            var pc = getPositionCurrencyCode(pos, portfolios[pid].currencyCode).toUpperCase();
             var rate = pc === 'USD' ? 1 : (fxByDate[pc] && fxByDate[pc][dk] ? fxByDate[pc][dk] : 1);
             total += pos.qty * priceMap[pos.ticker][dk] * rate;
           });
@@ -7793,7 +7799,7 @@ function loadSummaryChartData(range, mode) {
           var total = 0, complete = true;
           posns.forEach(function(pos) {
             if (!priceMap[pos.ticker] || priceMap[pos.ticker][dk] == null) { complete = false; return; }
-            var pc = (pos.currency || baseCur2).toUpperCase();
+            var pc = getPositionCurrencyCode(pos, baseCur2).toUpperCase();
             var rateToUSD = pc === 'USD' ? 1 : (fxByDate[pc] && fxByDate[pc][dk] ? fxByDate[pc][dk] : 1);
             var rateBaseToUSD = baseCur2 === 'USD' ? 1 : (fxByDate[baseCur2] && fxByDate[baseCur2][dk] ? fxByDate[baseCur2][dk] : 1);
             total += pos.qty * priceMap[pos.ticker][dk] * rateToUSD / rateBaseToUSD;
@@ -8365,7 +8371,7 @@ function render() {
     var archPids = Object.keys(portfolios).filter(function(pid) { return portfolios[pid].archive; }).sort(function(a, b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
     archPids.forEach(function(pid) {
       (portfolios[pid].positions || []).forEach(function(pos) {
-        var c = pos.currency || portfolios[pid].currencyCode || 'USD';
+        var c = getPositionCurrencyCode(pos, portfolios[pid].currencyCode);
         if (c !== 'USD' && archNonUSD.indexOf(c) === -1) archNonUSD.push(c);
       });
     });
@@ -8403,7 +8409,7 @@ function render() {
         (p.positions || []).forEach(function(pos) {
           var pcur = getPositionCurrent(pos);
           if (pcur != null && pos.qty > 0) {
-            var posCur = pos.currency || baseCur;
+            var posCur = getPositionCurrencyCode(pos, baseCur);
             var rateToUSD = posCur === 'USD' ? 1 : (archFxRates[posCur] || 1);
             valUSD += pos.qty * pcur * rateToUSD;
             costUSD += pos.qty * pos.entry * rateToUSD;
@@ -9400,7 +9406,7 @@ function render() {
       var base = (p.currencyCode || 'USD').toUpperCase();
       if (base !== 'USD' && smNonUSD.indexOf(base) === -1) smNonUSD.push(base);
       (p.positions || []).forEach(function(pos) {
-        var c = pos.currency || base;
+        var c = getPositionCurrencyCode(pos, base);
         if (c !== 'USD' && smNonUSD.indexOf(c) === -1) smNonUSD.push(c);
       });
     });
@@ -9416,7 +9422,7 @@ function render() {
         (p.positions || []).forEach(function(pos) {
           var pcur = getPositionCurrent(pos);
           if (pcur != null && pos.qty > 0) {
-            var pc = pos.currency || base;
+            var pc = getPositionCurrencyCode(pos, base);
             var rateToUSD = pc === 'USD' ? 1 : (fxRates[pc] || fxRates[pc + 'USD'] || 1);
             var rateBaseToUSD = base === 'USD' ? 1 : (fxRates[base] || fxRates[base + 'USD'] || 1);
             var closePrice = pos.sold ? pcur : (HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(pos.ticker, closeMode) || pos.regularMarketPrice || pcur) : (closeMode === 'prev' ? (pos.previousClose || pos.regularMarketPrice || pcur) : (pos.regularMarketPrice || pcur)));
@@ -9499,7 +9505,7 @@ function render() {
     var summaryPids = Object.keys(portfolios).filter(function(pid) { return !portfolios[pid].watchlist && !portfolios[pid].archive; }).sort(function(a, b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
     summaryPids.forEach(function(pid) {
       (portfolios[pid].positions || []).forEach(function(pos) {
-        var c = pos.currency || portfolios[pid].currencyCode || 'USD';
+        var c = getPositionCurrencyCode(pos, portfolios[pid].currencyCode);
         if (c !== 'USD' && summaryNonUSD.indexOf(c) === -1) summaryNonUSD.push(c);
       });
     });
@@ -9512,7 +9518,7 @@ function render() {
         (p.positions || []).forEach(function(pos) {
           var pcur = getPositionCurrent(pos);
           if (pcur != null && pos.qty > 0) {
-            var posCur = pos.currency || baseCur;
+            var posCur = getPositionCurrencyCode(pos, baseCur);
             var rateToUSD = posCur === 'USD' ? 1 : (summaryFxRates[posCur] || 1);
             valUSD += pos.qty * pcur * rateToUSD;
             costUSD += pos.qty * pos.entry * rateToUSD;
@@ -10019,7 +10025,7 @@ function render() {
     });
     gwPids.forEach(function(pid) {
       (portfolios[pid].positions || []).forEach(function(pos) {
-        var c = pos.currency || portfolios[pid].currencyCode || 'USD';
+        var c = getPositionCurrencyCode(pos, portfolios[pid].currencyCode);
         if (c !== 'USD' && gwNonUSD.indexOf(c) === -1) gwNonUSD.push(c);
       });
     });
@@ -10031,7 +10037,7 @@ function render() {
           var pcur = getPositionCurrent(pos);
           if (!pos.qty || pos.qty <= 0 || pcur == null) return;
           if (!gwIsRealized && pos.sold) return;
-          var posCur = pos.currency || portfolios[pid].currencyCode || 'USD';
+          var posCur = getPositionCurrencyCode(pos, portfolios[pid].currencyCode);
           var rateToUSD = posCur === 'USD' ? 1 : (fxRates[posCur] || 1);
           var valUSD = pos.qty * pcur * rateToUSD;
           var t = pos.ticker.toUpperCase();
