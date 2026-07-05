@@ -6796,18 +6796,19 @@ function analyticsMarketContent(keys, groups, breakdown, baseSym, baseCode, fxMa
     var grp = groups[key];
     var closeBase = 0, currentBase = 0, closeNative = 0, currentNative = 0, hasPos = false;
     grp.forEach(function(p) {
-      if (p.current == null || p.qty <= 0) return;
+      var pcur = getPositionCurrent(p);
+      if (pcur == null || p.qty <= 0) return;
       if (!p.sold && allTickers.indexOf(p.ticker) === -1) allTickers.push(p.ticker);
       var pc = getPositionCurrencyCode(p);
       var rate = pc === baseCode ? 1 : (fxMap[pc + baseCode] || fxMap[pc] || 1);
-      var closePrice = p.sold ? p.current
+      var closePrice = p.sold ? pcur
         : (HIST_MODES.indexOf(closeMode) !== -1
-            ? (getHistoricalClose(p.ticker, closeMode) || p.regularMarketPrice || p.current)
+            ? (getHistoricalClose(p.ticker, closeMode) || p.regularMarketPrice || pcur)
             : (closeMode === 'prev'
-                ? (p.previousClose || p.regularMarketPrice || p.current)
-                : (p.regularMarketPrice || p.current)));
-      var curPrice = p.sold ? p.current
-        : (currentMode === 'reg' ? (p.regularMarketPrice || p.current) : p.current);
+                ? (p.previousClose || p.regularMarketPrice || pcur)
+                : (p.regularMarketPrice || pcur)));
+      var curPrice = p.sold ? pcur
+        : (currentMode === 'reg' ? (p.regularMarketPrice || pcur) : pcur);
       closeBase     += p.qty * closePrice * rate;
       currentBase   += p.qty * curPrice   * rate;
       closeNative   += p.qty * closePrice;
@@ -7082,13 +7083,14 @@ function exportPositionsCsv() {
   var rows = [['ticker','qty','entry','current','pnl','pnl_pct','category','region','sector','currency']];
   (p.positions || []).forEach(function(pos) {
     if (pos.sold) return;
-    var pnl = (pos.current !== null && pos.qty > 0) ? ((pos.current - pos.entry) * pos.qty).toFixed(2) : '';
-    var pnlPct = (pos.current !== null && pos.entry) ? (((pos.current - pos.entry) / pos.entry) * 100).toFixed(2) + '%' : '';
+    var pcur = getPositionCurrent(pos);
+    var pnl = (pcur !== null && pos.qty > 0) ? ((pcur - pos.entry) * pos.qty).toFixed(2) : '';
+    var pnlPct = (pcur !== null && pos.entry) ? (((pcur - pos.entry) / pos.entry) * 100).toFixed(2) + '%' : '';
     rows.push([
       pos.ticker,
       pos.qty,
       pos.entry,
-      pos.current !== null ? pos.current : '',
+      pcur !== null ? pcur : '',
       pnl,
       pnlPct,
       getTickerAttr(pos.ticker, 'category') || '',
@@ -7593,7 +7595,7 @@ var CHART_COLORS = ['#00c48c','#5b9cf6','#f6c15b','#e05c5c','#b47ef6','#5bf6e4',
 
 
 function getChartCurrentPrice(p) {
-  return currentMode === 'reg' ? (p.regularMarketPrice || p.current) : p.current;
+  return currentMode === 'reg' ? (p.regularMarketPrice || getPositionCurrent(p)) : getPositionCurrent(p);
 }
 
 function addTodayPoint(points, p) {
@@ -7946,11 +7948,11 @@ function aggregatePositions(posns) {
   function makeEntry(group, isSold) {
     if (group.length === 1) return { agg: false, pos: group[0] };
     var totalQty = 0, totalCost = 0, totalSell = 0;
-    group.forEach(function(p) { totalQty += p.qty; totalCost += p.qty * p.entry; if (isSold) totalSell += p.qty * p.current; });
+    group.forEach(function(p) { totalQty += p.qty; totalCost += p.qty * p.entry; if (isSold) totalSell += p.qty * getPositionCurrent(p); });
     var rep = Object.assign({}, group[0], {
       qty: totalQty,
       entry: totalQty > 0 ? totalCost / totalQty : 0,
-      current: isSold ? (totalQty > 0 ? totalSell / totalQty : 0) : group[0].current
+      current: isSold ? (totalQty > 0 ? totalSell / totalQty : 0) : getPositionCurrent(group[0])
     });
     return { agg: true, count: group.length, pos: rep, group: group };
   }
@@ -8085,7 +8087,7 @@ function render() {
     })();
     var withDeltaSingle = moversPos.map(function(p) {
       var close2 = getCloseForMode(p);
-      var cur2 = currentMode === 'reg' ? (p.regularMarketPrice || null) : (p.current || null);
+      var cur2 = currentMode === 'reg' ? (p.regularMarketPrice || null) : (getPositionCurrent(p) || null);
       var delta2 = (close2 && cur2) ? (cur2 - close2) / close2 * 100 : null;
       return { pos: p, close: close2, cur: cur2, delta: delta2 };
     }).filter(function(x) { return x.delta !== null; });
@@ -8207,7 +8209,8 @@ function render() {
   var rows = '';
   rowsSource.forEach(function(entry) {
     var p = entry.pos; var isAgg = entry.agg; var aggCount = entry.count || 1; var aggGroup = entry.group || null;
-    var pnl = (p.current !== null && p.current !== undefined) ? p.current - p.entry : null;
+    var pcur = getPositionCurrent(p);
+    var pnl = (pcur !== null && pcur !== undefined) ? pcur - p.entry : null;
     var pnlPct = (pnl !== null && p.entry && p.entry > 0) ? (pnl / p.entry) * 100 : null;
     if (p.qty === 0 || !p.entry) pnl = null;
     if (p.qty === 0 && !p.entry) pnlPct = null;
@@ -8217,8 +8220,8 @@ function render() {
     var curCell;
     if (isLoading) {
       curCell = '<span class="muted">...</span>';
-    } else if (p.current !== null && p.current !== undefined) {
-      curCell = getPositionCurrencySymbol(p) + f2(p.current);
+    } else if (pcur !== null && pcur !== undefined) {
+      curCell = getPositionCurrencySymbol(p) + f2(pcur);
     } else {
       curCell = '<span class="muted">&mdash;</span>';
     }
@@ -8226,7 +8229,7 @@ function render() {
     var qtyCell = isEdit ? '<input class="edit-input" id="editQty" type="number" value="' + p.qty + '">' : (p.qty === 0 ? '<span style="color:var(--dim)">&mdash;</span>' : (Number.isInteger(p.qty) ? p.qty : p.qty.toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:4})));
     var entryCell = isEdit ? '<input class="edit-input" id="editEntry" type="number" value="' + p.entry + '">' : (p.entry === 0 && p.qty === 0 ? '<span class="muted">&mdash;</span>' : getPositionCurrencySymbol(p) + f2(p.entry));
     var curEditCell = isEdit
-      ? '<input class="edit-input" id="editCurrent" type="number" value="' + (p.current !== null && p.current !== undefined ? p.current : '') + '" placeholder="&mdash;">'
+      ? '<input class="edit-input" id="editCurrent" type="number" value="' + (pcur !== null && pcur !== undefined ? pcur : '') + '" placeholder="&mdash;">'
       : curCell;
 
     var sellAction, moveBtn, editBtn, deleteBtn;
@@ -8316,18 +8319,19 @@ function render() {
   var posFxNeeded = [];
   positions.forEach(function(p) {
     var pc = getPositionCurrencyCode(p);
-    if (p.current != null && pc !== baseCode && posFxNeeded.indexOf(pc) === -1) posFxNeeded.push(pc);
+    if (getPositionCurrent(p) != null && pc !== baseCode && posFxNeeded.indexOf(pc) === -1) posFxNeeded.push(pc);
   });
 
   function buildTotals(fxMap) {
     var tCost = 0, tVal = 0, tHas = false;
     positions.forEach(function(p) {
-      if (p.current !== null && p.current !== undefined) {
+      var pcur = getPositionCurrent(p);
+      if (pcur !== null && pcur !== undefined) {
         var rate = 1;
         var pc = getPositionCurrencyCode(p);
         if (pc !== baseCode) rate = fxMap[pc + baseCode] || fxMap[pc] || 1;
         tCost += p.qty * p.entry * rate;
-        tVal += p.qty * p.current * rate;
+        tVal += p.qty * pcur * rate;
         tHas = true;
       }
     });
@@ -8396,13 +8400,14 @@ function render() {
         var baseCur = (p.currencyCode || 'USD').toUpperCase();
         var valUSD = 0, costUSD = 0, valBase = 0, costBase = 0, hasAny = false;
         (p.positions || []).forEach(function(pos) {
-          if (pos.current != null && pos.qty > 0) {
+          var pcur = getPositionCurrent(pos);
+          if (pcur != null && pos.qty > 0) {
             var posCur = pos.currency || baseCur;
             var rateToUSD = posCur === 'USD' ? 1 : (archFxRates[posCur] || 1);
-            valUSD += pos.qty * pos.current * rateToUSD;
+            valUSD += pos.qty * pcur * rateToUSD;
             costUSD += pos.qty * pos.entry * rateToUSD;
             var rateBaseToUSD = baseCur === 'USD' ? 1 : (archFxRates[baseCur] || 1);
-            valBase += pos.qty * pos.current * rateToUSD / rateBaseToUSD;
+            valBase += pos.qty * pcur * rateToUSD / rateBaseToUSD;
             costBase += pos.qty * pos.entry * rateToUSD / rateBaseToUSD;
             hasAny = true;
           }
