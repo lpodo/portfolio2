@@ -6362,7 +6362,7 @@ function buildMoversView(area, opts) {
   // Compute delta% for each using closeMode/currentMode
   var withDelta = allPos.map(function(p) {
     var close = getCloseForMode(p);
-    var cur = currentMode === 'reg' ? (p.regularMarketPrice || null) : (p.current || null);
+    var cur = currentMode === 'reg' ? (p.regularMarketPrice || null) : (getPositionCurrent(p) || null);
     var delta = (close && cur) ? (cur - close) / close * 100 : null;
     return { pos: p, close: close, cur: cur, delta: delta };
   }).filter(function(x) { return x.delta !== null; });
@@ -6462,7 +6462,7 @@ function showAnalyticsDetail(rubric, value) {
     positions.forEach(function(p) {
       sumQty += p.qty;
       sumCost += p.qty * p.entry;
-      if (tg.isSold) sumSell += p.qty * p.current;
+      if (tg.isSold) sumSell += p.qty * getPositionCurrent(p);
     });
     var first = positions[0];
     return {
@@ -6471,7 +6471,7 @@ function showAnalyticsDetail(rubric, value) {
       entry: sumQty > 0 ? sumCost / sumQty : 0,
       current: tg.isSold
         ? (sumQty > 0 ? sumSell / sumQty : 0)
-        : (first.current != null ? first.current : 0),
+        : (getPositionCurrent(first) != null ? getPositionCurrent(first) : 0),
       currency: first.currency,
       sold: tg.isSold
     };
@@ -6492,7 +6492,7 @@ function showAnalyticsDetail(rubric, value) {
     var sym = CURRENCY_SYMBOLS[p.currency] || p.currency || '';
     var qty = p.qty;
     var entry = p.entry;
-    var current = p.current != null ? p.current : 0;
+    var current = getPositionCurrent(p) != null ? getPositionCurrent(p) : 0;
     var pnlAbs = (current - entry) * qty;
     var pnlPct = entry > 0 ? ((current / entry) - 1) * 100 : null;
     return '<tr>'
@@ -6513,12 +6513,13 @@ function showAnalyticsDetail(rubric, value) {
   var fxMap = _analyticsCtx.fxMap || {};
   var totVal = 0, totCost = 0, totPnL = 0;
   group.forEach(function(p) {
-    if (p.current == null || p.qty <= 0) return;
+    var pcur = getPositionCurrent(p);
+    if (pcur == null || p.qty <= 0) return;
     var pc = getPositionCurrencyCode(p);
     var rate = pc === baseCode ? 1 : (fxMap[pc + baseCode] || fxMap[pc] || 1);
-    totVal  += p.qty * p.current * rate;
+    totVal  += p.qty * pcur * rate;
     totCost += p.qty * p.entry   * rate;
-    totPnL  += p.qty * (p.current - p.entry) * rate;
+    totPnL  += p.qty * (pcur - p.entry) * rate;
   });
   var totPct = totCost > 0 ? (totPnL / totCost) * 100 : null;
   var pnlClass = totPnL >= 0 ? 'pos' : 'neg';
@@ -6619,12 +6620,13 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
   Object.keys(groups).forEach(function(key) {
     var valBase = 0, costBase = 0, valNative = 0, costNative = 0;
     groups[key].forEach(function(p) {
-      if (p.current == null || p.qty <= 0) return;
+      var pcur = getPositionCurrent(p);
+      if (pcur == null || p.qty <= 0) return;
       var pc = getPositionCurrencyCode(p);
       var rate = pc === baseCode ? 1 : (fxMap[pc + baseCode] || fxMap[pc] || 1);
-      valBase  += p.qty * p.current * rate;
+      valBase  += p.qty * pcur * rate;
       costBase += p.qty * p.entry   * rate;
-      valNative  += p.qty * p.current;
+      valNative  += p.qty * pcur;
       costNative += p.qty * p.entry;
     });
     groupStats[key] = { valBase: valBase, costBase: costBase, valNative: valNative, costNative: costNative };
