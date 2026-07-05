@@ -4283,7 +4283,7 @@ function pastePosition() {
 function sellPosition(id) {
   var pos = positions.find(function(p) { return p.id === id; });
   if (!pos) return;
-  var defaultPrice = pos.current !== null && pos.current !== undefined ? pos.current.toFixed(2) : '';
+  var defaultPrice = getPositionCurrent(pos) !== null && getPositionCurrent(pos) !== undefined ? getPositionCurrent(pos).toFixed(2) : '';
 
   // Build sell modal
   var overlay = document.createElement('div');
@@ -4624,7 +4624,7 @@ function saveEdit(id) {
   var qty = document.getElementById('editQty').value.trim() === '' ? null : parseFloat(document.getElementById('editQty').value);
   var entry = parseFloat(document.getElementById('editEntry').value);
   var curRaw = document.getElementById('editCurrent').value.trim();
-  var current = curRaw ? parseFloat(curRaw) : pos.current;
+  var current = curRaw ? parseFloat(curRaw) : getPositionCurrent(pos);
   if (qty === null || isNaN(qty) || qty < 0 || (qty > 0 && entry <= 0)) return;
   // ISIN first: overwriting/removing a real ISIN needs confirmation. On
   // cancel, applyIsinInput restores the field and we abort with the edit
@@ -4850,12 +4850,13 @@ function refreshAll() {
         var baseSym2 = CURRENCY_SYMBOLS[base] || base;
         var closeVal = 0, currentVal = 0, closeUSD = 0, currentUSD = 0, hasPos = false;
         (p.positions || []).forEach(function(pos) {
-          if (pos.current != null && pos.qty > 0) {
+          var pcur = getPositionCurrent(pos);
+          if (pcur != null && pos.qty > 0) {
             var pc = pos.currency || base;
             var rateToUSD = pc === 'USD' ? 1 : (fxRates[pc] || fxRates[pc + 'USD'] || 1);
             var rateBaseToUSD = base === 'USD' ? 1 : (fxRates[base] || fxRates[base + 'USD'] || 1);
-            var closePrice = pos.sold ? pos.current : (HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(pos.ticker, closeMode) || pos.regularMarketPrice || pos.current) : (closeMode === 'prev' ? (pos.previousClose || pos.regularMarketPrice || pos.current) : (pos.regularMarketPrice || pos.current)));
-            var curPrice = pos.sold ? pos.current : (currentMode === 'reg' ? (pos.regularMarketPrice || pos.current) : pos.current);
+            var closePrice = pos.sold ? pcur : (HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(pos.ticker, closeMode) || pos.regularMarketPrice || pcur) : (closeMode === 'prev' ? (pos.previousClose || pos.regularMarketPrice || pcur) : (pos.regularMarketPrice || pcur)));
+            var curPrice = pos.sold ? pcur : (currentMode === 'reg' ? (pos.regularMarketPrice || pcur) : pcur);
             var posClose = pos.qty * closePrice * rateToUSD / rateBaseToUSD;
             var posCurrent = pos.qty * curPrice * rateToUSD / rateBaseToUSD;
             closeVal += posClose;
@@ -9413,12 +9414,13 @@ function render() {
         var baseSym2 = CURRENCY_SYMBOLS[base] || base;
         var closeVal = 0, currentVal = 0, closeUSD = 0, currentUSD = 0, hasPos = false;
         (p.positions || []).forEach(function(pos) {
-          if (pos.current != null && pos.qty > 0) {
+          var pcur = getPositionCurrent(pos);
+          if (pcur != null && pos.qty > 0) {
             var pc = pos.currency || base;
             var rateToUSD = pc === 'USD' ? 1 : (fxRates[pc] || fxRates[pc + 'USD'] || 1);
             var rateBaseToUSD = base === 'USD' ? 1 : (fxRates[base] || fxRates[base + 'USD'] || 1);
-            var closePrice = pos.sold ? pos.current : (HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(pos.ticker, closeMode) || pos.regularMarketPrice || pos.current) : (closeMode === 'prev' ? (pos.previousClose || pos.regularMarketPrice || pos.current) : (pos.regularMarketPrice || pos.current)));
-            var curPrice = pos.sold ? pos.current : (currentMode === 'reg' ? (pos.regularMarketPrice || pos.current) : pos.current);
+            var closePrice = pos.sold ? pcur : (HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(pos.ticker, closeMode) || pos.regularMarketPrice || pcur) : (closeMode === 'prev' ? (pos.previousClose || pos.regularMarketPrice || pcur) : (pos.regularMarketPrice || pcur)));
+            var curPrice = pos.sold ? pcur : (currentMode === 'reg' ? (pos.regularMarketPrice || pcur) : pcur);
             var posClose = pos.qty * closePrice * rateToUSD / rateBaseToUSD;
             var posCurrent = pos.qty * curPrice * rateToUSD / rateBaseToUSD;
             closeVal += posClose;
@@ -9508,13 +9510,14 @@ function render() {
         var baseCur = (p.currencyCode || 'USD').toUpperCase();
         var valUSD = 0, costUSD = 0, valBase = 0, costBase = 0, hasAny = false;
         (p.positions || []).forEach(function(pos) {
-          if (pos.current != null && pos.qty > 0) {
+          var pcur = getPositionCurrent(pos);
+          if (pcur != null && pos.qty > 0) {
             var posCur = pos.currency || baseCur;
             var rateToUSD = posCur === 'USD' ? 1 : (summaryFxRates[posCur] || 1);
-            valUSD += pos.qty * pos.current * rateToUSD;
+            valUSD += pos.qty * pcur * rateToUSD;
             costUSD += pos.qty * pos.entry * rateToUSD;
             var rateBaseToUSD = baseCur === 'USD' ? 1 : (summaryFxRates[baseCur] || 1);
-            valBase += pos.qty * pos.current * rateToUSD / rateBaseToUSD;
+            valBase += pos.qty * pcur * rateToUSD / rateBaseToUSD;
             costBase += pos.qty * pos.entry * rateToUSD / rateBaseToUSD;
             hasAny = true;
           }
@@ -9618,7 +9621,7 @@ function render() {
     var wlDeltaArrow = watchlistSort.key === 'absdelta' ? ' &#177;&#9660;' : watchlistSort.key === 'delta' ? (watchlistSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
     getWatchlistSorted(wlSource).forEach(function(p) {
       var close = getCloseForMode(p);
-      var price = currentMode === 'reg' ? (p.regularMarketPrice || null) : (p.current || null);
+      var price = currentMode === 'reg' ? (p.regularMarketPrice || null) : (getPositionCurrent(p) || null);
       var delta = (close && price) ? (price - close) / close * 100 : null;
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
       var isExpanded = expandedId === p.id;
@@ -9689,7 +9692,8 @@ function render() {
       var mktExpandedRow = isExpanded
         ? '<tr><td colspan="7" style="padding:4px 8px 8px;background:var(--bg2)">' + (entry.group.length > 1 ? buildExpandedInnerAgg(p, entry.group) : buildExpandedInner(p)) + '</td></tr>'
         : '';
-      if (p.current == null) {
+      var pcur = getPositionCurrent(p);
+      if (pcur == null) {
         marketRows += '<tr>'
           + '<td style="text-align:left">' + mktTickerCell + '</td>'
           + '<td style="padding:5px 4px"><span class="muted">&mdash;</span></td>'
@@ -9704,13 +9708,13 @@ function render() {
       }
       var regPrice;
       if (p.sold) {
-        regPrice = p.current;
+        regPrice = pcur;
       } else if (HIST_MODES.indexOf(closeMode) !== -1) {
         regPrice = getHistoricalClose(p.ticker, closeMode);
       } else {
-        regPrice = closeMode === 'prev' ? (p.previousClose || p.regularMarketPrice || p.current) : (p.regularMarketPrice || p.current);
+        regPrice = closeMode === 'prev' ? (p.previousClose || p.regularMarketPrice || pcur) : (p.regularMarketPrice || pcur);
       }
-      var mktCurrent = currentMode === 'reg' ? (p.regularMarketPrice || p.current) : p.current;
+      var mktCurrent = currentMode === 'reg' ? (p.regularMarketPrice || pcur) : pcur;
       var delta = p.sold ? 0 : (regPrice !== null ? (mktCurrent - regPrice) / regPrice * 100 : null);
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
       var mktSoldStyle = (p.sold || p.qty === 0 || allWatchlist) ? 'font-style:italic;opacity:0.5' : '';
@@ -9941,25 +9945,27 @@ function render() {
       var wTotVal = 0;
       weightSource.forEach(function(wEntry) {
         var p = wEntry.pos;
-        if (p.current != null && p.qty > 0) {
+        var pcur = getPositionCurrent(p);
+        if (pcur != null && p.qty > 0) {
           var rate2 = 1;
           var pc2 = getPositionCurrencyCode(p);
           if (pc2 !== baseCode) rate2 = wFxMap[pc2 + baseCode] || 1;
-          wTotVal += p.qty * p.current * rate2;
+          wTotVal += p.qty * pcur * rate2;
         }
       });
       getWeightSorted(weightSource.map(function(e) { return e.pos; }), wTotVal).forEach(function(p) {
         var wSoldStyle = p.sold ? 'font-style:italic;opacity:0.5' : '';
-        if (p.current === null || p.current === undefined || p.qty === 0) {
+        var pcur = getPositionCurrent(p);
+        if (pcur === null || pcur === undefined || p.qty === 0) {
           return;
         }
         var pc = getPositionCurrencyCode(p);
         var rate = pc !== baseCode ? (wFxMap[pc + baseCode] || 1) : 1;
-        var posValBase = p.qty * p.current * rate;
+        var posValBase = p.qty * pcur * rate;
         var weight = wTotVal > 0 ? (posValBase / wTotVal) * 100 : null;
         weightRows += '<tr style="' + wSoldStyle + '">'
           + '<td style="text-align:left;white-space:nowrap">' + p.ticker + '</td>'
-          + '<td style="padding:5px 4px;white-space:nowrap">' + getPositionCurrencySymbol(p) + f2(p.qty * p.current) + '</td>'
+          + '<td style="padding:5px 4px;white-space:nowrap">' + getPositionCurrencySymbol(p) + f2(p.qty * pcur) + '</td>'
           + '<td style="padding:5px 4px;white-space:nowrap">' + fPctNoSign(weight) + '</td>'
           + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
           + '</tr>';
@@ -10022,15 +10028,16 @@ function render() {
       var tickerMap = {};
       gwPids.forEach(function(pid) {
         (portfolios[pid].positions || []).forEach(function(pos) {
-          if (!pos.qty || pos.qty <= 0 || pos.current == null) return;
+          var pcur = getPositionCurrent(pos);
+          if (!pos.qty || pos.qty <= 0 || pcur == null) return;
           if (!gwIsRealized && pos.sold) return;
           var posCur = pos.currency || portfolios[pid].currencyCode || 'USD';
           var rateToUSD = posCur === 'USD' ? 1 : (fxRates[posCur] || 1);
-          var valUSD = pos.qty * pos.current * rateToUSD;
+          var valUSD = pos.qty * pcur * rateToUSD;
           var t = pos.ticker.toUpperCase();
           if (!tickerMap[t]) tickerMap[t] = { valUSD: 0, valNative: 0, currency: posCur, shortName: '' };
           tickerMap[t].valUSD += valUSD;
-          tickerMap[t].valNative += pos.qty * pos.current;
+          tickerMap[t].valNative += pos.qty * pcur;
           if (pos.shortName && !tickerMap[t].shortName) tickerMap[t].shortName = pos.shortName;
         });
       });
