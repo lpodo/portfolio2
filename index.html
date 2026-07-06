@@ -498,7 +498,7 @@
 
 <!-- Settings toggle button -->
 <div style="position:fixed;bottom:0;left:0;right:0;background:var(--bg2);border-top:1px solid var(--border);padding:10px 18px;display:flex;justify-content:space-between;align-items:center;z-index:98">
-  <span style="font-size:10px;color:var(--dim)" id="providerLabel"></span>
+  <span style="font-size:10px;color:var(--dim)"><span id="providerLabel"></span><span id="versionStamp" style="margin-left:8px;opacity:0.7"></span></span>
   <div style="display:flex;align-items:center;gap:4px">
     <span id="cloudDirtyIcon" onclick="openCloudDirtyModal()" title="Local metadata not synced to cloud"
       style="display:none;align-items:center;justify-content:center;width:40px;height:36px;cursor:pointer;user-select:none">
@@ -10202,12 +10202,45 @@ document.addEventListener('visibilitychange', function() {
 </script>
 <script>
 if ('serviceWorker' in navigator) {
+  // Track whether a controller already exists. If it does, a controllerchange
+  // means a NEW sw.js took over (deploy happened) → reload once to pull the
+  // fresh index.html the new SW just cached. If there was NO controller (first
+  // ever load), the initial control handoff is not a version change — don't
+  // reload then, or the first visit double-loads.
+  var hadController = !!navigator.serviceWorker.controller;
+  var reloadedForNewSW = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function() {
+    if (hadController && !reloadedForNewSW) {
+      reloadedForNewSW = true;
+      window.location.reload();
+    }
+  });
+
+  function requestSwVersion() {
+    if (navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage('getVersion');
+    }
+  }
+  navigator.serviceWorker.addEventListener('message', function(e) {
+    if (e.data && e.data.type === 'swVersion') {
+      var el = document.getElementById('versionStamp');
+      if (el) el.textContent = e.data.value;
+    }
+  });
+
   window.addEventListener('load', function() {
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function(reg) {
       console.log('SW registered:', reg.scope);
+      // Force a check for a new sw.js on every load (bypasses the browser's
+      // lazy 24h SW-update check). A bumped CACHE version here → new SW →
+      // skipWaiting/claim → controllerchange → auto-reload above.
+      reg.update();
+      requestSwVersion();
     }).catch(function(e) {
       console.log('SW error:', e);
     });
+    // Also ask once the SW is ready (covers the already-registered case)
+    navigator.serviceWorker.ready.then(requestSwVersion);
   });
 }
 </script>
