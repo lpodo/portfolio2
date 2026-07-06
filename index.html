@@ -676,7 +676,7 @@ function isKnownIsin(v) {
 // lookups are skipped. Returns false while instrumentType is unknown (never
 // refreshed yet) — the safe default; one Yahoo refresh fixes the state.
 function isRealSecurity(p) {
-  var t = p && p.instrumentType;
+  var t = getPositionInstrumentType(p);
   return t === 'EQUITY' || t === 'ETF';
 }
 // ── Prune orphaned ticker data ─────────────────────────────────────────────
@@ -1055,6 +1055,36 @@ function getPositionCurrent(pos) {
   if (!pos) return null;
   if (pos.sold) return pos.current != null ? pos.current : null;
   return pos.current != null ? pos.current : null;
+}
+// Market-data fields describing the ticker's live/last state. These are
+// meaningful only for active positions — sold positions never consult them
+// (callers gate on p.sold first, or show a distinct sold icon). Today they
+// read the position; Stage 2 repoints them at tickerData[ticker]. No sold
+// branch is needed by design.
+function getPositionRegularMarketPrice(pos) {
+  return pos ? (pos.regularMarketPrice != null ? pos.regularMarketPrice : null) : null;
+}
+function getPositionPreviousClose(pos) {
+  return pos ? (pos.previousClose != null ? pos.previousClose : null) : null;
+}
+function getPositionMarketState(pos) {
+  return pos ? (pos.marketState || null) : null;
+}
+function getPositionPriceType(pos) {
+  return pos ? (pos.priceType || null) : null;
+}
+// Descriptive ticker metadata (company name, instrument kind, listing venue).
+// Like the market-data fields, these describe the ticker, not the trade; a
+// sold position reads the same current values. Today they read the position;
+// Stage 2 repoints them at tickerData[ticker].
+function getPositionShortName(pos) {
+  return pos ? (pos.shortName || null) : null;
+}
+function getPositionInstrumentType(pos) {
+  return pos ? (pos.instrumentType || null) : null;
+}
+function getPositionExchange(pos) {
+  return pos ? (pos.exchangeName || null) : null;
 }
 function currentPortfolio() {
   return portfolios[currentPortfolioId] || { name: 'MY PORTFOLIO', positions: [] };
@@ -4693,7 +4723,7 @@ function refreshTicker(ticker, silent) {
       if (port.archive) return;
       port.positions = (port.positions || []).map(function(p) {
         if (p.ticker !== ticker || p.sold) return p;
-        return Object.assign({}, p, { current: price, priceType: __priceType, marketState: __marketState, regularMarketPrice: __regularMarketPrice, previousClose: __previousClose, currency: __currency, shortName: __shortName, instrumentType: __instrumentType || p.instrumentType, exchangeName: __exchangeName || p.exchangeName });
+        return Object.assign({}, p, { current: price, priceType: __priceType, marketState: __marketState, regularMarketPrice: __regularMarketPrice, previousClose: __previousClose, currency: __currency, shortName: __shortName, instrumentType: __instrumentType || getPositionInstrumentType(p), exchangeName: __exchangeName || getPositionExchange(p) });
       });
     });
     // Metadata changed → local state is ahead of cloud. Price refreshes don't
@@ -4827,6 +4857,56 @@ function refreshAllPortfolios() {
   });
 }
 
+// Summary-market per-portfolio totals: builds the table rows and the USD
+// grand totals for the Σ SUMMARY market view. This exact computation was
+// duplicated verbatim in refreshAll() and render(); it lives here so future
+// changes (and the Stage 2/3 data migration) touch one place, not two.
+// Reads closeMode/currentMode globals; returns accumulators for the caller.
+function computeSummaryMarketRows(smPids, fxRates) {
+  var rows = '';
+  var totCloseUSD = 0, totCurrentUSD = 0, hasAny = false;
+  smPids.forEach(function(pid) {
+    var p = portfolios[pid];
+    var base = (p.currencyCode || 'USD').toUpperCase();
+    var baseSym2 = CURRENCY_SYMBOLS[base] || base;
+    var closeVal = 0, currentVal = 0, closeUSD = 0, currentUSD = 0, hasPos = false;
+    (p.positions || []).forEach(function(pos) {
+      var pcur = getPositionCurrent(pos);
+      if (pcur != null && pos.qty > 0) {
+        var pc = getPositionCurrencyCode(pos, base);
+        var rateToUSD = pc === 'USD' ? 1 : (fxRates[pc] || fxRates[pc + 'USD'] || 1);
+        var rateBaseToUSD = base === 'USD' ? 1 : (fxRates[base] || fxRates[base + 'USD'] || 1);
+        var closePrice = pos.sold ? pcur : (HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(pos.ticker, closeMode) || getPositionRegularMarketPrice(pos) || pcur) : (closeMode === 'prev' ? (getPositionPreviousClose(pos) || getPositionRegularMarketPrice(pos) || pcur) : (getPositionRegularMarketPrice(pos) || pcur)));
+        var curPrice = pos.sold ? pcur : (currentMode === 'reg' ? (getPositionRegularMarketPrice(pos) || pcur) : pcur);
+        var posClose = pos.qty * closePrice * rateToUSD / rateBaseToUSD;
+        var posCurrent = pos.qty * curPrice * rateToUSD / rateBaseToUSD;
+        closeVal += posClose;
+        currentVal += posCurrent;
+        closeUSD += pos.qty * closePrice * rateToUSD;
+        currentUSD += pos.qty * curPrice * rateToUSD;
+        hasPos = true;
+      }
+    });
+    if (!hasPos) {
+      rows += '<tr><td style="text-align:left;white-space:nowrap">' + p.name + '</td>' + stalePortfolioColHtml(pid) + '<td colspan="4" style="color:var(--dim)">—</td></tr>';
+      return;
+    }
+    var delta = currentVal - closeVal;
+    var deltaPct = closeVal > 0 ? delta / closeVal * 100 : null;
+    var dClass = delta >= 0 ? 'pos' : 'neg';
+    totCloseUSD += closeUSD; totCurrentUSD += currentUSD; hasAny = true;
+    rows += '<tr>'
+      + '<td style="text-align:left;white-space:nowrap;cursor:pointer" onclick="switchPortfolio(&apos;' + pid + '&apos;)">' + p.name + '</td>'
+      + stalePortfolioColHtml(pid)
+      + '<td>' + baseSym2 + f2(closeVal) + '</td>'
+      + '<td>' + baseSym2 + f2(currentVal) + '</td>'
+      + '<td class="' + dClass + '">' + fSign(delta) + '</td>'
+      + '<td class="' + dClass + '">' + (deltaPct !== null ? fSign(deltaPct) + '%' : '—') + '</td>'
+      + '</tr>';
+  });
+  return { rows: rows, totCloseUSD: totCloseUSD, totCurrentUSD: totCurrentUSD, hasAny: hasAny };
+}
+
 function refreshAll() {
   if (!getApiKey()) { toggleSettings(); return; }
   var btn = document.getElementById('refreshAllBtn');
@@ -4848,47 +4928,8 @@ function refreshAll() {
     });
 
     function buildSummaryMarketStats(fxRates) {
-      var rows = '';
-      var totCloseUSD = 0, totCurrentUSD = 0, hasAny = false;
-      smPids.forEach(function(pid) {
-        var p = portfolios[pid];
-        var base = (p.currencyCode || 'USD').toUpperCase();
-        var baseSym2 = CURRENCY_SYMBOLS[base] || base;
-        var closeVal = 0, currentVal = 0, closeUSD = 0, currentUSD = 0, hasPos = false;
-        (p.positions || []).forEach(function(pos) {
-          var pcur = getPositionCurrent(pos);
-          if (pcur != null && pos.qty > 0) {
-            var pc = getPositionCurrencyCode(pos, base);
-            var rateToUSD = pc === 'USD' ? 1 : (fxRates[pc] || fxRates[pc + 'USD'] || 1);
-            var rateBaseToUSD = base === 'USD' ? 1 : (fxRates[base] || fxRates[base + 'USD'] || 1);
-            var closePrice = pos.sold ? pcur : (HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(pos.ticker, closeMode) || pos.regularMarketPrice || pcur) : (closeMode === 'prev' ? (pos.previousClose || pos.regularMarketPrice || pcur) : (pos.regularMarketPrice || pcur)));
-            var curPrice = pos.sold ? pcur : (currentMode === 'reg' ? (pos.regularMarketPrice || pcur) : pcur);
-            var posClose = pos.qty * closePrice * rateToUSD / rateBaseToUSD;
-            var posCurrent = pos.qty * curPrice * rateToUSD / rateBaseToUSD;
-            closeVal += posClose;
-            currentVal += posCurrent;
-            closeUSD += pos.qty * closePrice * rateToUSD;
-            currentUSD += pos.qty * curPrice * rateToUSD;
-            hasPos = true;
-          }
-        });
-        if (!hasPos) {
-          rows += '<tr><td style="text-align:left;white-space:nowrap">' + p.name + '</td>' + stalePortfolioColHtml(pid) + '<td colspan="4" style="color:var(--dim)">—</td></tr>';
-          return;
-        }
-        var delta = currentVal - closeVal;
-        var deltaPct = closeVal > 0 ? delta / closeVal * 100 : null;
-        var dClass = delta >= 0 ? 'pos' : 'neg';
-        totCloseUSD += closeUSD; totCurrentUSD += currentUSD; hasAny = true;
-        rows += '<tr>'
-          + '<td style="text-align:left;white-space:nowrap;cursor:pointer" onclick="switchPortfolio(&apos;' + pid + '&apos;)">' + p.name + '</td>'
-          + stalePortfolioColHtml(pid)
-          + '<td>' + baseSym2 + f2(closeVal) + '</td>'
-          + '<td>' + baseSym2 + f2(currentVal) + '</td>'
-          + '<td class="' + dClass + '">' + fSign(delta) + '</td>'
-          + '<td class="' + dClass + '">' + (deltaPct !== null ? fSign(deltaPct) + '%' : '—') + '</td>'
-          + '</tr>';
-      });
+      var smRes = computeSummaryMarketRows(smPids, fxRates);
+      var rows = smRes.rows, totCloseUSD = smRes.totCloseUSD, totCurrentUSD = smRes.totCurrentUSD, hasAny = smRes.hasAny;
       var totDelta = totCurrentUSD - totCloseUSD;
       var totDeltaPct = totCloseUSD > 0 ? totDelta / totCloseUSD * 100 : null;
       var tClass = totDelta >= 0 ? 'pos' : 'neg';
@@ -5070,8 +5111,8 @@ function getMarketSorted(items) {
       return marketSort.dir * a.ticker.localeCompare(b.ticker);
     }
     // delta% — use previousClose same as render
-    var aBase = HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(a.ticker, closeMode) || a.previousClose || a.regularMarketPrice) : ((a.marketState === 'REGULAR') ? (a.previousClose || a.regularMarketPrice) : ((closeMode === 'prev' ? a.previousClose : a.regularMarketPrice) || a.regularMarketPrice));
-    var bBase = HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(b.ticker, closeMode) || b.previousClose || b.regularMarketPrice) : ((b.marketState === 'REGULAR') ? (b.previousClose || b.regularMarketPrice) : ((closeMode === 'prev' ? b.previousClose : b.regularMarketPrice) || b.regularMarketPrice));
+    var aBase = HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(a.ticker, closeMode) || getPositionPreviousClose(a) || getPositionRegularMarketPrice(a)) : ((getPositionMarketState(a) === 'REGULAR') ? (getPositionPreviousClose(a) || getPositionRegularMarketPrice(a)) : ((closeMode === 'prev' ? getPositionPreviousClose(a) : getPositionRegularMarketPrice(a)) || getPositionRegularMarketPrice(a)));
+    var bBase = HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(b.ticker, closeMode) || getPositionPreviousClose(b) || getPositionRegularMarketPrice(b)) : ((getPositionMarketState(b) === 'REGULAR') ? (getPositionPreviousClose(b) || getPositionRegularMarketPrice(b)) : ((closeMode === 'prev' ? getPositionPreviousClose(b) : getPositionRegularMarketPrice(b)) || getPositionRegularMarketPrice(b)));
     var acur = getPositionCurrent(a), bcur = getPositionCurrent(b);
     va = (acur != null && aBase) ? (acur - aBase) / aBase * 100 : null;
     vb = (bcur != null && bBase) ? (bcur - bBase) / bBase * 100 : null;
@@ -5107,8 +5148,8 @@ function getWatchlistSorted(items) {
   if (!watchlistSort.key) return items.slice();
   return items.slice().sort(function(a, b) {
     if (watchlistSort.key === 'ticker') return watchlistSort.dir * a.ticker.localeCompare(b.ticker);
-    var aBase = a.previousClose || a.regularMarketPrice;
-    var bBase = b.previousClose || b.regularMarketPrice;
+    var aBase = getPositionPreviousClose(a) || getPositionRegularMarketPrice(a);
+    var bBase = getPositionPreviousClose(b) || getPositionRegularMarketPrice(b);
     var acur = getPositionCurrent(a), bcur = getPositionCurrent(b);
     var va = (acur != null && aBase) ? (acur - aBase) / aBase * 100 : null;
     var vb = (bcur != null && bBase) ? (bcur - bBase) / bBase * 100 : null;
@@ -5434,8 +5475,8 @@ function buildMarketTotals(fxMap, baseCode, baseSym, srcArr) {
   src.forEach(function(p) {
     var pcur = getPositionCurrent(p);
     if (pcur != null && p.qty > 0) {
-      var closeVal = p.sold ? pcur : (HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(p.ticker, closeMode) || p.regularMarketPrice || pcur) : (closeMode === 'prev' ? (p.previousClose || p.regularMarketPrice || pcur) : (p.regularMarketPrice || pcur)));
-      var curVal   = p.sold ? pcur : (currentMode === 'reg' ? (p.regularMarketPrice || pcur) : pcur);
+      var closeVal = p.sold ? pcur : (HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(p.ticker, closeMode) || getPositionRegularMarketPrice(p) || pcur) : (closeMode === 'prev' ? (getPositionPreviousClose(p) || getPositionRegularMarketPrice(p) || pcur) : (getPositionRegularMarketPrice(p) || pcur)));
+      var curVal   = p.sold ? pcur : (currentMode === 'reg' ? (getPositionRegularMarketPrice(p) || pcur) : pcur);
       var pc = getPositionCurrencyCode(p);
       var rate = pc !== baseCode ? (fxMap[pc + baseCode] || fxMap[pc] || 1) : 1;
       mktTotClose   += p.qty * closeVal * rate;
@@ -6018,7 +6059,7 @@ function renderPositionSetsModal() {
             + '<div style="display:flex;flex-direction:column;gap:5px;max-height:280px;overflow-y:auto;border:1px solid var(--border);padding:8px;background:var(--bg2)">'
             + allTickers.map(function(t) {
                 var pos = positions.find(function(p) { return p.ticker === t; });
-                var name = pos && pos.shortName ? pos.shortName : '';
+                var name = pos && getPositionShortName(pos) ? getPositionShortName(pos) : '';
                 var isChecked = checked.indexOf(t) !== -1 ? 'checked' : '';
                 return '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">'
                   + '<input type="checkbox" id="setcb_' + t + '" ' + isChecked + ' style="cursor:pointer">'
@@ -6136,7 +6177,7 @@ function filterFundamentalsTickers(tickers) {
   var equity = [], skipped = 0;
   tickers.forEach(function(t) {
     var pos = positions.find(function(p) { return p.ticker === t; });
-    var it = pos && pos.instrumentType;
+    var it = pos && getPositionInstrumentType(pos);
     if (!it || it === 'EQUITY') {
       equity.push(t);
     } else {
@@ -6369,7 +6410,7 @@ function buildMoversView(area, opts) {
   // Compute delta% for each using closeMode/currentMode
   var withDelta = allPos.map(function(p) {
     var close = getCloseForMode(p);
-    var cur = currentMode === 'reg' ? (p.regularMarketPrice || null) : (getPositionCurrent(p) || null);
+    var cur = currentMode === 'reg' ? (getPositionRegularMarketPrice(p) || null) : (getPositionCurrent(p) || null);
     var delta = (close && cur) ? (cur - close) / close * 100 : null;
     return { pos: p, close: close, cur: cur, delta: delta };
   }).filter(function(x) { return x.delta !== null; });
@@ -6398,8 +6439,8 @@ function buildMoversView(area, opts) {
       + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.close ? ('' + x.close.toFixed(2)) : '—') + '</td>'
       + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.cur ? ('' + x.cur.toFixed(2)) : '—') + '</td>'
       + '<td style="text-align:right;padding:5px 4px;white-space:nowrap" class="' + cls + '">' + (x.delta >= 0 ? '+' : '') + x.delta.toFixed(2) + '%</td>'
-      + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(p.marketState) + '</td>' + staleColHtml(p)
-      + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
+      + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(getPositionMarketState(p)) + '</td>' + staleColHtml(p)
+      + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (getPositionShortName(p) || '') + '</td>'
       + '</tr>'
       + (isExpanded ? '<tr><td colspan="7" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>' : '');
   }).join('');
@@ -6440,7 +6481,7 @@ function showAnalyticsDetail(rubric, value) {
     } else if (rubric === 'broker') {
       key = getPositionBroker(p) || 'default';
     } else if (rubric === 'exchange') {
-      key = p.exchangeName || 'Other';
+      key = getPositionExchange(p) || 'Other';
     } else if (rubric === 'isin') {
       var isin = getTickerIsin(p.ticker);
       key = isKnownIsin(isin) ? isin.substring(0, 2).toUpperCase() : 'Unknown';
@@ -6603,7 +6644,7 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
       // Missing (sold positions never refreshed, or added before this field
       // was captured) folds into Other bucket; refreshTicker populates on
       // next foreground refresh.
-      key = p.exchangeName || 'Other';
+      key = getPositionExchange(p) || 'Other';
     } else if (breakdown === 'isin') {
       // ISO country code = first two letters of the ISIN. UNRESOLVED and
       // missing entries both fold into a single 'Unknown' bucket. Clicking
@@ -6810,12 +6851,12 @@ function analyticsMarketContent(keys, groups, breakdown, baseSym, baseCode, fxMa
       var rate = pc === baseCode ? 1 : (fxMap[pc + baseCode] || fxMap[pc] || 1);
       var closePrice = p.sold ? pcur
         : (HIST_MODES.indexOf(closeMode) !== -1
-            ? (getHistoricalClose(p.ticker, closeMode) || p.regularMarketPrice || pcur)
+            ? (getHistoricalClose(p.ticker, closeMode) || getPositionRegularMarketPrice(p) || pcur)
             : (closeMode === 'prev'
-                ? (p.previousClose || p.regularMarketPrice || pcur)
-                : (p.regularMarketPrice || pcur)));
+                ? (getPositionPreviousClose(p) || getPositionRegularMarketPrice(p) || pcur)
+                : (getPositionRegularMarketPrice(p) || pcur)));
       var curPrice = p.sold ? pcur
-        : (currentMode === 'reg' ? (p.regularMarketPrice || pcur) : pcur);
+        : (currentMode === 'reg' ? (getPositionRegularMarketPrice(p) || pcur) : pcur);
       closeBase     += p.qty * closePrice * rate;
       currentBase   += p.qty * curPrice   * rate;
       closeNative   += p.qty * closePrice;
@@ -7360,7 +7401,7 @@ function getHistoricalClose(ticker, mode) {
 
 function getCloseForMode(p) {
   if (HIST_MODES.indexOf(closeMode) !== -1) return getHistoricalClose(p.ticker, closeMode);
-  return closeMode === 'prev' ? (p.previousClose || p.regularMarketPrice || null) : (p.regularMarketPrice || null);
+  return closeMode === 'prev' ? (getPositionPreviousClose(p) || getPositionRegularMarketPrice(p) || null) : (getPositionRegularMarketPrice(p) || null);
 }
 
 function fetchHistoricalIfNeeded(tickers) {
@@ -7602,7 +7643,7 @@ var CHART_COLORS = ['#00c48c','#5b9cf6','#f6c15b','#e05c5c','#b47ef6','#5bf6e4',
 
 
 function getChartCurrentPrice(p) {
-  return currentMode === 'reg' ? (p.regularMarketPrice || getPositionCurrent(p)) : getPositionCurrent(p);
+  return currentMode === 'reg' ? (getPositionRegularMarketPrice(p) || getPositionCurrent(p)) : getPositionCurrent(p);
 }
 
 function addTodayPoint(points, p) {
@@ -8094,7 +8135,7 @@ function render() {
     })();
     var withDeltaSingle = moversPos.map(function(p) {
       var close2 = getCloseForMode(p);
-      var cur2 = currentMode === 'reg' ? (p.regularMarketPrice || null) : (getPositionCurrent(p) || null);
+      var cur2 = currentMode === 'reg' ? (getPositionRegularMarketPrice(p) || null) : (getPositionCurrent(p) || null);
       var delta2 = (close2 && cur2) ? (cur2 - close2) / close2 * 100 : null;
       return { pos: p, close: close2, cur: cur2, delta: delta2 };
     }).filter(function(x) { return x.delta !== null; });
@@ -8111,8 +8152,8 @@ function render() {
         + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.close ? x.close.toFixed(2) : '—') + '</td>'
         + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.cur ? x.cur.toFixed(2) : '—') + '</td>'
         + '<td style="text-align:right;padding:5px 4px;white-space:nowrap" class="' + cls + '">' + (x.delta >= 0 ? '+' : '') + x.delta.toFixed(2) + '%</td>'
-        + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(p.marketState) + '</td>' + staleColHtml(p)
-        + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
+        + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(getPositionMarketState(p)) + '</td>' + staleColHtml(p)
+        + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (getPositionShortName(p) || '') + '</td>'
         + '</tr>'
         + (isExpanded ? '<tr><td colspan="7" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>' : '');
     }).join('');
@@ -8270,7 +8311,7 @@ function render() {
       + '<td>' + curEditCell + '</td>'
       + '<td class="' + cls(pnl) + '">' + (p.qty === 0 ? '<span style="color:var(--dim)">&mdash;</span>' : fSign(pnl !== null ? pnl * p.qty : null)) + '</td>'
       + '<td class="' + cls(pnlPct) + '">' + fPct(pnlPct) + '</td>'
-      + '<td style="width:16px;padding:0 2px;text-align:center">' + (p.sold ? '<span style="color:#7090b0;font-size:13px">&#8960;</span>' : marketIcon(p.marketState)) + '</td>' + staleColHtml(p)
+      + '<td style="width:16px;padding:0 2px;text-align:center">' + (p.sold ? '<span style="color:#7090b0;font-size:13px">&#8960;</span>' : marketIcon(getPositionMarketState(p))) + '</td>' + staleColHtml(p)
       + '<td style="white-space:nowrap;text-align:left">' + sellAction + '</td>'
       + '<td style="white-space:nowrap;text-align:center">' + moveBtn + '</td>'
       + '<td style="white-space:nowrap;text-align:center">' + editBtn + '</td>'
@@ -9412,47 +9453,8 @@ function render() {
     });
 
     function buildSummaryMarketStats(fxRates) {
-      var rows = '';
-      var totCloseUSD = 0, totCurrentUSD = 0, hasAny = false;
-      smPids.forEach(function(pid) {
-        var p = portfolios[pid];
-        var base = (p.currencyCode || 'USD').toUpperCase();
-        var baseSym2 = CURRENCY_SYMBOLS[base] || base;
-        var closeVal = 0, currentVal = 0, closeUSD = 0, currentUSD = 0, hasPos = false;
-        (p.positions || []).forEach(function(pos) {
-          var pcur = getPositionCurrent(pos);
-          if (pcur != null && pos.qty > 0) {
-            var pc = getPositionCurrencyCode(pos, base);
-            var rateToUSD = pc === 'USD' ? 1 : (fxRates[pc] || fxRates[pc + 'USD'] || 1);
-            var rateBaseToUSD = base === 'USD' ? 1 : (fxRates[base] || fxRates[base + 'USD'] || 1);
-            var closePrice = pos.sold ? pcur : (HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(pos.ticker, closeMode) || pos.regularMarketPrice || pcur) : (closeMode === 'prev' ? (pos.previousClose || pos.regularMarketPrice || pcur) : (pos.regularMarketPrice || pcur)));
-            var curPrice = pos.sold ? pcur : (currentMode === 'reg' ? (pos.regularMarketPrice || pcur) : pcur);
-            var posClose = pos.qty * closePrice * rateToUSD / rateBaseToUSD;
-            var posCurrent = pos.qty * curPrice * rateToUSD / rateBaseToUSD;
-            closeVal += posClose;
-            currentVal += posCurrent;
-            closeUSD += pos.qty * closePrice * rateToUSD;
-            currentUSD += pos.qty * curPrice * rateToUSD;
-            hasPos = true;
-          }
-        });
-        if (!hasPos) {
-          rows += '<tr><td style="text-align:left;white-space:nowrap">' + p.name + '</td>' + stalePortfolioColHtml(pid) + '<td colspan="4" style="color:var(--dim)">—</td></tr>';
-          return;
-        }
-        var delta = currentVal - closeVal;
-        var deltaPct = closeVal > 0 ? delta / closeVal * 100 : null;
-        var dClass = delta >= 0 ? 'pos' : 'neg';
-        totCloseUSD += closeUSD; totCurrentUSD += currentUSD; hasAny = true;
-        rows += '<tr>'
-          + '<td style="text-align:left;white-space:nowrap;cursor:pointer" onclick="switchPortfolio(&apos;' + pid + '&apos;)">' + p.name + '</td>'
-          + stalePortfolioColHtml(pid)
-          + '<td>' + baseSym2 + f2(closeVal) + '</td>'
-          + '<td>' + baseSym2 + f2(currentVal) + '</td>'
-          + '<td class="' + dClass + '">' + fSign(delta) + '</td>'
-          + '<td class="' + dClass + '">' + (deltaPct !== null ? fSign(deltaPct) + '%' : '—') + '</td>'
-          + '</tr>';
-      });
+      var smRes = computeSummaryMarketRows(smPids, fxRates);
+      var rows = smRes.rows, totCloseUSD = smRes.totCloseUSD, totCurrentUSD = smRes.totCurrentUSD, hasAny = smRes.hasAny;
       var totDelta = totCurrentUSD - totCloseUSD;
       var totDeltaPct = totCloseUSD > 0 ? totDelta / totCloseUSD * 100 : null;
       var tClass = totDelta >= 0 ? 'pos' : 'neg';
@@ -9627,7 +9629,7 @@ function render() {
     var wlDeltaArrow = watchlistSort.key === 'absdelta' ? ' &#177;&#9660;' : watchlistSort.key === 'delta' ? (watchlistSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
     getWatchlistSorted(wlSource).forEach(function(p) {
       var close = getCloseForMode(p);
-      var price = currentMode === 'reg' ? (p.regularMarketPrice || null) : (getPositionCurrent(p) || null);
+      var price = currentMode === 'reg' ? (getPositionRegularMarketPrice(p) || null) : (getPositionCurrent(p) || null);
       var delta = (close && price) ? (price - close) / close * 100 : null;
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
       var isExpanded = expandedId === p.id;
@@ -9637,8 +9639,8 @@ function render() {
         + '<td style="white-space:nowrap">' + (close ? getPositionCurrencySymbol(p) + f2(close) : '&mdash;') + '</td>'
         + '<td style="white-space:nowrap">' + (price ? getPositionCurrencySymbol(p) + f2(price) : '&mdash;') + '</td>'
         + '<td class="' + deltaClass + '" style="white-space:nowrap">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
-        + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(p.marketState) + '</td>' + staleColHtml(p)
-        + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
+        + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(getPositionMarketState(p)) + '</td>' + staleColHtml(p)
+        + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (getPositionShortName(p) || '') + '</td>'
         + '<td style="white-space:nowrap">'
           + '<button class="btn-icon" onclick="removePosition(' + p.id + ')" style="color:var(--red)">&#10005;</button>'
         + '</td>'
@@ -9718,9 +9720,9 @@ function render() {
       } else if (HIST_MODES.indexOf(closeMode) !== -1) {
         regPrice = getHistoricalClose(p.ticker, closeMode);
       } else {
-        regPrice = closeMode === 'prev' ? (p.previousClose || p.regularMarketPrice || pcur) : (p.regularMarketPrice || pcur);
+        regPrice = closeMode === 'prev' ? (getPositionPreviousClose(p) || getPositionRegularMarketPrice(p) || pcur) : (getPositionRegularMarketPrice(p) || pcur);
       }
-      var mktCurrent = currentMode === 'reg' ? (p.regularMarketPrice || pcur) : pcur;
+      var mktCurrent = currentMode === 'reg' ? (getPositionRegularMarketPrice(p) || pcur) : pcur;
       var delta = p.sold ? 0 : (regPrice !== null ? (mktCurrent - regPrice) / regPrice * 100 : null);
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
       var mktSoldStyle = (p.sold || p.qty === 0 || allWatchlist) ? 'font-style:italic;opacity:0.5' : '';
@@ -9729,8 +9731,8 @@ function render() {
         + '<td style="text-align:right;padding:5px 4px">' + (regPrice !== null ? getPositionCurrencySymbol(p) + f2(regPrice) : '&mdash;') + '</td>'
         + '<td style="text-align:right;padding:5px 4px">' + getPositionCurrencySymbol(p) + f2(mktCurrent) + '</td>'
         + '<td style="text-align:right;padding:5px 4px" class="' + deltaClass + '">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
-        + '<td style="width:16px;padding:0 2px;text-align:center">' + (p.sold ? '<span style="color:#7090b0;font-size:13px">&#8960;</span>' : marketIcon(p.marketState)) + '</td>' + staleColHtml(p)
-        + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
+        + '<td style="width:16px;padding:0 2px;text-align:center">' + (p.sold ? '<span style="color:#7090b0;font-size:13px">&#8960;</span>' : marketIcon(getPositionMarketState(p))) + '</td>' + staleColHtml(p)
+        + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (getPositionShortName(p) || '') + '</td>'
         + '</tr>'
         + mktExpandedRow;
     });
@@ -9973,7 +9975,7 @@ function render() {
           + '<td style="text-align:left;white-space:nowrap">' + p.ticker + '</td>'
           + '<td style="padding:5px 4px;white-space:nowrap">' + getPositionCurrencySymbol(p) + f2(p.qty * pcur) + '</td>'
           + '<td style="padding:5px 4px;white-space:nowrap">' + fPctNoSign(weight) + '</td>'
-          + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (p.shortName || '') + '</td>'
+          + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (getPositionShortName(p) || '') + '</td>'
           + '</tr>';
       });
       return weightRows;
@@ -10044,7 +10046,7 @@ function render() {
           if (!tickerMap[t]) tickerMap[t] = { valUSD: 0, valNative: 0, currency: posCur, shortName: '' };
           tickerMap[t].valUSD += valUSD;
           tickerMap[t].valNative += pos.qty * pcur;
-          if (pos.shortName && !tickerMap[t].shortName) tickerMap[t].shortName = pos.shortName;
+          if (pos.shortName && !tickerMap[t].shortName) tickerMap[t].shortName = getPositionShortName(pos);
         });
       });
       var totalValUSD = 0;
