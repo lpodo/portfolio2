@@ -498,7 +498,7 @@
 
 <!-- Settings toggle button -->
 <div style="position:fixed;bottom:0;left:0;right:0;background:var(--bg2);border-top:1px solid var(--border);padding:10px 18px;display:flex;justify-content:space-between;align-items:center;z-index:98">
-  <span style="font-size:10px;color:var(--dim)"><span id="providerLabel"></span><span id="versionStamp" style="margin-left:8px;opacity:0.7"></span></span>
+  <span style="font-size:10px;color:var(--dim)"><span id="providerLabel"></span><span id="versionStamp" style="opacity:0.7"></span></span>
   <div style="display:flex;align-items:center;gap:4px">
     <span id="cloudDirtyIcon" onclick="openCloudDirtyModal()" title="Local metadata not synced to cloud"
       style="display:none;align-items:center;justify-content:center;width:40px;height:36px;cursor:pointer;user-select:none">
@@ -10224,7 +10224,7 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('message', function(e) {
     if (e.data && e.data.type === 'swVersion') {
       var el = document.getElementById('versionStamp');
-      if (el) el.textContent = e.data.value;
+      if (el) el.innerHTML = '&nbsp;|&nbsp; ' + e.data.value;
     }
   });
 
