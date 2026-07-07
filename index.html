@@ -547,7 +547,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.13';
+var APP_VERSION = 'v1.3.14';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -1089,10 +1089,11 @@ function getCurrency() {
 // current portfolio. Post-migration (Stage 4) this reads tickerData for the
 // ticker (sold → frozen sellCurrency); the fallback stays as the null guard.
 function getPositionCurrencySymbol(pos, fallbackCode) {
-  var code = pos.currency || fallbackCode || currentPortfolio().currencyCode || 'USD';
+  var code = getPositionCurrencyCode(pos, fallbackCode);
   return CURRENCY_SYMBOLS[code] || code;
 }
 function getPositionCurrencyCode(pos, fallbackCode) {
+  if (pos.sold && pos.sellCurrency) return pos.sellCurrency;
   return pos.currency || fallbackCode || currentPortfolio().currencyCode || 'USD';
 }
 // Price of a position for display and P&L math. For a sold position this is
@@ -1103,7 +1104,10 @@ function getPositionCurrencyCode(pos, fallbackCode) {
 // Returns null when no price is available.
 function getPositionCurrent(pos) {
   if (!pos) return null;
-  if (pos.sold) return pos.current != null ? pos.current : null;
+  if (pos.sold) {
+    if (pos.sellPrice != null) return pos.sellPrice;
+    return pos.current != null ? pos.current : null; // fallback: un-migrated sold
+  }
   return pos.current != null ? pos.current : null;
 }
 // Market-data fields describing the ticker's live/last state. These are
