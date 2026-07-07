@@ -498,7 +498,7 @@
 
 <!-- Settings toggle button -->
 <div style="position:fixed;bottom:0;left:0;right:0;background:var(--bg2);border-top:1px solid var(--border);padding:10px 18px;display:flex;justify-content:space-between;align-items:center;z-index:98">
-  <span style="font-size:10px;color:var(--dim)"><span id="providerLabel"></span><span id="versionStamp" style="opacity:0.7"></span></span>
+  <span style="font-size:10px;color:var(--dim)" id="providerLabel"></span>
   <div style="display:flex;align-items:center;gap:4px">
     <span id="cloudDirtyIcon" onclick="openCloudDirtyModal()" title="Local metadata not synced to cloud"
       style="display:none;align-items:center;justify-content:center;width:40px;height:36px;cursor:pointer;user-select:none">
@@ -546,6 +546,10 @@
 
 <script src="fundamentals.js"></script>
 <script>
+// App version, shown bottom-left. Bump on every index.html deploy — this is
+// what the version stamp displays, so a stale stamp after deploy means you're
+// seeing a cached index.html. Independent of sw.js CACHE (different role).
+var APP_VERSION = 'v1.3.10';
 // --- Multi-portfolio ---
 var portfolios = {};  // { id: { name, positions } }
 var currentPortfolioId = null;
@@ -4038,8 +4042,8 @@ function updateSettingsUI() {
   var hasCloud = backend === 'kv' ? !!getKvKey() : !!(jbKey && jbBin);
   document.getElementById('settingsNote').textContent = 'Prices: Yahoo Finance via Cloudflare Worker. Cloud: ' + (backend === 'kv' ? 'Cloudflare KV' : 'JSONBin') + '.';
   var cloudStatus = hasCloud ? '&#9729; Cloud' : '&#128190; Local';
-  var srcStatus = k ? '&#10003; Yahoo Finance' : '&#9888; Backend URL required';
-  document.getElementById('providerLabel').innerHTML = srcStatus + ' &nbsp;|&nbsp; ' + cloudStatus;
+  var srcStatus = k ? '&#10003; Backend' : '&#9888; Backend URL required';
+  document.getElementById('providerLabel').innerHTML = srcStatus + ' | ' + cloudStatus + ' | ' + APP_VERSION;
   document.getElementById('mainNote').textContent = '* Prices via Yahoo Finance — all exchanges, extended hours.';
 }
 function showKeyStatus() { updateSettingsUI(); }
@@ -10216,31 +10220,16 @@ if ('serviceWorker' in navigator) {
     }
   });
 
-  function requestSwVersion() {
-    if (navigator.serviceWorker.controller) {
-      navigator.serviceWorker.controller.postMessage('getVersion');
-    }
-  }
-  navigator.serviceWorker.addEventListener('message', function(e) {
-    if (e.data && e.data.type === 'swVersion') {
-      var el = document.getElementById('versionStamp');
-      if (el) el.innerHTML = '&nbsp;|&nbsp; ' + e.data.value;
-    }
-  });
-
   window.addEventListener('load', function() {
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function(reg) {
       console.log('SW registered:', reg.scope);
       // Force a check for a new sw.js on every load (bypasses the browser's
-      // lazy 24h SW-update check). A bumped CACHE version here → new SW →
+      // lazy 24h SW-update check). A bumped CACHE version in sw.js → new SW →
       // skipWaiting/claim → controllerchange → auto-reload above.
       reg.update();
-      requestSwVersion();
     }).catch(function(e) {
       console.log('SW error:', e);
     });
-    // Also ask once the SW is ready (covers the already-registered case)
-    navigator.serviceWorker.ready.then(requestSwVersion);
   });
 }
 </script>

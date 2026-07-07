@@ -1,10 +1,10 @@
-// SINGLE SOURCE OF TRUTH for the app version. Bump this on EVERY deploy.
-// Format: portfolio-YYYY-MM-DD-vN (bump vN for multiple deploys same day).
-// index.html reads this value back via postMessage and shows it as the version
-// stamp bottom-left, and registers with reg.update() + auto-reload so a bumped
-// version here forces: fresh SW → old cache wiped → page reloads → fresh
-// index.html + fresh stamp. Change the version ONLY here.
-var CACHE = 'portfolio-2026-07-06-v395';
+// Cache name / version. Bump this to force a full cache wipe (fresh SW →
+// old cache deleted → controllerchange → index.html auto-reloads with fresh
+// content). For routine index.html edits the stale-while-revalidate strategy
+// picks them up on the next load without a bump. Independent of APP_VERSION
+// in index.html (that one is the user-facing version stamp; this one controls
+// cache invalidation).
+var CACHE = 'portfolio-2026-07-06-v396';
 
 self.addEventListener('install', function(e) {
   // Pre-cache with cache:'reload' on each Request — forces network bypass of
@@ -35,15 +35,6 @@ self.addEventListener('activate', function(e) {
     })
   );
   self.clients.claim();
-});
-
-// The page asks 'getVersion'; reply with CACHE so it can show the version
-// stamp reflecting the ACTUALLY ACTIVE service worker (not what's on the
-// server). Strip the 'portfolio-' prefix for display.
-self.addEventListener('message', function(e) {
-  if (e.data === 'getVersion' && e.source) {
-    e.source.postMessage({ type: 'swVersion', value: CACHE.replace(/^portfolio-/, '') });
-  }
 });
 
 // Stale-while-revalidate: serve cached response immediately (fast first paint),
