@@ -492,8 +492,6 @@
 
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">APPEARANCE</div>
   <button class="btn" onclick="openAppearance()">CUSTOMIZE</button>
-
-  <div class="settings-note" id="settingsNote"></div>
 </div>
 
 <!-- Settings toggle button -->
@@ -549,7 +547,28 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.10';
+var APP_VERSION = 'v1.3.13';
+// Live status of the two data sources, shown in the bottom-left label.
+// backendOk: last non-cloud backend request (price/fx/isin) succeeded.
+//   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
+// cloudSyncOk: last cloud load/save succeeded. Starts false — strictly, no
+//   sync has happened yet this session, so the label reads Local until one does.
+// Both in-memory (reset on reload). updateProviderLabel() repaints just the
+// label; it's cheap enough to call on every request without touching the rest
+// of updateSettingsUI.
+var backendOk = true;
+var cloudSyncOk = false;
+function updateProviderLabel() {
+  var el = document.getElementById('providerLabel');
+  if (!el) return;
+  var srcStatus = !getApiKey() ? '&#9888; Backend URL required'
+                : backendOk ? '&#10003; Backend'
+                : '&#9888; Backend';
+  var cloudStatus = cloudSyncOk ? '&#9729; Cloud' : '&#128190; Local';
+  el.innerHTML = srcStatus + ' | ' + cloudStatus + ' | ' + APP_VERSION;
+}
+function setBackendStatus(ok) { if (ok !== backendOk) { backendOk = ok; updateProviderLabel(); } }
+function setCloudSyncStatus(ok) { if (ok !== cloudSyncOk) { cloudSyncOk = ok; updateProviderLabel(); } }
 // --- Multi-portfolio ---
 var portfolios = {};  // { id: { name, positions } }
 var currentPortfolioId = null;
@@ -788,6 +807,7 @@ function initPortfolios() {
   // them from positions. Idempotent and cheap — safe to run every startup;
   // this also cleans up stray null attribute keys left by older versions.
   liftAttrsFromPositions();
+  migrateSoldPositions();
   // Restore last active portfolio
   currentPortfolioId = localStorage.getItem('pt_current');
   if (!currentPortfolioId || !portfolios[currentPortfolioId]) {
@@ -817,6 +837,32 @@ function liftAttrsFromPositions() {
     saveTickerDataLS();
     savePortfolios();
   }
+}
+
+// Stage 1 migration: give existing sold positions their own sellPrice and
+// sellCurrency (frozen at sale). Historically a sold position stored the sale
+// price in `current` and shared `currency`; these move to dedicated fields so
+// the sale stays historically correct regardless of later ticker changes.
+// Idempotent — only fills a field that's absent, so it's safe to run every
+// startup and after every cloud load (self-healing). `current`/`currency` are
+// left in place for now; Stage 5 strips them.
+function migrateSoldPositions() {
+  var changed = false;
+  Object.keys(portfolios).forEach(function(pid) {
+    var ownerBase = (portfolios[pid].currencyCode || 'USD');
+    (portfolios[pid].positions || []).forEach(function(pos) {
+      if (!pos.sold) return;
+      if (!('sellPrice' in pos)) {
+        pos.sellPrice = (pos.current != null ? pos.current : null);
+        changed = true;
+      }
+      if (!('sellCurrency' in pos)) {
+        pos.sellCurrency = pos.currency || ownerBase;
+        changed = true;
+      }
+    });
+  });
+  if (changed) savePortfolios();
 }
 
 // ── Last view persistence ───────────────────────────────────────────────────
@@ -3429,6 +3475,7 @@ function restoreData(event) {
       if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
       migrateLegacyTickerAlertsFromCloud(data);
       liftAttrsFromPositions();
+      migrateSoldPositions();
       saveTickerDataLS();
       saveDicts();
       currentPortfolioId = Object.keys(portfolios)[0];
@@ -3584,8 +3631,9 @@ function _doCloudSave(key, binId) {
         localStorage.setItem('pt_cloud_ts', res.metadata.updatedAt || new Date().toISOString());
         document.getElementById('jbBinInput').value = id;
         clearCloudDirty();
+        setCloudSyncStatus(true);
         updateJbStatus('✓ Cloud: bin created and saved', 'var(--green)');
-      }).catch(function() { updateJbStatus('✗ Failed to create bin', 'var(--red)'); });
+      }).catch(function() { setCloudSyncStatus(false); updateJbStatus('✗ Failed to create bin', 'var(--red)'); });
     } else {
       fetch('https://api.jsonbin.io/v3/b/' + binId, {
         method: 'PUT',
@@ -3597,6 +3645,7 @@ function _doCloudSave(key, binId) {
       }).then(function(res) {
         localStorage.setItem('pt_cloud_ts', res.metadata && res.metadata.updatedAt ? res.metadata.updatedAt : new Date().toISOString());
         clearCloudDirty();
+        setCloudSyncStatus(true);
         updateJbStatus('✓ Cloud: saved ' + new Date().toLocaleTimeString(), 'var(--green)');
       }).catch(function(e) {
         var msg = '✗ Save error';
@@ -3606,6 +3655,7 @@ function _doCloudSave(key, binId) {
         else if (hint.indexOf('http_5') !== -1) msg = '✗ Save: JSONBin server error (' + hint.replace('http_','') + ')';
         else if (hint.indexOf('Failed to fetch') !== -1 || hint.indexOf('NetworkError') !== -1) msg = '✗ Save: network error (JSONBin unreachable)';
         else if (hint) msg = '✗ Save: ' + hint;
+        setCloudSyncStatus(false);
         updateJbStatus(msg, 'var(--red)');
       });
     }
@@ -3664,12 +3714,14 @@ function cloudLoadKV(callback) {
           if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
           migrateLegacyTickerAlertsFromCloud(data);
           liftAttrsFromPositions();
+          migrateSoldPositions();
           saveTickerDataLS();
           saveDicts();
           savePortfolios();
           if (!portfolios[currentPortfolioId]) { currentPortfolioId = Object.keys(portfolios)[0]; localStorage.setItem('pt_current', currentPortfolioId); }
           loadLocal();
           setTitleForCurrentView();
+          setCloudSyncStatus(true);
           updateJbStatus('✓ Loaded from KV', 'var(--green)');
           showCloudOverlay('✓ Loaded from KV', 'var(--green)');
           setTimeout(dismissCloudOverlay, 800);
@@ -3692,6 +3744,7 @@ function cloudLoadKV(callback) {
                 hint.indexOf('Failed to fetch') !== -1 ? '✗ KV: worker unreachable' : '✗ KV: ' + hint;
       updateJbStatus(msg, 'var(--red)');
       showCloudOverlay(msg + ' · tap to dismiss', 'var(--red)');
+      setCloudSyncStatus(false);
       callback(false);
     });
 }
@@ -3714,10 +3767,12 @@ function cloudSaveKV() {
     }).then(function(res) {
       localStorage.setItem('pt_cloud_ts', res.updatedAt || new Date().toISOString());
       clearCloudDirty();
+      setCloudSyncStatus(true);
       updateJbStatus('✓ Saved to KV', 'var(--green)');
     }).catch(function(e) {
       var hint = String(e && e.message || '');
       var msg = hint.indexOf('http_503') !== -1 ? '✗ KV: not configured on server' : '✗ KV save: ' + hint;
+      setCloudSyncStatus(false);
       updateJbStatus(msg, 'var(--red)');
     });
   }
@@ -3883,6 +3938,7 @@ function cloudLoad(callback) {
         if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
         migrateLegacyTickerAlertsFromCloud(data);
         liftAttrsFromPositions();
+        migrateSoldPositions();
         saveTickerDataLS();
         saveDicts();
         savePortfolios();
@@ -3893,6 +3949,7 @@ function cloudLoad(callback) {
         loadLocal();
         setTitleForCurrentView();
         localStorage.setItem('pt_cloud_ts', res.metadata && res.metadata.updatedAt ? res.metadata.updatedAt : new Date().toISOString());
+        setCloudSyncStatus(true);
         updateJbStatus('✓ Loaded from cloud', 'var(--green)');
         showCloudOverlay('✓ Loaded from cloud', 'var(--green)');
         setTimeout(dismissCloudOverlay, 800);
@@ -3932,6 +3989,7 @@ function cloudLoad(callback) {
     else if (hint.indexOf('Failed to fetch') !== -1 || hint.indexOf('NetworkError') !== -1) msg = '✗ Cloud: network error (JSONBin unreachable)';
     else if (hint.indexOf('CORS') !== -1 || hint.indexOf('Access-Control') !== -1) msg = '✗ Cloud: CORS error — check API key';
     else if (hint) msg = '✗ Cloud: ' + hint;
+    setCloudSyncStatus(false);
     updateJbStatus(msg, 'var(--red)');
     showCloudOverlay(msg + ' · tap to dismiss', 'var(--red)');
     callback(false);
@@ -4038,12 +4096,7 @@ function updateSettingsUI() {
   if (document.getElementById('jbKeyInput')) document.getElementById('jbKeyInput').value = jbKey;
   if (document.getElementById('jbBinInput')) document.getElementById('jbBinInput').value = jbBin;
   updateCloudBackendUI();
-  var backend = getCloudBackend();
-  var hasCloud = backend === 'kv' ? !!getKvKey() : !!(jbKey && jbBin);
-  document.getElementById('settingsNote').textContent = 'Prices: Yahoo Finance via Cloudflare Worker. Cloud: ' + (backend === 'kv' ? 'Cloudflare KV' : 'JSONBin') + '.';
-  var cloudStatus = hasCloud ? '&#9729; Cloud' : '&#128190; Local';
-  var srcStatus = k ? '&#10003; Backend' : '&#9888; Backend URL required';
-  document.getElementById('providerLabel').innerHTML = srcStatus + ' | ' + cloudStatus + ' | ' + APP_VERSION;
+  updateProviderLabel();
   document.getElementById('mainNote').textContent = '* Prices via Yahoo Finance — all exchanges, extended hours.';
 }
 function showKeyStatus() { updateSettingsUI(); }
@@ -4083,7 +4136,12 @@ function fetchPrice(ticker) {
     __shortName = data.shortName || null;
     __instrumentType = data.instrumentType || null;
     __exchangeName = data.exchangeName || null;
+    setBackendStatus(true);
     return data.price;
+  }).catch(function(err) {
+    if (timer) clearTimeout(timer);
+    setBackendStatus(false);
+    throw err;
   });
 }
 
