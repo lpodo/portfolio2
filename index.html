@@ -547,7 +547,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.17';
+var APP_VERSION = 'v1.3.18';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -664,6 +664,28 @@ var RUBRIC_SOURCE = {
 function rubricRawValue(p, rubric) {
   if (RUBRIC_SOURCE[rubric] === 'ticker') return getTickerAttr(p.ticker, rubric);
   return p[rubric] || null;
+}
+
+// Ticker-level market metadata from Yahoo (shortName, instrumentType,
+// exchangeName, marketState, priceType, regularMarketPrice, previousClose).
+// Unlike getTickerAttr/setTickerAttr (which trim strings for hand-typed
+// cat/reg/sec), these store the value verbatim — Yahoo data isn't edited, and
+// numeric fields (regularMarketPrice/previousClose) must not be stringified.
+// null/undefined clears the field; empty tickerData entry is pruned.
+function getTickerMeta(ticker, field) {
+  if (!ticker) return null;
+  var d = tickerData[ticker];
+  return (d && d[field] != null) ? d[field] : null;
+}
+function setTickerMeta(ticker, field, val) {
+  if (!ticker) return;
+  if (val != null) {
+    if (!tickerData[ticker]) tickerData[ticker] = {};
+    tickerData[ticker][field] = val;
+  } else if (tickerData[ticker]) {
+    delete tickerData[ticker][field];
+    if (!Object.keys(tickerData[ticker]).length) delete tickerData[ticker];
+  }
 }
 
 // ── ISIN (thin wrappers over tickerData[ticker].isin) ──────────────────────
@@ -808,6 +830,7 @@ function initPortfolios() {
   // this also cleans up stray null attribute keys left by older versions.
   liftAttrsFromPositions();
   migrateSoldPositions();
+  migrateMetaToTicker();
   // Restore last active portfolio
   currentPortfolioId = localStorage.getItem('pt_current');
   if (!currentPortfolioId || !portfolios[currentPortfolioId]) {
@@ -863,6 +886,26 @@ function migrateSoldPositions() {
     });
   });
   if (changed) savePortfolios();
+}
+
+// Stage 2 migration: copy ticker-level market metadata from positions into
+// tickerData. Idempotent — only fills a tickerData field that's absent, so
+// repeated runs (startup + after each cloud load) are safe. Does NOT delete
+// from positions yet; Stage 5 strips them. Uses the last-seen position value
+// per ticker (they're all the same ticker, so any is fine; later positions
+// don't overwrite an already-set tickerData value).
+var TICKER_META_FIELDS = ['shortName', 'instrumentType', 'exchangeName', 'marketState', 'priceType', 'regularMarketPrice', 'previousClose'];
+function migrateMetaToTicker() {
+  Object.keys(portfolios).forEach(function(pid) {
+    (portfolios[pid].positions || []).forEach(function(pos) {
+      TICKER_META_FIELDS.forEach(function(f) {
+        if (pos[f] != null && getTickerMeta(pos.ticker, f) == null) {
+          setTickerMeta(pos.ticker, f, pos[f]);
+        }
+      });
+    });
+  });
+  saveTickerDataLS();
 }
 
 // ── Last view persistence ───────────────────────────────────────────────────
@@ -3484,6 +3527,7 @@ function restoreData(event) {
       migrateLegacyTickerAlertsFromCloud(data);
       liftAttrsFromPositions();
       migrateSoldPositions();
+      migrateMetaToTicker();
       saveTickerDataLS();
       saveDicts();
       currentPortfolioId = Object.keys(portfolios)[0];
@@ -3723,6 +3767,7 @@ function cloudLoadKV(callback) {
           migrateLegacyTickerAlertsFromCloud(data);
           liftAttrsFromPositions();
           migrateSoldPositions();
+          migrateMetaToTicker();
           saveTickerDataLS();
           saveDicts();
           savePortfolios();
@@ -3947,6 +3992,7 @@ function cloudLoad(callback) {
         migrateLegacyTickerAlertsFromCloud(data);
         liftAttrsFromPositions();
         migrateSoldPositions();
+        migrateMetaToTicker();
         saveTickerDataLS();
         saveDicts();
         savePortfolios();
