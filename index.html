@@ -547,7 +547,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.14';
+var APP_VERSION = 'v1.3.16';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -2154,6 +2154,8 @@ function moveToPortfolio(targetPid) {
       entry: pos.entry,
       current: pos.current,
       sold: pos.sold || undefined,
+      sellPrice: pos.sold ? pos.sellPrice : undefined,
+      sellCurrency: pos.sold ? pos.sellCurrency : undefined,
       currency: pos.currency,
       shortName: pos.shortName,
       previousClose: pos.previousClose,
@@ -2241,6 +2243,8 @@ function moveToArchive(archivePid) {
       entry: pos.entry,
       current: pos.current,
       sold: true,
+      sellPrice: pos.sellPrice != null ? pos.sellPrice : pos.current,
+      sellCurrency: pos.sellCurrency || pos.currency,
       currency: pos.currency,
       shortName: pos.shortName,
       purchaseDate: pos.purchaseDate || undefined,
@@ -4427,11 +4431,11 @@ function confirmSell(id) {
   if (Math.abs(qtyInput - pos.qty) < 0.0001) {
     // Sell entire position
     positions = positions.map(function(p) {
-      return p.id === id ? Object.assign({}, p, { sold: true, current: priceInput }) : p;
+      return p.id === id ? Object.assign({}, p, { sold: true, current: priceInput, sellPrice: priceInput, sellCurrency: getPositionCurrencyCode(p) }) : p;
     });
   } else {
     // Partial sell: replace original with two records
-    var soldPart = Object.assign({}, pos, { id: Date.now(), qty: qtyInput, sold: true, current: priceInput });
+    var soldPart = Object.assign({}, pos, { id: Date.now(), qty: qtyInput, sold: true, current: priceInput, sellPrice: priceInput, sellCurrency: getPositionCurrencyCode(pos) });
     var remaining = Object.assign({}, pos, { id: Date.now() + 1, qty: Math.round((pos.qty - qtyInput) * 1e10) / 1e10 });
     positions = positions.reduce(function(acc, p) {
       if (p.id === id) { acc.push(soldPart); acc.push(remaining); }
@@ -6061,14 +6065,16 @@ function confirmAggSell() {
     if (!(p.id in actions)) { acc.push(p); return acc; }
     var action = actions[p.id];
     if (action.type === 'sell') {
-      acc.push(Object.assign({}, p, { sold: true, current: priceInput }));
+      acc.push(Object.assign({}, p, { sold: true, current: priceInput, sellPrice: priceInput, sellCurrency: getPositionCurrencyCode(p) }));
     } else {
       idOffset++;
       acc.push(Object.assign({}, p, {
         id: baseId + idOffset,
         qty: action.soldQty,
         sold: true,
-        current: priceInput
+        current: priceInput,
+        sellPrice: priceInput,
+        sellCurrency: getPositionCurrencyCode(p)
       }));
       idOffset++;
       acc.push(Object.assign({}, p, {
@@ -7295,7 +7301,11 @@ function processPositionCsv(text) {
             instrumentType: d.instrumentType || null,
             exchangeName: d.exchangeName || null
           };
-          if (row.sold) pos.sold = true;
+          if (row.sold) {
+            pos.sold = true;
+            pos.sellPrice = (row.current != null ? row.current : (d.price != null ? d.price : null));
+            pos.sellCurrency = d.currency || (portfolios[currentPortfolioId] && portfolios[currentPortfolioId].currencyCode) || 'USD';
+          }
           positions.push(pos);
           added++;
         }
