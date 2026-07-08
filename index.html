@@ -547,7 +547,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.19';
+var APP_VERSION = 'v1.3.20';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4834,12 +4834,24 @@ function refreshTicker(ticker, silent) {
       if (hit) { metaBefore = { currency: hit.currency || null, shortName: hit.shortName || null, instrumentType: hit.instrumentType || null, exchangeName: hit.exchangeName || null }; return true; }
       return false;
     });
+    // Ticker-level metadata → tickerData (one write per ticker, shared by all
+    // positions). current/currency stay on the position for now (Stages 3/4).
+    // Price-state fields are always present in the response; instrumentType/
+    // exchangeName are written only when non-empty so a sparse response doesn't
+    // wipe a previously-known value.
+    setTickerMeta(ticker, 'priceType', __priceType);
+    setTickerMeta(ticker, 'marketState', __marketState);
+    setTickerMeta(ticker, 'regularMarketPrice', __regularMarketPrice);
+    setTickerMeta(ticker, 'previousClose', __previousClose);
+    setTickerMeta(ticker, 'shortName', __shortName);
+    if (__instrumentType) setTickerMeta(ticker, 'instrumentType', __instrumentType);
+    if (__exchangeName) setTickerMeta(ticker, 'exchangeName', __exchangeName);
     Object.keys(portfolios).forEach(function(pid) {
       var port = portfolios[pid];
       if (port.archive) return;
       port.positions = (port.positions || []).map(function(p) {
         if (p.ticker !== ticker || p.sold) return p;
-        return Object.assign({}, p, { current: price, priceType: __priceType, marketState: __marketState, regularMarketPrice: __regularMarketPrice, previousClose: __previousClose, currency: __currency, shortName: __shortName, instrumentType: __instrumentType || getPositionInstrumentType(p), exchangeName: __exchangeName || getPositionExchange(p) });
+        return Object.assign({}, p, { current: price, currency: __currency });
       });
     });
     // Metadata changed → local state is ahead of cloud. Price refreshes don't
@@ -4945,12 +4957,12 @@ function refreshAllPortfolios() {
       var promise = fetchPrice(p.ticker).then(function(price) {
         markPriceFresh(p.ticker);
         p.current = price;
-        p.priceType = __priceType;
-        p.marketState = __marketState;
-        p.regularMarketPrice = __regularMarketPrice;
-        p.previousClose = __previousClose;
-        if (__instrumentType) p.instrumentType = __instrumentType;
-        if (__exchangeName) p.exchangeName = __exchangeName;
+        setTickerMeta(p.ticker, 'priceType', __priceType);
+        setTickerMeta(p.ticker, 'marketState', __marketState);
+        setTickerMeta(p.ticker, 'regularMarketPrice', __regularMarketPrice);
+        setTickerMeta(p.ticker, 'previousClose', __previousClose);
+        if (__instrumentType) setTickerMeta(p.ticker, 'instrumentType', __instrumentType);
+        if (__exchangeName) setTickerMeta(p.ticker, 'exchangeName', __exchangeName);
         // Update triggered state for this ticker's alerts. Multiple positions
         // of same ticker re-run this redundantly per position; idempotent.
         var tAlerts = getTickerAlerts(p.ticker);
