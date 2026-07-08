@@ -547,7 +547,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.18';
+var APP_VERSION = 'v1.3.19';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -1159,29 +1159,29 @@ function getPositionCurrent(pos) {
 // read the position; Stage 2 repoints them at tickerData[ticker]. No sold
 // branch is needed by design.
 function getPositionRegularMarketPrice(pos) {
-  return pos ? (pos.regularMarketPrice != null ? pos.regularMarketPrice : null) : null;
+  return pos ? getTickerMeta(pos.ticker, 'regularMarketPrice') : null;
 }
 function getPositionPreviousClose(pos) {
-  return pos ? (pos.previousClose != null ? pos.previousClose : null) : null;
+  return pos ? getTickerMeta(pos.ticker, 'previousClose') : null;
 }
 function getPositionMarketState(pos) {
-  return pos ? (pos.marketState || null) : null;
+  return pos ? getTickerMeta(pos.ticker, 'marketState') : null;
 }
 function getPositionPriceType(pos) {
-  return pos ? (pos.priceType || null) : null;
+  return pos ? getTickerMeta(pos.ticker, 'priceType') : null;
 }
 // Descriptive ticker metadata (company name, instrument kind, listing venue).
 // Like the market-data fields, these describe the ticker, not the trade; a
 // sold position reads the same current values. Today they read the position;
 // Stage 2 repoints them at tickerData[ticker].
 function getPositionShortName(pos) {
-  return pos ? (pos.shortName || null) : null;
+  return pos ? getTickerMeta(pos.ticker, 'shortName') : null;
 }
 function getPositionInstrumentType(pos) {
-  return pos ? (pos.instrumentType || null) : null;
+  return pos ? getTickerMeta(pos.ticker, 'instrumentType') : null;
 }
 function getPositionExchange(pos) {
-  return pos ? (pos.exchangeName || null) : null;
+  return pos ? getTickerMeta(pos.ticker, 'exchangeName') : null;
 }
 function currentPortfolio() {
   return portfolios[currentPortfolioId] || { name: 'MY PORTFOLIO', positions: [] };
