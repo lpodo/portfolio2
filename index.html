@@ -553,7 +553,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.25';
+var APP_VERSION = 'v1.3.27';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4670,7 +4670,7 @@ function buildExpandedInner(p) {
       : '<span style="color:var(--bright)">' + (p.note || '—') + '</span>'
         + '<button class="btn-icon" onclick="startNoteEdit(' + p.id + ')" style="font-size:12px;padding:0 3px">&#9998;</button>')
     + '</div>'
-    + (isArchiveContext() ? '' :
+    + (p.sold ? '' :
       '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
       + '<span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
       + (function() {
@@ -4727,7 +4727,7 @@ function buildExpandedInnerAgg(p, group) {
     + '<span style="opacity:0.6">NOTE</span> '
     + '<span style="color:var(--bright);white-space:pre-line">' + (notes || '—') + '</span>'
     + '</div>';
-  if (!isArchiveContext()) {
+  if (!p.sold) {
     var allAlerts = getTickerAlerts(p.ticker);
     html += '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
       + '<span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
@@ -8515,7 +8515,7 @@ function render() {
         + buildDictSelectHtml('sec', secDict, getTickerAttr(p.ticker, 'sector'), 'SECTOR', '120px')
         + '</div>'
         + '<div style="margin-top:6px"><div class="field" style="width:100%"><label>NOTE</label><input type="text" id="editNote" value="' + (p.note || '') + '" placeholder="optional note..." style="width:100%;box-sizing:border-box" autocomplete="off" autocorrect="off"></div></div>'
-        + (isArchiveContext() ? '' : (
+        + (p.sold ? '' : (
             '<div style="margin-top:8px">'
             + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:6px">ALERTS</div>'
             + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
