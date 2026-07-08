@@ -547,7 +547,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.16';
+var APP_VERSION = 'v1.3.17';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -6585,13 +6585,16 @@ function showAnalyticsDetail(rubric, value) {
       if (tg.isSold) sumSell += p.qty * getPositionCurrent(p);
     });
     var first = positions[0];
+    var aggCurrent = tg.isSold
+      ? (sumQty > 0 ? sumSell / sumQty : 0)
+      : (getPositionCurrent(first) != null ? getPositionCurrent(first) : 0);
     return {
       ticker: tg.ticker,
       qty: sumQty,
       entry: sumQty > 0 ? sumCost / sumQty : 0,
-      current: tg.isSold
-        ? (sumQty > 0 ? sumSell / sumQty : 0)
-        : (getPositionCurrent(first) != null ? getPositionCurrent(first) : 0),
+      current: aggCurrent,
+      sellPrice: tg.isSold ? aggCurrent : undefined,
+      sellCurrency: tg.isSold ? (first.sellCurrency || getPositionCurrencyCode(first)) : undefined,
       currency: first.currency,
       sold: tg.isSold
     };
@@ -8073,11 +8076,19 @@ function aggregatePositions(posns) {
     if (group.length === 1) return { agg: false, pos: group[0] };
     var totalQty = 0, totalCost = 0, totalSell = 0;
     group.forEach(function(p) { totalQty += p.qty; totalCost += p.qty * p.entry; if (isSold) totalSell += p.qty * getPositionCurrent(p); });
+    var avgSell = totalQty > 0 ? totalSell / totalQty : 0;
     var rep = Object.assign({}, group[0], {
       qty: totalQty,
       entry: totalQty > 0 ? totalCost / totalQty : 0,
-      current: isSold ? (totalQty > 0 ? totalSell / totalQty : 0) : getPositionCurrent(group[0])
+      current: isSold ? avgSell : getPositionCurrent(group[0])
     });
+    if (isSold) {
+      // Aggregate reads its price via the sold branch, so give it a real
+      // sellPrice (weighted-average sale price) instead of relying on the
+      // current-fallback. sellCurrency is frozen per ticker (same for the group).
+      rep.sellPrice = avgSell;
+      rep.sellCurrency = group[0].sellCurrency || getPositionCurrencyCode(group[0]);
+    }
     return { agg: true, count: group.length, pos: rep, group: group };
   }
 
