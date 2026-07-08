@@ -553,7 +553,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.22';
+var APP_VERSION = 'v1.3.24';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -692,6 +692,22 @@ function setTickerMeta(ticker, field, val) {
     delete tickerData[ticker][field];
     if (!Object.keys(tickerData[ticker]).length) delete tickerData[ticker];
   }
+}
+
+// Current price of a ticker (ticker-level concept — alerts, etc. test against
+// it). Today the price still lives on positions, so this reads the first
+// active position of the ticker. Stage 3 moves current into tickerData; then
+// this body becomes a direct tickerData read and every caller follows.
+function getTickerCurrentPrice(ticker) {
+  if (!ticker) return null;
+  var price = null;
+  Object.keys(portfolios).some(function(pid) {
+    if (portfolios[pid].archive) return false;
+    var hit = (portfolios[pid].positions || []).filter(function(p) { return p.ticker === ticker && !p.sold; })[0];
+    if (hit) { price = getPositionCurrent(hit); return true; }
+    return false;
+  });
+  return price;
 }
 
 // ── ISIN (thin wrappers over tickerData[ticker].isin) ──────────────────────
@@ -4560,7 +4576,12 @@ function addAlert(ticker) {
   var cond = _alertCondEdit;
   var val = parseFloat(document.getElementById('alertVal').value);
   if (isNaN(val) || val <= 0) return;
-  addTickerAlert(ticker, { id: newAlertId(), condition: cond, value: val, triggered: false });
+  // Evaluate against the ticker's current price right away so an already-met
+  // condition lights the indicator without waiting for the next refresh
+  // (mirrors how refresh keeps triggered up to date).
+  var curPrice = getTickerCurrentPrice(ticker);
+  var triggered = curPrice != null ? (cond === '>' ? curPrice > val : curPrice < val) : false;
+  addTickerAlert(ticker, { id: newAlertId(), condition: cond, value: val, triggered: triggered });
   saveTickerDataLS();
   save();
   render();
