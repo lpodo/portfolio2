@@ -547,7 +547,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.20';
+var APP_VERSION = 'v1.3.21';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4831,7 +4831,15 @@ function refreshTicker(ticker, silent) {
       var port = portfolios[pid];
       if (port.archive) return false;
       var hit = (port.positions || []).filter(function(p) { return p.ticker === ticker && !p.sold; })[0];
-      if (hit) { metaBefore = { currency: hit.currency || null, shortName: hit.shortName || null, instrumentType: hit.instrumentType || null, exchangeName: hit.exchangeName || null }; return true; }
+      if (hit) {
+        metaBefore = {
+          currency: hit.currency || null,
+          shortName: getTickerMeta(ticker, 'shortName'),
+          instrumentType: getTickerMeta(ticker, 'instrumentType'),
+          exchangeName: getTickerMeta(ticker, 'exchangeName')
+        };
+        return true;
+      }
       return false;
     });
     // Ticker-level metadata → tickerData (one write per ticker, shared by all
