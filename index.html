@@ -185,6 +185,12 @@
   .key-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
   .key-row label { font-size: 9px; color: var(--dim); letter-spacing: 2px; white-space: nowrap; min-width: 90px; }
   .key-row input { flex: 1; min-width: 0; }
+  /* Visual masking for secret fields (API token, master key, enc key) without
+     type=password — that type makes Chrome treat the whole page as a login form
+     and pop "save password?" on unrelated DOM changes (render after any edit).
+     -webkit-text-security gives the same dots on Chrome/Safari; the -moz/plain
+     fallbacks cover other engines. These are secrets, not login credentials. */
+  .masked-secret { -webkit-text-security: disc; -moz-text-security: disc; text-security: disc; }
   .settings-note { font-size: 10px; color: var(--dim); margin-top: 8px; }
   .overlay { display: none; position: fixed; inset: 0; z-index: 150; }
   .overlay.open { display: block; }
@@ -422,7 +428,7 @@
   </div>
   <div class="key-row" style="margin-top:6px">
     <label>API TOKEN</label>
-    <input type="password" id="apiTokenInput" placeholder="secret token" style="font-size:11px" autocomplete="new-password">
+    <input type="text" id="apiTokenInput" class="masked-secret" placeholder="secret token" style="font-size:11px" autocomplete="off">
     <button class="btn btn-green" onclick="saveToken()">OK</button>
   </div>
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">CLOUD STORAGE</div>
@@ -434,7 +440,7 @@
   <div id="jbSection">
     <div class="key-row">
       <label>MASTER KEY</label>
-      <input type="password" id="jbKeyInput" placeholder="jsonbin.io → API Keys" autocomplete="new-password">
+      <input type="text" id="jbKeyInput" class="masked-secret" placeholder="jsonbin.io → API Keys" autocomplete="off">
       <button class="btn btn-green" onclick="saveJbKey()">OK</button>
     </div>
     <div class="key-row" style="margin-top:6px">
@@ -455,7 +461,7 @@
   <div class="api-status" id="jbStatus"></div>
   <div class="key-row" style="margin-top:6px">
     <label>ENC KEY</label>
-    <input type="password" id="encKeyInput" placeholder="encryption password" autocomplete="new-password" style="font-size:11px">
+    <input type="text" id="encKeyInput" class="masked-secret" placeholder="encryption password" autocomplete="off" style="font-size:11px">
     <button class="btn btn-green" onclick="saveEncKey()">OK</button>
     <button class="btn" onclick="clearEncKey()">✕</button>
   </div>
@@ -547,7 +553,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.21';
+var APP_VERSION = 'v1.3.22';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
