@@ -1069,9 +1069,9 @@ function fundRenderChart(_, container) {
       area.innerHTML = '<span style="color:var(--dim)">No chart data available.</span>';
       return;
     }
-    // Add today's live point (only for non-1d) using position.current
+    // Add today's live point (only for non-1d) using the ticker's current price
     var pos = (typeof positions !== 'undefined' && positions) ? positions.find(function(p) { return p.ticker === ticker; }) : null;
-    var live = (pos && pos.current != null) ? pos.current : null;
+    var live = (pos && getPositionCurrent(pos) != null) ? getPositionCurrent(pos) : null;
     var allPts = (range !== '1d' && live != null) ? fundAppendChartTodayPoint(points, live) : points;
 
     // Period summary: first → last absolute values, plus Δ
@@ -1561,8 +1561,8 @@ function buildFundamentalsTargetsTable(tickers, currentMode, targetWindow) {
     var pos = (typeof positions !== 'undefined' && positions)
       ? positions.find(function(p) { return p.ticker === ticker; })
       : null;
-    var live = pos ? (currentMode === 'reg' ? pos.regularMarketPrice : pos.current) : null;
-    if (live == null && pos) live = pos.current;
+    var live = pos ? (currentMode === 'reg' ? getPositionRegularMarketPrice(pos) : getPositionCurrent(pos)) : null;
+    if (live == null && pos) live = getPositionCurrent(pos);
 
     var cellInfo = fundTickerCellAndExpanded(ticker, TD_TICKER, 8);
 

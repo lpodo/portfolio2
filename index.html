@@ -553,7 +553,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.36';
+var APP_VERSION = 'v1.3.38';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -647,33 +647,12 @@ function setTickerAttr(ticker, field, val) {
   }
 }
 
-// Rubric → source dispatcher for analytics / weights grouping. As attributes
-// migrate from positions into tickerData, only this table changes — the
-// grouping code calls rubricValue() and stays agnostic. category/region/
-// sector/isin/currency live on the ticker; broker stays on the position
-// permanently (genuinely per-lot). 'ticker' rubrics read tickerData,
-// 'position' rubrics read the position object.
-// NOTE: only category/region/sector actually flow through rubricRawValue below;
-// currency/exchange/broker/isin are resolved by dedicated branches at their
-// call sites (getPositionCurrencyCode / getPositionExchange / getPositionBroker
-// / getTickerIsin). Their entries here are documentation of where the field
-// lives, not an active dispatch.
-var RUBRIC_SOURCE = {
-  category: 'ticker',
-  region:   'ticker',
-  sector:   'ticker',
-  isin:     'ticker',
-  currency: 'ticker',
-  exchange: 'ticker',
-  broker:   'position'
-};
-// Returns the grouping value for a position under the given rubric, reading
-// from whichever source RUBRIC_SOURCE dictates. Callers still special-case
-// the display/formatting (e.g. isin → country code, broker → default label);
-// this only resolves the raw value.
+// Raw grouping value for the "simple" ticker-level rubrics — category, region,
+// sector. These are the only rubrics routed here; currency/exchange/broker/isin
+// need special handling (fallbacks, 'default' label, ISIN→country) and are
+// resolved by dedicated branches at the analytics call sites instead.
 function rubricRawValue(p, rubric) {
-  if (RUBRIC_SOURCE[rubric] === 'ticker') return getTickerAttr(p.ticker, rubric);
-  return p[rubric] || null;
+  return getTickerAttr(p.ticker, rubric);
 }
 
 // Ticker-level market metadata from Yahoo (shortName, instrumentType,
