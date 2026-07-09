@@ -553,7 +553,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.28';
+var APP_VERSION = 'v1.3.32';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -699,15 +699,7 @@ function setTickerMeta(ticker, field, val) {
 // active position of the ticker. Stage 3 moves current into tickerData; then
 // this body becomes a direct tickerData read and every caller follows.
 function getTickerCurrentPrice(ticker) {
-  if (!ticker) return null;
-  var price = null;
-  Object.keys(portfolios).some(function(pid) {
-    if (portfolios[pid].archive) return false;
-    var hit = (portfolios[pid].positions || []).filter(function(p) { return p.ticker === ticker && !p.sold; })[0];
-    if (hit) { price = getPositionCurrent(hit); return true; }
-    return false;
-  });
-  return price;
+  return getTickerMeta(ticker, 'current');
 }
 
 // ── ISIN (thin wrappers over tickerData[ticker].isin) ──────────────────────
@@ -925,6 +917,12 @@ function migrateMetaToTicker() {
           setTickerMeta(pos.ticker, f, pos[f]);
         }
       });
+      // current is ticker-level too, but only an ACTIVE position's current is
+      // the market price. A sold position's current is its sale price (now in
+      // sellPrice), so it must not seed tickerData.current.
+      if (!pos.sold && pos.current != null && getTickerMeta(pos.ticker, 'current') == null) {
+        setTickerMeta(pos.ticker, 'current', pos.current);
+      }
     });
   });
   saveTickerDataLS();
@@ -1166,7 +1164,7 @@ function getPositionCurrent(pos) {
     if (pos.sellPrice != null) return pos.sellPrice;
     return pos.current != null ? pos.current : null; // fallback: un-migrated sold
   }
-  return pos.current != null ? pos.current : null;
+  return getTickerMeta(pos.ticker, 'current');
 }
 // Market-data fields describing the ticker's live/last state. These are
 // meaningful only for active positions — sold positions never consult them
@@ -4331,8 +4329,16 @@ function addPosition() {
     // Category/region/sector are ticker-level (in tickerData) — no need to
     // copy them onto the new position; it inherits them automatically at
     // render time from whatever the ticker already has.
-    var pos = Object.assign({ id: Date.now(), ticker: ticker, qty: qty, entry: entry, current: current }, extraFields);
-    if (isSold) pos.sold = true;
+    var pos = Object.assign({ id: Date.now(), ticker: ticker, qty: qty, entry: entry }, extraFields);
+    if (isSold) {
+      pos.sold = true;
+      pos.sellPrice = current;
+      pos.sellCurrency = getPositionCurrencyCode(pos);
+    } else if (current != null) {
+      // Active add: seed the ticker's current price (ticker-level). A refresh
+      // fires right after and will overwrite it with the live quote.
+      setTickerMeta(ticker, 'current', current);
+    }
     positions.push(pos);
     save();
     ['fTicker','fQty','fEntry','fCurrent','fIsin'].forEach(function(id) { document.getElementById(id).value = ''; });
@@ -4814,8 +4820,15 @@ function saveEdit(id) {
   if (catEl) setTickerAttr(ticker, 'category', catEl.value.trim() || null);
   if (regEl) setTickerAttr(ticker, 'region',   regEl.value.trim() || null);
   if (secEl) setTickerAttr(ticker, 'sector',   secEl.value.trim() || null);
+  // current is ticker-level. For an active position, a manual edit sets the
+  // ticker's current price (all its active positions reflect it). A sold
+  // position's price is its own sellPrice — update that instead.
+  if (!pos.sold) setTickerMeta(ticker, 'current', current);
   positions = positions.map(function(p) {
-    return p.id === id ? Object.assign({}, p, { qty: qty, entry: entry, current: current, note: note, purchaseDate: purchaseDate, broker: broker }) : p;
+    if (p.id !== id) return p;
+    var patch = { qty: qty, entry: entry, note: note, purchaseDate: purchaseDate, broker: broker };
+    if (p.sold) patch.sellPrice = current;
+    return Object.assign({}, p, patch);
   });
   portfolios[currentPortfolioId].positions = positions;
   saveTickerDataLS();
@@ -4874,6 +4887,7 @@ function refreshTicker(ticker, silent) {
     setTickerMeta(ticker, 'regularMarketPrice', __regularMarketPrice);
     setTickerMeta(ticker, 'previousClose', __previousClose);
     setTickerMeta(ticker, 'shortName', __shortName);
+    setTickerMeta(ticker, 'current', price);
     if (__instrumentType) setTickerMeta(ticker, 'instrumentType', __instrumentType);
     if (__exchangeName) setTickerMeta(ticker, 'exchangeName', __exchangeName);
     Object.keys(portfolios).forEach(function(pid) {
@@ -4881,7 +4895,7 @@ function refreshTicker(ticker, silent) {
       if (port.archive) return;
       port.positions = (port.positions || []).map(function(p) {
         if (p.ticker !== ticker || p.sold) return p;
-        return Object.assign({}, p, { current: price, currency: __currency });
+        return Object.assign({}, p, { currency: __currency });
       });
     });
     // Metadata changed → local state is ahead of cloud. Price refreshes don't
@@ -4986,7 +5000,7 @@ function refreshAllPortfolios() {
       if (p.sold) return;
       var promise = fetchPrice(p.ticker).then(function(price) {
         markPriceFresh(p.ticker);
-        p.current = price;
+        setTickerMeta(p.ticker, 'current', price);
         setTickerMeta(p.ticker, 'priceType', __priceType);
         setTickerMeta(p.ticker, 'marketState', __marketState);
         setTickerMeta(p.ticker, 'regularMarketPrice', __regularMarketPrice);
@@ -7386,7 +7400,6 @@ function processPositionCsv(text) {
             ticker: row.ticker,
             qty: row.qty,
             entry: row.entry,
-            current: row.current || d.price,
             currency: d.currency || null,
             shortName: d.shortName || null,
             instrumentType: d.instrumentType || null,
@@ -7396,6 +7409,10 @@ function processPositionCsv(text) {
             pos.sold = true;
             pos.sellPrice = (row.current != null ? row.current : (d.price != null ? d.price : null));
             pos.sellCurrency = d.currency || (portfolios[currentPortfolioId] && portfolios[currentPortfolioId].currencyCode) || 'USD';
+          } else {
+            // Active: current is ticker-level → tickerData, so the helper (which
+            // reads tickerData) sees it immediately without waiting for a migrate.
+            setTickerMeta(row.ticker, 'current', row.current || d.price);
           }
           positions.push(pos);
           added++;
