@@ -553,7 +553,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.27';
+var APP_VERSION = 'v1.3.28';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -1061,13 +1061,6 @@ function updateAddForm() {
 }
 function isWatchlist() {
   return !!(currentPortfolio().watchlist);
-}
-// True when the current portfolio is an archive (REALIZED). Used to hide
-// alerts UI (display + add/delete) in expanded rows and edit forms — alerts
-// live at the ticker level, so manipulating them in an archive context would
-// silently affect active positions of the same ticker, which is surprising.
-function isArchiveContext() {
-  return !!(currentPortfolio() && currentPortfolio().archive);
 }
 
 // ── Price staleness ─────────────────────────────────────────────────────────
