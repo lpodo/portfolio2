@@ -553,7 +553,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.34';
+var APP_VERSION = 'v1.3.36';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -649,18 +649,22 @@ function setTickerAttr(ticker, field, val) {
 
 // Rubric → source dispatcher for analytics / weights grouping. As attributes
 // migrate from positions into tickerData, only this table changes — the
-// grouping code calls rubricValue() and stays agnostic. Today category/
-// region/sector/isin live on the ticker; currency/exchange still live on the
-// position (slated to move to the ticker later); broker stays on the position
-// permanently (it's genuinely per-lot). 'ticker' rubrics read tickerData,
+// grouping code calls rubricValue() and stays agnostic. category/region/
+// sector/isin/currency live on the ticker; broker stays on the position
+// permanently (genuinely per-lot). 'ticker' rubrics read tickerData,
 // 'position' rubrics read the position object.
+// NOTE: only category/region/sector actually flow through rubricRawValue below;
+// currency/exchange/broker/isin are resolved by dedicated branches at their
+// call sites (getPositionCurrencyCode / getPositionExchange / getPositionBroker
+// / getTickerIsin). Their entries here are documentation of where the field
+// lives, not an active dispatch.
 var RUBRIC_SOURCE = {
   category: 'ticker',
   region:   'ticker',
   sector:   'ticker',
   isin:     'ticker',
-  currency: 'position',
-  exchange: 'position',
+  currency: 'ticker',
+  exchange: 'ticker',
   broker:   'position'
 };
 // Returns the grouping value for a position under the given rubric, reading
@@ -923,6 +927,12 @@ function migrateMetaToTicker() {
       if (!pos.sold && pos.current != null && getTickerMeta(pos.ticker, 'current') == null) {
         setTickerMeta(pos.ticker, 'current', pos.current);
       }
+      // currency is ticker-level; only an active position's currency is the
+      // live ticker currency. A sold position freezes its own sellCurrency, so
+      // it must not seed tickerData.currency.
+      if (!pos.sold && pos.currency != null && getTickerMeta(pos.ticker, 'currency') == null) {
+        setTickerMeta(pos.ticker, 'currency', pos.currency);
+      }
     });
   });
   saveTickerDataLS();
@@ -1149,7 +1159,7 @@ function getPositionCurrencySymbol(pos, fallbackCode) {
 }
 function getPositionCurrencyCode(pos, fallbackCode) {
   if (pos.sold && pos.sellCurrency) return pos.sellCurrency;
-  return pos.currency || fallbackCode || currentPortfolio().currencyCode || 'USD';
+  return getTickerMeta(pos.ticker, 'currency') || fallbackCode || currentPortfolio().currencyCode || 'USD';
 }
 // Price of a position for display and P&L math. For a sold position this is
 // the sale price; for an active one it's the latest market price. Today both
@@ -4371,14 +4381,15 @@ function addPosition() {
       return;
     }
     errEl.textContent = '';
-    // shortName/instrumentType/exchangeName are ticker-level — write them to
-    // tickerData so the helpers (which read tickerData) see them immediately,
-    // instead of putting dead copies on the position. currency stays on the
-    // position until Stage 4. A refresh fires right after and refreshes these.
+    // All ticker-level fields (shortName/instrumentType/exchangeName/currency)
+    // → tickerData so the helpers see them immediately. extraFields carries
+    // only genuine position fields. A refresh fires right after and refreshes
+    // the ticker data.
     if (d.shortName) setTickerMeta(ticker, 'shortName', d.shortName);
     if (d.instrumentType) setTickerMeta(ticker, 'instrumentType', d.instrumentType);
     if (d.exchangeName) setTickerMeta(ticker, 'exchangeName', d.exchangeName);
-    doAddPosition({ currency: d.currency || null, purchaseDate: purchaseDate, broker: broker });
+    if (d.currency) setTickerMeta(ticker, 'currency', d.currency);
+    doAddPosition({ purchaseDate: purchaseDate, broker: broker });
   }).catch(function() {
     errEl.textContent = '✗ Ticker check failed';
   });
@@ -4867,43 +4878,37 @@ function refreshTicker(ticker, silent) {
     // Capture pre-update metadata from any one live position of this ticker,
     // to detect whether this refresh changed persistent metadata (which must
     // reach the cloud) vs. only price (which must not trigger a cloud write).
+    // Capture ticker metadata before the refresh overwrites it, but only if
+    // the ticker has an active position somewhere (no point tracking cloud
+    // drift for a ticker no active position references). All values come from
+    // tickerData; the scan just tests for an active position.
     var metaBefore = null;
-    Object.keys(portfolios).some(function(pid) {
-      var port = portfolios[pid];
-      if (port.archive) return false;
-      var hit = (port.positions || []).filter(function(p) { return p.ticker === ticker && !p.sold; })[0];
-      if (hit) {
-        metaBefore = {
-          currency: hit.currency || null,
-          shortName: getTickerMeta(ticker, 'shortName'),
-          instrumentType: getTickerMeta(ticker, 'instrumentType'),
-          exchangeName: getTickerMeta(ticker, 'exchangeName')
-        };
-        return true;
-      }
-      return false;
+    var hasActive = Object.keys(portfolios).some(function(pid) {
+      if (portfolios[pid].archive) return false;
+      return (portfolios[pid].positions || []).some(function(p) { return p.ticker === ticker && !p.sold; });
     });
-    // Ticker-level metadata → tickerData (one write per ticker, shared by all
-    // positions). current/currency stay on the position for now (Stages 3/4).
-    // Price-state fields are always present in the response; instrumentType/
-    // exchangeName are written only when non-empty so a sparse response doesn't
-    // wipe a previously-known value.
+    if (hasActive) {
+      metaBefore = {
+        currency: getTickerMeta(ticker, 'currency'),
+        shortName: getTickerMeta(ticker, 'shortName'),
+        instrumentType: getTickerMeta(ticker, 'instrumentType'),
+        exchangeName: getTickerMeta(ticker, 'exchangeName')
+      };
+    }
+    // All refreshed data is ticker-level → tickerData. One write per ticker,
+    // shared by every position. Price-state fields are always present in the
+    // response; instrumentType/exchangeName are written only when non-empty so
+    // a sparse response doesn't wipe a previously-known value. Refresh no
+    // longer touches position objects at all.
     setTickerMeta(ticker, 'priceType', __priceType);
     setTickerMeta(ticker, 'marketState', __marketState);
     setTickerMeta(ticker, 'regularMarketPrice', __regularMarketPrice);
     setTickerMeta(ticker, 'previousClose', __previousClose);
     setTickerMeta(ticker, 'shortName', __shortName);
     setTickerMeta(ticker, 'current', price);
+    setTickerMeta(ticker, 'currency', __currency);
     if (__instrumentType) setTickerMeta(ticker, 'instrumentType', __instrumentType);
     if (__exchangeName) setTickerMeta(ticker, 'exchangeName', __exchangeName);
-    Object.keys(portfolios).forEach(function(pid) {
-      var port = portfolios[pid];
-      if (port.archive) return;
-      port.positions = (port.positions || []).map(function(p) {
-        if (p.ticker !== ticker || p.sold) return p;
-        return Object.assign({}, p, { currency: __currency });
-      });
-    });
     // Metadata changed → local state is ahead of cloud. Price refreshes don't
     // auto-save to cloud, so record each changed field (with from/to) for the
     // manual-sync modal. Compare the effective post-refresh value per field.
@@ -7386,12 +7391,12 @@ function processPositionCsv(text) {
             id: Date.now() + Math.random(),
             ticker: row.ticker,
             qty: row.qty,
-            entry: row.entry,
-            currency: d.currency || null
+            entry: row.entry
           };
           if (d.shortName) setTickerMeta(row.ticker, 'shortName', d.shortName);
           if (d.instrumentType) setTickerMeta(row.ticker, 'instrumentType', d.instrumentType);
           if (d.exchangeName) setTickerMeta(row.ticker, 'exchangeName', d.exchangeName);
+          if (d.currency) setTickerMeta(row.ticker, 'currency', d.currency);
           if (row.sold) {
             pos.sold = true;
             pos.sellPrice = (row.current != null ? row.current : (d.price != null ? d.price : null));
