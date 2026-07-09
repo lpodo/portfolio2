@@ -553,7 +553,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.32';
+var APP_VERSION = 'v1.3.34';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -1073,14 +1073,13 @@ function markPriceFresh(ticker)  { if (ticker) delete staleTickers[ticker]; }
 function isPriceStale(ticker)    { return !!staleTickers[ticker]; }
 
 // Returns the HTML for the inline ⚠ icon when a position's price is stale.
-// The icon is a clickable button — tapping triggers refreshPrice for this
-// position, which refreshes ALL positions of the same ticker across all
-// non-archive portfolios (see refreshPrice for details).
-// Sold positions always return empty (their `current` is intentionally not
-// refreshed — it's the sell price, frozen by design).
+// The icon is a clickable button — tapping calls refreshTicker for this
+// position's ticker, refreshing every position of that ticker everywhere
+// (price is ticker-level). Sold positions always return empty (their price is
+// the frozen sellPrice, intentionally not refreshed).
 function staleIconHtml(p) {
   if (!p || p.sold || !isPriceStale(p.ticker)) return '';
-  return '<span onclick="refreshPrice(' + p.id + ')" style="color:#c77dff;font-size:11px;cursor:pointer;user-select:none" title="last fetch failed — tap to retry">&#9888;&#65038;</span>';
+  return '<span onclick="refreshTicker(&apos;' + p.ticker + '&apos;)" style="color:#c77dff;font-size:11px;cursor:pointer;user-select:none" title="last fetch failed — tap to retry">&#9888;&#65038;</span>';
 }
 
 // Standard cell wrapper. Zero-width when no icon, expands when needed.
@@ -4345,7 +4344,7 @@ function addPosition() {
     document.getElementById('fDate').value = todayLocalISO();
     renderAddBrokerSlot(); // refresh dropdown + reset to current default
     render();
-    if (!isSold) refreshPrice(pos.id);
+    if (!isSold) refreshTicker(ticker);
   }
 
   // Verify ticker via Yahoo for all portfolio types
@@ -4372,7 +4371,14 @@ function addPosition() {
       return;
     }
     errEl.textContent = '';
-    doAddPosition({ currency: d.currency || null, shortName: d.shortName || null, instrumentType: d.instrumentType || null, exchangeName: d.exchangeName || null, purchaseDate: purchaseDate, broker: broker });
+    // shortName/instrumentType/exchangeName are ticker-level — write them to
+    // tickerData so the helpers (which read tickerData) see them immediately,
+    // instead of putting dead copies on the position. currency stays on the
+    // position until Stage 4. A refresh fires right after and refreshes these.
+    if (d.shortName) setTickerMeta(ticker, 'shortName', d.shortName);
+    if (d.instrumentType) setTickerMeta(ticker, 'instrumentType', d.instrumentType);
+    if (d.exchangeName) setTickerMeta(ticker, 'exchangeName', d.exchangeName);
+    doAddPosition({ currency: d.currency || null, purchaseDate: purchaseDate, broker: broker });
   }).catch(function() {
     errEl.textContent = '✗ Ticker check failed';
   });
@@ -4955,25 +4961,6 @@ function refreshTicker(ticker, silent) {
     affectedIds.forEach(function(id) { delete loadingSet[id]; });
     if (!silent) render();
   });
-}
-
-// Wrapper that takes a position id (from a UI click). Searches across ALL
-// non-archive portfolios — clicks may originate from cross-portfolio views
-// (All Positions / Σ SUMMARY) where the target position isn't in the current
-// portfolio's `positions`.
-function refreshPrice(id, silent) {
-  var pos = null;
-  var pids = Object.keys(portfolios);
-  for (var i = 0; i < pids.length && !pos; i++) {
-    var port = portfolios[pids[i]];
-    if (port.archive) continue;
-    var arr = port.positions || [];
-    for (var j = 0; j < arr.length; j++) {
-      if (arr[j].id === id) { pos = arr[j]; break; }
-    }
-  }
-  if (!pos || pos.sold) return Promise.resolve();
-  return refreshTicker(pos.ticker, silent);
 }
 
 // Batch retry from a summary row: refresh every stale ticker in the target
@@ -7400,11 +7387,11 @@ function processPositionCsv(text) {
             ticker: row.ticker,
             qty: row.qty,
             entry: row.entry,
-            currency: d.currency || null,
-            shortName: d.shortName || null,
-            instrumentType: d.instrumentType || null,
-            exchangeName: d.exchangeName || null
+            currency: d.currency || null
           };
+          if (d.shortName) setTickerMeta(row.ticker, 'shortName', d.shortName);
+          if (d.instrumentType) setTickerMeta(row.ticker, 'instrumentType', d.instrumentType);
+          if (d.exchangeName) setTickerMeta(row.ticker, 'exchangeName', d.exchangeName);
           if (row.sold) {
             pos.sold = true;
             pos.sellPrice = (row.current != null ? row.current : (d.price != null ? d.price : null));
@@ -8055,8 +8042,12 @@ function clearChartCacheAndReload() {
       if (tickers.indexOf(p.ticker) === -1) tickers.push(p.ticker);
     });
   }
-  var promises = positions.filter(function(p) { return !p.sold; }).map(function(p) {
-    return refreshPrice(p.id);
+  var refreshTickers = [];
+  (positions || []).filter(function(p) { return !p.sold; }).forEach(function(p) {
+    if (refreshTickers.indexOf(p.ticker) === -1) refreshTickers.push(p.ticker);
+  });
+  var promises = refreshTickers.map(function(t) {
+    return refreshTicker(t);
   });
   Promise.all(promises).then(function() {
     tickers.forEach(function(t) {
