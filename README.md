@@ -6,7 +6,7 @@ A PWA stock portfolio tracker with a Cloudflare Worker backend. Supports all maj
 
 | | |
 |---|---|
-| **Frontend** | GitHub Pages — `lpodo.github.io/portfolio2` |
+| **Frontend** | Single-file HTML SPA, hostable anywhere static (GitHub Pages, Vercel, Cloudflare Pages, Netlify, plain S3, etc.). Reference deployment: `lpodo.github.io/portfolio2` |
 | **Price backend** | Cloudflare Workers — `portfolio2.lpodolskiy.workers.dev` |
 | **Repository** | `lpodo/portfolio2` |
 | **App** | PWA — installable on Android/iOS as a home screen app |
@@ -106,8 +106,9 @@ Portfolios in the **REALIZED** tab hold closed positions and show their actual r
 
 ### Adding, editing, deleting
 
-- Add position: ticker + qty (0 allowed) + entry price + current price (optional) + purchase date (defaults to today) + broker (current default pre-selected, see [Brokers](#brokers)).
+- Add position: ticker + qty (0 allowed) + entry price + current price (optional) + purchase date (defaults to today) + broker (current default pre-selected, see [Brokers](#brokers)) + **ISIN** (optional, 12 alphanumeric chars, uppercase-only, `US0378331005` format).
 - Adding a position validates the ticker against Yahoo Finance — unknown tickers are rejected.
+- Editing the ticker in the Add form clears any typed ISIN — a different ticker implies a different ISIN.
 - Inline edit (✎) and delete (✕). Editing exposes the same set of fields plus the classification dropdowns (CAT / REG / SEC) and the NOTE field.
 
 **qty=0** is allowed — used for watchlist candidates. P&L $ shows `—`, P&L % is calculated if entry > 0. Entry=0 is allowed only when qty=0 (pure price tracking). Excluded from WEIGHTS and Analytics totals.
@@ -227,6 +228,23 @@ Positions without a `broker` field land in the subgroup of the current default b
 **Sold aggregations:** the modal ends with a single **⊟ MOVE TO REALIZED** button that moves every sold position in the aggregation (across all brokers) to a chosen realized portfolio.
 
 **Missing-date warning:** if any position in the aggregation lacks `purchaseDate`, a small `⚠` notice is shown below the table noting how many — these are treated as the oldest in FIFO order.
+
+### Filters
+
+A global, persistent filter narrows the set of positions shown across every view at once. Toggle it via the **∇** (nabla) icon — it sits in the P&L table header (over the MOVE column) for individual portfolios, and in the PORTFOLIO header cell of cross-portfolio views. The icon is green when a filter is active, dim otherwise. Clicking it opens the filter modal.
+
+Two conditions are available, combined with AND:
+
+- **PURCHASE DATE FROM** — keeps only positions bought on or after the given date. (Positions with no entry price or no purchase date are excluded by this condition.)
+- **BROKER** — keeps only positions at the selected broker. (qty=0 watchlist candidates are excluded by this condition, since broker is meaningless for them.)
+
+**APPLY** saves the filter; **RESET** clears it. The filter persists in localStorage (`pt_filter`) across sessions.
+
+Scope of the filter:
+
+- **Individual regular portfolios** — the filter applies. Watchlists and realized portfolios ignore it (their ∇ icon isn't shown).
+- **Cross-portfolio views** (ALL POSITIONS, Σ SUMMARY) — the active summaries apply the filter; the realized summary does not.
+- **What you see is what you act on:** the filter is the single choke point for both display *and* operations — aggregation, bulk move, bulk delete, and totals all operate on the filtered set, so you can't accidentally act on hidden positions.
 
 ## Summary
 
@@ -390,8 +408,14 @@ Available via dropdown menu → ANALYTICS for individual portfolios and the ALL 
 
 Two dropdowns at the top of the view drive what's shown:
 
-- **Rubric** (left): **CATEGORY** / **REGION** / **SECTOR** / **CURRENCY** / **BROKER**. Determines how positions are grouped. Currency uses the actual position currency from Yahoo Finance (no manual input needed). Broker uses the position's `broker` field, falling back to the current default broker when empty (see [Brokers](#brokers)). Positions with qty=0 are excluded. Positions without a value in the selected field appear in the **Other** group.
+- **Rubric** (left): **CATEGORY** / **REGION** / **SECTOR** / **CURRENCY** / **EXCHANGE** / **ISIN** / **BROKER**. Determines how positions are grouped. Positions with qty=0 are excluded from all rubrics. Positions without a value in the selected field fall into a fallback bucket described per-rubric below.
 - **Subview** (right): determines what's shown per group. Four options — **P&L**, **MARKET**, **CHART**, **WEIGHTS**. Realized contexts only have **P&L** and **WEIGHTS** (MARKET and CHART make no sense for closed positions).
+
+Rubric semantics:
+
+- **CATEGORY / REGION / SECTOR / ISIN** — ticker-level attributes (see [Ticker classification fields](#ticker-classification-fields)). Same ticker, same value everywhere. Fallback bucket: `Other` (or `Unknown` for ISIN).
+- **CURRENCY / EXCHANGE / BROKER** — position-level. Currency uses the actual position currency from Yahoo Finance. Exchange uses the position's `exchangeName` field. Broker falls back to the current default broker when empty (see [Brokers](#brokers)). Fallback bucket: `Other`.
+- The ISIN rubric groups by **country code** — the first two characters of the ISIN (e.g. `US`, `NL`, `GB`). Positions whose ticker has no known ISIN — including all non-securities (indices, currencies, etc.) — fall into `Unknown`.
 
 Subviews:
 
@@ -400,37 +424,36 @@ Subviews:
 - **CHART** — one normalized % line per group, each starting at 0% on the first available date. Color-coded with a legend showing the final % change.
 - **WEIGHTS** — group name, value (with FX conversion to base currency), weight %, and a horizontal bar chart scaled to the largest group.
 
-Row order is stable across subview switches — groups are sorted by base value descending, with **Other** always last — so toggling between subviews doesn't shuffle the table. The rubric and subview selections persist in localStorage (`pt_analytics_subview`).
+Row order is stable across subview switches — groups are sorted by base value descending, with the fallback bucket always last — so toggling between subviews doesn't shuffle the table. The rubric and subview selections persist in localStorage (`pt_analytics_subview`).
 
-### Position classification fields
+### Ticker classification fields
 
-Each position has three classification fields: **category**, **region**, **sector**. Values must be chosen from per-field dictionaries — free text is not allowed. This ensures exact consistency across portfolios, which is required for Analytics to group correctly.
+Four attributes describe **the security itself**, not any specific holding: **category**, **region**, **sector**, and **ISIN**. They live on the ticker (in the [Ticker data registry](#ticker-data-registry)) — one value per ticker, shared by every position of that ticker across every portfolio.
 
-**Setting values:** open the ✎ edit form for any position. Each field shows a custom dropdown — tap/click to open a list of all values in that dictionary. Select a value, or choose **+ new...** to add a new value inline: a text input appears with ✓ (confirm) and ✕ (cancel) buttons. Confirming adds the value to the dictionary and selects it.
+- **CATEGORY / REGION / SECTOR** — must be chosen from dictionaries (Settings → DICTIONARIES). Free text is not allowed; this guarantees exact consistency across portfolios so Analytics grouping works.
+- **ISIN** — free text, 12-character ISO 6166 code. Uppercase-only, alphanumeric.
 
-**Dictionaries** (Settings → DICTIONARIES): five buttons — CATEGORIES, REGIONS, SECTORS, BROKERS, CASH CAT. Tap a button to expand the list of values for that dictionary. Each value has a ✕ button to delete it from the dictionary. Deleting a value from the dictionary does not remove it from existing positions — except for BROKERS, where deletion is rejected while any position still references the broker (see [Brokers](#brokers)).
+These attributes are shown and edited only for real securities (`EQUITY` / `ETF`) — for indices, currencies, futures, crypto, etc. the fields are hidden entirely in both the expanded row and the edit form, since they have no meaningful company-level classification.
 
-**On first run after upgrade:** existing category/region/sector values found in positions are automatically migrated into the dictionaries. No manual action required.
+**Setting values:** open the ✎ edit form for any position. Each dictionary-backed field shows a custom dropdown — tap/click to open the list. Select a value, or choose **+ new...** to add a new value inline: a text input appears with ✓ (confirm) and ✕ (cancel) buttons. Confirming adds the value to the dictionary and selects it. Saving updates the ticker — so every other position of the same ticker sees the change immediately.
+
+For ISIN, overwriting or clearing an existing value triggers a confirmation dialog. Setting an ISIN on an empty slot happens silently.
+
+**Dictionaries** (Settings → DICTIONARIES): five buttons — CATEGORIES, REGIONS, SECTORS, BROKERS, CASH CAT. Tap a button to expand the list of values for that dictionary. Each value has a ✕ button to delete it from the dictionary. Deleting a value from the dictionary does not remove it from existing tickers — except for BROKERS, where deletion is rejected while any position still references the broker (see [Brokers](#brokers)).
 
 Dictionaries are included in cloud sync and backup/restore. Grouping in Analytics normalizes whitespace (trims and collapses multiple spaces) but preserves original casing.
 
-### Attribute inheritance & sync
-
-When a position is added (via the Add form or CSV import), the app automatically checks all existing portfolios (active, realized, and watchlist) for a position with the same ticker. If found and it has category/region/sector values, those are copied to the new position. This means you only need to classify a ticker once — subsequent additions inherit the values automatically.
-
-**Ticker-wide sync:** when attributes are edited via the ✎ edit form, the new values are immediately synced to all other positions with the same ticker across all portfolios (including realized). There is no prompt and no separate step — sync is silent, enforcing the rule that a ticker always has exactly one set of attributes everywhere.
-
 ### Note field
 
-Each position also has a free-text **note** field, set via the ✎ edit row. Notes are personal annotations — they don't affect any calculations or groupings and appear only in the expanded view and the edit form.
+Each position has a free-text **note** field, set via the ✎ edit row. Notes are position-level (unlike CAT/REG/SEC/ISIN which are ticker-level) — one note per lot, so different positions of the same ticker can carry different annotations. Notes don't affect any calculations or groupings and appear only in the expanded view and the edit form.
 
-### CSV import / export (Analytics)
+### CSV import / export
 
-In the Analytics view (portfolio level), three links appear: **↑ Import CSV**, **↓ Export CSV**, and **↓ Incomplete**.
+Located in Settings → **ANALYTICS CSV** as three buttons — **↑ IMPORT CSV**, **↓ EXPORT CSV**, **↓ INCOMPLETE**.
 
-- **Export CSV** downloads `tickers.csv` — all unique tickers across all portfolios with their current category/region/sector values.
-- **Incomplete** downloads `incomplete_analytics.csv` — all unique tickers across all regular and realized portfolios (watchlist excluded) where at least one of category/region/sector is empty. Useful for identifying what still needs to be classified. Includes all positions regardless of sold/qty status.
-- **Import** reads a CSV and updates matching positions across all portfolios. Supports comma (`,`) or semicolon (`;`) delimiter, auto-detected from the header row. Empty fields in the CSV do not overwrite existing values. All imported category/region/sector values are automatically added to their respective dictionaries.
+- **EXPORT CSV** downloads `tickers_analytics.csv` — all tickers with at least one of category/region/sector set, plus their current values.
+- **INCOMPLETE** downloads `incomplete_analytics.csv` — all unique tickers across all regular and realized portfolios (watchlist excluded) where at least one of category/region/sector is empty. Useful for identifying what still needs to be classified.
+- **IMPORT CSV** reads a CSV and updates ticker attributes. Supports comma (`,`) or semicolon (`;`) delimiter, auto-detected from the header row. Empty fields in the CSV do not overwrite existing values. All imported category/region/sector values are automatically added to their respective dictionaries.
 
 CSV format:
 
@@ -451,18 +474,34 @@ Tapping/clicking the **ticker name** in any market-style view toggles an expanda
 
 ### Position metadata
 
-The first four lines always show position metadata:
+Metadata layout depends on the position's instrument type:
+
+- **Real security (`EQUITY` / `ETF`) with qty>0** — two rows:
+  ```
+  BROKER  ETrade   BUY DATE  2024-08-19   ISIN  US26884L1098
+    CAT  AI & Semi    REG  US    SEC  Technology
+  ```
+- **Real security in a watchlist (qty=0)** — trade fields make no sense, so only ISIN + CAT/REG/SEC show:
+  ```
+  ISIN  US26884L1098
+    CAT  AI & Semi    REG  US    SEC  Technology
+  ```
+- **Non-security** (`INDEX`, `CURRENCY`, `FUTURE`, `CRYPTO`, etc.) — these have no meaningful company-level metadata; both rows are hidden entirely.
+
+Fields:
+
+- **BROKER** — the broker tagged on this position, or the current default broker if none is explicitly set (see [Brokers](#brokers)). If no brokers are defined at all, shows `default`.
+- **BUY DATE** — the position's `purchaseDate` (ISO `YYYY-MM-DD`), or `—` if not set.
+- **ISIN** — International Securities Identification Number for the ticker, or `—` if not known. Free-text; the frontend supports lookup via the worker's `/api/isin` endpoint but no free provider currently supplies it (see [Cloudflare Worker](#cloudflare-worker)), so users enter ISINs manually via the ✎ Edit form. Overwriting or clearing an existing ISIN triggers a confirmation dialog.
+- **CAT / REG / SEC** — classification fields, ticker-level (see [Ticker classification fields](#ticker-classification-fields)). Show `—` if empty.
+
+Below these, always two more rows:
 
 ```
-BROKER  ETrade        BUY DATE  2024-08-19
-  CAT  AI & Semi    REG  US    SEC  Technology
 NOTE  Bought on dip after earnings  ✎
 ALERTS  > 920  ✕    [>] [price] [+]
 ```
 
-- **BROKER** — the broker tagged on this position, or the current default broker if none is explicitly set (see [Brokers](#brokers)). If no brokers are defined at all, shows `default`.
-- **BUY DATE** — the position's `purchaseDate` (ISO `YYYY-MM-DD`), or `—` if not set.
-- **CAT / REG / SEC** — classification fields (show `—` if empty).
 - **NOTE** — free-text annotation. Click the ✎ button to edit inline: the value becomes an input field; press **Enter** or click away to save, **Escape** to cancel.
 - **ALERTS** — existing alerts with ✕ delete buttons, plus inline quick-add controls.
 
@@ -666,7 +705,7 @@ Backup format:
   "bondsDb": [ ... ],
   "bondPortfolios": { ... },
   "cashPortfolios": { ... },
-  "tickerAlerts": { ... },
+  "tickerData": { ... },
   "catDict": ["AI & Semi", "Energy", ...],
   "regDict": ["Europe", "US", ...],
   "secDict": ["Energy", "Technology", ...],
@@ -759,6 +798,7 @@ Market state (`REGULAR` / `PRE` / `POST` / `CLOSED`) is determined from `current
 - `/api/kv` — cloud storage proxy (GET to load, PUT to save). Requires the `X-KV-Key` header with the user's storage key. Only available when the Cloudflare KV backend is configured.
 - `/api/profile?ticker=AAPL` — sector/industry/country from Yahoo `assetProfile`. Returns nulls for ETFs and when Yahoo blocks the request.
 - `/api/quotesummary?ticker=AAPL&modules=financialData,defaultKeyStatistics,recommendationTrend,upgradeDowngradeHistory` — Yahoo Finance fundamentals via the `quoteSummary` API. Returns raw module data under `quoteSummary.result[0]`. Requires a Yahoo crumb token for auth; the worker fetches and caches the crumb in-memory automatically. If Yahoo returns 404 for a multi-module request (some ETFs lack certain modules), the worker falls back to per-module fetches and merges what succeeds. Used by the **Expanded Row** fundamentals lines and the **More** overlay.
+- `/api/isin?ticker=AAPL` — ISIN lookup. Currently a **stub**: always returns `{ isin: null }`. No free provider supplies ISIN data reliably (Yahoo doesn't return it, Business Insider scrapes are noisy, Twelve Data gates the field behind a paid add-on). The endpoint stays so the frontend contract is unchanged — users enter ISINs manually via the ✎ Edit form, and a real provider can be wired in later by editing only this handler. The frontend caches a negative result with the `UNRESOLVED` marker so it won't re-query (see [Ticker data registry](#ticker-data-registry)).
 - `/api/debug?ticker=AAPL` — processed result (same logic as `/api/quote`).
 - `/api/debug1?ticker=AAPL` — raw meta from the Yahoo 1d request.
 - `/api/debug2?ticker=AAPL` — last candles + pre/post windows from the 5d request.
@@ -777,43 +817,43 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
 
 ### Position structure
 
+A position is now a purely **transactional** record — it describes one lot you bought (and possibly sold). Everything about the *security* (its price, currency, name, market metadata, classification, ISIN, alerts) has moved to the ticker-keyed [Ticker data registry](#ticker-data-registry) and is read through helper functions (`getPositionCurrent`, `getPositionCurrencyCode`, `getTickerMeta`, etc.).
+
 ```json
 {
   "id": 1234567890,
   "ticker": "EOG",
   "qty": 8,
   "entry": 134.00,
-  "current": 140.75,
   "purchaseDate": "2024-08-19",
   "broker": "ETrade",
-  "sold": false,
-  "currency": "USD",
-  "shortName": "EOG Resources, Inc.",
-  "instrumentType": "EQUITY",
-  "priceType": "regular",
-  "marketState": "REGULAR",
-  "regularMarketPrice": 140.75,
-  "previousClose": 138.82,
-  "category": "Energy",
-  "region": "US",
-  "sector": "Energy"
+  "note": "core energy holding",
+  "sold": false
 }
 ```
 
-- `purchaseDate` — ISO `YYYY-MM-DD` (local timezone). Optional; defaults to today on add. Used for FIFO ordering inside the aggregation detail modal and for display in the [Expanded Row](#expanded-row).
-- `broker` — explicit broker tag for this position. Optional; when absent, `getPositionBroker(p)` resolves to the current default broker at read time. See [Brokers](#brokers).
-- `currency` — position currency code from Yahoo Finance (e.g. `GBP`, `EUR`). Set on add. Used for symbol display and FX conversion in totals/weights.
-- `shortName` — company/ETF name from Yahoo Finance. Displayed in MARKET and WEIGHT views.
-- `instrumentType` — instrument category from Yahoo (`EQUITY`, `ETF`, `INDEX`, `MUTUALFUND`, `CURRENCY`, etc.). Used to filter non-equity tickers out of the [Fundamentals view](#fundamentals). Populated on add and on every refresh; positions stored before this field existed are migrated lazily.
-- `sold` — marks position as sold; price frozen at sell price, excluded from Refresh.
-- `previousClose`, `regularMarketPrice` — cached from the worker response for Market view Δ% calculations.
-- `category`, `region`, `sector` — classification fields for the Analytics view. Selected from per-field dictionaries; free text is not allowed.
-- `note` — optional free-text annotation. Visible only in the expanded position row and edit form.
-- `priceTimestamp` — Unix timestamp of last price from `regularMarketTime`; used to align the "today's point" in charts.
+A sold lot additionally freezes its sale values, which are historical and must never be seeded back into the live ticker:
 
-Price alerts are not a position field — they live in a separate ticker-keyed registry (see [Ticker alerts registry](#ticker-alerts-registry) below).
+```json
+{
+  "id": 1234567891, "ticker": "EOG", "qty": 8, "entry": 134.00,
+  "purchaseDate": "2023-02-10", "broker": "ETrade",
+  "sold": true, "sellPrice": 151.20, "sellCurrency": "USD"
+}
+```
 
-`qty=0` is allowed — used for watchlist candidates. P&L $ shows `—`, P&L % is calculated if entry > 0. Entry=0 is allowed only when qty=0 (pure price tracking). Excluded from WEIGHTS and Analytics totals.
+Fields:
+
+- `id` — unique numeric id (`Date.now()`-based) identifying the lot.
+- `ticker` — uppercase symbol; the key into the ticker data registry.
+- `qty` — number of shares. `qty=0` is allowed for watchlist candidates. P&L $ shows `—`, P&L % is calculated if entry > 0. Entry=0 is allowed only when qty=0 (pure price tracking). Excluded from WEIGHTS and Analytics totals.
+- `entry` — buy price per share.
+- `purchaseDate` — ISO `YYYY-MM-DD` (local timezone). Optional; defaults to today on add. Used for FIFO ordering inside the aggregation detail modal, the purchase-date filter, and display in the [Expanded Row](#expanded-row).
+- `broker` — explicit broker tag for this lot. Optional; when absent, `getPositionBroker(p)` resolves to the current default broker at read time. See [Brokers](#brokers).
+- `note` — optional free-text annotation. Position-level (each lot can carry its own note), unlike the ticker-level classification. Visible only in the expanded row and edit form.
+- `sold` — marks the lot as closed. A sold lot carries `sellPrice` and `sellCurrency` (frozen at sale); its price is not refreshed.
+
+Everything else a position used to carry — `current`, `currency`, `shortName`, `instrumentType`, `exchangeName`, `marketState`, `priceType`, `regularMarketPrice`, `previousClose`, plus `category` / `region` / `sector` / `isin` / `alerts` — is ticker-level and lives in the [Ticker data registry](#ticker-data-registry).
 
 ### Portfolio structure
 
@@ -833,27 +873,60 @@ Price alerts are not a position field — they live in a separate ticker-keyed r
 - `archive: true` — realized portfolio (all positions sold, no Refresh, excluded from the main Summary).
 - `positionSets` — array of named ticker subsets for use by Chart and Fundamentals views: `[{ id: "set_<timestamp>", name: "AI BASKET", tickers: ["NVDA", "ASML.AS"] }]`. Tickers are stored as symbols, not IDs, so re-adding a removed position keeps it in any set it belonged to. See [Position sets](#position-sets).
 
-### Ticker alerts registry
+### Ticker data registry
 
-Price alerts live in a separate registry keyed by ticker — independent of any specific position — so the same ticker held in multiple portfolios/brokers/watchlists shares one alert set. See [Price Alerts](#price-alerts) for the user-facing behavior.
+The central consequence of the data refactor: a ticker-keyed registry holds **everything that describes the security rather than a specific holding**. One entry per ticker, shared by every position of that ticker across every portfolio. Persisted in localStorage under `pt_ticker_data` and cloud-synced as a top-level field `tickerData`.
+
+It stores three groups of fields:
+
+1. **Live market metadata** from Yahoo — refreshed on every price update: `current`, `currency`, `shortName`, `instrumentType`, `exchangeName`, `marketState`, `priceType`, `regularMarketPrice`, `previousClose`.
+2. **User classification** — `category`, `region`, `sector` (dictionary-backed) and `isin`.
+3. **Alerts** — `alerts` array.
 
 ```json
 {
-  "AAPL": [
-    { "id": "1735420800123_a7k9x2", "condition": ">", "value": 250.00, "triggered": false }
-  ],
-  "NVDA": [
-    { "id": "1735420800124_b3m1z5", "condition": "<", "value": 100.00, "triggered": true }
-  ]
+  "AAPL": {
+    "current": 248.10,
+    "currency": "USD",
+    "shortName": "Apple Inc.",
+    "instrumentType": "EQUITY",
+    "exchangeName": "NMS",
+    "marketState": "REGULAR",
+    "priceType": "regular",
+    "regularMarketPrice": 248.10,
+    "previousClose": 246.55,
+    "category": "Consumer Electronics",
+    "region": "US",
+    "sector": "Technology",
+    "isin": "US0378331005",
+    "alerts": [
+      { "id": "1735420800123_a7k9x2", "condition": ">", "value": 250.00, "triggered": false }
+    ]
+  },
+  "^GSPC": {
+    "current": 5820.4,
+    "shortName": "S&P 500",
+    "instrumentType": "INDEX",
+    "isin": "UNRESOLVED"
+  }
 }
 ```
 
-- Keyed by uppercase ticker symbol.
-- Tickers with no alerts are absent from the object (no empty-array clutter).
-- Alert `id` is `Date.now()` + `_` + a short random suffix.
-- `triggered` is recomputed on every price refresh and saved alongside the rest. It does survive reloads (the dot stays lit between sessions until the next refresh re-evaluates).
-- The registry is cloud-synced as a top-level field `tickerAlerts` alongside `portfolios` and the dictionaries.
-- Cleanup hook `cleanupAlertsForTickerIfUnused(ticker)` runs after operations that may orphan a ticker (sell, delete, move-to-archive, ticker rename, portfolio delete). If no live position remains, the ticker's entry is removed; otherwise nothing happens. The hook is idempotent.
+Field semantics:
+
+- Market metadata is stored verbatim from Yahoo (numeric fields stay numeric). A `null`/`undefined` clears the field. Read via `getTickerMeta(ticker, field)` and the per-field wrappers (`getPositionCurrent`, `getPositionCurrencyCode`, `getPositionShortName`, etc.).
+- `category` / `region` / `sector` — free-string values chosen from dictionaries (see [Ticker classification fields](#ticker-classification-fields)); hand-typed values are trimmed. Absent means unclassified.
+- `isin` — one of three states: a real ISIN string; the marker `UNRESOLVED` (a provider was asked and returned nothing — don't re-ask); or absent (never looked up). A lookup fires only when the field is falsy, so both a known ISIN and the `UNRESOLVED` marker suppress re-querying. The helper `isKnownIsin(v)` treats any value starting with `UNRESOLVED` as a marker — so a future provider can use a suffixed variant (e.g. `UNRESOLVED_V2`) to auto-requery tickers still carrying the bare marker, without changing the check.
+- `alerts` — array of alert objects `{ id, condition: ">" | "<", value, triggered }`. Absent means no alerts. `triggered` is recomputed on every price refresh and saved (the dot stays lit between sessions until the next refresh re-evaluates). Alert IDs are `Date.now() + '_' + shortRandom`.
+
+Storage rules: missing fields aren't stored (no `null` clutter); if an entry ends up with no fields, it's removed entirely.
+
+**Cleanup** — `pruneTickerData(ticker)` runs after operations that may orphan a ticker (sell, delete, move-to-archive, ticker rename, portfolio delete). Retention differs by field group:
+
+- **Alerts** are dropped when no live position of the ticker remains (non-sold in a regular portfolio, or any position in a watchlist). Realized portfolios don't keep alerts alive.
+- **Classification / ISIN / market metadata** are dropped only when no position of the ticker exists **anywhere**, including realized portfolios — closed positions still want their metadata for reporting.
+
+The hook is idempotent.
 
 ## Local Storage
 
@@ -864,7 +937,7 @@ Primary on-device storage:
 - `pt_bond_portfolios` — bond portfolios and positions (also used by deposit portfolios)
 - `pt_cash_portfolios` — cash portfolios and entries
 - `pt_cash_cat_dict` — shared dictionary of cash entry categories
-- `pt_ticker_alerts` — ticker-keyed price alerts registry (see [Ticker alerts registry](#ticker-alerts-registry))
+- `pt_ticker_data` — ticker-keyed registry with live market metadata, classification, ISIN, and alerts (see [Ticker data registry](#ticker-data-registry))
 - `pt_current` — active portfolio ID
 - `pt_finnhub` — Cloudflare Worker URL
 - `pt_token` — API token for Cloudflare Worker
@@ -888,6 +961,7 @@ Primary on-device storage:
 - `pt_close_mode` — close column mode: `prev` (Prev.Close), `reg` (Reg.Price), or a historical period (`5d`, `1mo`, `3mo`, `6mo`, `1y`, `5y`); default `prev`
 - `pt_current_mode` — current column mode: `cur` (Current) or `reg` (Reg.Price); default `cur`
 - `pt_analytics_subview` — Analytics subview: `pnl` / `market` / `chart` / `weights`; default `weights`
+- `pt_filter` — global position filter: `{ purchaseDateFrom?, broker? }`; absent when no filter is set (see [Filters](#filters))
 - `pt_chart_set_{portfolioId}` — currently selected set in the Chart view (a set ID or the string `portfolio` for PORTFOLIO mode)
 - `pt_fund_set_{portfolioId}` — currently selected set in the Fundamentals view (a set ID, or absent for "no selection")
 - `chart_hist_{ticker}_{range}` — historical price cache (daily TTL)
@@ -901,7 +975,7 @@ Cross-device sync via two supported backends (selected in Settings):
 - **JSONBin.io** — direct browser-to-API requests; requires a Master Key and Bin ID.
 - **Cloudflare KV** — routed through the Worker; requires only a user-defined KV Key. More reliable and no extra API keys needed.
 
-Bond, deposit, cash, and ticker-alerts data (`bondsDb`, `bondPortfolios`, `cashPortfolios`, `tickerAlerts`, stored in `pt_bonds_db`, `pt_bond_portfolios`, `pt_cash_portfolios`, and `pt_ticker_alerts`) is included in cloud sync alongside equity portfolios, in the same cloud storage record, regardless of backend.
+Bond, deposit, cash, and ticker-data (`bondsDb`, `bondPortfolios`, `cashPortfolios`, `tickerData`, stored in `pt_bonds_db`, `pt_bond_portfolios`, `pt_cash_portfolios`, and `pt_ticker_data`) is included in cloud sync alongside equity portfolios, in the same cloud storage record, regardless of backend.
 
 ### Structural data vs live prices
 
