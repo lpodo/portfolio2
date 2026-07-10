@@ -553,7 +553,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.43';
+var APP_VERSION = 'v1.3.45';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -5650,6 +5650,41 @@ function resetCustomizeIcons() {
   renderCustomizeIconsRows();
   if (typeof render === 'function') render();
 }
+// Shared USD market-total accumulator: sums a position array into USD close/
+// current values using the same price logic as the per-portfolio summary
+// (sold freezes at sellPrice; closeMode/currentMode pick close/current price).
+// fxRates maps currency→USD. Returns { closeUSD, currentUSD, hasAny }. Reused
+// by Σ SUMMARY (per-portfolio) and All Positions MARKET (whole set).
+function computeUsdMarketTotal(posns, fxRates) {
+  var closeUSD = 0, currentUSD = 0, hasAny = false;
+  (posns || []).forEach(function(pos) {
+    var pcur = getPositionCurrent(pos);
+    if (pcur == null || !(pos.qty > 0)) return;
+    var pc = getPositionCurrencyCode(pos);
+    var rateToUSD = pc === 'USD' ? 1 : (fxRates[pc] || fxRates[pc + 'USD'] || 1);
+    var closePrice = pos.sold ? pcur : (HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(pos.ticker, closeMode) || getPositionRegularMarketPrice(pos) || pcur) : (closeMode === 'prev' ? (getPositionPreviousClose(pos) || getPositionRegularMarketPrice(pos) || pcur) : (getPositionRegularMarketPrice(pos) || pcur)));
+    var curPrice = pos.sold ? pcur : (currentMode === 'reg' ? (getPositionRegularMarketPrice(pos) || pcur) : pcur);
+    closeUSD += pos.qty * closePrice * rateToUSD;
+    currentUSD += pos.qty * curPrice * rateToUSD;
+    hasAny = true;
+  });
+  return { closeUSD: closeUSD, currentUSD: currentUSD, hasAny: hasAny };
+}
+
+// Renders a USD totals-bar (AT CLOSE / CURRENT / Δ / Δ%) from a USD total.
+function usdMarketTotalsBar(tot) {
+  if (!tot.hasAny) return '';
+  var d = tot.currentUSD - tot.closeUSD;
+  var dPct = tot.closeUSD > 0 ? d / tot.closeUSD * 100 : null;
+  var cls = d >= 0 ? 'pos' : 'neg';
+  return '<div class="totals-bar">'
+    + '<div class="total-block"><div class="total-label">AT CLOSE</div><div class="total-value" style="color:var(--bright)">$' + f2(tot.closeUSD) + '</div></div>'
+    + '<div class="total-block"><div class="total-label">CURRENT</div><div class="total-value" style="color:var(--bright)">$' + f2(tot.currentUSD) + '</div></div>'
+    + '<div class="total-block"><div class="total-label">&#916;</div><div class="total-value ' + cls + '">' + fSign(d) + '</div></div>'
+    + '<div class="total-block"><div class="total-label">&#916;%</div><div class="total-value ' + cls + '">' + (dPct !== null ? fSign(dPct) + '%' : '—') + '</div></div>'
+    + '</div>';
+}
+
 function buildMarketTotals(fxMap, baseCode, baseSym, srcArr) {
   // srcArr — optional positions array (e.g. alerts subset). Defaults to
   // all sorted positions, so existing market-view callers keep behaviour.
@@ -6575,8 +6610,11 @@ function setMoversLimit(n) {
 function buildMoversView(area, opts) {
   opts = opts || {};
   var bmvAlertsOnly = !!opts.alertsOnly;
-  // Collect all positions from regular + watchlist (not archive), not sold
-  var seen = {}, allPos = [];
+  // Collect all positions from regular + watchlist (not archive), not sold.
+  // allPos is deduplicated by ticker (for the rows); allPosFull keeps every lot
+  // (for the value total, which must count quantities across all lots).
+  var seen = {}, allPos = [], allPosFull = [];
+  var bmvNonUSD = [];
   var bmvDoFilter = filterActiveForSummary(false); // movers/alerts are active-only
   Object.keys(portfolios).forEach(function(pid) {
     var p = portfolios[pid];
@@ -6589,6 +6627,9 @@ function buildMoversView(area, opts) {
       if (pos.sold) return;
       if (bmvAlertsOnly && !getTickerAlerts(pos.ticker).length) return;
       if (!seen[pos.ticker]) { seen[pos.ticker] = true; allPos.push(pos); }
+      allPosFull.push(pos);
+      var pc = getPositionCurrencyCode(pos);
+      if (pc !== 'USD' && bmvNonUSD.indexOf(pc) === -1) bmvNonUSD.push(pc);
     });
   });
 
@@ -6635,17 +6676,34 @@ function buildMoversView(area, opts) {
       + (isExpanded ? '<tr><td colspan="7" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>' : '');
   }).join('');
 
-  area.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
-    + '<thead><tr>'
-    + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortMarket(&apos;ticker&apos;)">TICKER' + smTickerArrow + '</th>'
-    + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
-    + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
-    + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortMarket(&apos;delta&apos;)">&#916;%' + smDeltaArrow + '</th>'
-    + '<th style="width:16px;border-bottom:1px solid var(--border)"></th>' + '<th style="width:0;padding:0;border-bottom:1px solid var(--border)"></th>'
-    + '<th style="text-align:left;padding:5px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">NAME</th>'
-    + '</tr></thead>'
-    + '<tbody>' + rows + '</tbody>'
-    + '</table></div>';
+  function renderMovers(fxRates) {
+    area.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
+      + '<thead><tr>'
+      + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortMarket(&apos;ticker&apos;)">TICKER' + smTickerArrow + '</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortMarket(&apos;delta&apos;)">&#916;%' + smDeltaArrow + '</th>'
+      + '<th style="width:16px;border-bottom:1px solid var(--border)"></th>' + '<th style="width:0;padding:0;border-bottom:1px solid var(--border)"></th>'
+      + '<th style="text-align:left;padding:5px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">NAME</th>'
+      + '</tr></thead>'
+      + '<tbody>' + rows + '</tbody>'
+      + '</table></div>'
+      + usdMarketTotalsBar(computeUsdMarketTotal(allPosFull, fxRates));
+  }
+
+  if (bmvNonUSD.length === 0) {
+    renderMovers({});
+  } else {
+    var bmvFxRates = {};
+    var bmvBaseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
+    var bmvToken = getToken();
+    var bmvFxP = bmvNonUSD.map(function(code) {
+      return fetchFxRate(bmvBaseUrl, bmvToken, code + 'USD=X').then(function(rate) {
+        if (rate) bmvFxRates[code] = rate;
+      });
+    });
+    Promise.all(bmvFxP).then(function() { renderMovers(bmvFxRates); });
+  }
 
   fetchHistoricalIfNeeded(allPos.map(function(p) { return p.ticker; }));
 }
@@ -8208,23 +8266,27 @@ function filterActiveForSummary(isRealized) {
 }
 
 // Pure filter: reduce a position array to the filter's SET, with NO context
-// gate. When a filter is active the set is { entry != 0 AND purchaseDate
-// present AND purchaseDate >= threshold }. This DEFINES the working set; each
-// view then applies its own logic (active/sold/qty) on top — identical for
-// individual portfolios and cross-portfolio views. Used directly by
-// cross-portfolio collectors (which gate themselves) and by applyFilter.
-// Extensible: additional conditions slot in as further early-outs.
+// gate. Each active condition is a FULL predicate — including its own base
+// requirement — and predicates combine by AND (a position must satisfy every
+// active condition). Only conditions present in activeFilter apply.
+//   • purchaseDateFrom → entry != 0 AND purchaseDate present AND >= threshold
+//       (a qty-0 lot with an entry is a fully-sold buy; its date still matters)
+//   • broker           → qty != 0 AND getPositionBroker(p) === broker
+//       (broker is meaningless for a qty-0 lot, so it's excluded here)
+// This DEFINES the working set; each view then applies its own logic on top —
+// identical for individual portfolios and cross-portfolio views. Extensible:
+// new conditions slot in as further AND predicates.
 function filterPositions(posns) {
   if (!activeFilter) return posns;
   return posns.filter(function(p) {
-    // Only genuinely purchased lots participate — entry 0/null means there's
-    // no purchase to date-filter on.
-    if (!p.entry) return false;
-    // purchaseDate must be present and >= threshold. A missing date is -infinity
-    // and never passes.
     if (activeFilter.purchaseDateFrom) {
+      if (!p.entry) return false;
       if (!p.purchaseDate) return false;
       if (p.purchaseDate < activeFilter.purchaseDateFrom) return false;
+    }
+    if (activeFilter.broker) {
+      if (!(p.qty !== 0)) return false;
+      if (getPositionBroker(p) !== activeFilter.broker) return false;
     }
     return true;
   });
@@ -8238,7 +8300,7 @@ function applyFilter(posns) {
 
 // True if any condition is actually set (drives the lit icon).
 function hasActiveFilter() {
-  return !!(activeFilter && activeFilter.purchaseDateFrom);
+  return !!(activeFilter && (activeFilter.purchaseDateFrom || activeFilter.broker));
 }
 
 // Filter indicator for cross-portfolio (Σ SUMMARY) headers: same nabla as the
@@ -8253,12 +8315,21 @@ function openFilterModal() {
   var overlay = document.createElement('div');
   overlay.id = 'filterOverlay';
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:600;display:flex;align-items:flex-start;justify-content:center;padding-top:60px';
-  var cur = (activeFilter && activeFilter.purchaseDateFrom) || '';
+  var curDate = (activeFilter && activeFilter.purchaseDateFrom) || '';
+  var curBroker = (activeFilter && activeFilter.broker) || '';
+  var brokerOpts = '<option value="">&mdash; any &mdash;</option>'
+    + brokerDict.map(function(b) {
+        var sel = b === curBroker ? ' selected' : '';
+        return '<option value="' + b.replace(/"/g, '&quot;') + '"' + sel + '>' + b.replace(/</g, '&lt;') + '</option>';
+      }).join('');
+  var fieldInputStyle = 'width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:13px;padding:7px 8px;outline:none';
   overlay.innerHTML =
     '<div style="background:var(--bg2);border:1px solid var(--border);padding:20px 24px;min-width:260px;max-width:85vw" onclick="event.stopPropagation()">'
     + '<div style="font-size:11px;letter-spacing:2px;color:var(--dim);margin-bottom:16px">FILTER</div>'
     + '<div class="field" style="margin-bottom:18px"><label>PURCHASE DATE FROM</label>'
-    + '<input type="date" id="filterDateFrom" value="' + cur + '" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:13px;padding:7px 8px;outline:none"></div>'
+    + '<input type="date" id="filterDateFrom" value="' + curDate + '" style="' + fieldInputStyle + '"></div>'
+    + '<div class="field" style="margin-bottom:18px"><label>BROKER</label>'
+    + '<select id="filterBroker" style="' + fieldInputStyle + '">' + brokerOpts + '</select></div>'
     + '<div style="display:flex;gap:10px">'
     + '<button class="btn-primary" onclick="applyFilterModal()" style="flex:1">APPLY</button>'
     + '<button class="btn" onclick="clearFilter()" style="flex:1">RESET</button>'
@@ -8270,8 +8341,12 @@ function openFilterModal() {
 
 function applyFilterModal() {
   var v = document.getElementById('filterDateFrom').value;
-  if (v) {
-    activeFilter = { purchaseDateFrom: v };
+  var b = document.getElementById('filterBroker').value;
+  var f = {};
+  if (v) f.purchaseDateFrom = v;
+  if (b) f.broker = b;
+  if (f.purchaseDateFrom || f.broker) {
+    activeFilter = f;
     localStorage.setItem('pt_filter', JSON.stringify(activeFilter));
   } else {
     activeFilter = null;
