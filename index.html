@@ -553,7 +553,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.38';
+var APP_VERSION = 'v1.3.39';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -828,6 +828,7 @@ function initPortfolios() {
   liftAttrsFromPositions();
   migrateSoldPositions();
   migrateMetaToTicker();
+  stripMigratedFieldsFromPositions();
   // Restore last active portfolio
   currentPortfolioId = localStorage.getItem('pt_current');
   if (!currentPortfolioId || !portfolios[currentPortfolioId]) {
@@ -883,6 +884,39 @@ function migrateSoldPositions() {
     });
   });
   if (changed) savePortfolios();
+}
+
+// Stage 5 migration: physically remove migrated fields from position objects.
+// current/currency/metadata now live in tickerData and are read via helpers;
+// the copies left on positions are dead weight. Safe-guard: before deleting a
+// field, ensure its value is preserved in tickerData (self-sufficient — does
+// not rely on migrateMetaToTicker having run first). Sold positions keep their
+// frozen sellPrice/sellCurrency; their dead current/currency are removed too.
+// Idempotent: only touches fields that are physically present.
+var STRIP_POSITION_FIELDS = ['current', 'currency', 'shortName', 'instrumentType', 'exchangeName', 'marketState', 'priceType', 'regularMarketPrice', 'previousClose'];
+function stripMigratedFieldsFromPositions() {
+  var changed = false;
+  Object.keys(portfolios).forEach(function(pid) {
+    (portfolios[pid].positions || []).forEach(function(pos) {
+      // Preserve into tickerData before stripping (active positions only — a
+      // sold position's current/currency are its historical sale values, held
+      // in sellPrice/sellCurrency, and must not seed the live ticker).
+      if (!pos.sold) {
+        STRIP_POSITION_FIELDS.forEach(function(f) {
+          if (pos[f] != null && getTickerMeta(pos.ticker, f) == null) {
+            setTickerMeta(pos.ticker, f, pos[f]);
+          }
+        });
+      }
+      STRIP_POSITION_FIELDS.forEach(function(f) {
+        if (f in pos) { delete pos[f]; changed = true; }
+      });
+    });
+  });
+  if (changed) {
+    saveTickerDataLS();
+    savePortfolios();
+  }
 }
 
 // Stage 2 migration: copy ticker-level market metadata from positions into
@@ -2196,19 +2230,10 @@ function moveToPortfolio(targetPid) {
       ticker: pos.ticker,
       qty: pos.qty,
       entry: pos.entry,
-      current: pos.current,
       sold: pos.sold || undefined,
       sellPrice: pos.sold ? pos.sellPrice : undefined,
       sellCurrency: pos.sold ? pos.sellCurrency : undefined,
-      currency: pos.currency,
-      shortName: pos.shortName,
-      previousClose: pos.previousClose,
-      regularMarketPrice: pos.regularMarketPrice,
-      marketState: pos.marketState,
-      priceType: pos.priceType,
       purchaseDate: pos.purchaseDate || undefined,
-      instrumentType: pos.instrumentType || undefined,
-      exchangeName: pos.exchangeName || undefined,
       broker: pos.broker || undefined
     });
   });
@@ -2285,15 +2310,10 @@ function moveToArchive(archivePid) {
       ticker: pos.ticker,
       qty: pos.qty,
       entry: pos.entry,
-      current: pos.current,
       sold: true,
-      sellPrice: pos.sellPrice != null ? pos.sellPrice : pos.current,
-      sellCurrency: pos.sellCurrency || pos.currency,
-      currency: pos.currency,
-      shortName: pos.shortName,
+      sellPrice: pos.sellPrice,
+      sellCurrency: pos.sellCurrency,
       purchaseDate: pos.purchaseDate || undefined,
-      instrumentType: pos.instrumentType || undefined,
-      exchangeName: pos.exchangeName || undefined,
       broker: pos.broker || undefined
     });
   });
@@ -3529,6 +3549,7 @@ function restoreData(event) {
       liftAttrsFromPositions();
       migrateSoldPositions();
       migrateMetaToTicker();
+      stripMigratedFieldsFromPositions();
       saveTickerDataLS();
       saveDicts();
       currentPortfolioId = Object.keys(portfolios)[0];
@@ -3769,6 +3790,7 @@ function cloudLoadKV(callback) {
           liftAttrsFromPositions();
           migrateSoldPositions();
           migrateMetaToTicker();
+          stripMigratedFieldsFromPositions();
           saveTickerDataLS();
           saveDicts();
           savePortfolios();
@@ -3994,6 +4016,7 @@ function cloudLoad(callback) {
         liftAttrsFromPositions();
         migrateSoldPositions();
         migrateMetaToTicker();
+        stripMigratedFieldsFromPositions();
         saveTickerDataLS();
         saveDicts();
         savePortfolios();
@@ -4494,11 +4517,11 @@ function confirmSell(id) {
   if (Math.abs(qtyInput - pos.qty) < 0.0001) {
     // Sell entire position
     positions = positions.map(function(p) {
-      return p.id === id ? Object.assign({}, p, { sold: true, current: priceInput, sellPrice: priceInput, sellCurrency: getPositionCurrencyCode(p) }) : p;
+      return p.id === id ? Object.assign({}, p, { sold: true, sellPrice: priceInput, sellCurrency: getPositionCurrencyCode(p) }) : p;
     });
   } else {
     // Partial sell: replace original with two records
-    var soldPart = Object.assign({}, pos, { id: Date.now(), qty: qtyInput, sold: true, current: priceInput, sellPrice: priceInput, sellCurrency: getPositionCurrencyCode(pos) });
+    var soldPart = Object.assign({}, pos, { id: Date.now(), qty: qtyInput, sold: true, sellPrice: priceInput, sellCurrency: getPositionCurrencyCode(pos) });
     var remaining = Object.assign({}, pos, { id: Date.now() + 1, qty: Math.round((pos.qty - qtyInput) * 1e10) / 1e10 });
     positions = positions.reduce(function(acc, p) {
       if (p.id === id) { acc.push(soldPart); acc.push(remaining); }
@@ -4518,7 +4541,7 @@ function removePosition(id) {
   var pos = positions.find(function(p) { return p.id === id; });
   if (!confirm('Delete "' + (pos ? pos.ticker : 'this position') + '"?')) return;
   if (pos) {
-    positionClipboard = { ticker: pos.ticker, qty: pos.qty, entry: pos.entry, current: pos.current };
+    positionClipboard = { ticker: pos.ticker, qty: pos.qty, entry: pos.entry, current: getPositionCurrent(pos) };
   }
   positions = positions.filter(function(p) { return p.id !== id; });
   portfolios[currentPortfolioId].positions = positions;
@@ -6138,14 +6161,13 @@ function confirmAggSell() {
     if (!(p.id in actions)) { acc.push(p); return acc; }
     var action = actions[p.id];
     if (action.type === 'sell') {
-      acc.push(Object.assign({}, p, { sold: true, current: priceInput, sellPrice: priceInput, sellCurrency: getPositionCurrencyCode(p) }));
+      acc.push(Object.assign({}, p, { sold: true, sellPrice: priceInput, sellCurrency: getPositionCurrencyCode(p) }));
     } else {
       idOffset++;
       acc.push(Object.assign({}, p, {
         id: baseId + idOffset,
         qty: action.soldQty,
         sold: true,
-        current: priceInput,
         sellPrice: priceInput,
         sellCurrency: getPositionCurrencyCode(p)
       }));
