@@ -15,6 +15,30 @@ Decisions, invariants, and non-obvious behaviour. Reading the code answers every
 
 ---
 
+## Data Model — Position vs Ticker (the central invariant)
+
+A position carries ONLY what is unique to that lot:
+`id, ticker, qty, entry, note, purchaseDate, broker` — and for sold lots, `sold, sellPrice, sellCurrency` (the sale is frozen at those values).
+
+Everything shared by all holders of a ticker lives in `tickerData[ticker]`:
+`current, currency, shortName, instrumentType, exchangeName, marketState, priceType, regularMarketPrice, previousClose, category, region, sector, isin, alerts`.
+
+**Reads go through the `getPositionX(pos)` helper layer** (see "Things Not to Break" #14). Helpers resolve sold vs active: a sold position reports `sellPrice`/`sellCurrency`; an active one reads `tickerData`. Never read a migrated field off the position object — after Stage 5 it isn't there.
+
+**`refreshTicker` writes ONLY `tickerData`** — it never touches position objects. Price/metadata are ticker-level, so one write updates every holder.
+
+### Migration chain (idempotent, runs at startup + after every cloud load)
+
+Order is load-bearing:
+1. `liftAttrsFromPositions` — category/region/sector → tickerData, delete from position
+2. `migrateSoldPositions` — old sold lots: `current → sellPrice`, `currency → sellCurrency`
+3. `migrateMetaToTicker` — metadata + current + currency → tickerData (current/currency ACTIVE positions only — a sold lot's values are historical and must not seed the live ticker)
+4. `stripMigratedFieldsFromPositions` — physically delete the now-dead fields from positions (self-sufficient: re-copies to tickerData before deleting)
+
+**Why the order matters:** step 2 must convert a sold lot's `current` into `sellPrice` BEFORE step 4 deletes `current`. Reordering silently loses historical sale prices. Each step only fills what's absent / deletes what's present, so re-running on every load is safe and self-healing. This makes old exports (pre-split, e.g. v1.3.12) upgrade cleanly.
+
+---
+
 ## Service Worker
 
 Stale-while-revalidate strategy. Both fetch paths must bypass the browser HTTP cache, otherwise GitHub Pages' default `Cache-Control: max-age=600` causes the SW to recache stale content:
@@ -38,7 +62,6 @@ isAllPositions()              // viewMode is in the second
 isRealizedAllPositions()      // viewMode is in the third
 isCrossPortfolioContext()     // any of the above
 isWatchlist()                 // currentPortfolio is watchlist
-isArchiveContext()            // currentPortfolio is archive
 ```
 
 **Rule:** any check that asks "are we in one of these cross-portfolio modes" goes through a helper, not through inline `indexOf(viewMode) !== -1` lists. New viewModes added to the lists are automatically respected everywhere.
@@ -83,7 +106,7 @@ Alerts are keyed by ticker (`tickerAlerts = { 'AAPL': [...] }`), not by position
 
 **Cleanup:** after any operation that could orphan a ticker (full sell, delete position, delete agg, rename ticker via edit, delete portfolio), call `cleanupAlertsForTickerIfUnused(ticker)`. It drops the registry entry if no live (non-sold, non-archive) or watchlist positions of that ticker remain. `moveToArchive` does NOT need cleanup — positions are already sold before they move.
 
-**Archive context hides the alerts UI** (expanded row + edit form). Without this, editing a ticker's alert from a closed archive row would silently affect active siblings of the same ticker.
+**Sold positions hide the alerts UI** (expanded row + edit form + dots), gated by `p.sold` alone. A sold position's price is frozen (`sellPrice`); its alerts would test against a live ticker price that no longer applies to it. Archive positions are always sold, so this covers them too — there is no separate archive-context check.
 
 **Dots on sold positions:** all dot render sites use `getAlertDotsHtmlForPosition(p)`, which returns empty string when `p.sold`. The base `getAlertDotsHtml(alerts)` knows nothing about positions.
 
@@ -156,7 +179,7 @@ Bond selling is not implemented — bonds are held to maturity only.
 
 ## Position Classification
 
-`category`, `region`, `sector`, `broker` come from dictionaries — free text not allowed. Adding a position searches all portfolios (incl. archive/watchlist) for the same ticker and inherits classification if found.
+`category`, `region`, `sector` come from dictionaries (free text not allowed) and are **ticker-level** (`tickerData[ticker]`, read via `getTickerAttr`) — set once, shared by every holder. `broker` is genuinely per-lot and stays on the position. Adding a position inherits classification automatically from `tickerData` if the ticker is already known anywhere.
 
 Broker fallback in display is `'default'` (positions with no broker semantically use the configured default broker), distinct from `'Other'` (missing attribute). Analytics view dims `'Other'` but NOT `'default'`.
 
@@ -174,19 +197,23 @@ Mutation pattern: update `positions` → write back to `portfolios[currentPortfo
 
 ## Move / Archive
 
-Position copy must include all fields explicitly: `ticker, qty, entry, current, sold, currency, shortName, category, region, sector, purchaseDate, instrumentType, broker`. Missing any → silent data loss.
+A moved/archived position copies ONLY its own fields: `id, ticker, qty, entry, note, purchaseDate, broker` (+ for sold: `sold, sellPrice, sellCurrency`). Everything ticker-level (current, currency, metadata, category/region/sector) is NOT copied — the new position inherits it from `tickerData` by ticker automatically. Copying those fields would resurrect the dead per-position duplication the position/ticker split removed.
 
-`alerts` is NOT copied — it lives in `tickerAlerts` and follows the ticker automatically.
+`alerts` is also not copied — it lives in `tickerAlerts` and follows the ticker.
+
+`moveToArchive` sets `sold: true` and relies on `sellPrice`/`sellCurrency` already being present (only sold positions can reach it). It does NOT fall back to any live price — a frozen sale must never be backfilled with arbitrary current data.
 
 ---
 
 ## Gotchas
 
+**`fundamentals.js` is a SEPARATE file sharing the same globals** (positions, tickerData, helpers, currentMode). After any field migration, grep BOTH `index.html` AND `fundamentals.js` for direct `pos.field` reads. A stale `pos.current` / `pos.regularMarketPrice` in the fundamentals targets table (read directly instead of via helpers) silently showed frozen prices, upside %, and P/E — invisible in index.html-only greps.
+
 **Global `table { min-width: 400px }`** causes mysterious layout bugs in narrow containers or few-column tables (overflow, clipped content). Check this first. Fix: inline `min-width: 0` on the specific table.
 
-**Bulk sed `s|pattern|replacement|g`** can match both call sites AND a wrapper function's body, creating infinite recursion. Use line-range sed, targeted `str_replace` calls, or apply call-site replacements before adding the wrapper.
-
 **Modal z-index:** `archivePosMenu` z-index 500, agg detail modal z-index 400. Order matters when both are open.
+
+**Bulk identifier replacement (sed/python) is dangerous — prefer targeted `str_replace`.** It matches substrings, not tokens (`a.field →` also hits `dat‹a.field›`), and corrupts writer left-sides (`p.field = x` → `getPositionField(p) = x`, invalid). Both bit us twice during the split, both in the refresh path. **`new Function(code)` does NOT catch invalid-LHS** (V8 lazy-parses) — verify with **`node --check`** on extracted `<script>` blocks. After any bulk replace, grep for corruption: `[a-zA-Z0-9_]getPosition` (left-glue) and `getPosition[A-Za-z]+\([^)]*\) =[^=]` (assignment to a call).
 
 ---
 
@@ -199,9 +226,14 @@ Position copy must include all fields explicitly: `ticker, qty, entry, current, 
 5. Multi-line chart values arrays must be equal-length (nulls for missing dates)
 6. `addTodayPoint` uses `getChartCurrentPrice(p)`, not `p.current`
 7. Bond switcher count: filter `qty > 0`
-8. Move/Archive: copy ALL position fields explicitly (alerts excluded — ticker-level)
+8. Move/Archive: copy ONLY position-owned fields (id, ticker, qty, entry, note, purchaseDate, broker, +sold/sellPrice/sellCurrency). Never copy ticker-level fields — they're inherited from `tickerData`. Alerts excluded (ticker-level).
 9. Worker CORS: PUT in Allow-Methods; `X-KV-Key, Content-Type` in Allow-Headers
 10. Cross-portfolio checks: use the helpers, never `indexOf(viewMode) !== -1`
 11. New mutation paths that could orphan a ticker: call `cleanupAlertsForTickerIfUnused`
 12. Title bar: through `setTitleForCurrentView()`, never direct `textContent`
 13. External fetches: AbortController timeout, no exceptions
+14. Position field reads go through the `getPositionX(pos)` helper layer (`getPositionCurrent`, `getPositionCurrencyCode`/`Symbol`, `getPositionRegularMarketPrice`, `getPositionPreviousClose`, `getPositionMarketState`, `getPositionPriceType`, `getPositionShortName`, `getPositionInstrumentType`, `getPositionExchange`). Never read the raw field for display/calc — the helpers are the single migration point for the position/ticker data split.
+15. `getPositionCurrent(pos)` has an explicit sold/active branch (sold → sale price, active → market price). Do not collapse it.
+16. `getPositionCurrencyCode(pos, fallbackCode)` / `getPositionCurrencySymbol(pos, fallbackCode)`: cross-portfolio callers MUST pass the OWNER portfolio's currency as `fallbackCode`, never the current portfolio's. Single-portfolio callers omit it.
+17. Verify syntax with `node --check`, not `new Function` (the latter misses invalid-LHS). After bulk replacements, grep for `[a-zA-Z0-9_]getPosition` and `getPosition[A-Za-z]+\([^)]*\) =[^=]`.
+18. Summary-market per-portfolio totals live in ONE shared function `computeSummaryMarketRows(smPids, fxRates)` (returns `{rows, totCloseUSD, totCurrentUSD, hasAny}`), called from both `refreshAll`'s and `render`'s `buildSummaryMarketStats`. Do not re-inline or re-duplicate.
