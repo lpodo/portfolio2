@@ -553,7 +553,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.42';
+var APP_VERSION = 'v1.3.43';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -5114,7 +5114,7 @@ function refreshAll() {
       var tClass = totDelta >= 0 ? 'pos' : 'neg';
       area.innerHTML = '<div class="table-wrap"><table>'
         + '<thead><tr>'
-        + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO</th>'
+        + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO' + summaryFilterIconHtml() + '</th>'
         + '<th style="width:0;padding:0;border-bottom:1px solid var(--border)"></th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
@@ -6581,7 +6581,10 @@ function buildMoversView(area, opts) {
   Object.keys(portfolios).forEach(function(pid) {
     var p = portfolios[pid];
     if (p.archive) return;
-    var bmvPosns = (bmvDoFilter && !p.watchlist) ? filterPositions(p.positions || []) : (p.positions || []);
+    // With an active filter the set is regular portfolios only — skip watchlist
+    // entirely. Without a filter, watchlist is included as before.
+    if (bmvDoFilter && p.watchlist) return;
+    var bmvPosns = bmvDoFilter ? filterPositions(p.positions || []) : (p.positions || []);
     bmvPosns.forEach(function(pos) {
       if (pos.sold) return;
       if (bmvAlertsOnly && !getTickerAlerts(pos.ticker).length) return;
@@ -8204,16 +8207,21 @@ function filterActiveForSummary(isRealized) {
   return !!activeFilter && !isRealized;
 }
 
-// Pure filter: reduce a position array by the active conditions, with NO
-// context gate. Used directly by cross-portfolio collectors (which do their
-// own gating) and by applyFilter (individual views). Extensible: each
-// condition is an independent early-out; new keys slot in without touching
-// callers.
+// Pure filter: reduce a position array to the filter's SET, with NO context
+// gate. When a filter is active the set is { entry != 0 AND purchaseDate
+// present AND purchaseDate >= threshold }. This DEFINES the working set; each
+// view then applies its own logic (active/sold/qty) on top — identical for
+// individual portfolios and cross-portfolio views. Used directly by
+// cross-portfolio collectors (which gate themselves) and by applyFilter.
+// Extensible: additional conditions slot in as further early-outs.
 function filterPositions(posns) {
   if (!activeFilter) return posns;
   return posns.filter(function(p) {
-    // purchaseDate >= threshold. A missing purchaseDate is treated as -infinity
-    // (as elsewhere), so it never passes a ">= date" bound.
+    // Only genuinely purchased lots participate — entry 0/null means there's
+    // no purchase to date-filter on.
+    if (!p.entry) return false;
+    // purchaseDate must be present and >= threshold. A missing date is -infinity
+    // and never passes.
     if (activeFilter.purchaseDateFrom) {
       if (!p.purchaseDate) return false;
       if (p.purchaseDate < activeFilter.purchaseDateFrom) return false;
@@ -8231,6 +8239,14 @@ function applyFilter(posns) {
 // True if any condition is actually set (drives the lit icon).
 function hasActiveFilter() {
   return !!(activeFilter && activeFilter.purchaseDateFrom);
+}
+
+// Filter indicator for cross-portfolio (Σ SUMMARY) headers: same nabla as the
+// P&L icon, opens the same modal. Lit when a filter is active. Rendered inline
+// in the PORTFOLIO header cell so the user sees a filter is in effect in views
+// where there's no per-row filter control.
+function summaryFilterIconHtml() {
+  return ' <span onclick="openFilterModal()" title="Filter" style="cursor:pointer;color:' + (hasActiveFilter() ? 'var(--green)' : 'var(--dim)') + '">&#8711;</span>';
 }
 
 function openFilterModal() {
@@ -9772,7 +9788,7 @@ function render() {
       var tClass = totDelta >= 0 ? 'pos' : 'neg';
       area.innerHTML = '<div class="table-wrap"><table>'
         + '<thead><tr>'
-        + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO</th>'
+        + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO' + summaryFilterIconHtml() + '</th>'
         + '<th style="width:0;padding:0;border-bottom:1px solid var(--border)"></th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
@@ -9889,7 +9905,7 @@ function render() {
     area.innerHTML = '<div class="table-wrap">'
       + '<table>'
       + '<thead><tr>'
-      + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO</th>'
+      + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO' + summaryFilterIconHtml() + '</th>'
         + '<th style="width:0;padding:0;border-bottom:1px solid var(--border)"></th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">VALUE</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">P&amp;L</th>'
