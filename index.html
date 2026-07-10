@@ -553,7 +553,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.40';
+var APP_VERSION = 'v1.3.41';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -8212,16 +8212,16 @@ function hasActiveFilter() {
 function openFilterModal() {
   var overlay = document.createElement('div');
   overlay.id = 'filterOverlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:600;display:flex;align-items:center;justify-content:center';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:600;display:flex;align-items:flex-start;justify-content:center;padding-top:60px';
   var cur = (activeFilter && activeFilter.purchaseDateFrom) || '';
   overlay.innerHTML =
-    '<div style="background:var(--bg);border:1px solid var(--border);padding:20px;min-width:260px;max-width:90vw" onclick="event.stopPropagation()">'
-    + '<div style="font-size:11px;letter-spacing:2px;color:var(--dim);margin-bottom:14px">FILTER</div>'
-    + '<label style="font-size:11px;color:var(--bright);display:block;margin-bottom:6px">Purchase date from</label>'
-    + '<input type="date" id="filterDateFrom" value="' + cur + '" style="width:100%;box-sizing:border-box;margin-bottom:16px">'
-    + '<div style="display:flex;gap:8px;justify-content:space-between">'
-    + '<button class="btn" onclick="clearFilter()" style="color:var(--red)">Reset filter</button>'
-    + '<button class="btn btn-green" onclick="applyFilterModal()">Apply</button>'
+    '<div style="background:var(--bg2);border:1px solid var(--border);padding:20px 24px;min-width:260px;max-width:85vw" onclick="event.stopPropagation()">'
+    + '<div style="font-size:11px;letter-spacing:2px;color:var(--dim);margin-bottom:16px">FILTER</div>'
+    + '<div class="field" style="margin-bottom:18px"><label>PURCHASE DATE FROM</label>'
+    + '<input type="date" id="filterDateFrom" value="' + cur + '" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:13px;padding:7px 8px;outline:none"></div>'
+    + '<div style="display:flex;gap:10px">'
+    + '<button class="btn-primary" onclick="applyFilterModal()" style="flex:1">APPLY</button>'
+    + '<button class="btn" onclick="clearFilter()" style="flex:1">RESET</button>'
     + '</div>'
     + '</div>';
   overlay.onclick = function() { document.body.removeChild(overlay); };
