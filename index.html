@@ -216,8 +216,8 @@
     50%      { opacity: 0.25; }
   }
   .alert-blink-slow { animation: alertBlink 1.8s ease-in-out infinite; }
-  .alert-blink-med  { animation: alertBlink 1.2s ease-in-out infinite; }
-  .alert-blink-fast { animation: alertBlink 0.7s ease-in-out infinite; }
+  .alert-blink-med  { animation: alertBlink 1.1s ease-in-out infinite; }
+  .alert-blink-fast { animation: alertBlink 0.5s ease-in-out infinite; }
 
   @media (max-width: 480px) {
     .header { padding: 11px 14px; }
@@ -553,7 +553,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.45';
+var APP_VERSION = 'v1.3.47';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4184,7 +4184,6 @@ function updateSettingsUI() {
   if (document.getElementById('jbBinInput')) document.getElementById('jbBinInput').value = jbBin;
   updateCloudBackendUI();
   updateProviderLabel();
-  document.getElementById('mainNote').textContent = '* Prices via Yahoo Finance — all exchanges, extended hours.';
 }
 function showKeyStatus() { updateSettingsUI(); }
 
@@ -5433,7 +5432,7 @@ document.addEventListener('click', function(e) {
   }
 });
 // --- Market state icons (user-customizable) ---
-var MARKET_ICONS_DEFAULTS = { regular: '', pre: '🌙', post: '🌙', closed: '✦' };
+var MARKET_ICONS_DEFAULTS = { regular: '', pre: '🌤️', post: '🌙', closed: '✦' };
 var MARKET_ICONS_STORAGE_KEY = 'pt_market_icons';
 
 function getMarketIcons() {

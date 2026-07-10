@@ -908,6 +908,17 @@ function fundFmtChartXLabel(ts, range) {
   return (dd < 10 ? '0' + dd : dd) + '/' + (mm < 10 ? '0' + mm : mm);
 }
 
+// Full-precision timestamp for the chart readout: hh:mm dd/mm/yyyy in the
+// browser-local timezone (matches the 1d axis convention). Unlike the X-axis
+// labels above, the readout always shows full date+time regardless of range —
+// there's room for it, and 2026 alone (5y axis) isn't a useful point label.
+function fundFmtPointDateTime(ts) {
+  var d = new Date(ts * 1000);
+  function p2(x) { return x < 10 ? '0' + x : '' + x; }
+  return p2(d.getHours()) + ':' + p2(d.getMinutes()) + ' '
+    + p2(d.getDate()) + '/' + p2(d.getMonth() + 1) + '/' + d.getFullYear();
+}
+
 // Append today's live point to the series (using position.current). Only used
 // for non-1d ranges where API data may end at previous trading day's close.
 function fundAppendChartTodayPoint(points, livePrice) {
@@ -1083,6 +1094,7 @@ function fundRenderChart(_, container) {
     var summary = '<div style="font-size:11px;margin-bottom:4px;font-family:var(--font);display:flex;flex-wrap:wrap;gap:10px;align-items:baseline">'
       + '<span style="color:var(--bright)">' + fundFmtChartPrice(first) + ' &#8594; ' + fundFmtChartPrice(last) + '</span>'
       + '<span style="color:' + dColor + '">&Delta; ' + sgn + fundFmtChartPrice(abs) + '  (' + sgn + pct.toFixed(2) + '%)</span>'
+      + '<span style="color:var(--dim)">' + fundFmtPointDateTime(allPts[allPts.length - 1].t) + '</span>'
       + '</div>';
 
     var chartW = Math.max(280, container.clientWidth || 340);
@@ -1111,17 +1123,21 @@ function fundAttachChartTap(area, points, chartW, first) {
   if (n < 2) return;
   var lastIdx = n - 1;
 
-  function buildSummaryInnerHtml(val) {
+  function buildSummaryInnerHtml(val, ts) {
     var dabs = val - first;
     var dpct = first !== 0 ? (val / first - 1) * 100 : 0;
     var dsgn = dabs >= 0 ? '+' : '';
     var dcol = dabs >= 0 ? 'var(--green)' : 'var(--red)';
+    var timeHtml = (ts != null)
+      ? '<span style="color:var(--dim)">' + fundFmtPointDateTime(ts) + '</span>'
+      : '';
     return '<span style="color:var(--bright)">' + fundFmtChartPrice(first) + ' &#8594; ' + fundFmtChartPrice(val) + '</span>'
-      + '<span style="color:' + dcol + '">&Delta; ' + dsgn + fundFmtChartPrice(dabs) + '  (' + dsgn + dpct.toFixed(2) + '%)</span>';
+      + '<span style="color:' + dcol + '">&Delta; ' + dsgn + fundFmtChartPrice(dabs) + '  (' + dsgn + dpct.toFixed(2) + '%)</span>'
+      + timeHtml;
   }
 
   function clearTap() {
-    summaryEl.innerHTML = buildSummaryInnerHtml(points[lastIdx].c);
+    summaryEl.innerHTML = buildSummaryInnerHtml(points[lastIdx].c, points[lastIdx].t);
     var line = svg.querySelector('.tap-line');
     if (line && line.parentNode) line.parentNode.removeChild(line);
     document.removeEventListener('click', outsideHandler, true);
@@ -1143,7 +1159,7 @@ function fundAttachChartTap(area, points, chartW, first) {
     var i = Math.round(((svgX - padL) / innerW) * (n - 1));
     i = Math.max(0, Math.min(n - 1, i));
 
-    summaryEl.innerHTML = buildSummaryInnerHtml(points[i].c);
+    summaryEl.innerHTML = buildSummaryInnerHtml(points[i].c, points[i].t);
 
     var x = padL + (i / (n - 1)) * innerW;
     var line = svg.querySelector('.tap-line');
