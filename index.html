@@ -553,7 +553,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.39';
+var APP_VERSION = 'v1.3.40';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -1228,6 +1228,15 @@ var weightSort = { key: 'weight', dir: -1 };
 var switcherTab = 'active'; // 'active' (stocks), 'bonds', or 'archive'
 var positionClipboard = null;
 var aggregatedModeActive = localStorage.getItem('pt_agg_active') === '1';
+// Position filter (regular active portfolios only). null = off. An object of
+// conditions when on — extensible: today { purchaseDateFrom }, later more keys.
+// Global like aggregation (one filter for all regular active portfolios),
+// persisted across sessions. Applied to display AND to aggregate operations
+// (move/delete/archive) so "what you see is what you act on".
+var activeFilter = (function() {
+  try { return JSON.parse(localStorage.getItem('pt_filter') || 'null'); }
+  catch (e) { return null; }
+})();
 var closeMode = localStorage.getItem('pt_close_mode') || 'prev';
 var currentMode = localStorage.getItem('pt_current_mode') || 'cur';
 var aggregatedModeArchive = localStorage.getItem('pt_agg_archive') === '1';
@@ -2173,7 +2182,7 @@ function showMoveMenu(posId, btn) {
 // own ⇨ button) — matches the same boundary as ×n shows.
 function showMoveMenuAgg(ticker, soldFlag, btn) {
   var isSold = soldFlag === 1 || soldFlag === '1' || soldFlag === true;
-  var ids = positions.filter(function(p) {
+  var ids = applyFilter(positions).filter(function(p) {
     return p.ticker === ticker && (isSold ? !!p.sold : (!p.sold && p.qty > 0));
   }).map(function(p) { return p.id; });
   if (!ids.length) return;
@@ -2253,7 +2262,7 @@ function showArchiveMenu(posId, btn) {
 // portfolio matching the ticker. Same pattern as showMoveMenuAgg —
 // active and sold aggregations are independent; this is for the sold one.
 function showArchiveMenuAgg(ticker, btn) {
-  var ids = positions.filter(function(p) {
+  var ids = applyFilter(positions).filter(function(p) {
     return p.ticker === ticker && !!p.sold;
   }).map(function(p) { return p.id; });
   if (!ids.length) return;
@@ -4553,7 +4562,7 @@ function removePosition(id) {
 // in the current portfolio. Used by ✕ button on aggregation rows.
 function removeAggPositions(ticker, soldFlag) {
   var isSold = soldFlag === 1 || soldFlag === '1' || soldFlag === true;
-  var group = positions.filter(function(p) {
+  var group = applyFilter(positions).filter(function(p) {
     return p.ticker === ticker && (isSold ? !!p.sold : (!p.sold && p.qty > 0));
   });
   if (!group.length) return;
@@ -5195,8 +5204,9 @@ function sortBy(key) {
 
 function getSorted() {
   var sortKey = getSortKey(), sortDir = getSortDir();
-  if (!sortKey) return positions.slice();
-  return positions.slice().sort(function(a, b) {
+  var base = applyFilter(positions);
+  if (!sortKey) return base.slice();
+  return base.slice().sort(function(a, b) {
     var va, vb;
     if (sortKey === 'ticker') { var cmp = sortDir * a.ticker.localeCompare(b.ticker); if (cmp !== 0) return cmp; return (a.sold ? 0 : 1) - (b.sold ? 0 : 1); }
     if (sortKey === 'qty')    { va = a.qty; vb = b.qty; }
@@ -5211,8 +5221,9 @@ function getSorted() {
 function getSortedForRender() {
   var sortKey = getSortKey(), sortDir = getSortDir();
   if (!isAggregated()) return getSorted().map(function(p) { return { agg: false, pos: p }; });
-  // Aggregate first on unsorted positions, then sort aggregated entries
-  var entries = aggregatePositions(positions.slice());
+  // Aggregate first on unsorted positions, then sort aggregated entries.
+  // Filter applies BEFORE aggregation, so ×N counts only visible lots.
+  var entries = aggregatePositions(applyFilter(positions));
   if (!sortKey) return entries;
   return entries.slice().sort(function(a, b) {
     var pa = a.pos, pb = b.pos;
@@ -5864,8 +5875,9 @@ var _aggOverlayState = null;
 
 function showAggDetail(ticker, soldFlag) {
   var isSold = soldFlag === 1 || soldFlag === '1' || soldFlag === true;
-  // Collect all positions in the current portfolio matching this aggregation
-  var allPositions = positions.filter(function(p) {
+  // Collect the visible (filtered) positions matching this aggregation, so the
+  // detail list matches the ×N count and what move/delete act on.
+  var allPositions = applyFilter(positions).filter(function(p) {
     return p.ticker === ticker && (isSold ? !!p.sold : (!p.sold && p.qty > 0));
   });
   if (!allPositions.length) return;
@@ -8160,6 +8172,86 @@ function toggleAggregated() {
   render();
 }
 
+// ── Position filter ─────────────────────────────────────────────────────────
+// A global, persisted filter for REGULAR ACTIVE portfolios. When active it
+// restricts which positions are shown AND which an aggregate operation acts on.
+// applyFilter is the single choke point — every display/operation path routes
+// its position list through it, so adding a view or a condition needs no new
+// wiring here.
+
+// True when the filter should apply in the current portfolio context: an
+// object filter is set AND the current portfolio is a regular active one
+// (not watchlist, not archive). Cross-portfolio views pass their own context.
+function filterActive() {
+  if (!activeFilter) return false;
+  var pf = currentPortfolio();
+  return !!pf && !pf.archive && !pf.watchlist;
+}
+
+// Filter a position array by the active conditions. No-op when the filter is
+// off or the context doesn't qualify. Extensible: each condition is an
+// independent early-out; new keys slot in without touching callers.
+function applyFilter(posns) {
+  if (!filterActive()) return posns;
+  return posns.filter(function(p) {
+    // purchaseDate >= threshold. A missing purchaseDate is treated as -infinity
+    // (as elsewhere), so it never passes a ">= date" bound.
+    if (activeFilter.purchaseDateFrom) {
+      if (!p.purchaseDate) return false;
+      if (p.purchaseDate < activeFilter.purchaseDateFrom) return false;
+    }
+    return true;
+  });
+}
+
+// True if any condition is actually set (drives the lit icon).
+function hasActiveFilter() {
+  return !!(activeFilter && activeFilter.purchaseDateFrom);
+}
+
+function openFilterModal() {
+  var overlay = document.createElement('div');
+  overlay.id = 'filterOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:600;display:flex;align-items:center;justify-content:center';
+  var cur = (activeFilter && activeFilter.purchaseDateFrom) || '';
+  overlay.innerHTML =
+    '<div style="background:var(--bg);border:1px solid var(--border);padding:20px;min-width:260px;max-width:90vw" onclick="event.stopPropagation()">'
+    + '<div style="font-size:11px;letter-spacing:2px;color:var(--dim);margin-bottom:14px">FILTER</div>'
+    + '<label style="font-size:11px;color:var(--bright);display:block;margin-bottom:6px">Purchase date from</label>'
+    + '<input type="date" id="filterDateFrom" value="' + cur + '" style="width:100%;box-sizing:border-box;margin-bottom:16px">'
+    + '<div style="display:flex;gap:8px;justify-content:space-between">'
+    + '<button class="btn" onclick="clearFilter()" style="color:var(--red)">Reset filter</button>'
+    + '<button class="btn btn-green" onclick="applyFilterModal()">Apply</button>'
+    + '</div>'
+    + '</div>';
+  overlay.onclick = function() { document.body.removeChild(overlay); };
+  document.body.appendChild(overlay);
+}
+
+function applyFilterModal() {
+  var v = document.getElementById('filterDateFrom').value;
+  if (v) {
+    activeFilter = { purchaseDateFrom: v };
+    localStorage.setItem('pt_filter', JSON.stringify(activeFilter));
+  } else {
+    activeFilter = null;
+    localStorage.removeItem('pt_filter');
+  }
+  var ov = document.getElementById('filterOverlay');
+  if (ov) document.body.removeChild(ov);
+  expandedId = null;
+  render();
+}
+
+function clearFilter() {
+  activeFilter = null;
+  localStorage.removeItem('pt_filter');
+  var ov = document.getElementById('filterOverlay');
+  if (ov) document.body.removeChild(ov);
+  expandedId = null;
+  render();
+}
+
 function aggregatePositions(posns) {
   // Build maps: active by ticker, sold by ticker; qty=0 kept as-is
   var activeMap = {}, soldMap = {};
@@ -8285,16 +8377,17 @@ function render() {
 
   // Analytics view (single portfolio)
   if (viewMode === 'analytics') {
+    var aPosns = applyFilter(positions);
     var aBase = (currentPortfolio().currencyCode || 'USD').toUpperCase();
     var aBaseSym = CURRENCY_SYMBOLS[aBase] || aBase;
     var aNonUSD = [];
-    positions.forEach(function(p) {
+    aPosns.forEach(function(p) {
       var pc = getPositionCurrencyCode(p);
       if (pc !== aBase && aNonUSD.indexOf(pc) === -1) aNonUSD.push(pc);
     });
     var aFxMap = {};
     function renderAnalytics(fxMap) {
-      area.innerHTML = buildAnalyticsView(positions, aBaseSym, aBase, fxMap, false);
+      area.innerHTML = buildAnalyticsView(aPosns, aBaseSym, aBase, fxMap, false);
     }
     if (aNonUSD.length === 0) {
       renderAnalytics({});
@@ -8552,16 +8645,18 @@ function render() {
   var totCost = 0, totVal = 0, hasAny = false;
   var baseCode = (currentPortfolio().currencyCode || 'USD').toUpperCase();
   var baseSym = getCurrency();
+  // Totals reflect the filter (a filtered view shows the totals of that slice).
+  var tPosns = applyFilter(positions);
   // Get unique non-base currencies in this portfolio
   var posFxNeeded = [];
-  positions.forEach(function(p) {
+  tPosns.forEach(function(p) {
     var pc = getPositionCurrencyCode(p);
     if (getPositionCurrent(p) != null && pc !== baseCode && posFxNeeded.indexOf(pc) === -1) posFxNeeded.push(pc);
   });
 
   function buildTotals(fxMap) {
     var tCost = 0, tVal = 0, tHas = false;
-    positions.forEach(function(p) {
+    tPosns.forEach(function(p) {
       var pcur = getPositionCurrent(p);
       if (pcur !== null && pcur !== undefined) {
         var rate = 1;
@@ -10137,7 +10232,7 @@ function render() {
   // Weight view
   if (viewMode === 'weight') {
     function buildWeightRows(wFxMap) {
-      var weightSource = isAggregated() ? aggregatePositions(positions.slice()) : getSorted().map(function(p) { return { agg: false, pos: p }; });
+      var weightSource = isAggregated() ? aggregatePositions(applyFilter(positions)) : getSorted().map(function(p) { return { agg: false, pos: p }; });
       var weightRows = '';
       var wTotVal = 0;
       weightSource.forEach(function(wEntry) {
@@ -10304,7 +10399,7 @@ function render() {
     + thBtn('pnlpct', 'P&amp;L %')
     + '<th style="width:16px;padding:0"></th>' + '<th style="width:0;padding:0"></th>'
     + '<th style="text-align:left;padding:5px 4px;border-bottom:1px solid var(--border)"><span onclick="toggleAggregated()" title="Toggle aggregation" style="cursor:pointer;font-size:14px;color:' + (isAggregated() ? 'var(--green)' : 'var(--dim)') + '">&#8801;</span></th>'
-    + '<th style="border-bottom:1px solid var(--border)"></th>'
+    + '<th style="text-align:center;padding:5px 4px;border-bottom:1px solid var(--border)">' + ((!currentPortfolio().archive && !currentPortfolio().watchlist) ? '<span onclick="openFilterModal()" title="Filter" style="cursor:pointer;font-size:14px;color:' + (hasActiveFilter() ? 'var(--green)' : 'var(--dim)') + '">&#8711;</span>' : '') + '</th>'
     + '<th style="border-bottom:1px solid var(--border)"></th>'
     + '<th style="border-bottom:1px solid var(--border)"></th>'
     + '</tr></thead>'
