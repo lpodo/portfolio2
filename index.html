@@ -553,7 +553,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.41';
+var APP_VERSION = 'v1.3.42';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -5040,12 +5040,14 @@ function refreshAllPortfolios() {
 function computeSummaryMarketRows(smPids, fxRates) {
   var rows = '';
   var totCloseUSD = 0, totCurrentUSD = 0, hasAny = false;
+  var smDoFilter = filterActiveForSummary(false); // Σ SUMMARY is active-only
   smPids.forEach(function(pid) {
     var p = portfolios[pid];
     var base = (p.currencyCode || 'USD').toUpperCase();
     var baseSym2 = CURRENCY_SYMBOLS[base] || base;
     var closeVal = 0, currentVal = 0, closeUSD = 0, currentUSD = 0, hasPos = false;
-    (p.positions || []).forEach(function(pos) {
+    var smPosns = smDoFilter ? filterPositions(p.positions || []) : (p.positions || []);
+    smPosns.forEach(function(pos) {
       var pcur = getPositionCurrent(pos);
       if (pcur != null && pos.qty > 0) {
         var pc = getPositionCurrencyCode(pos, base);
@@ -5092,11 +5094,13 @@ function refreshAll() {
     var smFxRates = {};
     var smNonUSD = [];
     var smPids = Object.keys(portfolios).filter(function(pid) { return !portfolios[pid].watchlist && !portfolios[pid].archive; }).sort(function(a, b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+    var smScanDoFilter = filterActiveForSummary(false);
     smPids.forEach(function(pid) {
       var p = portfolios[pid];
       var base = (p.currencyCode || 'USD').toUpperCase();
       if (base !== 'USD' && smNonUSD.indexOf(base) === -1) smNonUSD.push(base);
-      (p.positions || []).forEach(function(pos) {
+      var smScanPosns = smScanDoFilter ? filterPositions(p.positions || []) : (p.positions || []);
+      smScanPosns.forEach(function(pos) {
         var c = getPositionCurrencyCode(pos, base);
         if (c !== 'USD' && smNonUSD.indexOf(c) === -1) smNonUSD.push(c);
       });
@@ -5126,8 +5130,10 @@ function refreshAll() {
           + '<div class="total-block"><div class="total-label">&#916;%</div><div class="total-value ' + tClass + '">' + (totDeltaPct !== null ? fSign(totDeltaPct) + '%' : '—') + '</div></div>'
           + '</div>' : '');
       var smAllTickers = [];
+      var smHistDoFilter = filterActiveForSummary(false);
       smPids.forEach(function(pid2) {
-        (portfolios[pid2].positions || []).forEach(function(pos2) {
+        var smHistPosns = smHistDoFilter ? filterPositions(portfolios[pid2].positions || []) : (portfolios[pid2].positions || []);
+        smHistPosns.forEach(function(pos2) {
           if (!pos2.sold && pos2.qty > 0 && smAllTickers.indexOf(pos2.ticker) === -1) smAllTickers.push(pos2.ticker);
         });
       });
@@ -6571,10 +6577,12 @@ function buildMoversView(area, opts) {
   var bmvAlertsOnly = !!opts.alertsOnly;
   // Collect all positions from regular + watchlist (not archive), not sold
   var seen = {}, allPos = [];
+  var bmvDoFilter = filterActiveForSummary(false); // movers/alerts are active-only
   Object.keys(portfolios).forEach(function(pid) {
     var p = portfolios[pid];
     if (p.archive) return;
-    (p.positions || []).forEach(function(pos) {
+    var bmvPosns = (bmvDoFilter && !p.watchlist) ? filterPositions(p.positions || []) : (p.positions || []);
+    bmvPosns.forEach(function(pos) {
       if (pos.sold) return;
       if (bmvAlertsOnly && !getTickerAlerts(pos.ticker).length) return;
       if (!seen[pos.ticker]) { seen[pos.ticker] = true; allPos.push(pos); }
@@ -8179,20 +8187,30 @@ function toggleAggregated() {
 // its position list through it, so adding a view or a condition needs no new
 // wiring here.
 
-// True when the filter should apply in the current portfolio context: an
-// object filter is set AND the current portfolio is a regular active one
-// (not watchlist, not archive). Cross-portfolio views pass their own context.
+// True when the filter should apply in the current individual-portfolio
+// context: a filter is set AND the current portfolio is a regular active one
+// (not watchlist, not archive).
 function filterActive() {
   if (!activeFilter) return false;
   var pf = currentPortfolio();
   return !!pf && !pf.archive && !pf.watchlist;
 }
 
-// Filter a position array by the active conditions. No-op when the filter is
-// off or the context doesn't qualify. Extensible: each condition is an
-// independent early-out; new keys slot in without touching callers.
-function applyFilter(posns) {
-  if (!filterActive()) return posns;
+// True when the filter should apply to a cross-portfolio view (ALL POSITIONS /
+// Σ SUMMARY). Same global filter, but the gate is the view — active summaries
+// filter, realized (archive) summaries don't. Callers pass whether the current
+// summary context is the realized one.
+function filterActiveForSummary(isRealized) {
+  return !!activeFilter && !isRealized;
+}
+
+// Pure filter: reduce a position array by the active conditions, with NO
+// context gate. Used directly by cross-portfolio collectors (which do their
+// own gating) and by applyFilter (individual views). Extensible: each
+// condition is an independent early-out; new keys slot in without touching
+// callers.
+function filterPositions(posns) {
+  if (!activeFilter) return posns;
   return posns.filter(function(p) {
     // purchaseDate >= threshold. A missing purchaseDate is treated as -infinity
     // (as elsewhere), so it never passes a ">= date" bound.
@@ -8202,6 +8220,12 @@ function applyFilter(posns) {
     }
     return true;
   });
+}
+
+// Individual-view filter: gate on the current portfolio, then filter.
+function applyFilter(posns) {
+  if (!filterActive()) return posns;
+  return filterPositions(posns);
 }
 
 // True if any condition is actually set (drives the lit icon).
@@ -8481,8 +8505,10 @@ function render() {
         : (!portfolios[pid].watchlist && !portfolios[pid].archive);
     });
     var allSaPos = [];
+    var saDoFilter = filterActiveForSummary(saIsRealized);
     saPids.forEach(function(pid) {
-      (portfolios[pid].positions || []).forEach(function(pos) {
+      var saPosns = saDoFilter ? filterPositions(portfolios[pid].positions || []) : (portfolios[pid].positions || []);
+      saPosns.forEach(function(pos) {
         allSaPos.push(pos);
         var pc = getPositionCurrencyCode(pos);
         if (pc !== 'USD' && saNonUSD.indexOf(pc) === -1) saNonUSD.push(pc);
@@ -9726,11 +9752,13 @@ function render() {
     var smFxRates = {};
     var smNonUSD = [];
     var smPids = Object.keys(portfolios).filter(function(pid) { return !portfolios[pid].watchlist && !portfolios[pid].archive; }).sort(function(a, b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+    var smScanDoFilter = filterActiveForSummary(false);
     smPids.forEach(function(pid) {
       var p = portfolios[pid];
       var base = (p.currencyCode || 'USD').toUpperCase();
       if (base !== 'USD' && smNonUSD.indexOf(base) === -1) smNonUSD.push(base);
-      (p.positions || []).forEach(function(pos) {
+      var smScanPosns = smScanDoFilter ? filterPositions(p.positions || []) : (p.positions || []);
+      smScanPosns.forEach(function(pos) {
         var c = getPositionCurrencyCode(pos, base);
         if (c !== 'USD' && smNonUSD.indexOf(c) === -1) smNonUSD.push(c);
       });
@@ -9760,8 +9788,10 @@ function render() {
           + '<div class="total-block"><div class="total-label">&#916;%</div><div class="total-value ' + tClass + '">' + (totDeltaPct !== null ? fSign(totDeltaPct) + '%' : '—') + '</div></div>'
           + '</div>' : '');
       var smAllTickers = [];
+      var smHistDoFilter = filterActiveForSummary(false);
       smPids.forEach(function(pid2) {
-        (portfolios[pid2].positions || []).forEach(function(pos2) {
+        var smHistPosns = smHistDoFilter ? filterPositions(portfolios[pid2].positions || []) : (portfolios[pid2].positions || []);
+        smHistPosns.forEach(function(pos2) {
           if (!pos2.sold && pos2.qty > 0 && smAllTickers.indexOf(pos2.ticker) === -1) smAllTickers.push(pos2.ticker);
         });
       });
@@ -9789,8 +9819,10 @@ function render() {
     var summaryFxRates = {}; // currency → USD rate
     var summaryNonUSD = [];
     var summaryPids = Object.keys(portfolios).filter(function(pid) { return !portfolios[pid].watchlist && !portfolios[pid].archive; }).sort(function(a, b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+    var summaryDoFilter = filterActiveForSummary(false);
     summaryPids.forEach(function(pid) {
-      (portfolios[pid].positions || []).forEach(function(pos) {
+      var sumScanPosns = summaryDoFilter ? filterPositions(portfolios[pid].positions || []) : (portfolios[pid].positions || []);
+      sumScanPosns.forEach(function(pos) {
         var c = getPositionCurrencyCode(pos, portfolios[pid].currencyCode);
         if (c !== 'USD' && summaryNonUSD.indexOf(c) === -1) summaryNonUSD.push(c);
       });
@@ -9801,7 +9833,8 @@ function render() {
         var p = portfolios[pid];
         var baseCur = (p.currencyCode || 'USD').toUpperCase();
         var valUSD = 0, costUSD = 0, valBase = 0, costBase = 0, hasAny = false;
-        (p.positions || []).forEach(function(pos) {
+        var sumStatPosns = summaryDoFilter ? filterPositions(p.positions || []) : (p.positions || []);
+        sumStatPosns.forEach(function(pos) {
           var pcur = getPositionCurrent(pos);
           if (pcur != null && pos.qty > 0) {
             var posCur = getPositionCurrencyCode(pos, baseCur);
@@ -10309,8 +10342,10 @@ function render() {
         ? portfolios[pid].archive
         : (!portfolios[pid].watchlist && !portfolios[pid].archive);
     });
+    var gwDoFilter = filterActiveForSummary(gwIsRealized);
     gwPids.forEach(function(pid) {
-      (portfolios[pid].positions || []).forEach(function(pos) {
+      var gwScanPosns = gwDoFilter ? filterPositions(portfolios[pid].positions || []) : (portfolios[pid].positions || []);
+      gwScanPosns.forEach(function(pos) {
         var c = getPositionCurrencyCode(pos, portfolios[pid].currencyCode);
         if (c !== 'USD' && gwNonUSD.indexOf(c) === -1) gwNonUSD.push(c);
       });
@@ -10319,7 +10354,8 @@ function render() {
     function buildGlobalWeightRows(fxRates) {
       var tickerMap = {};
       gwPids.forEach(function(pid) {
-        (portfolios[pid].positions || []).forEach(function(pos) {
+        var gwRowPosns = gwDoFilter ? filterPositions(portfolios[pid].positions || []) : (portfolios[pid].positions || []);
+        gwRowPosns.forEach(function(pos) {
           var pcur = getPositionCurrent(pos);
           if (!pos.qty || pos.qty <= 0 || pcur == null) return;
           if (!gwIsRealized && pos.sold) return;
