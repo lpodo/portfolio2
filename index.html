@@ -78,7 +78,7 @@
   .api-bar input { flex: 1; min-width: 160px; }
   .api-status { font-size: 10px; width: 100%; margin-top: 2px; }
   .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 400px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th { text-align: right; padding: 5px 4px; font-size: 9px; color: var(--dim); letter-spacing: 1px; font-weight: normal; border-bottom: 1px solid var(--border); white-space: nowrap; }
   th:first-child { text-align: left; }
   td { padding: 5px 4px; text-align: right; font-size: 13px; }
@@ -553,7 +553,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.49';
+var APP_VERSION = 'v1.3.50';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
