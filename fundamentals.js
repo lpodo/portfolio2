@@ -770,7 +770,7 @@ function fundBuildQuarterlyChart(quarters, width) {
     s += '<text x="' + (padL + innerW + 4) + '" y="' + (yRight(rt[rti]) + 3).toFixed(1) + '" fill="var(--dim)" font-size="8" text-anchor="start">' + rt[rti].toFixed(0) + '%</text>';
   }
 
-  return '<svg width="' + W + '" height="' + H + '" style="display:block;margin-top:6px">' + s + '</svg>';
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" preserveAspectRatio="xMidYMid meet" style="display:block;margin-top:6px;max-width:100%;height:auto">' + s + '</svg>';
 }
 
 function fundRenderQuarterly(data, container) {
@@ -793,7 +793,7 @@ function fundRenderQuarterly(data, container) {
     + '<span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:12px;height:2px;background:#c4a000"></span>Net Margin</span>'
     + '</div>';
 
-  var chartW = Math.max(280, container.clientWidth || 340);
+  var chartW = Math.max(280, fundContentWidth(container) || 340);
 
   if (sub === 'yearly') {
     var yearly = data.earnings && data.earnings.financialsChart && data.earnings.financialsChart.yearly;
@@ -897,6 +897,20 @@ function fundFmtChartPrice(v, step) {
 }
 
 // Format X-axis tick by range: HH:MM for intraday, year for 5Y, DD/MM otherwise.
+// Content-box width of an element: clientWidth includes padding, but children
+// live in the content box, so a chart sized to clientWidth overflows a padded
+// container (e.g. #fund-body has 16px side padding) and spills past the screen
+// edge. Subtract the horizontal padding to get the real available width.
+function fundContentWidth(el) {
+  if (!el) return 0;
+  var w = el.clientWidth || 0;
+  try {
+    var cs = window.getComputedStyle(el);
+    w -= (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+  } catch (e) {}
+  return w;
+}
+
 function fundFmtChartXLabel(ts, range) {
   var d = new Date(ts * 1000);
   if (range === '1d') {
@@ -1052,7 +1066,7 @@ function fundBuildAbsoluteChart(points, width, range, tradingPeriod) {
     xticks += '<text x="' + xp(idx).toFixed(1) + '" y="' + (H - 6) + '" fill="var(--dim)" font-size="9" text-anchor="' + anchor + '">' + fundFmtChartXLabel(points[idx].t, range) + '</text>';
   }
 
-  return '<svg width="' + W + '" height="' + H + '" style="display:block">' + sessionShade + ygrid + line + xticks + '</svg>';
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" preserveAspectRatio="xMidYMid meet" style="display:block;max-width:100%;height:auto">' + sessionShade + ygrid + line + xticks + '</svg>';
 }
 
 function fundRenderChart(_, container) {
@@ -1100,7 +1114,7 @@ function fundRenderChart(_, container) {
       + '<span style="color:var(--dim)">' + fundFmtPointDateTime(allPts[allPts.length - 1].t) + '</span>'
       + '</div>';
 
-    var chartW = Math.max(280, container.clientWidth || 340);
+    var chartW = Math.max(280, fundContentWidth(container) || 340);
     area.innerHTML = summary + fundBuildAbsoluteChart(allPts, chartW, range, tradingPeriod);
     fundAttachChartTap(area, allPts, chartW, first);
   });
@@ -1727,7 +1741,7 @@ function buildFundamentalsRatingsTable(tickers) {
       + cellInfo.expandedRow;
   }
 
-  return '<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;table-layout:fixed;width:' + TBL_W + ';max-width:100%;min-width:0">'
+  return '<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;table-layout:fixed;width:' + TBL_W + ';min-width:0">'
     + head
     + '<tbody>' + rows + '</tbody>'
     + '</table></div>';
@@ -1939,7 +1953,7 @@ function buildFundamentalsEarningsTable(tickers) {
       + cellInfo.expandedRow;
   });
 
-  return '<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;table-layout:fixed;width:' + TBL_W + ';max-width:100%;min-width:0">'
+  return '<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;table-layout:fixed;width:' + TBL_W + ';min-width:0">'
     + head
     + '<tbody>' + rows + '</tbody>'
     + '</table></div>';
@@ -2022,7 +2036,7 @@ function buildFundamentalsEpsTable(tickers) {
       + cellInfo.expandedRow;
   });
 
-  return '<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;table-layout:fixed;width:' + TBL_W + ';max-width:100%;min-width:0">'
+  return '<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;table-layout:fixed;width:' + TBL_W + ';min-width:0">'
     + head
     + '<tbody>' + rows + '</tbody>'
     + '</table></div>';
