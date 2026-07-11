@@ -553,7 +553,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.53';
+var APP_VERSION = 'v1.3.54';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4657,24 +4657,24 @@ function buildExpandedInner(p) {
   var isSecurity = isRealSecurity(p);
   var isinRaw = getTickerIsin(p.ticker);
   var isinDisplay = isKnownIsin(isinRaw) ? isinRaw : '—';
-  // Row 1: three shapes
-  //   security + qty>0 (real trade) → BROKER · BUY DATE · ISIN
-  //   security + qty=0 (watchlist)  → ISIN only (for verification)
-  //   not a security                → hidden
-  var row1Html = '';
+  // Meta row: BROKER · BUY DATE · ISIN appear only for real securities (and
+  // BROKER/BUY DATE only when qty>0). EXCHANGE · TYPE are appended in ALL cases
+  // — including non-securities, where this row previously didn't render at all.
+  // The row scrolls horizontally rather than wrapping when it gets long.
+  var exTypeHtml = '<span style="white-space:nowrap"><span style="opacity:0.6">EXCHANGE</span> <span style="color:var(--bright)">' + (getPositionExchange(p) || '—') + '</span></span>'
+    + '<span style="white-space:nowrap"><span style="opacity:0.6">TYPE</span> <span style="color:var(--bright)">' + (getPositionInstrumentType(p) || '—') + '</span></span>';
+  var row1Parts = '';
   if (isSecurity) {
     if (p.qty > 0) {
-      row1Html = '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px">'
-        + '<span><span style="opacity:0.6">BROKER</span> <span style="color:var(--bright)">' + (getPositionBroker(p) || 'default') + '</span></span>'
-        + '<span><span style="opacity:0.6">BUY DATE</span> <span style="color:var(--bright)">' + (p.purchaseDate || '—') + '</span></span>'
-        + '<span><span style="opacity:0.6">ISIN</span> <span style="color:var(--bright)">' + isinDisplay + '</span></span>'
-        + '</div>';
+      row1Parts = '<span style="white-space:nowrap"><span style="opacity:0.6">BROKER</span> <span style="color:var(--bright)">' + (getPositionBroker(p) || 'default') + '</span></span>'
+        + '<span style="white-space:nowrap"><span style="opacity:0.6">BUY DATE</span> <span style="color:var(--bright)">' + (p.purchaseDate || '—') + '</span></span>'
+        + '<span style="white-space:nowrap"><span style="opacity:0.6">ISIN</span> <span style="color:var(--bright)">' + isinDisplay + '</span></span>';
     } else {
-      row1Html = '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px">'
-        + '<span><span style="opacity:0.6">ISIN</span> <span style="color:var(--bright)">' + isinDisplay + '</span></span>'
-        + '</div>';
+      row1Parts = '<span style="white-space:nowrap"><span style="opacity:0.6">ISIN</span> <span style="color:var(--bright)">' + isinDisplay + '</span></span>';
     }
   }
+  row1Parts += exTypeHtml;
+  var row1Html = '<div style="display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;font-size:10px;color:var(--dim);letter-spacing:1px">' + row1Parts + '</div>';
   var row2Html = isSecurity
     ? '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px;' + (row1Html ? 'margin-top:6px' : '') + '">'
       + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'category') || '—') + '</span></span>'
@@ -4684,7 +4684,7 @@ function buildExpandedInner(p) {
     : '';
   return row1Html
     + row2Html
-    + '<div style="' + (row2Html ? 'margin-top:6px;' : '') + 'font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
+    + '<div style="margin-top:6px;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
     + '<span style="opacity:0.6">NOTE</span>'
     + (editNoteId === p.id
       ? '<input id="noteEditInput" type="text" value="' + (p.note || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;') + '" style="font-size:10px;font-family:var(--font);background:var(--bg);border:1px solid var(--border);color:var(--bright);padding:1px 4px;width:200px;box-sizing:border-box" onkeydown="if(event.key===\'Enter\'){event.preventDefault();saveNoteInline(' + p.id + ');}else if(event.key===\'Escape\'){event.preventDefault();cancelNoteEdit();}" onblur="saveNoteInline(' + p.id + ')">'
@@ -4731,20 +4731,25 @@ function buildExpandedInnerAgg(p, group) {
     : '<span style="color:var(--dim)">' + brokerKeys.length + ' brokers</span>';
   var isinRaw = getTickerIsin(p.ticker);
   var isinDisplay = isKnownIsin(isinRaw) ? isinRaw : '—';
-  var html = '';
+  var exTypeHtml = '<span style="white-space:nowrap"><span style="opacity:0.6">EXCHANGE</span> <span style="color:var(--bright)">' + (getPositionExchange(p) || '—') + '</span></span>'
+    + '<span style="white-space:nowrap"><span style="opacity:0.6">TYPE</span> <span style="color:var(--bright)">' + (getPositionInstrumentType(p) || '—') + '</span></span>';
+  var aggRow1Parts = '';
   if (isSecurity) {
-    html += '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px">'
-      + '<span><span style="opacity:0.6">BROKER</span> ' + brokerValueHtml + '</span>'
-      + '<span><span style="opacity:0.6">ISIN</span> <span style="color:var(--bright)">' + isinDisplay + '</span></span>'
-      + '</div>'
-      + '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px;margin-top:6px">'
+    aggRow1Parts = '<span style="white-space:nowrap"><span style="opacity:0.6">BROKER</span> ' + brokerValueHtml + '</span>'
+      + '<span style="white-space:nowrap"><span style="opacity:0.6">ISIN</span> <span style="color:var(--bright)">' + isinDisplay + '</span></span>';
+  }
+  aggRow1Parts += exTypeHtml;
+  var html = '';
+  html += '<div style="display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;font-size:10px;color:var(--dim);letter-spacing:1px">' + aggRow1Parts + '</div>';
+  if (isSecurity) {
+    html += '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px;margin-top:6px">'
       + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'category') || '—') + '</span></span>'
       + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'region') || '—') + '</span></span>'
       + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'sector') || '—') + '</span></span>'
       + '</div>';
   }
   var notes = group.map(function(g) { return g.note || ''; }).filter(Boolean).join(' • ');
-  html += '<div style="' + (isSecurity ? 'margin-top:6px;' : '') + 'font-size:10px;color:var(--dim);letter-spacing:1px">'
+  html += '<div style="margin-top:6px;font-size:10px;color:var(--dim);letter-spacing:1px">'
     + '<span style="opacity:0.6">NOTE</span> '
     + '<span style="color:var(--bright);white-space:pre-line">' + (notes || '—') + '</span>'
     + '</div>';
