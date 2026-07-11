@@ -553,7 +553,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.54';
+var APP_VERSION = 'v1.3.56';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4676,10 +4676,10 @@ function buildExpandedInner(p) {
   row1Parts += exTypeHtml;
   var row1Html = '<div style="display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;font-size:10px;color:var(--dim);letter-spacing:1px">' + row1Parts + '</div>';
   var row2Html = isSecurity
-    ? '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px;' + (row1Html ? 'margin-top:6px' : '') + '">'
-      + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'category') || '—') + '</span></span>'
-      + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'region') || '—') + '</span></span>'
-      + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'sector') || '—') + '</span></span>'
+    ? '<div style="display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;font-size:10px;color:var(--dim);letter-spacing:1px;' + (row1Html ? 'margin-top:6px' : '') + '">'
+      + '<span style="white-space:nowrap"><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'category') || '—') + '</span></span>'
+      + '<span style="white-space:nowrap"><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'region') || '—') + '</span></span>'
+      + '<span style="white-space:nowrap"><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'sector') || '—') + '</span></span>'
       + '</div>'
     : '';
   return row1Html
@@ -4742,10 +4742,10 @@ function buildExpandedInnerAgg(p, group) {
   var html = '';
   html += '<div style="display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;font-size:10px;color:var(--dim);letter-spacing:1px">' + aggRow1Parts + '</div>';
   if (isSecurity) {
-    html += '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px;margin-top:6px">'
-      + '<span><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'category') || '—') + '</span></span>'
-      + '<span><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'region') || '—') + '</span></span>'
-      + '<span><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'sector') || '—') + '</span></span>'
+    html += '<div style="display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;font-size:10px;color:var(--dim);letter-spacing:1px;margin-top:6px">'
+      + '<span style="white-space:nowrap"><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'category') || '—') + '</span></span>'
+      + '<span style="white-space:nowrap"><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'region') || '—') + '</span></span>'
+      + '<span style="white-space:nowrap"><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'sector') || '—') + '</span></span>'
       + '</div>';
   }
   var notes = group.map(function(g) { return g.note || ''; }).filter(Boolean).join(' • ');
@@ -6729,11 +6729,13 @@ function showAnalyticsDetail(rubric, value) {
       key = getPositionBroker(p) || 'default';
     } else if (rubric === 'exchange') {
       key = getPositionExchange(p) || 'Other';
+    } else if (rubric === 'type') {
+      key = getPositionInstrumentType(p) || 'Other';
     } else if (rubric === 'isin') {
       var isin = getTickerIsin(p.ticker);
       key = isKnownIsin(isin) ? isin.substring(0, 2).toUpperCase() : 'Unknown';
     } else {
-      key = ((rubricRawValue(p, rubric) || '').trim().replace(/\s+/g, ' ')) || 'Other';
+      key = rubricRawValue(p, rubric) || 'Other';
     }
     return key === value;
   });
@@ -6895,6 +6897,8 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
       // was captured) folds into Other bucket; refreshTicker populates on
       // next foreground refresh.
       key = getPositionExchange(p) || 'Other';
+    } else if (breakdown === 'type') {
+      key = getPositionInstrumentType(p) || 'Other';
     } else if (breakdown === 'isin') {
       // ISO country code = first two letters of the ISIN. UNRESOLVED and
       // missing entries both fold into a single 'Unknown' bucket. Clicking
@@ -6902,7 +6906,7 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
       var isin = getTickerIsin(p.ticker);
       key = isKnownIsin(isin) ? isin.substring(0, 2).toUpperCase() : 'Unknown';
     } else {
-      key = ((rubricRawValue(p, breakdown) || '').trim().replace(/\s+/g, ' ')) || 'Other';
+      key = rubricRawValue(p, breakdown) || 'Other';
     }
     if (!groups[key]) groups[key] = [];
     groups[key].push(p);
@@ -6961,7 +6965,7 @@ function buildAnalyticsView(posns, baseSym, baseCode, fxMap, isSummary) {
 // only P&L and WEIGHTS are listed since market/chart make no sense for
 // closed positions).
 function analyticsHeader(breakdown, subview, isRealized) {
-  var rubrics = ['category','region','sector','currency','exchange','isin','broker'];
+  var rubrics = ['category','region','sector','currency','type','exchange','isin','broker'];
   var subviews = isRealized ? ['pnl','weights'] : ['pnl','market','chart','weights'];
   var subviewLabels = { pnl: 'P&L', market: 'MARKET', chart: 'CHART', weights: 'WEIGHTS' };
 

@@ -166,7 +166,8 @@ Brokers feed three downstream features:
 **Market state indicator** (shown after P&L %):
 
 - No icon — regular session (REGULAR)
-- 🌙 — pre or post market (PRE / POST)
+- 🌤️ — pre-market (PRE)
+- 🌙 — post-market (POST)
 - ✦ — market closed (CLOSED)
 
 Market state icons can be changed via Settings.
