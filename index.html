@@ -216,8 +216,8 @@
     50%      { opacity: 0.25; }
   }
   .alert-blink-slow { animation: alertBlink 1.8s ease-in-out infinite; }
-  .alert-blink-med  { animation: alertBlink 1.1s ease-in-out infinite; }
-  .alert-blink-fast { animation: alertBlink 0.5s ease-in-out infinite; }
+  .alert-blink-med  { animation: alertBlink 1.0s ease-in-out infinite; }
+  .alert-blink-fast { animation: alertBlink 0.55s ease-in-out infinite; }
 
   @media (max-width: 480px) {
     .header { padding: 11px 14px; }
@@ -553,7 +553,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.47';
+var APP_VERSION = 'v1.3.49';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -677,10 +677,8 @@ function setTickerMeta(ticker, field, val) {
   }
 }
 
-// Current price of a ticker (ticker-level concept — alerts, etc. test against
-// it). Today the price still lives on positions, so this reads the first
-// active position of the ticker. Stage 3 moves current into tickerData; then
-// this body becomes a direct tickerData read and every caller follows.
+// Current price of a ticker (ticker-level — alerts etc. test against it).
+// Reads from tickerData via the meta accessor.
 function getTickerCurrentPrice(ticker) {
   return getTickerMeta(ticker, 'current');
 }
@@ -860,13 +858,13 @@ function liftAttrsFromPositions() {
   }
 }
 
-// Stage 1 migration: give existing sold positions their own sellPrice and
-// sellCurrency (frozen at sale). Historically a sold position stored the sale
-// price in `current` and shared `currency`; these move to dedicated fields so
-// the sale stays historically correct regardless of later ticker changes.
-// Idempotent — only fills a field that's absent, so it's safe to run every
-// startup and after every cloud load (self-healing). `current`/`currency` are
-// left in place for now; Stage 5 strips them.
+// Migration: give existing sold positions their own sellPrice and sellCurrency
+// (frozen at sale). Historically a sold position stored the sale price in
+// `current` and shared `currency`; these move to dedicated fields so the sale
+// stays historically correct regardless of later ticker changes. Idempotent —
+// only fills a field that's absent, so it's safe to run every startup and after
+// every cloud load (self-healing). Runs BEFORE stripMigratedFieldsFromPositions
+// so the old `current` is converted to sellPrice before it's deleted.
 function migrateSoldPositions() {
   var changed = false;
   Object.keys(portfolios).forEach(function(pid) {
@@ -886,7 +884,7 @@ function migrateSoldPositions() {
   if (changed) savePortfolios();
 }
 
-// Stage 5 migration: physically remove migrated fields from position objects.
+// Migration: physically remove migrated fields from position objects.
 // current/currency/metadata now live in tickerData and are read via helpers;
 // the copies left on positions are dead weight. Safe-guard: before deleting a
 // field, ensure its value is preserved in tickerData (self-sufficient — does
@@ -919,12 +917,13 @@ function stripMigratedFieldsFromPositions() {
   }
 }
 
-// Stage 2 migration: copy ticker-level market metadata from positions into
-// tickerData. Idempotent — only fills a tickerData field that's absent, so
-// repeated runs (startup + after each cloud load) are safe. Does NOT delete
-// from positions yet; Stage 5 strips them. Uses the last-seen position value
-// per ticker (they're all the same ticker, so any is fine; later positions
-// don't overwrite an already-set tickerData value).
+// Migration: copy ticker-level market metadata (plus current/currency, active
+// positions only) from positions into tickerData. Idempotent — only fills a
+// tickerData field that's absent, so repeated runs (startup + after each cloud
+// load) are safe. Deletion of the now-dead position copies is handled
+// separately by stripMigratedFieldsFromPositions. Uses the last-seen position
+// value per ticker (they're all the same ticker, so any is fine; later
+// positions don't overwrite an already-set tickerData value).
 var TICKER_META_FIELDS = ['shortName', 'instrumentType', 'exchangeName', 'marketState', 'priceType', 'regularMarketPrice', 'previousClose'];
 function migrateMetaToTicker() {
   Object.keys(portfolios).forEach(function(pid) {
@@ -1160,12 +1159,12 @@ function getCurrency() {
   var code = p.currencyCode || 'USD';
   return CURRENCY_SYMBOLS[code] || code;
 }
-// Currency of a position. Optional fallbackCode lets cross-portfolio callers
-// pass the OWNER portfolio's currency (not the current one) for the rare case
-// pos.currency is null (position added offline / before first refresh, or a
-// legacy record). Single-portfolio callers omit it and fall back to the
-// current portfolio. Post-migration (Stage 4) this reads tickerData for the
-// ticker (sold → frozen sellCurrency); the fallback stays as the null guard.
+// Currency of a position. A sold position keeps its frozen sellCurrency; an
+// active one reads the ticker-level currency from tickerData. Optional
+// fallbackCode lets cross-portfolio callers pass the OWNER portfolio's currency
+// (not the current one); the fallback chain (fallbackCode → current portfolio →
+// USD) guards the case where the ticker has no currency yet (added offline /
+// before first refresh, or a legacy record). Single-portfolio callers omit it.
 function getPositionCurrencySymbol(pos, fallbackCode) {
   var code = getPositionCurrencyCode(pos, fallbackCode);
   return CURRENCY_SYMBOLS[code] || code;
@@ -1174,12 +1173,10 @@ function getPositionCurrencyCode(pos, fallbackCode) {
   if (pos.sold && pos.sellCurrency) return pos.sellCurrency;
   return getTickerMeta(pos.ticker, 'currency') || fallbackCode || currentPortfolio().currencyCode || 'USD';
 }
-// Price of a position for display and P&L math. For a sold position this is
-// the sale price; for an active one it's the latest market price. Today both
-// read pos.current, but the branch is explicit so later stages can migrate
-// each side independently: Stage 1 points the sold branch at pos.sellPrice,
-// Stage 3 points the active branch at the ticker-level current in tickerData.
-// Returns null when no price is available.
+// Price of a position for display and P&L math. A sold position reports its
+// frozen sellPrice (with a legacy fallback to pos.current for records migrated
+// before sellPrice existed); an active one reads the ticker-level current from
+// tickerData. Returns null when no price is available.
 function getPositionCurrent(pos) {
   if (!pos) return null;
   if (pos.sold) {
@@ -1190,9 +1187,8 @@ function getPositionCurrent(pos) {
 }
 // Market-data fields describing the ticker's live/last state. These are
 // meaningful only for active positions — sold positions never consult them
-// (callers gate on p.sold first, or show a distinct sold icon). Today they
-// read the position; Stage 2 repoints them at tickerData[ticker]. No sold
-// branch is needed by design.
+// (callers gate on p.sold first, or show a distinct sold icon). They read the
+// ticker-level values from tickerData; no sold branch is needed by design.
 function getPositionRegularMarketPrice(pos) {
   return pos ? getTickerMeta(pos.ticker, 'regularMarketPrice') : null;
 }
@@ -1206,9 +1202,8 @@ function getPositionPriceType(pos) {
   return pos ? getTickerMeta(pos.ticker, 'priceType') : null;
 }
 // Descriptive ticker metadata (company name, instrument kind, listing venue).
-// Like the market-data fields, these describe the ticker, not the trade; a
-// sold position reads the same current values. Today they read the position;
-// Stage 2 repoints them at tickerData[ticker].
+// Like the market-data fields, these describe the ticker, not the trade, and
+// read the ticker-level values from tickerData.
 function getPositionShortName(pos) {
   return pos ? getTickerMeta(pos.ticker, 'shortName') : null;
 }
@@ -5034,7 +5029,7 @@ function refreshAllPortfolios() {
 // Summary-market per-portfolio totals: builds the table rows and the USD
 // grand totals for the Σ SUMMARY market view. This exact computation was
 // duplicated verbatim in refreshAll() and render(); it lives here so future
-// changes (and the Stage 2/3 data migration) touch one place, not two.
+// changes touch one place, not two.
 // Reads closeMode/currentMode globals; returns accumulators for the caller.
 function computeSummaryMarketRows(smPids, fxRates) {
   var rows = '';
