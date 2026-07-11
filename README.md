@@ -409,13 +409,13 @@ Available via dropdown menu → ANALYTICS for individual portfolios and the ALL 
 
 Two dropdowns at the top of the view drive what's shown:
 
-- **Rubric** (left): **CATEGORY** / **REGION** / **SECTOR** / **CURRENCY** / **EXCHANGE** / **ISIN** / **BROKER**. Determines how positions are grouped. Positions with qty=0 are excluded from all rubrics. Positions without a value in the selected field fall into a fallback bucket described per-rubric below.
+- **Rubric** (left): **CATEGORY** / **REGION** / **SECTOR** / **CURRENCY** / **TYPE** / **EXCHANGE** / **ISIN** / **BROKER**. Determines how positions are grouped. Positions with qty=0 are excluded from all rubrics. Positions without a value in the selected field fall into a fallback bucket described per-rubric below.
 - **Subview** (right): determines what's shown per group. Four options — **P&L**, **MARKET**, **CHART**, **WEIGHTS**. Realized contexts only have **P&L** and **WEIGHTS** (MARKET and CHART make no sense for closed positions).
 
 Rubric semantics:
 
 - **CATEGORY / REGION / SECTOR / ISIN** — ticker-level attributes (see [Ticker classification fields](#ticker-classification-fields)). Same ticker, same value everywhere. Fallback bucket: `Other` (or `Unknown` for ISIN).
-- **CURRENCY / EXCHANGE / BROKER** — position-level. Currency uses the actual position currency from Yahoo Finance. Exchange uses the position's `exchangeName` field. Broker falls back to the current default broker when empty (see [Brokers](#brokers)). Fallback bucket: `Other`.
+- **CURRENCY / TYPE / EXCHANGE / BROKER** — Currency uses the actual position currency from Yahoo Finance. Type uses the ticker's `instrumentType` (`EQUITY`, `ETF`, `INDEX`, etc.). Exchange uses the ticker's `exchangeName`. Broker is position-level and falls back to the current default broker when empty (see [Brokers](#brokers)). Fallback bucket: `Other`.
 - The ISIN rubric groups by **country code** — the first two characters of the ISIN (e.g. `US`, `NL`, `GB`). Positions whose ticker has no known ISIN — including all non-securities (indices, currencies, etc.) — fall into `Unknown`.
 
 Subviews:
@@ -475,19 +475,24 @@ Tapping/clicking the **ticker name** in any market-style view toggles an expanda
 
 ### Position metadata
 
-Metadata layout depends on the position's instrument type:
+The first row always ends with **EXCHANGE** and **TYPE**, shown for every position including non-securities. What precedes them depends on the instrument type:
 
 - **Real security (`EQUITY` / `ETF`) with qty>0** — two rows:
   ```
-  BROKER  ETrade   BUY DATE  2024-08-19   ISIN  US26884L1098
+  BROKER  ETrade   BUY DATE  2024-08-19   ISIN  US26884L1098   EXCHANGE  NMS   TYPE  EQUITY
     CAT  AI & Semi    REG  US    SEC  Technology
   ```
-- **Real security in a watchlist (qty=0)** — trade fields make no sense, so only ISIN + CAT/REG/SEC show:
+- **Real security in a watchlist (qty=0)** — trade fields make no sense, so BROKER/BUY DATE drop:
   ```
-  ISIN  US26884L1098
+  ISIN  US26884L1098   EXCHANGE  NMS   TYPE  EQUITY
     CAT  AI & Semi    REG  US    SEC  Technology
   ```
-- **Non-security** (`INDEX`, `CURRENCY`, `FUTURE`, `CRYPTO`, etc.) — these have no meaningful company-level metadata; both rows are hidden entirely.
+- **Non-security** (`INDEX`, `CURRENCY`, `FUTURE`, `CRYPTO`, etc.) — only EXCHANGE and TYPE, no second row (no company-level classification):
+  ```
+  EXCHANGE  NYM   TYPE  FUTURE
+  ```
+
+The first row scrolls horizontally rather than wrapping when it gets long.
 
 Fields:
 
@@ -495,6 +500,8 @@ Fields:
 - **BUY DATE** — the position's `purchaseDate` (ISO `YYYY-MM-DD`), or `—` if not set.
 - **ISIN** — International Securities Identification Number for the ticker, or `—` if not known. Free-text; the frontend supports lookup via the worker's `/api/isin` endpoint but no free provider currently supplies it (see [Cloudflare Worker](#cloudflare-worker)), so users enter ISINs manually via the ✎ Edit form. Overwriting or clearing an existing ISIN triggers a confirmation dialog.
 - **CAT / REG / SEC** — classification fields, ticker-level (see [Ticker classification fields](#ticker-classification-fields)). Show `—` if empty.
+- **EXCHANGE** — exchange identifier from Yahoo (`exchangeName`, e.g. `NMS`, `NYQ`, `LSE`), or `—` if unknown.
+- **TYPE** — instrument type from Yahoo (`instrumentType`, e.g. `EQUITY`, `ETF`, `INDEX`, `CURRENCY`, `FUTURE`), or `—` if unknown.
 
 Below these, always two more rows:
 
