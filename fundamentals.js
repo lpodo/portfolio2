@@ -1041,12 +1041,15 @@ function fundBuildAbsoluteChart(points, width, range, tradingPeriod) {
   var pts = points.map(function(p, i) { return xp(i).toFixed(1) + ',' + yp(p.c).toFixed(1); }).join(' ');
   var line = '<polyline points="' + pts + '" fill="none" stroke="' + color + '" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>';
 
-  // X-axis: 4 evenly-spaced ticks
+  // X-axis: 4 evenly-spaced ticks. The first and last labels are anchored to
+  // the start/end edges (not centered) so they don't spill past the SVG width —
+  // a centered last label had its right half clipped at the screen edge.
   var xTickCount = Math.min(4, n);
   var xticks = '';
   for (var i2 = 0; i2 < xTickCount; i2++) {
     var idx = xTickCount === 1 ? 0 : Math.floor(i2 * (n - 1) / (xTickCount - 1));
-    xticks += '<text x="' + xp(idx).toFixed(1) + '" y="' + (H - 6) + '" fill="var(--dim)" font-size="9" text-anchor="middle">' + fundFmtChartXLabel(points[idx].t, range) + '</text>';
+    var anchor = i2 === 0 ? 'start' : (i2 === xTickCount - 1 ? 'end' : 'middle');
+    xticks += '<text x="' + xp(idx).toFixed(1) + '" y="' + (H - 6) + '" fill="var(--dim)" font-size="9" text-anchor="' + anchor + '">' + fundFmtChartXLabel(points[idx].t, range) + '</text>';
   }
 
   return '<svg width="' + W + '" height="' + H + '" style="display:block">' + sessionShade + ygrid + line + xticks + '</svg>';
@@ -1724,7 +1727,7 @@ function buildFundamentalsRatingsTable(tickers) {
       + cellInfo.expandedRow;
   }
 
-  return '<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;table-layout:fixed;width:' + TBL_W + ';min-width:0">'
+  return '<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;table-layout:fixed;width:' + TBL_W + ';max-width:100%;min-width:0">'
     + head
     + '<tbody>' + rows + '</tbody>'
     + '</table></div>';
@@ -1936,7 +1939,7 @@ function buildFundamentalsEarningsTable(tickers) {
       + cellInfo.expandedRow;
   });
 
-  return '<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;table-layout:fixed;width:' + TBL_W + ';min-width:0">'
+  return '<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;table-layout:fixed;width:' + TBL_W + ';max-width:100%;min-width:0">'
     + head
     + '<tbody>' + rows + '</tbody>'
     + '</table></div>';
@@ -2019,7 +2022,7 @@ function buildFundamentalsEpsTable(tickers) {
       + cellInfo.expandedRow;
   });
 
-  return '<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;table-layout:fixed;width:' + TBL_W + ';min-width:0">'
+  return '<div style="overflow-x:auto;margin-top:6px"><table style="border-collapse:collapse;table-layout:fixed;width:' + TBL_W + ';max-width:100%;min-width:0">'
     + head
     + '<tbody>' + rows + '</tbody>'
     + '</table></div>';
