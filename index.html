@@ -345,7 +345,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.65';
+var APP_VERSION = 'v1.3.67';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -788,16 +788,6 @@ function addToDict(dict, value) {
   for (var i = 0; i < dict.length; i++) { if (dict[i] === value) return; }
   dict.push(value);
   dict.sort(function(a, b) { return a.localeCompare(b); });
-}
-function migrateDicts() {
-  if (localStorage.getItem('pt_cat_dict') !== null) return;
-  Object.keys(tickerData).forEach(function(t) {
-    var d = tickerData[t];
-    if (d.category) addToDict(catDict, d.category);
-    if (d.region)   addToDict(regDict, d.region);
-    if (d.sector)   addToDict(secDict, d.sector);
-  });
-  saveDicts();
 }
 
 // Broker helpers. Default broker is canonical when pos.broker is missing.
@@ -3721,9 +3711,6 @@ function fetchIsin(ticker) {
 }
 
 // YYYY-MM-DD in local timezone, used as default purchaseDate for new positions
-function todayLocalISO() {
-  return new Date().toLocaleDateString('en-CA');
-}
 
 // Render the BROKER select in the add form. Default broker (if any) is
 // pre-selected. Called on init and after each successful add to refresh
@@ -3735,22 +3722,6 @@ function renderAddBrokerSlot() {
   slot.innerHTML = buildDictSelectHtml('broAdd', brokerDict, def, 'BROKER', '115px');
 }
 
-function f2(n) {
-  if (n === null || n === undefined || isNaN(n)) return '&mdash;';
-  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-function fSign(n) {
-  if (n === null || n === undefined || isNaN(n)) return '&mdash;';
-  return (n >= 0 ? '+' : '') + f2(n);
-}
-function fPctNoSign(n) {
-  if (n === null || n === undefined || isNaN(n)) return '&mdash;';
-  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
-}
-function fPct(n) {
-  if (n === null || n === undefined || isNaN(n)) return '&mdash;';
-  return (n >= 0 ? '+' : '') + f2(n) + '%';
-}
 function cls(n) {
   if (n === null || n === undefined || isNaN(n)) return 'muted';
   return n >= 0 ? 'pos' : 'neg';
@@ -7116,11 +7087,6 @@ function dateKey(ts) {
 }
 function pad2(n) { return n < 10 ? '0' + n : '' + n; }
 
-function fmtK(v) {
-  if (Math.abs(v) >= 1000000) return (v / 1000000).toFixed(2) + 'M';
-  if (Math.abs(v) >= 1000) return (v / 1000).toFixed(1) + 'K';
-  return v.toFixed(0);
-}
 
 
 // --- Chart history cache ---

@@ -378,3 +378,42 @@ function getPositionInstrumentType(pos) {
 function getPositionExchange(pos) {
   return pos ? getTickerMeta(pos.ticker, 'exchangeName') : null;
 }
+
+// Dict migration: seed cat/reg/sec dictionaries from existing tickerData
+// (one-time, keyed on absence of pt_cat_dict).
+function migrateDicts() {
+  if (localStorage.getItem('pt_cat_dict') !== null) return;
+  Object.keys(tickerData).forEach(function(t) {
+    var d = tickerData[t];
+    if (d.category) addToDict(catDict, d.category);
+    if (d.region)   addToDict(regDict, d.region);
+    if (d.sector)   addToDict(secDict, d.sector);
+  });
+  saveDicts();
+}
+
+// ── Formatters ──────────────────────────────────────────────────────────────
+function todayLocalISO() {
+  return new Date().toLocaleDateString('en-CA');
+}
+function f2(n) {
+  if (n === null || n === undefined || isNaN(n)) return '&mdash;';
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fSign(n) {
+  if (n === null || n === undefined || isNaN(n)) return '&mdash;';
+  return (n >= 0 ? '+' : '') + f2(n);
+}
+function fPctNoSign(n) {
+  if (n === null || n === undefined || isNaN(n)) return '&mdash;';
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
+}
+function fPct(n) {
+  if (n === null || n === undefined || isNaN(n)) return '&mdash;';
+  return (n >= 0 ? '+' : '') + f2(n) + '%';
+}
+function fmtK(v) {
+  if (Math.abs(v) >= 1000000) return (v / 1000000).toFixed(2) + 'M';
+  if (Math.abs(v) >= 1000) return (v / 1000).toFixed(1) + 'K';
+  return v.toFixed(0);
+}
