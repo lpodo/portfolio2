@@ -1106,4 +1106,4 @@ function cls(n) {
   return n >= 0 ? 'pos' : 'neg';
 }
 function isPriceStale(ticker)    { return !!staleTickers[ticker]; }
-function getBlinkPref()      { try { return localStorage.getItem('pt_blink_period') || 'med'; } catch(e) { return 'med'; } }
+function getBlinkPref()      { try { return localStorage.getItem('pt_blink_period') || 'slow'; } catch(e) { return 'slow'; } }

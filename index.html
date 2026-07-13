@@ -346,7 +346,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.82';
+var APP_VERSION = 'v1.3.83';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4571,7 +4571,7 @@ var CONTRAST_PRESETS = {
 // User's setting is the BASE for 2-alert case; 3+ alerts step faster, clamped to 'fast'.
 var BLINK_LEVELS = ['slow', 'med', 'fast'];
 
-function getContrastPref()   { try { return localStorage.getItem('pt_contrast')     || 'low'; } catch(e) { return 'low'; } }
+function getContrastPref()   { try { return localStorage.getItem('pt_contrast')     || 'med'; } catch(e) { return 'med'; } }
 
 function setContrastPref(level) {
   if (!CONTRAST_PRESETS[level]) return;
@@ -4628,8 +4628,8 @@ function closeAppearance() {
 }
 
 function resetAppearance() {
-  setContrastPref('low');
-  setBlinkPref('med');
+  setContrastPref('med');
+  setBlinkPref('slow');
   resetCustomizeIcons();
 }
 
