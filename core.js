@@ -417,3 +417,20 @@ function fmtK(v) {
   if (Math.abs(v) >= 1000) return (v / 1000).toFixed(1) + 'K';
   return v.toFixed(0);
 }
+
+// ── Portfolio / broker accessors ────────────────────────────────────────────
+function currentPortfolio() {
+  return portfolios[currentPortfolioId] || { name: 'MY PORTFOLIO', positions: [] };
+}
+function getCurrency() {
+  var p = currentPortfolio();
+  var code = p.currencyCode || 'USD';
+  return CURRENCY_SYMBOLS[code] || code;
+}
+function getDefaultBroker() {
+  if (_defaultBroker && brokerDict.indexOf(_defaultBroker) !== -1) return _defaultBroker;
+  return brokerDict[0] || null;
+}
+function getPositionBroker(p) {
+  return p.broker || getDefaultBroker();
+}

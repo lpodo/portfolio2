@@ -345,7 +345,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.67';
+var APP_VERSION = 'v1.3.68';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -660,14 +660,6 @@ function isRealizedAllPositions() {
 function isCrossPortfolioContext() {
   return isSummaryByPortfolio() || isAllPositions() || isRealizedAllPositions();
 }
-function getCurrency() {
-  var p = currentPortfolio();
-  var code = p.currencyCode || 'USD';
-  return CURRENCY_SYMBOLS[code] || code;
-}
-function currentPortfolio() {
-  return portfolios[currentPortfolioId] || { name: 'MY PORTFOLIO', positions: [] };
-}
 
 var positions = [];
 var viewMode = 'main'; // main | weight
@@ -793,13 +785,6 @@ function addToDict(dict, value) {
 // Broker helpers. Default broker is canonical when pos.broker is missing.
 // If the stored _defaultBroker is no longer in the dict (e.g. deleted),
 // fall back to the first dict entry so positions never lose their group.
-function getDefaultBroker() {
-  if (_defaultBroker && brokerDict.indexOf(_defaultBroker) !== -1) return _defaultBroker;
-  return brokerDict[0] || null;
-}
-function getPositionBroker(p) {
-  return p.broker || getDefaultBroker();
-}
 function countPositionsWithBroker(broker) {
   var n = 0;
   Object.keys(portfolios).forEach(function(pid) {
