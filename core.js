@@ -639,49 +639,183 @@ function computeUsdMarketTotal(posns, fxRates) {
   });
   return { closeUSD: closeUSD, currentUSD: currentUSD, hasAny: hasAny };
 }
-function computeSummaryMarketRows(smPids, fxRates) {
-  var rows = '';
-  var totCloseUSD = 0, totCurrentUSD = 0, hasAny = false;
-  var smDoFilter = filterActiveForSummary(false); // Σ SUMMARY is active-only
-  smPids.forEach(function(pid) {
-    var p = portfolios[pid];
-    var base = (p.currencyCode || 'USD').toUpperCase();
-    var baseSym2 = CURRENCY_SYMBOLS[base] || base;
-    var closeVal = 0, currentVal = 0, closeUSD = 0, currentUSD = 0, hasPos = false;
-    var smPosns = smDoFilter ? filterPositions(p.positions || []) : (p.positions || []);
-    smPosns.forEach(function(pos) {
-      var pcur = getPositionCurrent(pos);
-      if (pcur != null && pos.qty > 0) {
-        var pc = getPositionCurrencyCode(pos, base);
-        var rateToUSD = pc === 'USD' ? 1 : (fxRates[pc] || fxRates[pc + 'USD'] || 1);
-        var rateBaseToUSD = base === 'USD' ? 1 : (fxRates[base] || fxRates[base + 'USD'] || 1);
-        var closePrice = pos.sold ? pcur : (HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(pos.ticker, closeMode) || getPositionRegularMarketPrice(pos) || pcur) : (closeMode === 'prev' ? (getPositionPreviousClose(pos) || getPositionRegularMarketPrice(pos) || pcur) : (getPositionRegularMarketPrice(pos) || pcur)));
-        var curPrice = pos.sold ? pcur : (currentMode === 'reg' ? (getPositionRegularMarketPrice(pos) || pcur) : pcur);
-        var posClose = pos.qty * closePrice * rateToUSD / rateBaseToUSD;
-        var posCurrent = pos.qty * curPrice * rateToUSD / rateBaseToUSD;
-        closeVal += posClose;
-        currentVal += posCurrent;
-        closeUSD += pos.qty * closePrice * rateToUSD;
-        currentUSD += pos.qty * curPrice * rateToUSD;
-        hasPos = true;
-      }
-    });
-    if (!hasPos) {
-      rows += '<tr><td style="text-align:left;white-space:nowrap">' + p.name + '</td>' + stalePortfolioColHtml(pid) + '<td colspan="4" style="color:var(--dim)">—</td></tr>';
-      return;
-    }
-    var delta = currentVal - closeVal;
-    var deltaPct = closeVal > 0 ? delta / closeVal * 100 : null;
-    var dClass = delta >= 0 ? 'pos' : 'neg';
-    totCloseUSD += closeUSD; totCurrentUSD += currentUSD; hasAny = true;
-    rows += '<tr>'
-      + '<td style="text-align:left;white-space:nowrap;cursor:pointer" onclick="switchPortfolio(&apos;' + pid + '&apos;)">' + p.name + '</td>'
-      + stalePortfolioColHtml(pid)
-      + '<td>' + baseSym2 + f2(closeVal) + '</td>'
-      + '<td>' + baseSym2 + f2(currentVal) + '</td>'
-      + '<td class="' + dClass + '">' + fSign(delta) + '</td>'
-      + '<td class="' + dClass + '">' + (deltaPct !== null ? fSign(deltaPct) + '%' : '—') + '</td>'
-      + '</tr>';
+
+// ── Position sorting ────────────────────────────────────────
+// Pure data sorts (return ordered arrays). Read sort-state globals from index.
+function getSortKey() { return _isArc() ? archiveSortKey : sortKey; }
+function getSortDir() { return _isArc() ? archiveSortDir : sortDir; }
+function setSortState(key, dir) {
+  if (_isArc()) { archiveSortKey = key; archiveSortDir = dir; try { localStorage.setItem('pt_sort_arc', JSON.stringify({key:key,dir:dir})); } catch(e) {} }
+  else { sortKey = key; sortDir = dir; try { localStorage.setItem('pt_sort', JSON.stringify({key:key,dir:dir})); } catch(e) {} }
+}
+function getSorted() {
+  var sortKey = getSortKey(), sortDir = getSortDir();
+  var base = applyFilter(positions);
+  if (!sortKey) return base.slice();
+  return base.slice().sort(function(a, b) {
+    var va, vb;
+    if (sortKey === 'ticker') { var cmp = sortDir * a.ticker.localeCompare(b.ticker); if (cmp !== 0) return cmp; return (a.sold ? 0 : 1) - (b.sold ? 0 : 1); }
+    if (sortKey === 'qty')    { va = a.qty; vb = b.qty; }
+    if (sortKey === 'entry')  { va = a.entry; vb = b.entry; }
+    if (sortKey === 'current'){ var ac0 = getPositionCurrent(a), bc0 = getPositionCurrent(b); va = ac0 !== null ? ac0 : -Infinity; vb = bc0 !== null ? bc0 : -Infinity; }
+    if (sortKey === 'pnl')    { var ac1 = getPositionCurrent(a), bc1 = getPositionCurrent(b); va = (ac1 !== null) ? (ac1 - a.entry) * a.qty : -Infinity; vb = (bc1 !== null) ? (bc1 - b.entry) * b.qty : -Infinity; }
+    if (sortKey === 'pnlpct') { var ac2 = getPositionCurrent(a), bc2 = getPositionCurrent(b); va = (ac2 !== null && a.entry) ? (ac2 - a.entry) / a.entry : -Infinity; vb = (bc2 !== null && b.entry) ? (bc2 - b.entry) / b.entry : -Infinity; }
+    return sortDir * (va > vb ? 1 : va < vb ? -1 : 0);
   });
-  return { rows: rows, totCloseUSD: totCloseUSD, totCurrentUSD: totCurrentUSD, hasAny: hasAny };
+}
+function getSortedForRender() {
+  var sortKey = getSortKey(), sortDir = getSortDir();
+  if (!isAggregated()) return getSorted().map(function(p) { return { agg: false, pos: p }; });
+  // Aggregate first on unsorted positions, then sort aggregated entries.
+  // Filter applies BEFORE aggregation, so ×N counts only visible lots.
+  var entries = aggregatePositions(applyFilter(positions));
+  if (!sortKey) return entries;
+  return entries.slice().sort(function(a, b) {
+    var pa = a.pos, pb = b.pos;
+    var va, vb;
+    if (sortKey === 'ticker') { var cmp = sortDir * pa.ticker.localeCompare(pb.ticker); if (cmp !== 0) return cmp; return (pa.sold ? 0 : 1) - (pb.sold ? 0 : 1); }
+    if (sortKey === 'qty')    { va = pa.qty; vb = pb.qty; }
+    if (sortKey === 'entry')  { va = pa.entry; vb = pb.entry; }
+    if (sortKey === 'current'){ var pac0 = getPositionCurrent(pa), pbc0 = getPositionCurrent(pb); va = pac0 !== null ? pac0 : -Infinity; vb = pbc0 !== null ? pbc0 : -Infinity; }
+    if (sortKey === 'pnl')    { var pac1 = getPositionCurrent(pa), pbc1 = getPositionCurrent(pb); va = (pac1 !== null) ? (pac1 - pa.entry) * pa.qty : -Infinity; vb = (pbc1 !== null) ? (pbc1 - pb.entry) * pb.qty : -Infinity; }
+    if (sortKey === 'pnlpct') { var pac2 = getPositionCurrent(pa), pbc2 = getPositionCurrent(pb); va = (pac2 !== null && pa.entry) ? (pac2 - pa.entry) / pa.entry : -Infinity; vb = (pbc2 !== null && pb.entry) ? (pbc2 - pb.entry) / pb.entry : -Infinity; }
+    return sortDir * (va > vb ? 1 : va < vb ? -1 : 0);
+  });
+}
+function getWeightSorted(items, totVal) {
+  return items.slice().sort(function(a, b) {
+    var va, vb;
+    if (weightSort.key === 'ticker') { va = a.ticker; vb = b.ticker; return weightSort.dir * va.localeCompare(vb); }
+    if (weightSort.key === 'value') {
+      var wac0 = getPositionCurrent(a), wbc0 = getPositionCurrent(b);
+      va = (wac0 !== null && a.qty > 0) ? a.qty * wac0 : -Infinity;
+      vb = (wbc0 !== null && b.qty > 0) ? b.qty * wbc0 : -Infinity;
+    } else { // weight same as value
+      var wac1 = getPositionCurrent(a), wbc1 = getPositionCurrent(b);
+      va = (wac1 !== null && a.qty > 0) ? a.qty * wac1 : -Infinity;
+      vb = (wbc1 !== null && b.qty > 0) ? b.qty * wbc1 : -Infinity;
+    }
+    return weightSort.dir * (va > vb ? 1 : va < vb ? -1 : 0);
+  });
+}
+function getMarketSorted(items) {
+  if (!marketSort.key) return items.slice(); // portfolio order
+  return items.slice().sort(function(a, b) {
+    var va, vb;
+    if (marketSort.key === 'ticker') {
+      return marketSort.dir * a.ticker.localeCompare(b.ticker);
+    }
+    // delta% — use previousClose same as render
+    var aBase = HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(a.ticker, closeMode) || getPositionPreviousClose(a) || getPositionRegularMarketPrice(a)) : ((getPositionMarketState(a) === 'REGULAR') ? (getPositionPreviousClose(a) || getPositionRegularMarketPrice(a)) : ((closeMode === 'prev' ? getPositionPreviousClose(a) : getPositionRegularMarketPrice(a)) || getPositionRegularMarketPrice(a)));
+    var bBase = HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(b.ticker, closeMode) || getPositionPreviousClose(b) || getPositionRegularMarketPrice(b)) : ((getPositionMarketState(b) === 'REGULAR') ? (getPositionPreviousClose(b) || getPositionRegularMarketPrice(b)) : ((closeMode === 'prev' ? getPositionPreviousClose(b) : getPositionRegularMarketPrice(b)) || getPositionRegularMarketPrice(b)));
+    var acur = getPositionCurrent(a), bcur = getPositionCurrent(b);
+    va = (acur != null && aBase) ? (acur - aBase) / aBase * 100 : null;
+    vb = (bcur != null && bBase) ? (bcur - bBase) / bBase * 100 : null;
+    if (marketSort.key === 'absdelta') {
+      va = va !== null ? Math.abs(va) : -Infinity;
+      vb = vb !== null ? Math.abs(vb) : -Infinity;
+      return vb - va;
+    }
+    if (va === null) va = -Infinity;
+    if (vb === null) vb = -Infinity;
+    return marketSort.dir * (va > vb ? 1 : va < vb ? -1 : 0);
+  });
+}
+function getWatchlistSorted(items) {
+  if (!watchlistSort.key) return items.slice();
+  return items.slice().sort(function(a, b) {
+    if (watchlistSort.key === 'ticker') return watchlistSort.dir * a.ticker.localeCompare(b.ticker);
+    var aBase = getPositionPreviousClose(a) || getPositionRegularMarketPrice(a);
+    var bBase = getPositionPreviousClose(b) || getPositionRegularMarketPrice(b);
+    var acur = getPositionCurrent(a), bcur = getPositionCurrent(b);
+    var va = (acur != null && aBase) ? (acur - aBase) / aBase * 100 : null;
+    var vb = (bcur != null && bBase) ? (bcur - bBase) / bBase * 100 : null;
+    if (watchlistSort.key === 'absdelta') {
+      va = va !== null ? Math.abs(va) : -Infinity;
+      vb = vb !== null ? Math.abs(vb) : -Infinity;
+      return vb - va;
+    }
+    if (va === null) va = -Infinity;
+    if (vb === null) vb = -Infinity;
+    return watchlistSort.dir * (va > vb ? 1 : va < vb ? -1 : 0);
+  });
+}
+
+
+// ── View-context predicates ─────────────────────────────────
+// Boolean predicates over the current view/portfolio state (globals in index).
+function isWatchlist() {
+  return !!(currentPortfolio().watchlist);
+}
+function isSummaryByPortfolio() {
+  return SUMMARY_BY_PORTFOLIO_VIEWS.indexOf(viewMode) !== -1;
+}
+function isAllPositions() {
+  return ALL_POSITIONS_VIEWS.indexOf(viewMode) !== -1;
+}
+function isRealizedAllPositions() {
+  return REALIZED_ALL_POSITIONS_VIEWS.indexOf(viewMode) !== -1;
+}
+function isCrossPortfolioContext() {
+  return isSummaryByPortfolio() || isAllPositions() || isRealizedAllPositions();
+}
+function isArchivePortfolio(p) {
+  return !!(p && p.archive);
+}
+function isAggregated() {
+  return currentPortfolio().archive ? aggregatedModeArchive : aggregatedModeActive;
+}
+
+// ── Config & misc primitives ─────────────────────────────────
+function getApiKey() { return localStorage.getItem('pt_finnhub') || ''; }
+function getToken() { return localStorage.getItem('pt_token') || ''; }
+function _isArc() { var p = portfolios[currentPortfolioId]; return !!(p && p.archive); }
+try { var _ws = JSON.parse(localStorage.getItem('pt_wl_sort')); if (_ws) { watchlistSort = _ws; } } catch(e) {}
+
+var catDict = [];
+var regDict = [];
+var secDict = [];
+var brokerDict = [];
+var _defaultBroker = null;
+
+// --- Local storage ---
+function loadLocal() {
+  positions = currentPortfolio().positions;
+}
+
+// ── Chart price cache (localStorage, per-day) ────────────────────
+function getHistoricalClose(ticker, mode) {
+  var pts = chartCacheGet(ticker, mode);
+  return (pts && pts.length > 0) ? pts[0].c : null;
+}
+function chartCacheKey(ticker, range) {
+  return 'chart_hist_' + ticker + '_' + range;
+}
+function chartCacheGet(ticker, range) {
+  var today = new Date().toISOString().slice(0, 10);
+  try {
+    var raw = localStorage.getItem(chartCacheKey(ticker, range));
+    if (!raw) return null;
+    var entry = JSON.parse(raw);
+    if (entry.date !== today) return null;
+    return entry.points;
+  } catch(e) { return null; }
+}
+function chartCacheSet(ticker, range, points) {
+  var today = new Date().toISOString().slice(0, 10);
+  try {
+    // Purge all stale chart cache entries
+    var toDelete = [];
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf('chart_hist_') === 0) {
+        try {
+          var e = JSON.parse(localStorage.getItem(k));
+          if (e.date !== today) toDelete.push(k);
+        } catch(e2) { toDelete.push(k); }
+      }
+    }
+    toDelete.forEach(function(k) { localStorage.removeItem(k); });
+    localStorage.setItem(chartCacheKey(ticker, range), JSON.stringify({ date: today, points: points }));
+  } catch(e) {}
 }
