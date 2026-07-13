@@ -345,7 +345,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.77';
+var APP_VERSION = 'v1.3.78';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -1669,15 +1669,9 @@ function moveToBondArchive(archivePid) {
   render();
 }
 
-function getBondsDb() {
-  try { return JSON.parse(localStorage.getItem('pt_bonds_db') || '[]'); } catch(e) { return []; }
-}
 function saveBondsDb() {
   try { localStorage.setItem('pt_bonds_db', JSON.stringify(bondsDb)); } catch(e) {}
   if (getCloudBackend() === 'kv') cloudSaveKV(); else cloudSave();
-}
-function getBondPortfolios() {
-  try { return JSON.parse(localStorage.getItem('pt_bond_portfolios') || '{}'); } catch(e) { return {}; }
 }
 function saveBondPortfolios() {
   try { localStorage.setItem('pt_bond_portfolios', JSON.stringify(bondPortfolios)); } catch(e) {}
@@ -2042,9 +2036,6 @@ function openBondDetail(idx) {
 }
 
 // ── Cash portfolios ────────────────────────────────────────────────────────
-function getCashPortfolios() {
-  try { return JSON.parse(localStorage.getItem('pt_cash_portfolios') || '{}'); } catch(e) { return {}; }
-}
 function saveCashPortfolios() {
   try { localStorage.setItem('pt_cash_portfolios', JSON.stringify(cashPortfolios)); } catch(e) {}
   if (getCloudBackend() === 'kv') cloudSaveKV(); else cloudSave();

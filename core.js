@@ -958,3 +958,16 @@ function addTodayPoint(points, p) {
   if (lastKey === priceKey) return points;
   return points.concat([{ t: priceTs, c: price }]);
 }
+
+// ── Bonds / cash storage readers ──────────────────────────────
+// Pure localStorage readers. The matching save* functions stay in index: they
+// trigger cloudSave → UI status, so they are not part of the pure layer.
+function getBondsDb() {
+  try { return JSON.parse(localStorage.getItem('pt_bonds_db') || '[]'); } catch(e) { return []; }
+}
+function getBondPortfolios() {
+  try { return JSON.parse(localStorage.getItem('pt_bond_portfolios') || '{}'); } catch(e) { return {}; }
+}
+function getCashPortfolios() {
+  try { return JSON.parse(localStorage.getItem('pt_cash_portfolios') || '{}'); } catch(e) { return {}; }
+}
