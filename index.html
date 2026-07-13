@@ -345,7 +345,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.69';
+var APP_VERSION = 'v1.3.70';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -661,24 +661,6 @@ var fxRateCache = {}; // { 'EURUSD=X': { rate: 1.17, ts: 1234567890 } }
 var fxRateInflight = {}; // { 'EURUSD=X': Promise }
 var FX_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
-function fetchFxRate(baseUrl, token, ticker) {
-  var now = Date.now();
-  var cached = fxRateCache[ticker];
-  if (cached && (now - cached.ts) < FX_CACHE_TTL) {
-    return Promise.resolve(cached.rate);
-  }
-  // Return existing in-flight promise if one exists
-  if (fxRateInflight[ticker]) return fxRateInflight[ticker];
-  var url = baseUrl + '/api/quote?ticker=' + encodeURIComponent(ticker);
-  var opts = token ? { headers: { 'X-API-Token': token } } : {};
-  var p = fetch(url, opts).then(function(r) { return r.json(); }).then(function(d) {
-    delete fxRateInflight[ticker];
-    if (d.price) fxRateCache[ticker] = { rate: d.price, ts: Date.now() };
-    return d.price || null;
-  }).catch(function() { delete fxRateInflight[ticker]; return null; });
-  fxRateInflight[ticker] = p;
-  return p;
-}
 
  // { ticker, qty, entry, current }
 var bondsDb = []; // bond database: { id, name, currency, parValue, nominalYield, couponFrequency, maturityDate }
@@ -3624,26 +3606,6 @@ function fetchPrice(ticker) {
 // enter ISINs manually and a real provider can be wired into the worker
 // later without touching the frontend. Returns the ISIN string on success,
 // null when unavailable, or throws on network/HTTP errors.
-function fetchIsin(ticker) {
-  if (!ticker) return Promise.resolve(null);
-  var baseUrl = getApiKey();
-  if (!baseUrl) return Promise.reject(new Error('no_key'));
-  baseUrl = baseUrl.replace(/\/+$/, '');
-  var token = getToken();
-  var url = baseUrl + '/api/isin?ticker=' + encodeURIComponent(ticker);
-  var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  var timer = controller ? setTimeout(function() { controller.abort(); }, 15000) : null;
-  var opts = controller ? { signal: controller.signal } : {};
-  if (token) opts.headers = { 'X-API-Token': token };
-  return fetch(url, opts).then(function(r) {
-    if (timer) clearTimeout(timer);
-    if (!r.ok) throw new Error('http_' + r.status);
-    return r.json();
-  }).then(function(data) {
-    if (!data || data.error) return null;
-    return data.isin || null;
-  });
-}
 
 // YYYY-MM-DD in local timezone, used as default purchaseDate for new positions
 

@@ -492,3 +492,43 @@ function addToDict(dict, value) {
   dict.push(value);
   dict.sort(function(a, b) { return a.localeCompare(b); });
 }
+
+// ── Network primitives ──────────────────────────────────────────
+function fetchFxRate(baseUrl, token, ticker) {
+  var now = Date.now();
+  var cached = fxRateCache[ticker];
+  if (cached && (now - cached.ts) < FX_CACHE_TTL) {
+    return Promise.resolve(cached.rate);
+  }
+  // Return existing in-flight promise if one exists
+  if (fxRateInflight[ticker]) return fxRateInflight[ticker];
+  var url = baseUrl + '/api/quote?ticker=' + encodeURIComponent(ticker);
+  var opts = token ? { headers: { 'X-API-Token': token } } : {};
+  var p = fetch(url, opts).then(function(r) { return r.json(); }).then(function(d) {
+    delete fxRateInflight[ticker];
+    if (d.price) fxRateCache[ticker] = { rate: d.price, ts: Date.now() };
+    return d.price || null;
+  }).catch(function() { delete fxRateInflight[ticker]; return null; });
+  fxRateInflight[ticker] = p;
+  return p;
+}
+function fetchIsin(ticker) {
+  if (!ticker) return Promise.resolve(null);
+  var baseUrl = getApiKey();
+  if (!baseUrl) return Promise.reject(new Error('no_key'));
+  baseUrl = baseUrl.replace(/\/+$/, '');
+  var token = getToken();
+  var url = baseUrl + '/api/isin?ticker=' + encodeURIComponent(ticker);
+  var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  var timer = controller ? setTimeout(function() { controller.abort(); }, 15000) : null;
+  var opts = controller ? { signal: controller.signal } : {};
+  if (token) opts.headers = { 'X-API-Token': token };
+  return fetch(url, opts).then(function(r) {
+    if (timer) clearTimeout(timer);
+    if (!r.ok) throw new Error('http_' + r.status);
+    return r.json();
+  }).then(function(data) {
+    if (!data || data.error) return null;
+    return data.isin || null;
+  });
+}
