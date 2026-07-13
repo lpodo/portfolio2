@@ -890,3 +890,71 @@ function setFundamentalsSelectedSet(v) {
     else localStorage.setItem('pt_fund_set_' + currentPortfolioId, v);
   } catch(e) {}
 }
+
+// (pad2: zero-padded number, used by date formatting)
+function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+
+
+
+// --- Chart history cache ---
+// Key: chart_hist_{ticker}_{range}, Value: { date, points }
+// Expires daily - stale entries purged on each write
+
+
+
+
+var HIST_MODES = ['5d','1mo','3mo','6mo','1y','5y'];
+
+function closeModeLabel(mode) {
+  var map = { 'prev': 'PREV.CLOSE', 'reg': 'REG.PRICE', '5d': '5D', '1mo': '1M', '3mo': '3M', '6mo': '6M', '1y': '1Y', '5y': '5Y' };
+  return map[mode] || mode.toUpperCase();
+}
+
+// ── Chart selection & cache-point helpers ───────────────────────
+// Which tickers/set the chart shows, and point bucketing/keys. Pure data.
+function getChartSelKey() {
+  return 'pt_chart_sel_' + currentPortfolioId;
+}
+function getChartSelection() {
+  // Returns array of tickers for the currently selected set, or [] if no set
+  // selected. 'portfolio' is handled separately (returns all unique tickers).
+  var sel = getChartSelectedSet();
+  if (sel === 'portfolio') return getChartUniqueTickers();
+  var set = getPositionSets().find(function(s) { return s.id === sel; });
+  if (!set) return [];
+  // Filter to tickers actually present in current portfolio
+  var allTickers = getChartUniqueTickers();
+  return set.tickers.filter(function(t) { return allTickers.indexOf(t) !== -1; });
+}
+function getChartUniqueTickers() {
+  var seen = {};
+  var result = [];
+  (positions || []).forEach(function(p) {
+    if (!seen[p.ticker]) { seen[p.ticker] = true; result.push(p.ticker); }
+  });
+  return result;
+}
+function saveChartSelection(tickers) {
+  try { localStorage.setItem(getChartSelKey(), JSON.stringify(tickers)); } catch(e) {}
+}
+function pointKey(ts, range) {
+  if (range === '1d') return Math.round(ts / 300) * 300 + ''; // 5-min bucket key
+  return dateKey(ts);
+}
+function dateKey(ts) {
+  var d = new Date(ts * 1000);
+  return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth()+1) + '-' + pad2(d.getUTCDate());
+}
+function getChartCurrentPrice(p) {
+  return currentMode === 'reg' ? (getPositionRegularMarketPrice(p) || getPositionCurrent(p)) : getPositionCurrent(p);
+}
+function addTodayPoint(points, p) {
+  if (!points || !points.length || !p) return points;
+  var price = getChartCurrentPrice(p);
+  if (!price) return points;
+  var priceTs = p.priceTimestamp || Math.floor(Date.now() / 1000);
+  var priceKey = dateKey(priceTs);
+  var lastKey = dateKey(points[points.length - 1].t);
+  if (lastKey === priceKey) return points;
+  return points.concat([{ t: priceTs, c: price }]);
+}
