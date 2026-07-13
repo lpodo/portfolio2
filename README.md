@@ -6,7 +6,7 @@ A PWA stock portfolio tracker with a Cloudflare Worker backend. Supports all maj
 
 | | |
 |---|---|
-| **Frontend** | Single-file HTML SPA, hostable anywhere static (GitHub Pages, Vercel, Cloudflare Pages, Netlify, plain S3, etc.). Reference deployment: `lpodo.github.io/portfolio2` |
+| **Frontend** | Static HTML/JS SPA (`index.html` + `core.js` + `fundamentals.js`), hostable anywhere static (GitHub Pages, Vercel, Cloudflare Pages, Netlify, plain S3, etc.). Reference deployment: `lpodo.github.io/portfolio2` |
 | **Price backend** | Cloudflare Workers — `portfolio2.lpodolskiy.workers.dev` |
 | **Repository** | `lpodo/portfolio2` |
 | **App** | PWA — installable on Android/iOS as a home screen app |
@@ -157,7 +157,7 @@ Brokers feed three downstream features:
 
 ## Prices & P&L
 
-- Price update: ↻ per row or Refresh All (parallel).
+- Price update: the **Refresh** button in the top bar (circular-arrows icon) fetches fresh prices for all positions in parallel.
 - Sort by any column — persists across sessions.
 - **P&L $** for full position: `(current - entry) × qty`
 - **P&L %** per share: `(current - entry) / entry × 100`
@@ -232,7 +232,7 @@ Positions without a `broker` field land in the subgroup of the current default b
 
 ### Filters
 
-A global, persistent filter narrows the set of positions shown across every view at once. Toggle it via the **∇** (nabla) icon — it sits in the P&L table header (over the MOVE column) for individual portfolios, and in the PORTFOLIO header cell of cross-portfolio views. The icon is green when a filter is active, dim otherwise. Clicking it opens the filter modal.
+A global, persistent filter narrows the set of positions shown across every view at once. Toggle it via the **funnel icon** in the app's top bar (next to Refresh). The icon appears only in contexts where the filter applies — individual regular portfolios and the active cross-portfolio views; it's hidden on watchlists, realized portfolios, and the realized ALL POSITIONS view. It's highlighted when a filter is active, dim otherwise. Tapping it opens the filter modal.
 
 Two conditions are available, combined with AND:
 
@@ -243,7 +243,7 @@ Two conditions are available, combined with AND:
 
 Scope of the filter:
 
-- **Individual regular portfolios** — the filter applies. Watchlists and realized portfolios ignore it (their ∇ icon isn't shown).
+- **Individual regular portfolios** — the filter applies. Watchlists and realized portfolios ignore it (the funnel icon isn't shown there).
 - **Cross-portfolio views** (ALL POSITIONS, Σ SUMMARY) — the active summaries apply the filter; the realized summary does not.
 - **What you see is what you act on:** the filter is the single choke point for both display *and* operations — aggregation, bulk move, bulk delete, and totals all operate on the filtered set, so you can't accidentally act on hidden positions.
 
@@ -779,6 +779,11 @@ Optional AES-GCM 256-bit client-side encryption via the **ENC KEY** field in Set
 ## Architecture & Stack
 
 - Pure HTML/JS/CSS — no frameworks or build tools.
+- **Frontend** is three files loaded in order into one shared global scope (ES5, no modules):
+  - `core.js` — the stable, separable layer with no rendering/DOM dependency: data migrations, ticker/position accessors, ISIN helpers, formatters, portfolio/broker accessors, localStorage primitives, network primitives (FX rate, ISIN fetch), position filtering, and aggregation/market-total math.
+  - `fundamentals.js` — the Fundamentals view and the More overlay (tables, charts, quarterly/analyst rendering, fundamentals caches).
+  - `index.html` — the main script: rendering, DOM, event handlers, and everything that touches the UI.
+  - The split is by separability, not strict layering: `core.js` and `fundamentals.js` load first so their definitions are available to `index.html`, and they may in turn read globals and call functions defined in `index.html` — safe because all of it runs after both files have loaded, never at parse time.
 - **Cloudflare Worker** (`worker.js`) — serverless proxy to Yahoo Finance, bypasses CORS.
 - PWA files: `manifest.json`, `sw.js`, `icon-192.png`, `icon-512.png`, `icon-32.png`, `icon-16.png`.
 - No npm, webpack, or React — maximum portability.
