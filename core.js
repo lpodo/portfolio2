@@ -819,3 +819,74 @@ function chartCacheSet(ticker, range, points) {
     localStorage.setItem(chartCacheKey(ticker, range), JSON.stringify({ date: today, points: points }));
   } catch(e) {}
 }
+
+// ── Dictionary helpers (cat/reg/sec/broker lookups) ───────────────
+// Pure lookups over the dict globals (which live in index). The mutating dict
+// actions (add/remove/setDefault) stay in index — they re-render the panel.
+function loadDicts() {
+  try { catDict = JSON.parse(localStorage.getItem('pt_cat_dict')) || []; } catch(e) { catDict = []; }
+  try { regDict = JSON.parse(localStorage.getItem('pt_reg_dict')) || []; } catch(e) { regDict = []; }
+  try { secDict = JSON.parse(localStorage.getItem('pt_sec_dict')) || []; } catch(e) { secDict = []; }
+  try { cashCatDict = JSON.parse(localStorage.getItem('pt_cash_cat_dict')) || []; } catch(e) { cashCatDict = []; }
+  try { brokerDict = JSON.parse(localStorage.getItem('pt_broker_dict')) || []; } catch(e) { brokerDict = []; }
+  try { _defaultBroker = localStorage.getItem('pt_default_broker') || null; } catch(e) { _defaultBroker = null; }
+}
+function countPositionsWithBroker(broker) {
+  var n = 0;
+  Object.keys(portfolios).forEach(function(pid) {
+    (portfolios[pid].positions || []).forEach(function(pos) {
+      if (pos.broker === broker) n++;
+    });
+  });
+  return n;
+}
+function _dictHiddenId(field) {
+  return field === 'cat' ? 'editCategory'
+       : field === 'reg' ? 'editRegion'
+       : field === 'sec' ? 'editSector'
+       : field === 'ccat' ? 'editCashCategory'
+       : field === 'bro' ? 'editBroker'
+       : field === 'broAdd' ? 'addBroker'
+       : '';
+}
+function _dictRef(field) {
+  return field === 'cat' ? catDict
+       : field === 'reg' ? regDict
+       : field === 'sec' ? secDict
+       : field === 'ccat' ? cashCatDict
+       : (field === 'bro' || field === 'broAdd') ? brokerDict
+       : null;
+}
+
+// ── Position sets: read + per-view selection ────────────────────
+// Reading sets and the chart/fundamentals selection (localStorage). The
+// mutating actions (save/create/update/delete) stay in index: they go through
+// the save path → cloudSave → UI status, so they are not part of the pure layer.
+function getPositionSets(portfolioId) {
+  var p = portfolios[portfolioId || currentPortfolioId];
+  return (p && p.positionSets) ? p.positionSets : [];
+}
+function getChartSelectedSet() {
+  // Returns 'portfolio' | setId | null
+  try {
+    var v = localStorage.getItem('pt_chart_set_' + currentPortfolioId);
+    if (v) return v;
+  } catch(e) {}
+  return 'portfolio'; // default for chart
+}
+function setChartSelectedSet(v) {
+  try { localStorage.setItem('pt_chart_set_' + currentPortfolioId, v); } catch(e) {}
+}
+function getFundamentalsSelectedSet() {
+  try {
+    var v = localStorage.getItem('pt_fund_set_' + currentPortfolioId);
+    if (v) return v;
+  } catch(e) {}
+  return null; // default for fundamentals: no selection
+}
+function setFundamentalsSelectedSet(v) {
+  try {
+    if (v == null) localStorage.removeItem('pt_fund_set_' + currentPortfolioId);
+    else localStorage.setItem('pt_fund_set_' + currentPortfolioId, v);
+  } catch(e) {}
+}
