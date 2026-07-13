@@ -1,19 +1,25 @@
-// core.js — stable lower-level layer for Portfolio Terminal.
+// core.js — stable, separable layer for Portfolio Terminal.
 //
-// Holds the parts that change rarely, split out of index.html for readability:
+// Holds the parts that change rarely and don't touch rendering/DOM, split out
+// of index.html for readability. Not just "low-level primitives" — any code
+// that is naturally separable (no render/DOM dependency) and stable lives here:
 //   • data migrations (position/ticker split chain + dict seeding)
 //   • ticker & position accessors (getTicker*/setTicker*/getPosition*)
 //   • ISIN helpers (isKnownIsin, ISIN_UNRESOLVED_MARKER)
 //   • formatters (f2/fSign/fPct/fmtK, todayLocalISO)
 //   • portfolio/broker accessors (currentPortfolio, getCurrency, get*Broker)
+//   • local storage primitives (get/savePortfolios, *TickerDataLS, saveDicts…)
+//   • network primitives (fetchFxRate, fetchIsin)
+//   • position filtering (filterActive/filterPositions/applyFilter…)
+//   • aggregation & market totals (aggregatePositions, computeUsdMarketTotal…)
 //
 // Loaded before fundamentals.js and the main index.html script, so every
 // definition here is available to both. This is a shared-globals split (ES5,
 // no modules): everything lives in one global scope — no import/export. Code
 // here may read globals and call functions that still live in index.html
-// (portfolios, tickerData, CURRENCY_SYMBOLS, save*, etc.); that's safe because
-// all of it runs after both files have loaded (from the window 'load' handler
-// and event callbacks), never at parse time.
+// (portfolios, tickerData, activeFilter, closeMode, save*, getHistoricalClose…);
+// that's safe because all of it runs after both files have loaded (from the
+// window 'load' handler and event callbacks), never at parse time.
 
 // ── Data migrations ─────────────────────────────────────────────────────────
 // When cloud payload contains legacy `tickerAlerts` (flat) but not `tickerData`,
@@ -200,7 +206,6 @@ function migrateMetaToTicker() {
   saveTickerDataLS();
 }
 
-// ── Ticker & alert accessors ────────────────────────────────────────────────
 // ── Alerts (thin wrappers over tickerData[ticker].alerts) ───────────────────
 function getTickerAlerts(ticker) {
   if (!ticker) return [];
@@ -565,4 +570,118 @@ function applyFilter(posns) {
 }
 function hasActiveFilter() {
   return !!(activeFilter && (activeFilter.purchaseDateFrom || activeFilter.broker));
+}
+
+// ── Position aggregation & market totals ────────────────────────
+// Data transforms that prepare positions for the views (group by ticker,
+// weighted-average an aggregate, sum a market total in USD). No rendering.
+function aggregatePositions(posns) {
+  // Build maps: active by ticker, sold by ticker; qty=0 kept as-is
+  var activeMap = {}, soldMap = {};
+  posns.forEach(function(p) {
+    if (!p.sold && p.qty > 0) {
+      if (!activeMap[p.ticker]) activeMap[p.ticker] = [];
+      activeMap[p.ticker].push(p);
+    } else if (p.sold) {
+      if (!soldMap[p.ticker]) soldMap[p.ticker] = [];
+      soldMap[p.ticker].push(p);
+    }
+  });
+
+  // Build aggregated entries
+  function makeEntry(group, isSold) {
+    if (group.length === 1) return { agg: false, pos: group[0] };
+    var totalQty = 0, totalCost = 0, totalSell = 0;
+    group.forEach(function(p) { totalQty += p.qty; totalCost += p.qty * p.entry; if (isSold) totalSell += p.qty * getPositionCurrent(p); });
+    var avgSell = totalQty > 0 ? totalSell / totalQty : 0;
+    var rep = Object.assign({}, group[0], {
+      qty: totalQty,
+      entry: totalQty > 0 ? totalCost / totalQty : 0,
+      current: isSold ? avgSell : getPositionCurrent(group[0])
+    });
+    if (isSold) {
+      // Aggregate reads its price via the sold branch, so give it a real
+      // sellPrice (weighted-average sale price) instead of relying on the
+      // current-fallback. sellCurrency is frozen per ticker (same for the group).
+      rep.sellPrice = avgSell;
+      rep.sellCurrency = group[0].sellCurrency || getPositionCurrencyCode(group[0]);
+    }
+    return { agg: true, count: group.length, pos: rep, group: group };
+  }
+
+  // Emit in the order of first appearance in posns
+  var seen = {}, result = [];
+  posns.forEach(function(p) {
+    if (!p.sold && p.qty === 0) {
+      result.push({ agg: false, pos: p });
+    } else if (!p.sold && p.qty > 0) {
+      var key = 'a:' + p.ticker;
+      if (!seen[key]) { seen[key] = true; result.push(makeEntry(activeMap[p.ticker], false)); }
+    } else if (p.sold) {
+      var key2 = 's:' + p.ticker;
+      if (!seen[key2]) { seen[key2] = true; result.push(makeEntry(soldMap[p.ticker], true)); }
+    }
+  });
+  return result;
+}
+function computeUsdMarketTotal(posns, fxRates) {
+  var closeUSD = 0, currentUSD = 0, hasAny = false;
+  (posns || []).forEach(function(pos) {
+    var pcur = getPositionCurrent(pos);
+    if (pcur == null || !(pos.qty > 0)) return;
+    var pc = getPositionCurrencyCode(pos);
+    var rateToUSD = pc === 'USD' ? 1 : (fxRates[pc] || fxRates[pc + 'USD'] || 1);
+    var closePrice = pos.sold ? pcur : (HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(pos.ticker, closeMode) || getPositionRegularMarketPrice(pos) || pcur) : (closeMode === 'prev' ? (getPositionPreviousClose(pos) || getPositionRegularMarketPrice(pos) || pcur) : (getPositionRegularMarketPrice(pos) || pcur)));
+    var curPrice = pos.sold ? pcur : (currentMode === 'reg' ? (getPositionRegularMarketPrice(pos) || pcur) : pcur);
+    closeUSD += pos.qty * closePrice * rateToUSD;
+    currentUSD += pos.qty * curPrice * rateToUSD;
+    hasAny = true;
+  });
+  return { closeUSD: closeUSD, currentUSD: currentUSD, hasAny: hasAny };
+}
+function computeSummaryMarketRows(smPids, fxRates) {
+  var rows = '';
+  var totCloseUSD = 0, totCurrentUSD = 0, hasAny = false;
+  var smDoFilter = filterActiveForSummary(false); // Σ SUMMARY is active-only
+  smPids.forEach(function(pid) {
+    var p = portfolios[pid];
+    var base = (p.currencyCode || 'USD').toUpperCase();
+    var baseSym2 = CURRENCY_SYMBOLS[base] || base;
+    var closeVal = 0, currentVal = 0, closeUSD = 0, currentUSD = 0, hasPos = false;
+    var smPosns = smDoFilter ? filterPositions(p.positions || []) : (p.positions || []);
+    smPosns.forEach(function(pos) {
+      var pcur = getPositionCurrent(pos);
+      if (pcur != null && pos.qty > 0) {
+        var pc = getPositionCurrencyCode(pos, base);
+        var rateToUSD = pc === 'USD' ? 1 : (fxRates[pc] || fxRates[pc + 'USD'] || 1);
+        var rateBaseToUSD = base === 'USD' ? 1 : (fxRates[base] || fxRates[base + 'USD'] || 1);
+        var closePrice = pos.sold ? pcur : (HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(pos.ticker, closeMode) || getPositionRegularMarketPrice(pos) || pcur) : (closeMode === 'prev' ? (getPositionPreviousClose(pos) || getPositionRegularMarketPrice(pos) || pcur) : (getPositionRegularMarketPrice(pos) || pcur)));
+        var curPrice = pos.sold ? pcur : (currentMode === 'reg' ? (getPositionRegularMarketPrice(pos) || pcur) : pcur);
+        var posClose = pos.qty * closePrice * rateToUSD / rateBaseToUSD;
+        var posCurrent = pos.qty * curPrice * rateToUSD / rateBaseToUSD;
+        closeVal += posClose;
+        currentVal += posCurrent;
+        closeUSD += pos.qty * closePrice * rateToUSD;
+        currentUSD += pos.qty * curPrice * rateToUSD;
+        hasPos = true;
+      }
+    });
+    if (!hasPos) {
+      rows += '<tr><td style="text-align:left;white-space:nowrap">' + p.name + '</td>' + stalePortfolioColHtml(pid) + '<td colspan="4" style="color:var(--dim)">—</td></tr>';
+      return;
+    }
+    var delta = currentVal - closeVal;
+    var deltaPct = closeVal > 0 ? delta / closeVal * 100 : null;
+    var dClass = delta >= 0 ? 'pos' : 'neg';
+    totCloseUSD += closeUSD; totCurrentUSD += currentUSD; hasAny = true;
+    rows += '<tr>'
+      + '<td style="text-align:left;white-space:nowrap;cursor:pointer" onclick="switchPortfolio(&apos;' + pid + '&apos;)">' + p.name + '</td>'
+      + stalePortfolioColHtml(pid)
+      + '<td>' + baseSym2 + f2(closeVal) + '</td>'
+      + '<td>' + baseSym2 + f2(currentVal) + '</td>'
+      + '<td class="' + dClass + '">' + fSign(delta) + '</td>'
+      + '<td class="' + dClass + '">' + (deltaPct !== null ? fSign(deltaPct) + '%' : '—') + '</td>'
+      + '</tr>';
+  });
+  return { rows: rows, totCloseUSD: totCloseUSD, totCurrentUSD: totCurrentUSD, hasAny: hasAny };
 }
