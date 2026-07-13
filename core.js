@@ -971,3 +971,139 @@ function getBondPortfolios() {
 function getCashPortfolios() {
   try { return JSON.parse(localStorage.getItem('pt_cash_portfolios') || '{}'); } catch(e) { return {}; }
 }
+
+// ── Misc utilities ──────────────────────────────────────────
+// Pure helpers: currency validation, deposit math, stale checks, icon codepoint
+// conversion, blink-class mapping, pnl class, fetch-with-timeout.
+function validateCurrencyCode(code, callback) {
+  if (code === 'USD') { callback(true); return; }
+  var baseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
+  var token = getToken();
+  if (!baseUrl) { callback(true); return; } // no backend — skip validation
+  var url = baseUrl + '/api/quote?ticker=' + encodeURIComponent(code + 'USD=X');
+  var opts = token ? { headers: { 'X-API-Token': token } } : {};
+  fetch(url, opts).then(function(r) { return r.json(); }).then(function(d) {
+    callback(!!(d.price && d.price > 0));
+  }).catch(function() { callback(false); });
+}
+function calcDeposit(dep, currencyCode) {
+  var termYears = dep.termMonths / 12;
+  var rate = dep.rate / 100;
+  var openDate = new Date(dep.openDate);
+  var maturityDate = new Date(openDate);
+  maturityDate.setMonth(maturityDate.getMonth() + dep.termMonths);
+  var today = new Date(); today.setHours(0,0,0,0);
+  var isMatured = maturityDate <= today;
+  var profit, annYield;
+  if (dep.depositType === 'compounded') {
+    var freq = dep.freqPerYear || 12;
+    profit = dep.amount * (Math.pow(1 + rate / freq, freq * termYears) - 1);
+    annYield = (Math.pow(1 + rate / freq, freq) - 1) * 100;
+  } else {
+    profit = dep.amount * rate * termYears;
+    annYield = dep.rate;
+  }
+  var ret = dep.amount > 0 ? profit / dep.amount * 100 : null;
+  return { profit: profit, ret: ret, annYield: annYield, maturityDate: maturityDate, isMatured: isMatured, currSym: CURRENCY_SYMBOLS[currencyCode] || currencyCode };
+}
+function findPortfolioForPosition(posId) {
+  for (var pid in portfolios) {
+    var port = portfolios[pid];
+    if (!port || !port.positions) continue;
+    for (var i = 0; i < port.positions.length; i++) {
+      if (port.positions[i].id === posId) return port;
+    }
+  }
+  return null;
+}
+function fetchWithTimeout(url, opts, ms) {
+  ms = ms || 10000;
+  var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  var timer = null;
+  var fetchOpts = controller ? Object.assign({}, opts, { signal: controller.signal }) : opts;
+  var p = fetch(url, fetchOpts).then(function(r) { clearTimeout(timer); return r.json(); });
+  if (controller) {
+    timer = setTimeout(function() { controller.abort(); }, ms);
+  }
+  return p;
+}
+function iconsCodeToSymbol(code) {
+  if (code == null) return '';
+  var trimmed = String(code).trim();
+  if (!trimmed) return '';
+  var parts = trimmed.split(/\s+/);
+  var chars = [];
+  for (var i = 0; i < parts.length; i++) {
+    if (!/^[0-9A-Fa-f]{1,6}$/.test(parts[i])) return null;
+    var n = parseInt(parts[i], 16);
+    if (isNaN(n) || n < 0 || n > 0x10FFFF) return null;
+    try { chars.push(String.fromCodePoint(n)); } catch (e) { return null; }
+  }
+  return chars.join('');
+}
+function iconsSymbolToCode(symbol) {
+  if (!symbol) return '';
+  var codes = [];
+  for (var i = 0; i < symbol.length; ) {
+    var cp = symbol.codePointAt(i);
+    codes.push(cp.toString(16).toUpperCase());
+    i += cp > 0xFFFF ? 2 : 1;
+  }
+  return codes.join(' ');
+}
+function isPortfolioStale(pid) {
+  var port = portfolios[pid];
+  if (!port || port.archive) return false;
+  var poss = port.positions || [];
+  for (var i = 0; i < poss.length; i++) {
+    if (poss[i].sold) continue;
+    if (isPriceStale(poss[i].ticker)) return true;
+  }
+  return false;
+}
+function activeTickerCount(p) {
+  var seen = {};
+  (p.positions || []).forEach(function(pos) {
+    // For watchlist/index: count all (they have qty=0 by design)
+    // For archive: count all (they're all sold but that's the point)
+    // For regular: only active (not sold, qty>0)
+    var count = p.watchlist || p.archive ? true : (!pos.sold && pos.qty > 0);
+    if (count) seen[pos.ticker] = true;
+  });
+  return Object.keys(seen).length;
+}
+function getMarketIcons() {
+  try {
+    var raw = localStorage.getItem(MARKET_ICONS_STORAGE_KEY);
+    if (!raw) return Object.assign({}, MARKET_ICONS_DEFAULTS);
+    var parsed = JSON.parse(raw);
+    return Object.assign({}, MARKET_ICONS_DEFAULTS, parsed);
+  } catch (e) { return Object.assign({}, MARKET_ICONS_DEFAULTS); }
+}
+function setMarketIcons(icons) {
+  try { localStorage.setItem(MARKET_ICONS_STORAGE_KEY, JSON.stringify(icons)); } catch (e) {}
+}
+function blinkClassForCount(n) {
+  if (n < 2) return null;
+  var base = getBlinkPref();
+  var startIdx = BLINK_LEVELS.indexOf(base);
+  if (startIdx < 0) startIdx = 1;
+  var idx = Math.min(BLINK_LEVELS.length - 1, startIdx + (n - 2));
+  return 'alert-blink-' + BLINK_LEVELS[idx];
+}
+function alertColorForCond(cond) {
+  return cond === '<' ? '#5bd1f6' : '#f6c15b';
+}
+function getCloseForMode(p) {
+  if (HIST_MODES.indexOf(closeMode) !== -1) return getHistoricalClose(p.ticker, closeMode);
+  return closeMode === 'prev' ? (getPositionPreviousClose(p) || getPositionRegularMarketPrice(p) || null) : (getPositionRegularMarketPrice(p) || null);
+}
+function escapeCustomizeIconsAttr(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function cls(n) {
+  if (n === null || n === undefined || isNaN(n)) return 'muted';
+  return n >= 0 ? 'pos' : 'neg';
+}
+function isPriceStale(ticker)    { return !!staleTickers[ticker]; }
+function getBlinkPref()      { try { return localStorage.getItem('pt_blink_period') || 'med'; } catch(e) { return 'med'; } }

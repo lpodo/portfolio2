@@ -345,7 +345,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.78';
+var APP_VERSION = 'v1.3.79';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -567,7 +567,6 @@ var staleTickers = {};
 
 function markPriceStale(ticker)  { if (ticker) staleTickers[ticker] = true; }
 function markPriceFresh(ticker)  { if (ticker) delete staleTickers[ticker]; }
-function isPriceStale(ticker)    { return !!staleTickers[ticker]; }
 
 // Returns the HTML for the inline ⚠ icon when a position's price is stale.
 // The icon is a clickable button — tapping calls refreshTicker for this
@@ -586,16 +585,6 @@ function staleColHtml(p) {
 
 // True if any active (non-sold) position in the portfolio has stale price.
 // Used by per-portfolio summary rows to surface aggregate staleness.
-function isPortfolioStale(pid) {
-  var port = portfolios[pid];
-  if (!port || port.archive) return false;
-  var poss = port.positions || [];
-  for (var i = 0; i < poss.length; i++) {
-    if (poss[i].sold) continue;
-    if (isPriceStale(poss[i].ticker)) return true;
-  }
-  return false;
-}
 function stalePortfolioIconHtml(pid) {
   if (!isPortfolioStale(pid)) return '';
   return '<span onclick="event.stopPropagation();refreshStaleInPortfolio(&apos;' + pid + '&apos;)" style="color:#c77dff;font-size:11px;cursor:pointer;user-select:none" title="tap to refresh stale positions in this portfolio">&#9888;&#65038;</span>';
@@ -1290,26 +1279,6 @@ function openBondPosDetail(posId) {
 
 
 // ─── Deposit functions ─────────────────────────────────────────────────────────
-function calcDeposit(dep, currencyCode) {
-  var termYears = dep.termMonths / 12;
-  var rate = dep.rate / 100;
-  var openDate = new Date(dep.openDate);
-  var maturityDate = new Date(openDate);
-  maturityDate.setMonth(maturityDate.getMonth() + dep.termMonths);
-  var today = new Date(); today.setHours(0,0,0,0);
-  var isMatured = maturityDate <= today;
-  var profit, annYield;
-  if (dep.depositType === 'compounded') {
-    var freq = dep.freqPerYear || 12;
-    profit = dep.amount * (Math.pow(1 + rate / freq, freq * termYears) - 1);
-    annYield = (Math.pow(1 + rate / freq, freq) - 1) * 100;
-  } else {
-    profit = dep.amount * rate * termYears;
-    annYield = dep.rate;
-  }
-  var ret = dep.amount > 0 ? profit / dep.amount * 100 : null;
-  return { profit: profit, ret: ret, annYield: annYield, maturityDate: maturityDate, isMatured: isMatured, currSym: CURRENCY_SYMBOLS[currencyCode] || currencyCode };
-}
 
 function openDepositDetail(posId) {
   var bp = bondPortfolios[currentBondPortfolioId];
@@ -3377,17 +3346,6 @@ function save() {
   saveLocal();
   if (getCloudBackend() === 'kv') cloudSaveKV(); else cloudSave();
 }
-function validateCurrencyCode(code, callback) {
-  if (code === 'USD') { callback(true); return; }
-  var baseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
-  var token = getToken();
-  if (!baseUrl) { callback(true); return; } // no backend — skip validation
-  var url = baseUrl + '/api/quote?ticker=' + encodeURIComponent(code + 'USD=X');
-  var opts = token ? { headers: { 'X-API-Token': token } } : {};
-  fetch(url, opts).then(function(r) { return r.json(); }).then(function(d) {
-    callback(!!(d.price && d.price > 0));
-  }).catch(function() { callback(false); });
-}
 
 
 // --- AES-GCM Cloud Encryption ---
@@ -3538,10 +3496,6 @@ function renderAddBrokerSlot() {
   slot.innerHTML = buildDictSelectHtml('broAdd', brokerDict, def, 'BROKER', '115px');
 }
 
-function cls(n) {
-  if (n === null || n === undefined || isNaN(n)) return 'muted';
-  return n >= 0 ? 'pos' : 'neg';
-}
 // Bond decomposition formatting helpers. Used in expanded rows, totals bars, summary.
 // Zero values (|v| < 0.005) render as dim em-dash for visual cleanliness.
 function fmtBondBody(v, currSym) {
@@ -3866,16 +3820,6 @@ function removeAggPositions(ticker, soldFlag) {
 // Find the portfolio object that contains a given position id.
 // Used by alert/note operations that may run from summary views where
 // the global `positions` doesn't necessarily include the target.
-function findPortfolioForPosition(posId) {
-  for (var pid in portfolios) {
-    var port = portfolios[pid];
-    if (!port || !port.positions) continue;
-    for (var i = 0; i < port.positions.length; i++) {
-      if (port.positions[i].id === posId) return port;
-    }
-  }
-  return null;
-}
 
 function deleteAlert(ticker, alertId) {
   if (!ticker) return;
@@ -3904,9 +3848,6 @@ function addAlert(ticker) {
 // Color for a triggered alert based on its condition direction.
 // '>' (price crossed above) → warm yellow.
 // '<' (price crossed below) → sky blue.
-function alertColorForCond(cond) {
-  return cond === '<' ? '#5bd1f6' : '#f6c15b';
-}
 
 // Returns HTML for 0/1/2 colored dots next to a ticker, based on which
 // directions have triggered alerts in the given flat list of alerts.
@@ -4597,47 +4538,12 @@ document.addEventListener('click', function(e) {
 var MARKET_ICONS_DEFAULTS = { regular: '', pre: '🌤️', post: '🌙', closed: '✦' };
 var MARKET_ICONS_STORAGE_KEY = 'pt_market_icons';
 
-function getMarketIcons() {
-  try {
-    var raw = localStorage.getItem(MARKET_ICONS_STORAGE_KEY);
-    if (!raw) return Object.assign({}, MARKET_ICONS_DEFAULTS);
-    var parsed = JSON.parse(raw);
-    return Object.assign({}, MARKET_ICONS_DEFAULTS, parsed);
-  } catch (e) { return Object.assign({}, MARKET_ICONS_DEFAULTS); }
-}
 
-function setMarketIcons(icons) {
-  try { localStorage.setItem(MARKET_ICONS_STORAGE_KEY, JSON.stringify(icons)); } catch (e) {}
-}
 
 // Parse "2600 FE0F" → "☀️". Returns null on invalid hex (caller treats as error).
 // Empty string input returns ''.
-function iconsCodeToSymbol(code) {
-  if (code == null) return '';
-  var trimmed = String(code).trim();
-  if (!trimmed) return '';
-  var parts = trimmed.split(/\s+/);
-  var chars = [];
-  for (var i = 0; i < parts.length; i++) {
-    if (!/^[0-9A-Fa-f]{1,6}$/.test(parts[i])) return null;
-    var n = parseInt(parts[i], 16);
-    if (isNaN(n) || n < 0 || n > 0x10FFFF) return null;
-    try { chars.push(String.fromCodePoint(n)); } catch (e) { return null; }
-  }
-  return chars.join('');
-}
 
 // "☀️" → "2600 FE0F"
-function iconsSymbolToCode(symbol) {
-  if (!symbol) return '';
-  var codes = [];
-  for (var i = 0; i < symbol.length; ) {
-    var cp = symbol.codePointAt(i);
-    codes.push(cp.toString(16).toUpperCase());
-    i += cp > 0xFFFF ? 2 : 1;
-  }
-  return codes.join(' ');
-}
 
 function marketIcon(state) {
   if (!state) return '';
@@ -4665,7 +4571,6 @@ var CONTRAST_PRESETS = {
 var BLINK_LEVELS = ['slow', 'med', 'fast'];
 
 function getContrastPref()   { try { return localStorage.getItem('pt_contrast')     || 'low'; } catch(e) { return 'low'; } }
-function getBlinkPref()      { try { return localStorage.getItem('pt_blink_period') || 'med'; } catch(e) { return 'med'; } }
 
 function setContrastPref(level) {
   if (!CONTRAST_PRESETS[level]) return;
@@ -4691,14 +4596,6 @@ function updateBlinkPreview() {
 
 // Map (alert count, user's base) → CSS class. Returns null if n < 2 (no blink).
 // Progression: starts at user's base level, advances one level per extra alert, clamps at 'fast'.
-function blinkClassForCount(n) {
-  if (n < 2) return null;
-  var base = getBlinkPref();
-  var startIdx = BLINK_LEVELS.indexOf(base);
-  if (startIdx < 0) startIdx = 1;
-  var idx = Math.min(BLINK_LEVELS.length - 1, startIdx + (n - 2));
-  return 'alert-blink-' + BLINK_LEVELS[idx];
-}
 
 function _renderPresetButtons(elId, levels, current, fnName) {
   var el = document.getElementById(elId);
@@ -4746,9 +4643,6 @@ function applyAppearancePrefs() {
   // via blinkClassForCount(n) in getAlertDotsHtml.
 }
 
-function escapeCustomizeIconsAttr(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
 
 function renderCustomizeIconsRows() {
   var icons = getMarketIcons();
@@ -4952,17 +4846,6 @@ function deletePositionSet(setId) {
 // ── Per-view current selection (which set is active in chart/fundamentals) ─
 
 
-function activeTickerCount(p) {
-  var seen = {};
-  (p.positions || []).forEach(function(pos) {
-    // For watchlist/index: count all (they have qty=0 by design)
-    // For archive: count all (they're all sold but that's the point)
-    // For regular: only active (not sold, qty>0)
-    var count = p.watchlist || p.archive ? true : (!pos.sold && pos.qty > 0);
-    if (count) seen[pos.ticker] = true;
-  });
-  return Object.keys(seen).length;
-}
 
 
 
@@ -6721,25 +6604,10 @@ function setChartRange(range) {
   render();
 }
 
-function fetchWithTimeout(url, opts, ms) {
-  ms = ms || 10000;
-  var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  var timer = null;
-  var fetchOpts = controller ? Object.assign({}, opts, { signal: controller.signal }) : opts;
-  var p = fetch(url, fetchOpts).then(function(r) { clearTimeout(timer); return r.json(); });
-  if (controller) {
-    timer = setTimeout(function() { controller.abort(); }, ms);
-  }
-  return p;
-}
 
 
 
 
-function getCloseForMode(p) {
-  if (HIST_MODES.indexOf(closeMode) !== -1) return getHistoricalClose(p.ticker, closeMode);
-  return closeMode === 'prev' ? (getPositionPreviousClose(p) || getPositionRegularMarketPrice(p) || null) : (getPositionRegularMarketPrice(p) || null);
-}
 
 function fetchHistoricalIfNeeded(tickers) {
   if (HIST_MODES.indexOf(closeMode) === -1) return;
