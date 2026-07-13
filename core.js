@@ -532,3 +532,37 @@ function fetchIsin(ticker) {
     return data.isin || null;
   });
 }
+
+// ── Position filtering (global active filter) ──────────────────────
+// Reads the activeFilter global (state lives in index). filterPositions is the
+// single choke point; each view applies its own gate on top.
+function filterActive() {
+  if (!activeFilter) return false;
+  var pf = currentPortfolio();
+  return !!pf && !pf.archive && !pf.watchlist;
+}
+function filterActiveForSummary(isRealized) {
+  return !!activeFilter && !isRealized;
+}
+function filterPositions(posns) {
+  if (!activeFilter) return posns;
+  return posns.filter(function(p) {
+    if (activeFilter.purchaseDateFrom) {
+      if (!p.entry) return false;
+      if (!p.purchaseDate) return false;
+      if (p.purchaseDate < activeFilter.purchaseDateFrom) return false;
+    }
+    if (activeFilter.broker) {
+      if (!(p.qty !== 0)) return false;
+      if (getPositionBroker(p) !== activeFilter.broker) return false;
+    }
+    return true;
+  });
+}
+function applyFilter(posns) {
+  if (!filterActive()) return posns;
+  return filterPositions(posns);
+}
+function hasActiveFilter() {
+  return !!(activeFilter && (activeFilter.purchaseDateFrom || activeFilter.broker));
+}

@@ -345,7 +345,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.70';
+var APP_VERSION = 'v1.3.71';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -7630,19 +7630,11 @@ function toggleAggregated() {
 // True when the filter should apply in the current individual-portfolio
 // context: a filter is set AND the current portfolio is a regular active one
 // (not watchlist, not archive).
-function filterActive() {
-  if (!activeFilter) return false;
-  var pf = currentPortfolio();
-  return !!pf && !pf.archive && !pf.watchlist;
-}
 
 // True when the filter should apply to a cross-portfolio view (ALL POSITIONS /
 // Σ SUMMARY). Same global filter, but the gate is the view — active summaries
 // filter, realized (archive) summaries don't. Callers pass whether the current
 // summary context is the realized one.
-function filterActiveForSummary(isRealized) {
-  return !!activeFilter && !isRealized;
-}
 
 // Pure filter: reduce a position array to the filter's SET, with NO context
 // gate. Each active condition is a FULL predicate — including its own base
@@ -7655,32 +7647,10 @@ function filterActiveForSummary(isRealized) {
 // This DEFINES the working set; each view then applies its own logic on top —
 // identical for individual portfolios and cross-portfolio views. Extensible:
 // new conditions slot in as further AND predicates.
-function filterPositions(posns) {
-  if (!activeFilter) return posns;
-  return posns.filter(function(p) {
-    if (activeFilter.purchaseDateFrom) {
-      if (!p.entry) return false;
-      if (!p.purchaseDate) return false;
-      if (p.purchaseDate < activeFilter.purchaseDateFrom) return false;
-    }
-    if (activeFilter.broker) {
-      if (!(p.qty !== 0)) return false;
-      if (getPositionBroker(p) !== activeFilter.broker) return false;
-    }
-    return true;
-  });
-}
 
 // Individual-view filter: gate on the current portfolio, then filter.
-function applyFilter(posns) {
-  if (!filterActive()) return posns;
-  return filterPositions(posns);
-}
 
 // True if any condition is actually set (drives the lit icon).
-function hasActiveFilter() {
-  return !!(activeFilter && (activeFilter.purchaseDateFrom || activeFilter.broker));
-}
 
 // Filter indicator for cross-portfolio (Σ SUMMARY) headers: same nabla as the
 // P&L icon, opens the same modal. Lit when a filter is active. Rendered inline
