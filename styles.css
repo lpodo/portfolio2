@@ -212,7 +212,7 @@
     -webkit-tap-highlight-color: transparent;
   }
   .icon-btn:disabled { cursor: default; opacity: 0.6; }
-  .icon-btn svg { display: block; width: 20px; height: 20px; }
+  .icon-btn svg { display: block; width: 16px; height: 16px; }
   /* Filter glyph: active = filled green; inactive = green outline (no fill). */
   .icon-btn.filter-inactive svg { fill: none; stroke: var(--green); stroke-width: 1.5px; }
   @keyframes iconSpin { to { transform: rotate(360deg); } }
