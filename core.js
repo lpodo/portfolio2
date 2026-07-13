@@ -1,13 +1,19 @@
 // core.js — stable lower-level layer for Portfolio Terminal.
 //
-// Holds the parts that change rarely: low-level position/ticker accessors,
-// formatters, data migrations, and cloud/network primitives. Loaded before
-// fundamentals.js and the main index.html script, so every one of its
-// definitions is available to them. This is a shared-globals split (ES5, no
-// modules): functions and vars declared here live in the same global scope as
-// the rest of the app — there is no import/export.
+// Holds the parts that change rarely, split out of index.html for readability:
+//   • data migrations (position/ticker split chain + dict seeding)
+//   • ticker & position accessors (getTicker*/setTicker*/getPosition*)
+//   • ISIN helpers (isKnownIsin, ISIN_UNRESOLVED_MARKER)
+//   • formatters (f2/fSign/fPct/fmtK, todayLocalISO)
+//   • portfolio/broker accessors (currentPortfolio, getCurrency, get*Broker)
 //
-// (Currently empty — code is migrated here in small, verified batches.)
+// Loaded before fundamentals.js and the main index.html script, so every
+// definition here is available to both. This is a shared-globals split (ES5,
+// no modules): everything lives in one global scope — no import/export. Code
+// here may read globals and call functions that still live in index.html
+// (portfolios, tickerData, CURRENCY_SYMBOLS, save*, etc.); that's safe because
+// all of it runs after both files have loaded (from the window 'load' handler
+// and event callbacks), never at parse time.
 
 // ── Data migrations ─────────────────────────────────────────────────────────
 // When cloud payload contains legacy `tickerAlerts` (flat) but not `tickerData`,
@@ -433,4 +439,56 @@ function getDefaultBroker() {
 }
 function getPositionBroker(p) {
   return p.broker || getDefaultBroker();
+}
+
+// ── Local storage primitives ─────────────────────────────────────
+function getPortfolios() {
+  try { return JSON.parse(localStorage.getItem('pt_portfolios') || '{}'); } catch(e) { return {}; }
+}
+function savePortfolios() {
+  try { localStorage.setItem('pt_portfolios', JSON.stringify(portfolios)); } catch(e) {}
+}
+function loadTickerDataLS() {
+  try { tickerData = JSON.parse(localStorage.getItem('pt_ticker_data') || '{}'); } catch(e) { tickerData = {}; }
+  // One-time migration from legacy per-ticker alerts key
+  try {
+    var legacyRaw = localStorage.getItem('pt_ticker_alerts');
+    if (legacyRaw) {
+      var legacy = JSON.parse(legacyRaw);
+      Object.keys(legacy || {}).forEach(function(t) {
+        var arr = legacy[t];
+        if (arr && arr.length) {
+          if (!tickerData[t]) tickerData[t] = {};
+          if (!tickerData[t].alerts) tickerData[t].alerts = arr;
+        }
+      });
+      localStorage.removeItem('pt_ticker_alerts');
+      saveTickerDataLS();
+    }
+  } catch(e) {}
+}
+function saveTickerDataLS() {
+  try { localStorage.setItem('pt_ticker_data', JSON.stringify(tickerData)); } catch(e) {}
+}
+function saveLocal() {
+  portfolios[currentPortfolioId].positions = positions;
+  savePortfolios();
+}
+function saveDicts() {
+  try { localStorage.setItem('pt_cat_dict', JSON.stringify(catDict)); } catch(e) {}
+  try { localStorage.setItem('pt_reg_dict', JSON.stringify(regDict)); } catch(e) {}
+  try { localStorage.setItem('pt_sec_dict', JSON.stringify(secDict)); } catch(e) {}
+  try { localStorage.setItem('pt_cash_cat_dict', JSON.stringify(cashCatDict)); } catch(e) {}
+  try { localStorage.setItem('pt_broker_dict', JSON.stringify(brokerDict)); } catch(e) {}
+  try {
+    if (_defaultBroker) localStorage.setItem('pt_default_broker', _defaultBroker);
+    else localStorage.removeItem('pt_default_broker');
+  } catch(e) {}
+}
+function addToDict(dict, value) {
+  value = String(value).trim();
+  if (!value) return;
+  for (var i = 0; i < dict.length; i++) { if (dict[i] === value) return; }
+  dict.push(value);
+  dict.sort(function(a, b) { return a.localeCompare(b); });
 }

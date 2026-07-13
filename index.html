@@ -345,7 +345,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.68';
+var APP_VERSION = 'v1.3.69';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -423,38 +423,10 @@ function pruneTickerData(ticker) {
   saveTickerDataLS();
 }
 
-function getPortfolios() {
-  try { return JSON.parse(localStorage.getItem('pt_portfolios') || '{}'); } catch(e) { return {}; }
-}
-function savePortfolios() {
-  try { localStorage.setItem('pt_portfolios', JSON.stringify(portfolios)); } catch(e) {}
-}
 // Loads from new key; one-time migration from legacy pt_ticker_alerts (flat
 // { ticker: [alerts] } shape) into new nested { ticker: { alerts: [...] } }.
 // Migration is destructive on the LS side — after successful move, the old
 // key is deleted so subsequent loads skip this path.
-function loadTickerDataLS() {
-  try { tickerData = JSON.parse(localStorage.getItem('pt_ticker_data') || '{}'); } catch(e) { tickerData = {}; }
-  // One-time migration from legacy per-ticker alerts key
-  try {
-    var legacyRaw = localStorage.getItem('pt_ticker_alerts');
-    if (legacyRaw) {
-      var legacy = JSON.parse(legacyRaw);
-      Object.keys(legacy || {}).forEach(function(t) {
-        var arr = legacy[t];
-        if (arr && arr.length) {
-          if (!tickerData[t]) tickerData[t] = {};
-          if (!tickerData[t].alerts) tickerData[t].alerts = arr;
-        }
-      });
-      localStorage.removeItem('pt_ticker_alerts');
-      saveTickerDataLS();
-    }
-  } catch(e) {}
-}
-function saveTickerDataLS() {
-  try { localStorage.setItem('pt_ticker_data', JSON.stringify(tickerData)); } catch(e) {}
-}
 
 // ── Last view persistence ───────────────────────────────────────────────────
 // Saves the user's last "place" — viewMode, current portfolio in each kind,
@@ -750,10 +722,6 @@ var _defaultBroker = null;
 function loadLocal() {
   positions = currentPortfolio().positions;
 }
-function saveLocal() {
-  portfolios[currentPortfolioId].positions = positions;
-  savePortfolios();
-}
 
 function loadDicts() {
   try { catDict = JSON.parse(localStorage.getItem('pt_cat_dict')) || []; } catch(e) { catDict = []; }
@@ -762,24 +730,6 @@ function loadDicts() {
   try { cashCatDict = JSON.parse(localStorage.getItem('pt_cash_cat_dict')) || []; } catch(e) { cashCatDict = []; }
   try { brokerDict = JSON.parse(localStorage.getItem('pt_broker_dict')) || []; } catch(e) { brokerDict = []; }
   try { _defaultBroker = localStorage.getItem('pt_default_broker') || null; } catch(e) { _defaultBroker = null; }
-}
-function saveDicts() {
-  try { localStorage.setItem('pt_cat_dict', JSON.stringify(catDict)); } catch(e) {}
-  try { localStorage.setItem('pt_reg_dict', JSON.stringify(regDict)); } catch(e) {}
-  try { localStorage.setItem('pt_sec_dict', JSON.stringify(secDict)); } catch(e) {}
-  try { localStorage.setItem('pt_cash_cat_dict', JSON.stringify(cashCatDict)); } catch(e) {}
-  try { localStorage.setItem('pt_broker_dict', JSON.stringify(brokerDict)); } catch(e) {}
-  try {
-    if (_defaultBroker) localStorage.setItem('pt_default_broker', _defaultBroker);
-    else localStorage.removeItem('pt_default_broker');
-  } catch(e) {}
-}
-function addToDict(dict, value) {
-  value = String(value).trim();
-  if (!value) return;
-  for (var i = 0; i < dict.length; i++) { if (dict[i] === value) return; }
-  dict.push(value);
-  dict.sort(function(a, b) { return a.localeCompare(b); });
 }
 
 // Broker helpers. Default broker is canonical when pos.broker is missing.
