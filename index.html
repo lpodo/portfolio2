@@ -25,7 +25,8 @@
       <span class="header-title-arrow">&#9660;</span>
     </button>
   </div>
-  <button class="btn btn-green" id="refreshAllBtn" onclick="refreshAll()" style="white-space:nowrap">&#8635; Refresh</button>
+  <button class="icon-btn" id="refreshAllBtn" onclick="refreshAll()" title="Refresh"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg></button>
+  <button class="icon-btn filter-inactive" id="filterBtn" onclick="openFilterModal()" title="Filter" style="display:none"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M20 3h-16a1 1 0 0 0 -1 1v2.227l.008 .223a3 3 0 0 0 .772 1.795l4.22 4.641v8.114a1 1 0 0 0 1.316 .949l6 -2l.108 -.043a1 1 0 0 0 .576 -.906v-6.586l4.121 -4.12a3 3 0 0 0 .879 -2.123v-2.171a1 1 0 0 0 -1 -1z"/></svg></button>
   <div style="position:relative;margin-left:8px">
     <button class="btn btn-green" id="viewMenuBtn" onclick="toggleViewMenu()" style="padding:7px 10px;font-size:9px;letter-spacing:1px;min-width:52px;white-space:nowrap">P&amp;L</button>
     <div id="viewMenu" style="display:none;position:absolute;right:0;top:110%;background:var(--bg2);border:1px solid var(--border);z-index:200;min-width:110px">
@@ -345,7 +346,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.79';
+var APP_VERSION = 'v1.3.80';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4281,7 +4282,7 @@ function refreshAllPortfolios() {
 function refreshAll() {
   if (!getApiKey()) { toggleSettings(); return; }
   var btn = document.getElementById('refreshAllBtn');
-  btn.innerHTML = 'UPDATING...';
+  btn.classList.add('spinning');
   btn.disabled = true;
   if (viewMode === 'summary-market') {
     // Collect all unique position currencies for FX
@@ -4308,7 +4309,7 @@ function refreshAll() {
       var tClass = totDelta >= 0 ? 'pos' : 'neg';
       area.innerHTML = '<div class="table-wrap"><table>'
         + '<thead><tr>'
-        + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO' + summaryFilterIconHtml() + '</th>'
+        + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO</th>'
         + '<th style="width:0;padding:0;border-bottom:1px solid var(--border)"></th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
@@ -4336,7 +4337,7 @@ function refreshAll() {
 
     if (smNonUSD.length === 0) {
       buildSummaryMarketStats({});
-      btn.innerHTML = '&#8635; Refresh';
+      btn.classList.remove('spinning');
       btn.disabled = false;
     } else {
       var smBaseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
@@ -4347,7 +4348,7 @@ function refreshAll() {
         });
       });
       Promise.all(smFxP).then(function() { buildSummaryMarketStats(smFxRates); }).finally(function() {
-        btn.innerHTML = '&#8635; Refresh';
+        btn.classList.remove('spinning');
         btn.disabled = false;
       });
     }
@@ -4356,7 +4357,7 @@ function refreshAll() {
 
   if (viewMode === 'summary') {
     refreshAllPortfolios().finally(function() {
-      btn.innerHTML = '&#8635; Refresh';
+      btn.classList.remove('spinning');
       btn.disabled = false;
     });
     return;
@@ -4381,7 +4382,7 @@ function refreshAll() {
     saveTickerDataLS();
   }).catch(function() {
   }).finally(function() {
-    btn.innerHTML = '&#8635; Refresh';
+    btn.classList.remove('spinning');
     btn.disabled = false;
     render();
   });
@@ -7158,6 +7159,25 @@ function updateViewMenuBtn() {
   btn.textContent = label;
 }
 
+// Filter icon in the header control row. Shown only where filtering applies:
+// a regular (non-archive, non-watchlist) portfolio, or an active cross-portfolio
+// view (Σ SUMMARY / ALL POSITIONS — but not the realized ones). Lit green when a
+// filter is active, dim otherwise.
+function updateFilterBtn() {
+  var btn = document.getElementById('filterBtn');
+  if (!btn) return;
+  var applies;
+  if (isCrossPortfolioContext()) {
+    applies = !isRealizedAllPositions();
+  } else {
+    var p = currentPortfolio();
+    applies = !!p && !p.archive && !p.watchlist;
+  }
+  btn.style.display = applies ? '' : 'none';
+  if (hasActiveFilter()) btn.classList.remove('filter-inactive');
+  else btn.classList.add('filter-inactive');
+}
+
 
 
 function toggleAggregated() {
@@ -7201,16 +7221,6 @@ function toggleAggregated() {
 // new conditions slot in as further AND predicates.
 
 // Individual-view filter: gate on the current portfolio, then filter.
-
-// True if any condition is actually set (drives the lit icon).
-
-// Filter indicator for cross-portfolio (Σ SUMMARY) headers: same nabla as the
-// P&L icon, opens the same modal. Lit when a filter is active. Rendered inline
-// in the PORTFOLIO header cell so the user sees a filter is in effect in views
-// where there's no per-row filter control.
-function summaryFilterIconHtml() {
-  return ' <span onclick="openFilterModal()" title="Filter" style="cursor:pointer;color:' + (hasActiveFilter() ? 'var(--green)' : 'var(--dim)') + '">&#8711;</span>';
-}
 
 function openFilterModal() {
   var overlay = document.createElement('div');
@@ -7338,6 +7348,7 @@ function toggleCurrentModeMenu(el) {
 function render() {
   saveLastView();
   updateViewMenuBtn();
+  updateFilterBtn();
   var stockForm = document.getElementById('stockAddForm');
   if (stockForm) stockForm.style.display = (isCrossPortfolioContext() || ['bonds','bond-summary','cash','archive-summary'].indexOf(viewMode) !== -1) ? 'none' : '';
   var area = document.getElementById('tableArea');
@@ -8715,7 +8726,7 @@ function render() {
       var tClass = totDelta >= 0 ? 'pos' : 'neg';
       area.innerHTML = '<div class="table-wrap"><table>'
         + '<thead><tr>'
-        + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO' + summaryFilterIconHtml() + '</th>'
+        + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO</th>'
         + '<th style="width:0;padding:0;border-bottom:1px solid var(--border)"></th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
         + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
@@ -8832,7 +8843,7 @@ function render() {
     area.innerHTML = '<div class="table-wrap">'
       + '<table>'
       + '<thead><tr>'
-      + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO' + summaryFilterIconHtml() + '</th>'
+      + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO</th>'
         + '<th style="width:0;padding:0;border-bottom:1px solid var(--border)"></th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">VALUE</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">P&amp;L</th>'
@@ -9378,7 +9389,7 @@ function render() {
     + thBtn('pnlpct', 'P&amp;L %')
     + '<th style="width:16px;padding:0"></th>' + '<th style="width:0;padding:0"></th>'
     + '<th style="text-align:left;padding:5px 4px;border-bottom:1px solid var(--border)"><span onclick="toggleAggregated()" title="Toggle aggregation" style="cursor:pointer;font-size:14px;color:' + (isAggregated() ? 'var(--green)' : 'var(--dim)') + '">&#8801;</span></th>'
-    + '<th style="text-align:center;padding:5px 4px;border-bottom:1px solid var(--border)">' + ((!currentPortfolio().archive && !currentPortfolio().watchlist) ? '<span onclick="openFilterModal()" title="Filter" style="cursor:pointer;font-size:14px;color:' + (hasActiveFilter() ? 'var(--green)' : 'var(--dim)') + '">&#8711;</span>' : '') + '</th>'
+    + '<th style="text-align:center;padding:5px 4px;border-bottom:1px solid var(--border)"></th>'
     + '<th style="border-bottom:1px solid var(--border)"></th>'
     + '<th style="border-bottom:1px solid var(--border)"></th>'
     + '</tr></thead>'
