@@ -346,7 +346,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.83';
+var APP_VERSION = 'v1.3.84';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -654,7 +654,6 @@ var watchlistSort = { key: null, dir: -1 };
 var loadingSet = {};
 var editId = null;
 var expandedId = null;
-var editNoteId = null;
 var sortKey = null, sortDir = 1;
 var archiveSortKey = null, archiveSortDir = 1;
 try { var _s = JSON.parse(localStorage.getItem('pt_sort')); if (_s) { sortKey = _s.key||null; sortDir = _s.dir||1; } } catch(e) {}
@@ -2466,7 +2465,7 @@ function switchPortfolio(id) {
   currentPortfolioId = id;
   localStorage.setItem('pt_current', id);
   loadLocal();
-  editId = null; editNoteId = null;
+  editId = null;
   loadingSet = {};
   // Reset view mode from any special modes
   var prevMode = viewMode;
@@ -2526,7 +2525,7 @@ function addPortfolio() {
     currentPortfolioId = id;
     localStorage.setItem('pt_current', id);
     loadLocal();
-    editId = null; expandedId = null; editNoteId = null; loadingSet = {};
+    editId = null; expandedId = null; loadingSet = {};
     document.getElementById('portfolioTitle').textContent = name;
     updateAddForm();
     renderSwitcher();
@@ -2609,7 +2608,7 @@ function deletePortfolio(id) {
     currentPortfolioId = Object.keys(portfolios)[0];
     localStorage.setItem('pt_current', currentPortfolioId);
     loadLocal();
-    editId = null; expandedId = null; editNoteId = null; loadingSet = {};
+    editId = null; expandedId = null; loadingSet = {};
     setTitleForCurrentView();
     render();
   }
@@ -3921,10 +3920,8 @@ function buildExpandedInner(p) {
     + row2Html
     + '<div style="margin-top:6px;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
     + '<span style="opacity:0.6">NOTE</span>'
-    + (editNoteId === p.id
-      ? '<input id="noteEditInput" type="text" value="' + (p.note || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;') + '" style="font-size:10px;font-family:var(--font);background:var(--bg);border:1px solid var(--border);color:var(--bright);padding:1px 4px;width:200px;box-sizing:border-box" onkeydown="if(event.key===\'Enter\'){event.preventDefault();saveNoteInline(' + p.id + ');}else if(event.key===\'Escape\'){event.preventDefault();cancelNoteEdit();}" onblur="saveNoteInline(' + p.id + ')">'
-      : '<span style="color:var(--bright)">' + (p.note || '—') + '</span>'
-        + '<button class="btn-icon" onclick="startNoteEdit(' + p.id + ')" style="font-size:12px;padding:0 3px">&#9998;</button>')
+    + '<span style="color:var(--bright)">' + (p.note || '—') + '</span>'
+    + '<button class="btn-icon" onclick="openNoteModal(' + p.id + ')" title="Edit note" style="font-size:12px;padding:0 3px">&#9998;</button>'
     + '</div>'
     + (p.sold ? '' :
       '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
@@ -4037,24 +4034,57 @@ function toggleAlertCondQuick(el) { _alertCondQuick = _alertCondQuick === '>' ? 
 function toggleExpand(id) { expandedId = (expandedId === id) ? null : id; render(); }
 function startEdit(id) { editId = id; expandedId = null; render(); }
 function cancelEdit() { editId = null; render(); }
-function startNoteEdit(posId) {
-  editNoteId = posId;
-  render();
-  setTimeout(function() { var el = document.getElementById('noteEditInput'); if (el) { el.focus(); el.select(); } }, 0);
+function openNoteModal(posId) {
+  var port = findPortfolioForPosition(posId);
+  if (!port) return;
+  var pos = null;
+  port.positions.forEach(function(p) { if (p.id === posId) pos = p; });
+  if (!pos) return;
+
+  var overlay = document.createElement('div');
+  overlay.id = 'noteOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;display:flex;align-items:center;justify-content:center;padding:24px';
+  overlay.onclick = function(e) { if (e.target === overlay) closeNoteModal(); };
+
+  var modal = document.createElement('div');
+  modal.style.cssText = 'background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:20px;width:100%;max-width:360px;box-sizing:border-box';
+
+  var title = pos.ticker + (pos.sold ? ' (sold)' : '');
+  modal.innerHTML =
+      '<div style="font-size:11px;color:var(--dim);letter-spacing:1px;margin-bottom:10px">NOTE &middot; ' + title + '</div>'
+    + '<textarea id="noteModalInput" rows="4" style="width:100%;box-sizing:border-box;font-size:13px;font-family:var(--font);background:var(--bg);border:1px solid var(--border);color:var(--bright);padding:8px;border-radius:4px;resize:vertical"></textarea>'
+    + '<div style="display:flex;gap:8px;margin-top:14px">'
+    + '<button class="btn" onclick="closeNoteModal()" style="flex:1;padding:9px;font-size:11px;letter-spacing:1px">CANCEL</button>'
+    + '<button class="btn btn-green" onclick="saveNoteModal(' + posId + ')" style="flex:1;padding:9px;font-size:11px;letter-spacing:1px">SAVE</button>'
+    + '</div>';
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  var ta = document.getElementById('noteModalInput');
+  ta.value = pos.note || '';               // set via value (avoids HTML-escaping issues)
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+  ta.onkeydown = function(e) { if (e.key === 'Escape') { e.preventDefault(); closeNoteModal(); } };
 }
-function cancelNoteEdit() { editNoteId = null; render(); }
-function saveNoteInline(posId) {
-  var el = document.getElementById('noteEditInput');
+function saveNoteModal(posId) {
+  var el = document.getElementById('noteModalInput');
   if (!el) return;
   var note = el.value.trim();
   var port = findPortfolioForPosition(posId);
-  if (!port) { editNoteId = null; return; }
+  if (!port) { closeNoteModal(); return; }
   port.positions = port.positions.map(function(p) {
-    return p.id === posId ? Object.assign({}, p, { note: note }) : p;
+    if (p.id !== posId) return p;
+    var np = Object.assign({}, p);
+    if (note) np.note = note; else delete np.note; // normalized: no empty note key
+    return np;
   });
   if (port === portfolios[currentPortfolioId]) positions = port.positions;
-  editNoteId = null;
+  closeNoteModal();
   save(); render();
+}
+function closeNoteModal() {
+  var o = document.getElementById('noteOverlay');
+  if (o) o.parentNode.removeChild(o);
 }
 function saveEdit(id) {
   var pos = null;
