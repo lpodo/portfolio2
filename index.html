@@ -346,7 +346,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.89';
+var APP_VERSION = 'v1.3.90';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -423,11 +423,6 @@ function pruneTickerData(ticker) {
   if (!Object.keys(tickerData[ticker]).length) delete tickerData[ticker];
   saveTickerDataLS();
 }
-
-// Loads from new key; one-time migration from legacy pt_ticker_alerts (flat
-// { ticker: [alerts] } shape) into new nested { ticker: { alerts: [...] } }.
-// Migration is destructive on the LS side — after successful move, the old
-// key is deleted so subsequent loads skip this path.
 
 // ── Last view persistence ───────────────────────────────────────────────────
 // Saves the user's last "place" — viewMode, current portfolio in each kind,
@@ -672,8 +667,6 @@ function setDefaultBroker(broker) {
   if (getCloudBackend() === 'kv') cloudSaveKV(); else cloudSave();
   renderDictsPanel();
 }
-
-// Lookup helpers used by all the field-driven dict UI code below.
 
 var _openDictDrop = null;
 var _activeDictPanel = null;
@@ -3481,15 +3474,6 @@ function fetchPrice(ticker) {
   });
 }
 
-// Fetch ISIN for a ticker via the worker's /api/isin endpoint. Currently the
-// worker returns { isin: null } for everything — no free provider supplies
-// ISIN data (see worker comment). The pipeline stays intact so users can
-// enter ISINs manually and a real provider can be wired into the worker
-// later without touching the frontend. Returns the ISIN string on success,
-// null when unavailable, or throws on network/HTTP errors.
-
-// YYYY-MM-DD in local timezone, used as default purchaseDate for new positions
-
 // Render the BROKER select in the add form. Default broker (if any) is
 // pre-selected. Called on init and after each successful add to refresh
 // the dropdown contents.
@@ -3820,10 +3804,6 @@ function removeAggPositions(ticker, soldFlag) {
   save();
   render();
 }
-
-// Find the portfolio object that contains a given position id.
-// Used by alert/note operations that may run from summary views where
-// the global `positions` doesn't necessarily include the target.
 
 function deleteAlert(ticker, alertId) {
   if (!ticker) return;
@@ -4274,12 +4254,6 @@ function refreshAllPortfolios() {
   });
 }
 
-// Summary-market per-portfolio totals: builds the table rows and the USD
-// grand totals for the Σ SUMMARY market view. This exact computation was
-// duplicated verbatim in refreshAll() and render(); it lives here so future
-// changes touch one place, not two.
-// Reads closeMode/currentMode globals; returns accumulators for the caller.
-
 function refreshAll() {
   if (!getApiKey()) { toggleSettings(); return; }
   var btn = document.getElementById('refreshAllBtn');
@@ -4542,11 +4516,6 @@ var MARKET_ICONS_STORAGE_KEY = 'pt_market_icons';
 
 
 
-// Parse "2600 FE0F" → "☀️". Returns null on invalid hex (caller treats as error).
-// Empty string input returns ''.
-
-// "☀️" → "2600 FE0F"
-
 function marketIcon(state) {
   if (!state) return '';
   var icons = getMarketIcons();
@@ -4595,9 +4564,6 @@ function updateBlinkPreview() {
   var el = document.getElementById('blinkPreview');
   if (el) el.className = 'alert-blink-' + getBlinkPref();
 }
-
-// Map (alert count, user's base) → CSS class. Returns null if n < 2 (no blink).
-// Progression: starts at user's base level, advances one level per extra alert, clamps at 'fast'.
 
 function _renderPresetButtons(elId, levels, current, fnName) {
   var el = document.getElementById(elId);
@@ -4707,12 +4673,6 @@ function resetCustomizeIcons() {
   renderCustomizeIconsRows();
   if (typeof render === 'function') render();
 }
-// Shared USD market-total accumulator: sums a position array into USD close/
-// current values using the same price logic as the per-portfolio summary
-// (sold freezes at sellPrice; closeMode/currentMode pick close/current price).
-// fxRates maps currency→USD. Returns { closeUSD, currentUSD, hasAny }. Reused
-// by Σ SUMMARY (per-portfolio) and All Positions MARKET (whole set).
-
 // Renders a USD totals-bar (AT CLOSE / CURRENT / Δ / Δ%) from a USD total.
 function usdMarketTotalsBar(tot) {
   if (!tot.hasAny) return '';
@@ -4727,6 +4687,11 @@ function usdMarketTotalsBar(tot) {
     + '</div>';
 }
 
+// Summary-market per-portfolio totals: builds the table rows and the USD
+// grand totals for the Σ SUMMARY market view. This exact computation was
+// duplicated verbatim in refreshAll() and render(); it lives here so future
+// changes touch one place, not two.
+// Reads closeMode/currentMode globals; returns accumulators for the caller.
 function computeSummaryMarketRows(smPids, fxRates) {
   var rows = '';
   var totCloseUSD = 0, totCurrentUSD = 0, hasAny = false;
@@ -7192,36 +7157,6 @@ function toggleAggregated() {
   }
   render();
 }
-
-// ── Position filter ─────────────────────────────────────────────────────────
-// A global, persisted filter for REGULAR ACTIVE portfolios. When active it
-// restricts which positions are shown AND which an aggregate operation acts on.
-// applyFilter is the single choke point — every display/operation path routes
-// its position list through it, so adding a view or a condition needs no new
-// wiring here.
-
-// True when the filter should apply in the current individual-portfolio
-// context: a filter is set AND the current portfolio is a regular active one
-// (not watchlist, not archive).
-
-// True when the filter should apply to a cross-portfolio view (ALL POSITIONS /
-// Σ SUMMARY). Same global filter, but the gate is the view — active summaries
-// filter, realized (archive) summaries don't. Callers pass whether the current
-// summary context is the realized one.
-
-// Pure filter: reduce a position array to the filter's SET, with NO context
-// gate. Each active condition is a FULL predicate — including its own base
-// requirement — and predicates combine by AND (a position must satisfy every
-// active condition). Only conditions present in activeFilter apply.
-//   • purchaseDateFrom → entry != 0 AND purchaseDate present AND >= threshold
-//       (a qty-0 lot with an entry is a fully-sold buy; its date still matters)
-//   • broker           → qty != 0 AND getPositionBroker(p) === broker
-//       (broker is meaningless for a qty-0 lot, so it's excluded here)
-// This DEFINES the working set; each view then applies its own logic on top —
-// identical for individual portfolios and cross-portfolio views. Extensible:
-// new conditions slot in as further AND predicates.
-
-// Individual-view filter: gate on the current portfolio, then filter.
 
 function openFilterModal() {
   var overlay = document.createElement('div');
