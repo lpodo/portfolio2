@@ -62,6 +62,7 @@ function initPortfolios() {
   liftAttrsFromPositions();
   migrateSoldPositions();
   migrateMetaToTicker();
+  migrateNotesToTicker();
   stripMigratedFieldsFromPositions();
   stripNullPositionFields();
   // Restore last active portfolio
@@ -160,7 +161,7 @@ function stripMigratedFieldsFromPositions() {
 // records so a position carries only real data — consistent across
 // localStorage, cloud, and backups. Idempotent: only touches keys that are
 // present AND empty; real values are never removed.
-var NULLABLE_POSITION_FIELDS = ['note', 'purchaseDate', 'broker'];
+var NULLABLE_POSITION_FIELDS = ['purchaseDate', 'broker'];
 function stripNullPositionFields() {
   var changed = false;
   Object.keys(portfolios).forEach(function(pid) {
@@ -204,6 +205,28 @@ function migrateMetaToTicker() {
     });
   });
   saveTickerDataLS();
+}
+
+// Notes were originally per-position, but a note like "sell at 300" describes
+// the ticker, not one lot — and in aggregated view there was no lot to attach
+// it to. Move every position note up to the ticker (concatenating when several
+// lots of the same ticker carried notes) and drop the key from positions.
+// Idempotent: after the first run no position has a note key, so re-runs no-op.
+function migrateNotesToTicker() {
+  var changed = false;
+  Object.keys(portfolios).forEach(function(pid) {
+    (portfolios[pid].positions || []).forEach(function(pos) {
+      if (!('note' in pos)) return;
+      var n = pos.note;
+      if (n) {
+        var existing = getTickerAttr(pos.ticker, 'note');
+        setTickerAttr(pos.ticker, 'note', existing ? existing + ' • ' + n : n);
+      }
+      delete pos.note;
+      changed = true;
+    });
+  });
+  if (changed) { saveTickerDataLS(); savePortfolios(); }
 }
 
 // ── Alerts (thin wrappers over tickerData[ticker].alerts) ───────────────────
@@ -1090,6 +1113,9 @@ function blinkClassForCount(n) {
   var idx = Math.min(BLINK_LEVELS.length - 1, startIdx + (n - 2));
   return 'alert-blink-' + BLINK_LEVELS[idx];
 }
+// Color for a triggered alert based on its condition direction.
+// '>' (price crossed above) → warm yellow.
+// '<' (price crossed below) → sky blue.
 function alertColorForCond(cond) {
   return cond === '<' ? '#5bd1f6' : '#f6c15b';
 }
