@@ -770,7 +770,6 @@ function isAggregated() {
 function getApiKey() { return localStorage.getItem('pt_finnhub') || ''; }
 function getToken() { return localStorage.getItem('pt_token') || ''; }
 function _isArc() { var p = portfolios[currentPortfolioId]; return !!(p && p.archive); }
-try { var _ws = JSON.parse(localStorage.getItem('pt_wl_sort')); if (_ws) { watchlistSort = _ws; } } catch(e) {}
 
 var catDict = [];
 var regDict = [];
