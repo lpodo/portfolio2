@@ -346,7 +346,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.92';
+var APP_VERSION = 'v1.3.93';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -599,7 +599,7 @@ function stalePortfolioColHtml(pid) {
 // individual portfolio). Bonds/cash/archive-summary are separate contexts and
 // not part of either group.
 var SUMMARY_BY_PORTFOLIO_VIEWS = ['summary', 'summary-market', 'summary-chart'];
-var ALL_POSITIONS_VIEWS = ['summary-movers', 'summary-alerts', 'global-weight', 'summary-analytics', 'global-chart'];
+var ALL_POSITIONS_VIEWS = ['summary-movers', 'summary-alerts', 'global-weight', 'summary-analytics', 'global-chart', 'global-fundamentals'];
 var REALIZED_ALL_POSITIONS_VIEWS = ['realized-weight', 'realized-analytics'];
 
 
@@ -4450,7 +4450,7 @@ function toggleViewMenu() {
     document.getElementById('vmMain').style.display = (inAllPositions || inRealizedAllPositions || isWL) ? 'none' : '';
     document.getElementById('vmMarket').style.display = (inAllPositions || inRealizedAllPositions || isArchive) ? 'none' : '';
     document.getElementById('vmChart').style.display = (inRealizedAllPositions || isArchive) ? 'none' : '';
-    document.getElementById('vmFundamentals').style.display = (isCrossPortfolio || isArchive) ? 'none' : '';
+    document.getElementById('vmFundamentals').style.display = ((inSummaryByPortfolio || inRealizedAllPositions) || isArchive) ? 'none' : '';
     document.getElementById('vmMarketTotal').style.display = inAllPositions ? '' : 'none';
     document.getElementById('vmAlerts').style.display = (inSummaryByPortfolio || inRealizedAllPositions || isArchive) ? 'none' : '';
     document.getElementById('vmGlobalWeight').style.display = (inAllPositions || inRealizedAllPositions) ? '' : 'none';
@@ -4479,6 +4479,7 @@ function setView(mode) {
                mode === 'analytics'     ? 'summary-analytics' :
                mode === 'global-weight' ? 'global-weight' :
                mode === 'chart'         ? 'global-chart' :
+               mode === 'fundamentals'  ? 'global-fundamentals' :
                'summary-movers';
     // MARKET (movers) and ALERTS share the same sort state; both default
     // to absdelta desc on entry (largest movers first / most-moved alerts first).
@@ -4499,11 +4500,11 @@ function setView(mode) {
   ['vmMain','vmMarket','vmMarketTotal','vmWeight','vmGlobalWeight','vmChart','vmFundamentals','vmAnalytics','vmAlerts'].forEach(function(id) {
     document.getElementById(id).style.color = '';
   });
-  var activeId = viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMarketTotal' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'realized-analytics' ? 'vmAnalytics' : viewMode === 'summary-alerts' ? 'vmAlerts' : viewMode === 'summary' ? 'vmMain' : viewMode === 'global-chart' ? 'vmChart' : viewMode === 'global-weight' ? 'vmGlobalWeight' : viewMode === 'realized-weight' ? 'vmGlobalWeight' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'fundamentals' ? 'vmFundamentals' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMarket' : viewMode === 'alerts' ? 'vmAlerts' : 'vmMarket';
+  var activeId = viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMarketTotal' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'realized-analytics' ? 'vmAnalytics' : viewMode === 'summary-alerts' ? 'vmAlerts' : viewMode === 'summary' ? 'vmMain' : viewMode === 'global-fundamentals' ? 'vmFundamentals' : viewMode === 'global-chart' ? 'vmChart' : viewMode === 'global-weight' ? 'vmGlobalWeight' : viewMode === 'realized-weight' ? 'vmGlobalWeight' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'fundamentals' ? 'vmFundamentals' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMarket' : viewMode === 'alerts' ? 'vmAlerts' : 'vmMarket';
   document.getElementById(activeId).style.color = 'var(--green)';
   document.getElementById('viewMenu').style.display = 'none';
   // Refresh prices when entering chart view (updates today's point)
-  if (viewMode === 'global-chart') refreshAllPortfolios();
+  if (viewMode === 'global-chart' || viewMode === 'global-fundamentals') refreshAllPortfolios();
   else if (viewMode === 'chart' || viewMode === 'summary-chart') refreshAll();
   render();
 }
@@ -5251,7 +5252,9 @@ function renderPositionSetsModal() {
   if (!modal) return;
   var sets = getPositionSets();
   var editing = window._editingSetId;
-  var allTickers = getChartUniqueTickers();
+  var allTickers = getChartUniqueTickers().slice().sort(function(a, b) {
+    return a.localeCompare(b);
+  });
 
   function renderEditForm(set) {
     var checked = set ? (set.tickers || []) : [];
@@ -5383,9 +5386,10 @@ function getFundamentalsSelection() {
 // startup. So in practice positions get tagged through normal use without
 // any dedicated migration code.
 function filterFundamentalsTickers(tickers) {
+  var ctxPositions = getChartContextPositions();
   var equity = [], skipped = 0;
   tickers.forEach(function(t) {
-    var pos = positions.find(function(p) { return p.ticker === t; });
+    var pos = ctxPositions.find(function(p) { return p.ticker === t; });
     var it = pos && getPositionInstrumentType(pos);
     if (!it || it === 'EQUITY') {
       equity.push(t);
@@ -5397,10 +5401,10 @@ function filterFundamentalsTickers(tickers) {
 }
 
 function getFundamentalsUniqueTickers() {
-  // Same shape as chart: unique tickers from current portfolio
+  // Same universe as the chart: current portfolio, or the All Positions union.
   var seen = {};
   var result = [];
-  (positions || []).forEach(function(p) {
+  getChartContextPositions().forEach(function(p) {
     if (!seen[p.ticker]) { seen[p.ticker] = true; result.push(p.ticker); }
   });
   return result;
@@ -7118,7 +7122,7 @@ function updateViewMenuBtn() {
   if (!btn) return;
   var labels = { 'main': 'P&L', 'weight': 'WEIGHTS', 'global-weight': 'WEIGHTS', 'market': 'MARKET', 'movers': 'MARKET', 'chart': 'CHART', 'fundamentals': 'FUNDAMENTALS', 'analytics': 'ANALYTICS', 'alerts': 'ALERTS',
     'summary': 'P&L', 'summary-market': 'MARKET', 'summary-chart': 'CHART', 'summary-analytics': 'ANALYTICS', 'summary-movers': 'MARKET', 'summary-alerts': 'ALERTS',
-    'realized-weight': 'WEIGHTS', 'realized-analytics': 'ANALYTICS', 'global-chart': 'CHART' };
+    'realized-weight': 'WEIGHTS', 'realized-analytics': 'ANALYTICS', 'global-chart': 'CHART', 'global-fundamentals': 'FUNDAMENTALS' };
   var label = labels[viewMode] || 'P&L';
   if (viewMode === 'main' && currentPortfolio() && currentPortfolio().watchlist) label = 'MARKET';
   btn.textContent = label;
@@ -9036,7 +9040,7 @@ function render() {
   }
 
   // Fundamentals view
-  if (viewMode === 'fundamentals') {
+  if (viewMode === 'fundamentals' || viewMode === 'global-fundamentals') {
     var fSubView = window.fundamentalsSubView || 'targets';
     var fAllTickers = getFundamentalsUniqueTickers();
     var sets = getPositionSets();
