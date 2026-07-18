@@ -346,7 +346,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.91';
+var APP_VERSION = 'v1.3.92';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -599,7 +599,7 @@ function stalePortfolioColHtml(pid) {
 // individual portfolio). Bonds/cash/archive-summary are separate contexts and
 // not part of either group.
 var SUMMARY_BY_PORTFOLIO_VIEWS = ['summary', 'summary-market', 'summary-chart'];
-var ALL_POSITIONS_VIEWS = ['summary-movers', 'summary-alerts', 'global-weight', 'summary-analytics'];
+var ALL_POSITIONS_VIEWS = ['summary-movers', 'summary-alerts', 'global-weight', 'summary-analytics', 'global-chart'];
 var REALIZED_ALL_POSITIONS_VIEWS = ['realized-weight', 'realized-analytics'];
 
 
@@ -2746,6 +2746,7 @@ function backupData() {
     regDict: regDict,
     secDict: secDict,
     cashCatDict: cashCatDict,
+    allPositionSets: allPositionSets,
     brokerDict: brokerDict,
     defaultBroker: _defaultBroker || null,
     tickerData: tickerData
@@ -2789,6 +2790,7 @@ function restoreData(event) {
       if (data.regDict && Array.isArray(data.regDict)) { regDict = data.regDict; }
       if (data.secDict && Array.isArray(data.secDict)) { secDict = data.secDict; }
       if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
+      if (data.allPositionSets && Array.isArray(data.allPositionSets)) { allPositionSets = data.allPositionSets; saveAllPositionSetsLS(); }
       if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
       if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
       migrateLegacyTickerAlertsFromCloud(data);
@@ -2937,7 +2939,7 @@ function cloudSave() {
 }
 
 function _doCloudSave(key, binId) {
-  var plaintext = JSON.stringify({ portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerData: tickerData });
+  var plaintext = JSON.stringify({ portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, allPositionSets: allPositionSets, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerData: tickerData });
   var encKey = getEncKey();
 
   function doSend(body) {
@@ -3032,6 +3034,7 @@ function cloudLoadKV(callback) {
           if (data.regDict && Array.isArray(data.regDict)) { regDict = data.regDict; }
           if (data.secDict && Array.isArray(data.secDict)) { secDict = data.secDict; }
           if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
+          if (data.allPositionSets && Array.isArray(data.allPositionSets)) { allPositionSets = data.allPositionSets; saveAllPositionSetsLS(); }
           if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
           if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
           migrateLegacyTickerAlertsFromCloud(data);
@@ -3080,7 +3083,7 @@ function cloudSaveKV() {
   var token = getToken();
   var kvKey = getKvKey();
   if (!baseUrl || !kvKey) return;
-  var payload = { portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerData: tickerData };
+  var payload = { portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, allPositionSets: allPositionSets, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerData: tickerData };
   var encKey = getEncKey();
   function doSave(body) {
     fetch(baseUrl + '/api/kv', {
@@ -3272,6 +3275,7 @@ function cloudLoad(callback) {
         if (data.regDict && Array.isArray(data.regDict)) { regDict = data.regDict; }
         if (data.secDict && Array.isArray(data.secDict)) { secDict = data.secDict; }
         if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
+        if (data.allPositionSets && Array.isArray(data.allPositionSets)) { allPositionSets = data.allPositionSets; saveAllPositionSetsLS(); }
         if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
         if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
         migrateLegacyTickerAlertsFromCloud(data);
@@ -4445,7 +4449,7 @@ function toggleViewMenu() {
     var isArchive = !isCrossPortfolio && !isWL && currentPortfolio() && currentPortfolio().archive;
     document.getElementById('vmMain').style.display = (inAllPositions || inRealizedAllPositions || isWL) ? 'none' : '';
     document.getElementById('vmMarket').style.display = (inAllPositions || inRealizedAllPositions || isArchive) ? 'none' : '';
-    document.getElementById('vmChart').style.display = (inAllPositions || inRealizedAllPositions || isArchive) ? 'none' : '';
+    document.getElementById('vmChart').style.display = (inRealizedAllPositions || isArchive) ? 'none' : '';
     document.getElementById('vmFundamentals').style.display = (isCrossPortfolio || isArchive) ? 'none' : '';
     document.getElementById('vmMarketTotal').style.display = inAllPositions ? '' : 'none';
     document.getElementById('vmAlerts').style.display = (inSummaryByPortfolio || inRealizedAllPositions || isArchive) ? 'none' : '';
@@ -4474,6 +4478,7 @@ function setView(mode) {
     viewMode = mode === 'alerts'        ? 'summary-alerts' :
                mode === 'analytics'     ? 'summary-analytics' :
                mode === 'global-weight' ? 'global-weight' :
+               mode === 'chart'         ? 'global-chart' :
                'summary-movers';
     // MARKET (movers) and ALERTS share the same sort state; both default
     // to absdelta desc on entry (largest movers first / most-moved alerts first).
@@ -4494,11 +4499,12 @@ function setView(mode) {
   ['vmMain','vmMarket','vmMarketTotal','vmWeight','vmGlobalWeight','vmChart','vmFundamentals','vmAnalytics','vmAlerts'].forEach(function(id) {
     document.getElementById(id).style.color = '';
   });
-  var activeId = viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMarketTotal' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'realized-analytics' ? 'vmAnalytics' : viewMode === 'summary-alerts' ? 'vmAlerts' : viewMode === 'summary' ? 'vmMain' : viewMode === 'global-weight' ? 'vmGlobalWeight' : viewMode === 'realized-weight' ? 'vmGlobalWeight' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'fundamentals' ? 'vmFundamentals' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMarket' : viewMode === 'alerts' ? 'vmAlerts' : 'vmMarket';
+  var activeId = viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMarketTotal' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'realized-analytics' ? 'vmAnalytics' : viewMode === 'summary-alerts' ? 'vmAlerts' : viewMode === 'summary' ? 'vmMain' : viewMode === 'global-chart' ? 'vmChart' : viewMode === 'global-weight' ? 'vmGlobalWeight' : viewMode === 'realized-weight' ? 'vmGlobalWeight' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'fundamentals' ? 'vmFundamentals' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMarket' : viewMode === 'alerts' ? 'vmAlerts' : 'vmMarket';
   document.getElementById(activeId).style.color = 'var(--green)';
   document.getElementById('viewMenu').style.display = 'none';
   // Refresh prices when entering chart view (updates today's point)
-  if (viewMode === 'chart' || viewMode === 'summary-chart') refreshAll();
+  if (viewMode === 'global-chart') refreshAllPortfolios();
+  else if (viewMode === 'chart' || viewMode === 'summary-chart') refreshAll();
   render();
 }
 // Close menu on outside click
@@ -4779,8 +4785,15 @@ window.chartSelectionOpen = false;
 // old "positions" item, with a MANAGE SETS button at the bottom.
 
 
-function savePositionSets(portfolioId, sets) {
-  var p = portfolios[portfolioId || currentPortfolioId];
+function savePositionSets(ctx, sets) {
+  var c = ctx || getSelCtx();
+  if (c === ALL_POSITIONS_CTX) {
+    allPositionSets = sets;
+    saveAllPositionSetsLS();
+    save();
+    return;
+  }
+  var p = portfolios[c];
   if (!p) return;
   p.positionSets = sets;
   save();
@@ -4790,7 +4803,7 @@ function createPositionSet(name, tickers) {
   var sets = getPositionSets().slice();
   var id = 'set_' + Date.now();
   sets.push({ id: id, name: (name || '').trim() || 'NEW SET', tickers: tickers || [] });
-  savePositionSets(currentPortfolioId, sets);
+  savePositionSets(getSelCtx(), sets);
   return id;
 }
 
@@ -4798,12 +4811,12 @@ function updatePositionSet(setId, updates) {
   var sets = getPositionSets().map(function(s) {
     return s.id === setId ? Object.assign({}, s, updates) : s;
   });
-  savePositionSets(currentPortfolioId, sets);
+  savePositionSets(getSelCtx(), sets);
 }
 
 function deletePositionSet(setId) {
   var sets = getPositionSets().filter(function(s) { return s.id !== setId; });
-  savePositionSets(currentPortfolioId, sets);
+  savePositionSets(getSelCtx(), sets);
   // If this set was selected anywhere, fall back
   if (getChartSelectedSet() === setId) setChartSelectedSet('portfolio');
   if (getFundamentalsSelectedSet() === setId) setFundamentalsSelectedSet(null);
@@ -7105,7 +7118,7 @@ function updateViewMenuBtn() {
   if (!btn) return;
   var labels = { 'main': 'P&L', 'weight': 'WEIGHTS', 'global-weight': 'WEIGHTS', 'market': 'MARKET', 'movers': 'MARKET', 'chart': 'CHART', 'fundamentals': 'FUNDAMENTALS', 'analytics': 'ANALYTICS', 'alerts': 'ALERTS',
     'summary': 'P&L', 'summary-market': 'MARKET', 'summary-chart': 'CHART', 'summary-analytics': 'ANALYTICS', 'summary-movers': 'MARKET', 'summary-alerts': 'ALERTS',
-    'realized-weight': 'WEIGHTS', 'realized-analytics': 'ANALYTICS' };
+    'realized-weight': 'WEIGHTS', 'realized-analytics': 'ANALYTICS', 'global-chart': 'CHART' };
   var label = labels[viewMode] || 'P&L';
   if (viewMode === 'main' && currentPortfolio() && currentPortfolio().watchlist) label = 'MARKET';
   btn.textContent = label;
@@ -8953,14 +8966,17 @@ function render() {
   }
 
   // Chart view
-  if (viewMode === 'chart') {
+  if (viewMode === 'chart' || viewMode === 'global-chart') {
     var chartRange = window.chartRange || '1mo';
     var sets = getPositionSets();
     var selSetId = getChartSelectedSet();
+    // No aggregate "PORTFOLIO" line exists for a watchlist (nothing is owned)
+    // or for ALL POSITIONS (it spans many portfolios) — those are set-only.
+    var noPortfolioOpt = isWatchlist() || isAllPositions();
     // Watchlist: 'portfolio' pseudo-value doesn't apply (WL has no aggregate
     // "portfolio" concept, only individual sets). If the saved selection is
     // 'portfolio' or points to a deleted set, fall back to the first set.
-    if (isWatchlist()) {
+    if (noPortfolioOpt) {
       var invalid = selSetId === 'portfolio'
         || (selSetId && !sets.find(function(s) { return s.id === selSetId; }));
       if (invalid) {
@@ -8990,10 +9006,10 @@ function render() {
       + '<div style="position:relative">'
       + '<button onclick="toggleChartViewMenu()" style="font-size:9px;letter-spacing:1px;padding:4px 8px;cursor:pointer;font-family:var(--font);' + chartBtnStyle + '">' + selLabel + '</button>'
       + '<div id="chartViewMenu" style="display:none;position:absolute;right:0;top:100%;background:var(--bg2);border:1px solid var(--border);z-index:100;min-width:140px">'
-      + (isWatchlist() ? '' :
+      + (noPortfolioOpt ? '' :
           '<div onclick="setChartSelectionPortfolio()" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;color:' + (selSetId === 'portfolio' ? 'var(--green)' : 'var(--bright)') + '">PORTFOLIO</div>'
         )
-      + (sets.length > 0 ? (isWatchlist() ? '' : '<div style="border-top:1px solid var(--border)"></div>') : '')
+      + (sets.length > 0 ? (noPortfolioOpt ? '' : '<div style="border-top:1px solid var(--border)"></div>') : '')
       + sets.map(function(s) {
           return '<div onclick="setChartSelectionSet(&apos;' + s.id + '&apos;)" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;color:' + (selSetId === s.id ? 'var(--green)' : 'var(--bright)') + '">' + s.name + '</div>';
         }).join('')
@@ -9003,7 +9019,7 @@ function render() {
       + '</div>'
       + '<div id="chartArea" style="min-height:200px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px">Loading...</div>';
 
-    if (selSetId === 'portfolio' && !isWatchlist()) {
+    if (selSetId === 'portfolio' && !noPortfolioOpt) {
       loadChartData(chartRange);
     } else if (selSet) {
       var tickers = selSet.tickers.filter(function(t) { return getChartUniqueTickers().indexOf(t) !== -1; });
@@ -9333,6 +9349,7 @@ loadCloudDirty();
 loadLocal();
 loadDicts();
 migrateDicts();
+loadAllPositionSetsLS();
 cashPortfolios = getCashPortfolios();
 var _restoredView = restoreLastView();
 setTitleForCurrentView();

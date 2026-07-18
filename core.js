@@ -526,6 +526,18 @@ function addToDict(dict, value) {
   dict.sort(function(a, b) { return a.localeCompare(b); });
 }
 
+// The ALL POSITIONS sets store (top-level, unlike portfolio sets which live
+// inside the portfolio object and are saved along with it).
+function loadAllPositionSetsLS() {
+  try {
+    var v = JSON.parse(localStorage.getItem('pt_all_sets'));
+    if (v && typeof v.length === 'number') allPositionSets = v;
+  } catch(e) {}
+}
+function saveAllPositionSetsLS() {
+  try { localStorage.setItem('pt_all_sets', JSON.stringify(allPositionSets)); } catch(e) {}
+}
+
 // ── Network primitives ──────────────────────────────────────────
 function fetchFxRate(baseUrl, token, ticker) {
   var now = Date.now();
@@ -839,6 +851,10 @@ var regDict = [];
 var secDict = [];
 var brokerDict = [];
 var _defaultBroker = null;
+// Sets for the ALL POSITIONS context. Portfolio sets ride inside the portfolio
+// object (and so reach the cloud for free); this one is top-level and must be
+// persisted/synced explicitly.
+var allPositionSets = [];
 
 // --- Local storage ---
 function loadLocal() {
@@ -925,32 +941,46 @@ function _dictRef(field) {
 // Reading sets and the chart/fundamentals selection (localStorage). The
 // mutating actions (save/create/update/delete) stay in index: they go through
 // the save path → cloudSave → UI status, so they are not part of the pure layer.
-function getPositionSets(portfolioId) {
-  var p = portfolios[portfolioId || currentPortfolioId];
+//
+// Sets and selection are per CONTEXT, not per portfolio: a regular portfolio is
+// its own context, and ALL POSITIONS is a separate cross-portfolio one with its
+// own sets (allPositionSets, a top-level store) and its own selection keys.
+// Without this, All Positions would silently reuse — and overwrite — the keys of
+// whatever portfolio happened to be open last.
+var ALL_POSITIONS_CTX = '__all__';
+function getSelCtx() {
+  return isAllPositions() ? ALL_POSITIONS_CTX : currentPortfolioId;
+}
+function getPositionSets(ctx) {
+  var c = ctx || getSelCtx();
+  if (c === ALL_POSITIONS_CTX) return allPositionSets || [];
+  var p = portfolios[c];
   return (p && p.positionSets) ? p.positionSets : [];
 }
 function getChartSelectedSet() {
   // Returns 'portfolio' | setId | null
   try {
-    var v = localStorage.getItem('pt_chart_set_' + currentPortfolioId);
+    var v = localStorage.getItem('pt_chart_set_' + getSelCtx());
     if (v) return v;
   } catch(e) {}
-  return 'portfolio'; // default for chart
+  // All Positions has no single-portfolio total, so it has no 'portfolio'
+  // option — same as a watchlist: a set must be chosen.
+  return isAllPositions() ? null : 'portfolio';
 }
 function setChartSelectedSet(v) {
-  try { localStorage.setItem('pt_chart_set_' + currentPortfolioId, v); } catch(e) {}
+  try { localStorage.setItem('pt_chart_set_' + getSelCtx(), v); } catch(e) {}
 }
 function getFundamentalsSelectedSet() {
   try {
-    var v = localStorage.getItem('pt_fund_set_' + currentPortfolioId);
+    var v = localStorage.getItem('pt_fund_set_' + getSelCtx());
     if (v) return v;
   } catch(e) {}
   return null; // default for fundamentals: no selection
 }
 function setFundamentalsSelectedSet(v) {
   try {
-    if (v == null) localStorage.removeItem('pt_fund_set_' + currentPortfolioId);
-    else localStorage.setItem('pt_fund_set_' + currentPortfolioId, v);
+    if (v == null) localStorage.removeItem('pt_fund_set_' + getSelCtx());
+    else localStorage.setItem('pt_fund_set_' + getSelCtx(), v);
   } catch(e) {}
 }
 
@@ -976,7 +1006,7 @@ function closeModeLabel(mode) {
 // ── Chart selection & cache-point helpers ───────────────────────
 // Which tickers/set the chart shows, and point bucketing/keys. Pure data.
 function getChartSelKey() {
-  return 'pt_chart_sel_' + currentPortfolioId;
+  return 'pt_chart_sel_' + getSelCtx();
 }
 function getChartSelection() {
   // Returns array of tickers for the currently selected set, or [] if no set
@@ -989,10 +1019,28 @@ function getChartSelection() {
   var allTickers = getChartUniqueTickers();
   return set.tickers.filter(function(t) { return allTickers.indexOf(t) !== -1; });
 }
+// Positions the chart draws from, per context. For a regular portfolio that's
+// the open portfolio's lots; for ALL POSITIONS it's the union across every
+// non-archive portfolio (watchlist included, sold lots excluded) — the same set
+// the All Positions views list. No type restriction: charting an index next to
+// your holdings is a legitimate comparison.
+function getChartContextPositions() {
+  if (!isAllPositions()) return positions || [];
+  var out = [];
+  Object.keys(portfolios).forEach(function(pid) {
+    var p = portfolios[pid];
+    if (!p || p.archive) return;
+    (p.positions || []).forEach(function(pos) {
+      if (pos.sold) return;
+      out.push(pos);
+    });
+  });
+  return out;
+}
 function getChartUniqueTickers() {
   var seen = {};
   var result = [];
-  (positions || []).forEach(function(p) {
+  getChartContextPositions().forEach(function(p) {
     if (!seen[p.ticker]) { seen[p.ticker] = true; result.push(p.ticker); }
   });
   return result;
