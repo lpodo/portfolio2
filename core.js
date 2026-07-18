@@ -654,15 +654,23 @@ function hasActiveFilter() {
 // Data transforms that prepare positions for the views (group by ticker,
 // weighted-average an aggregate, sum a market total in USD). No rendering.
 function aggregatePositions(posns) {
-  // Build maps: active by ticker, sold by ticker; qty=0 kept as-is
+  // Group key is ticker + currency (not ticker alone). In one portfolio a
+  // ticker has a single currency so this is identical to grouping by ticker;
+  // across portfolios it stops two lots of the same ticker in different
+  // currencies from being blended into one nonsensical weighted-average entry.
+  function keyOf(p) { return p.ticker + '|' + getPositionCurrencyCode(p); }
+
+  // Build maps: active by key, sold by key; qty=0 kept as-is
   var activeMap = {}, soldMap = {};
   posns.forEach(function(p) {
     if (!p.sold && p.qty > 0) {
-      if (!activeMap[p.ticker]) activeMap[p.ticker] = [];
-      activeMap[p.ticker].push(p);
+      var ka = keyOf(p);
+      if (!activeMap[ka]) activeMap[ka] = [];
+      activeMap[ka].push(p);
     } else if (p.sold) {
-      if (!soldMap[p.ticker]) soldMap[p.ticker] = [];
-      soldMap[p.ticker].push(p);
+      var ks = keyOf(p);
+      if (!soldMap[ks]) soldMap[ks] = [];
+      soldMap[ks].push(p);
     }
   });
 
@@ -693,11 +701,11 @@ function aggregatePositions(posns) {
     if (!p.sold && p.qty === 0) {
       result.push({ agg: false, pos: p });
     } else if (!p.sold && p.qty > 0) {
-      var key = 'a:' + p.ticker;
-      if (!seen[key]) { seen[key] = true; result.push(makeEntry(activeMap[p.ticker], false)); }
+      var key = 'a:' + keyOf(p);
+      if (!seen[key]) { seen[key] = true; result.push(makeEntry(activeMap[keyOf(p)], false)); }
     } else if (p.sold) {
-      var key2 = 's:' + p.ticker;
-      if (!seen[key2]) { seen[key2] = true; result.push(makeEntry(soldMap[p.ticker], true)); }
+      var key2 = 's:' + keyOf(p);
+      if (!seen[key2]) { seen[key2] = true; result.push(makeEntry(soldMap[keyOf(p)], true)); }
     }
   });
   return result;
@@ -731,9 +739,9 @@ function setSortState(key, dir) {
   if (_isArc()) { archiveSortKey = key; archiveSortDir = dir; try { localStorage.setItem('pt_sort_arc', JSON.stringify({key:key,dir:dir})); } catch(e) {} }
   else { sortKey = key; sortDir = dir; try { localStorage.setItem('pt_sort', JSON.stringify({key:key,dir:dir})); } catch(e) {} }
 }
-function getSorted() {
+function getSorted(srcPositions) {
   var sortKey = getSortKey(), sortDir = getSortDir();
-  var base = applyFilter(positions);
+  var base = applyFilter(srcPositions || positions);
   if (!sortKey) return base.slice();
   return base.slice().sort(function(a, b) {
     var va, vb;
@@ -746,12 +754,13 @@ function getSorted() {
     return sortDir * (va > vb ? 1 : va < vb ? -1 : 0);
   });
 }
-function getSortedForRender() {
+function getSortedForRender(srcPositions) {
+  var src = srcPositions || positions;
   var sortKey = getSortKey(), sortDir = getSortDir();
-  if (!isAggregated()) return getSorted().map(function(p) { return { agg: false, pos: p }; });
+  if (!isAggregated()) return getSorted(src).map(function(p) { return { agg: false, pos: p }; });
   // Aggregate first on unsorted positions, then sort aggregated entries.
   // Filter applies BEFORE aggregation, so ×N counts only visible lots.
-  var entries = aggregatePositions(applyFilter(positions));
+  var entries = aggregatePositions(applyFilter(src));
   if (!sortKey) return entries;
   return entries.slice().sort(function(a, b) {
     var pa = a.pos, pb = b.pos;
@@ -1032,6 +1041,24 @@ function getChartSelection() {
 // non-archive portfolio (watchlist included, sold lots excluded) — the same set
 // the All Positions views list. No type restriction: charting an index next to
 // your holdings is a legitimate comparison.
+// Positions the All Positions P&L draws from: every active regular portfolio
+// (no watchlist, no archive), equity/ETF only, sold lots included (rendered like
+// a portfolio would; their move/sell/archive actions are hidden in this view).
+// Distinct from getChartContextPositions, which spans watchlist and all types.
+function getMainContextPositions() {
+  if (!isAllPositions()) return positions || [];
+  var out = [];
+  Object.keys(portfolios).forEach(function(pid) {
+    var p = portfolios[pid];
+    if (!p || p.archive || p.watchlist) return;
+    (p.positions || []).forEach(function(pos) {
+      if (!isRealSecurity(pos)) return;
+      out.push(pos);
+    });
+  });
+  return out;
+}
+
 function getChartContextPositions() {
   if (!isAllPositions()) return positions || [];
   var out = [];

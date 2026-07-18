@@ -346,7 +346,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.97';
+var APP_VERSION = 'v1.3.98';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -599,7 +599,7 @@ function stalePortfolioColHtml(pid) {
 // individual portfolio). Bonds/cash/archive-summary are separate contexts and
 // not part of either group.
 var SUMMARY_BY_PORTFOLIO_VIEWS = ['summary', 'summary-market', 'summary-chart'];
-var ALL_POSITIONS_VIEWS = ['summary-movers', 'summary-alerts', 'global-weight', 'summary-analytics', 'global-chart', 'global-fundamentals'];
+var ALL_POSITIONS_VIEWS = ['summary-movers', 'summary-alerts', 'global-weight', 'summary-analytics', 'global-chart', 'global-fundamentals', 'global-main'];
 var REALIZED_ALL_POSITIONS_VIEWS = ['realized-weight', 'realized-analytics'];
 
 
@@ -4455,7 +4455,7 @@ function toggleViewMenu() {
     var isCrossPortfolio = inAllPositions || inSummaryByPortfolio || inRealizedAllPositions;
     var isWL = !isCrossPortfolio && currentPortfolio() && currentPortfolio().watchlist;
     var isArchive = !isCrossPortfolio && !isWL && currentPortfolio() && currentPortfolio().archive;
-    document.getElementById('vmMain').style.display = (inAllPositions || inRealizedAllPositions || isWL) ? 'none' : '';
+    document.getElementById('vmMain').style.display = (inRealizedAllPositions || isWL) ? 'none' : '';
     document.getElementById('vmMarket').style.display = (inAllPositions || inRealizedAllPositions || isArchive) ? 'none' : '';
     document.getElementById('vmChart').style.display = (inRealizedAllPositions || isArchive) ? 'none' : '';
     document.getElementById('vmFundamentals').style.display = ((inSummaryByPortfolio || inRealizedAllPositions) || isArchive) ? 'none' : '';
@@ -4488,6 +4488,7 @@ function setView(mode) {
                mode === 'global-weight' ? 'global-weight' :
                mode === 'chart'         ? 'global-chart' :
                mode === 'fundamentals'  ? 'global-fundamentals' :
+               mode === 'main'          ? 'global-main' :
                'summary-movers';
     // MARKET (movers) and ALERTS share the same sort state; both default
     // to absdelta desc on entry (largest movers first / most-moved alerts first).
@@ -4508,11 +4509,11 @@ function setView(mode) {
   ['vmMain','vmMarket','vmMarketTotal','vmWeight','vmGlobalWeight','vmChart','vmFundamentals','vmAnalytics','vmAlerts'].forEach(function(id) {
     document.getElementById(id).style.color = '';
   });
-  var activeId = viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMarketTotal' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'realized-analytics' ? 'vmAnalytics' : viewMode === 'summary-alerts' ? 'vmAlerts' : viewMode === 'summary' ? 'vmMain' : viewMode === 'global-fundamentals' ? 'vmFundamentals' : viewMode === 'global-chart' ? 'vmChart' : viewMode === 'global-weight' ? 'vmGlobalWeight' : viewMode === 'realized-weight' ? 'vmGlobalWeight' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'fundamentals' ? 'vmFundamentals' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMarket' : viewMode === 'alerts' ? 'vmAlerts' : 'vmMarket';
+  var activeId = viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMarketTotal' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'realized-analytics' ? 'vmAnalytics' : viewMode === 'summary-alerts' ? 'vmAlerts' : viewMode === 'summary' ? 'vmMain' : viewMode === 'global-main' ? 'vmMain' : viewMode === 'global-fundamentals' ? 'vmFundamentals' : viewMode === 'global-chart' ? 'vmChart' : viewMode === 'global-weight' ? 'vmGlobalWeight' : viewMode === 'realized-weight' ? 'vmGlobalWeight' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'fundamentals' ? 'vmFundamentals' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMarket' : viewMode === 'alerts' ? 'vmAlerts' : 'vmMarket';
   document.getElementById(activeId).style.color = 'var(--green)';
   document.getElementById('viewMenu').style.display = 'none';
   // Refresh prices when entering chart view (updates today's point)
-  if (viewMode === 'global-chart' || viewMode === 'global-fundamentals') refreshAllPortfolios();
+  if (viewMode === 'global-chart' || viewMode === 'global-fundamentals' || viewMode === 'global-main') refreshAllPortfolios();
   else if (viewMode === 'chart' || viewMode === 'summary-chart') refreshAll();
   render();
 }
@@ -7171,7 +7172,7 @@ function updateViewMenuBtn() {
   if (!btn) return;
   var labels = { 'main': 'P&L', 'weight': 'WEIGHTS', 'global-weight': 'WEIGHTS', 'market': 'MARKET', 'movers': 'MARKET', 'chart': 'CHART', 'fundamentals': 'FUNDAMENTALS', 'analytics': 'ANALYTICS', 'alerts': 'ALERTS',
     'summary': 'P&L', 'summary-market': 'MARKET', 'summary-chart': 'CHART', 'summary-analytics': 'ANALYTICS', 'summary-movers': 'MARKET', 'summary-alerts': 'ALERTS',
-    'realized-weight': 'WEIGHTS', 'realized-analytics': 'ANALYTICS', 'global-chart': 'CHART', 'global-fundamentals': 'FUNDAMENTALS' };
+    'realized-weight': 'WEIGHTS', 'realized-analytics': 'ANALYTICS', 'global-chart': 'CHART', 'global-fundamentals': 'FUNDAMENTALS', 'global-main': 'P&L' };
   var label = labels[viewMode] || 'P&L';
   if (viewMode === 'main' && currentPortfolio() && currentPortfolio().watchlist) label = 'MARKET';
   btn.textContent = label;
@@ -7516,12 +7517,15 @@ function render() {
     return;
   }
 
-  if (positions.length === 0 && ['cash','bonds','bond-summary','archive-summary'].indexOf(viewMode) === -1) {
+  var mainEmptyCheck = (viewMode === 'global-main') ? getMainContextPositions() : positions;
+  if (mainEmptyCheck.length === 0 && ['cash','bonds','bond-summary','archive-summary'].indexOf(viewMode) === -1) {
     area.innerHTML = '<div class="empty">NO POSITIONS &mdash; ADD ONE BELOW</div>';
     return;
   }
 
-  var rowsSource = getSortedForRender();
+  var mainIsAll = isAllPositions();
+  var mainSource = mainIsAll ? getMainContextPositions() : positions;
+  var rowsSource = getSortedForRender(mainSource);
   var rows = '';
   rowsSource.forEach(function(entry) {
     var p = entry.pos; var isAgg = entry.agg; var aggCount = entry.count || 1; var aggGroup = entry.group || null;
@@ -7549,7 +7553,14 @@ function render() {
       : curCell;
 
     var sellAction, moveBtn, editBtn, deleteBtn;
-    if (isEdit) {
+    if (mainIsAll) {
+      // Cross-portfolio view: no per-lot actions (they resolve by id within one
+      // portfolio's positions). ×N stays as a plain, non-clickable badge.
+      sellAction = isAgg
+        ? '<span style="font-size:12px;letter-spacing:1px;color:var(--bright);padding:0 4px;font-family:var(--font)">&times;' + aggCount + '</span>'
+        : '';
+      moveBtn = ''; editBtn = ''; deleteBtn = '';
+    } else if (isEdit) {
       sellAction = '<button class="btn-icon" style="color:var(--green)" onclick="saveEdit(' + p.id + ')">&#10003;</button>'
         + '<button class="btn-icon" onclick="cancelEdit()">&#10005;</button>';
       moveBtn = ''; editBtn = ''; deleteBtn = '';
@@ -7610,10 +7621,10 @@ function render() {
   });
 
   var totCost = 0, totVal = 0, hasAny = false;
-  var baseCode = (currentPortfolio().currencyCode || 'USD').toUpperCase();
-  var baseSym = getCurrency();
+  var baseCode = mainIsAll ? 'USD' : (currentPortfolio().currencyCode || 'USD').toUpperCase();
+  var baseSym = mainIsAll ? '$' : getCurrency();
   // Totals reflect the filter (a filtered view shows the totals of that slice).
-  var tPosns = applyFilter(positions);
+  var tPosns = applyFilter(mainSource);
   // Get unique non-base currencies in this portfolio
   var posFxNeeded = [];
   tPosns.forEach(function(p) {
