@@ -596,6 +596,9 @@ function fetchIsin(ticker) {
 // (not watchlist, not archive).
 function filterActive() {
   if (!activeFilter) return false;
+  // Cross-portfolio views (All Positions) gate on the view, not on the
+  // last-opened portfolio: a filter set here applies to the union.
+  if (isCrossPortfolioContext()) return !isRealizedAllPositions();
   var pf = currentPortfolio();
   return !!pf && !pf.archive && !pf.watchlist;
 }
@@ -1053,6 +1056,7 @@ function getMainContextPositions() {
     if (!p || p.archive || p.watchlist) return;
     (p.positions || []).forEach(function(pos) {
       if (!isRealSecurity(pos)) return;
+      if (pos.qty === 0) return; // observe-only lots (not bought) — no P&L
       out.push(pos);
     });
   });
