@@ -346,7 +346,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.95';
+var APP_VERSION = 'v1.3.96';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -2596,12 +2596,20 @@ function deletePortfolio(id) {
   (p.positions || []).forEach(function(pos) { if (pos.ticker) portfolioTickers[pos.ticker] = true; });
   delete portfolios[id];
   Object.keys(portfolioTickers).forEach(pruneTickerData);
-  savePortfolios();
-  save();
-  if (currentPortfolioId === id) {
+  // If we're deleting the portfolio we're currently in, move currentPortfolioId
+  // to a survivor BEFORE saving. saveLocal() writes positions into
+  // portfolios[currentPortfolioId]; if that still pointed at the deleted one it
+  // would throw and abort save() before the cloud push, so the deletion would
+  // never sync.
+  var wasCurrent = (currentPortfolioId === id);
+  if (wasCurrent) {
     currentPortfolioId = Object.keys(portfolios)[0];
     localStorage.setItem('pt_current', currentPortfolioId);
     loadLocal();
+  }
+  savePortfolios();
+  save();
+  if (wasCurrent) {
     editId = null; expandedId = null; loadingSet = {};
     setTitleForCurrentView();
     render();
