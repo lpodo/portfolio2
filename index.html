@@ -346,7 +346,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.99';
+var APP_VERSION = 'v1.4.0';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4933,12 +4933,18 @@ window._editingSetId = null;  // null = not editing; '_new' = adding; setId = ed
 // by index to avoid escaping broker names through inline onclick handlers.
 var _aggOverlayState = null;
 
-function showAggDetail(ticker, soldFlag) {
+function showAggDetail(ticker, soldFlag, curCode) {
   var isSold = soldFlag === 1 || soldFlag === '1' || soldFlag === true;
+  var aggIsAll = isAllPositions();
   // Collect the visible (filtered) positions matching this aggregation, so the
-  // detail list matches the ×N count and what move/delete act on.
-  var allPositions = applyFilter(positions).filter(function(p) {
-    return p.ticker === ticker && (isSold ? !!p.sold : (!p.sold && p.qty > 0));
+  // detail list matches the ×N count and what move/delete act on. In All
+  // Positions the source is the cross-portfolio union, not one portfolio.
+  var aggSource = aggIsAll ? getMainContextPositions() : positions;
+  var allPositions = applyFilter(aggSource).filter(function(p) {
+    if (p.ticker !== ticker) return false;
+    // curCode scopes to ticker+currency (the aggregation key) when provided.
+    if (curCode && getPositionCurrencyCode(p) !== curCode) return false;
+    return isSold ? !!p.sold : (!p.sold && p.qty > 0);
   });
   if (!allPositions.length) return;
 
@@ -5034,7 +5040,7 @@ function showAggDetail(ticker, soldFlag) {
   // table grows beyond its container and scrolls horizontally inside the
   // wrapper, never pushing SELL or the broker label off-screen.
   function brokerSectionHtml(bd, idx) {
-    var sellBtn = isSold ? '' :
+    var sellBtn = (isSold || aggIsAll) ? '' :
       '<button id="aggSellBtn_' + idx + '" class="btn" onclick="showAggSellForm(' + idx + ')" style="padding:5px 14px;font-size:9px;letter-spacing:1px;border-color:var(--border);color:var(--bright)">SELL</button>';
     // Wrap BROKER + name in one span so flex space-between can't split them.
     var brokerLabel = '<span>'
@@ -5074,7 +5080,9 @@ function showAggDetail(ticker, soldFlag) {
   // labelled inputs, SELL + CANCEL on one row.
   // For sold: MOVE TO REALIZED (acts on all sold positions regardless of broker).
   var actionHtml;
-  if (isSold) {
+  if (aggIsAll) {
+    actionHtml = ''; // cross-portfolio detail is read-only (no sell/archive)
+  } else if (isSold) {
     actionHtml = '<div style="margin-top:14px;padding:0 8px;display:flex;justify-content:flex-end">'
       + '<button class="btn" onclick="showArchiveMenuAgg(\'' + ticker + '\', this)">&#8863; MOVE TO REALIZED</button>'
       + '</div>';
@@ -7555,9 +7563,10 @@ function render() {
     var sellAction, moveBtn, editBtn, deleteBtn;
     if (mainIsAll) {
       // Cross-portfolio view: no per-lot actions (they resolve by id within one
-      // portfolio's positions). ×N stays as a plain, non-clickable badge.
+      // portfolio's positions). ×N opens a read-only breakdown, scoped to this
+      // row's ticker+currency.
       sellAction = isAgg
-        ? '<span style="font-size:12px;letter-spacing:1px;color:var(--bright);padding:0 4px;font-family:var(--font)">&times;' + aggCount + '</span>'
+        ? '<button class="btn-icon" onclick="showAggDetail(\'' + p.ticker + '\',' + (p.sold ? '1' : '0') + ',\'' + getPositionCurrencyCode(p) + '\')" style="font-size:12px;letter-spacing:1px;color:var(--bright);padding:0 4px;cursor:pointer;background:none;border:none;font-family:var(--font)">&times;' + aggCount + '</button>'
         : '';
       moveBtn = ''; editBtn = ''; deleteBtn = '';
     } else if (isEdit) {
