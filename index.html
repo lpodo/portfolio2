@@ -346,7 +346,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.90';
+var APP_VERSION = 'v1.3.91';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -3346,8 +3346,7 @@ function save() {
 
 
 // --- AES-GCM Cloud Encryption ---
-function getEncKey() { return localStorage.getItem('pt_enc_key') || ''; }
-function saveEncKey(v) { localStorage.setItem('pt_enc_key', v); }
+// (getEncKey/saveEncKey live with the ENC KEY UI above.)
 
 async function deriveKey(password, salt) {
   var enc = new TextEncoder();
@@ -4808,19 +4807,6 @@ function deletePositionSet(setId) {
   // If this set was selected anywhere, fall back
   if (getChartSelectedSet() === setId) setChartSelectedSet('portfolio');
   if (getFundamentalsSelectedSet() === setId) setFundamentalsSelectedSet(null);
-}
-
-// ── Per-view current selection (which set is active in chart/fundamentals) ─
-
-
-
-
-
-
-
-function toggleChartViewMenu() {
-  var m = document.getElementById('chartViewMenu');
-  if (m) m.style.display = m.style.display === 'none' ? '' : 'none';
 }
 
 function toggleChartViewMenu() {
