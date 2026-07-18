@@ -109,7 +109,7 @@ Portfolios in the **REALIZED** tab hold closed positions and show their actual r
 - Add position: ticker + qty (0 allowed) + entry price + current price (optional) + purchase date (defaults to today) + broker (current default pre-selected, see [Brokers](#brokers)) + **ISIN** (optional, 12 alphanumeric chars, uppercase-only, `US0378331005` format).
 - Adding a position validates the ticker against Yahoo Finance — unknown tickers are rejected.
 - Editing the ticker in the Add form clears any typed ISIN — a different ticker implies a different ISIN.
-- Inline edit (✎) and delete (✕). Editing exposes the same set of fields plus the classification dropdowns (CAT / REG / SEC) and the NOTE field.
+- Inline edit (✎) and delete (✕). Editing exposes the same set of fields plus the classification dropdowns (CAT / REG / SEC).
 
 **qty=0** is allowed — used for watchlist candidates. P&L $ shows `—`, P&L % is calculated if entry > 0. Entry=0 is allowed only when qty=0 (pure price tracking). Excluded from WEIGHTS and Analytics totals.
 
@@ -281,17 +281,13 @@ An alert set persists while at least one **live** position of the ticker exists 
 
 ### Setting alerts
 
-**From the ✎ edit form** — under the ALERTS section at the bottom of the form:
+Alerts are managed entirely from the **expanded row** — tap a ticker to expand, then use the inline ALERTS row:
 
-- Click the `>` / `<` toggle button to select the condition (tap to switch in place).
-- Enter a price value.
-- Click **+ ADD**.
-
-**From the expanded row** (faster, without opening the edit form) — tap a ticker to expand, then use the inline ALERTS row:
-
-- Click the `>` / `<` toggle to select the condition.
+- Click the `>` / `<` toggle to select the condition (tap to switch in place).
 - Enter a price value.
 - Click `+`.
+
+Existing alerts appear on the same row, each with a ✕ to delete it. Since alerts are keyed by ticker, the same set shows up on every position of that ticker — including aggregated rows, where the controls work identically.
 
 ### Triggering
 
@@ -390,14 +386,7 @@ Fundamentals data is meaningful only for individual stocks. Other instrument typ
 
 ### Expanded row
 
-Tap a ticker in any of the four tabs to toggle a compact "lite" sub-row beneath it. Four lines:
-
-1. **CAT / REG / SEC** — classification fields (show `—` if empty).
-2. **NOTE** — free-text annotation.
-3. **ALERTS** — existing alerts with ✕ delete buttons, plus the same inline quick-add controls as in the main Expanded Row.
-4. The `[›]` button — opens the full **More** overlay (the same overlay reached from the main [Expanded Row](#expanded-row)).
-
-Unlike the main Expanded Row, the lite version doesn't repeat the analyst votes / Avg tgt / P/E lines — that data is already visible in the comparative table above, so it would be redundant.
+Tap a ticker in any of the four tabs to toggle a minimal sub-row beneath it, holding a single `[›]` button that opens the full **More** overlay (the same overlay reached from the main [Expanded Row](#expanded-row)). Nothing else is repeated here: the fundamentals data is already inline in the comparison table above.
 
 ### Rendering behavior
 
@@ -429,7 +418,7 @@ Row order is stable across subview switches — groups are sorted by base value 
 
 ### Ticker classification fields
 
-Four attributes describe **the security itself**, not any specific holding: **category**, **region**, **sector**, and **ISIN**. They live on the ticker (in the [Ticker data registry](#ticker-data-registry)) — one value per ticker, shared by every position of that ticker across every portfolio.
+Four **classification** attributes describe the security itself rather than any specific holding: **category**, **region**, **sector**, and **ISIN**. They live on the ticker (in the [Ticker data registry](#ticker-data-registry)) — one value per ticker, shared by every position of that ticker across every portfolio.
 
 - **CATEGORY / REGION / SECTOR** — must be chosen from dictionaries (Settings → DICTIONARIES). Free text is not allowed; this guarantees exact consistency across portfolios so Analytics grouping works.
 - **ISIN** — free text, 12-character ISO 6166 code. Uppercase-only, alphanumeric.
@@ -446,7 +435,11 @@ Dictionaries are included in cloud sync and backup/restore. Grouping in Analytic
 
 ### Note field
 
-Each position has a free-text **note** field, set via the ✎ edit row. Notes are position-level (unlike CAT/REG/SEC/ISIN which are ticker-level) — one note per lot, so different positions of the same ticker can carry different annotations. Notes don't affect any calculations or groupings and appear only in the expanded view and the edit form.
+A free-text **note** per ticker — like the classification fields, it describes the security rather than one lot ("sell above 300" is about the ticker, not about a specific purchase). One note per ticker, shared by every position of that ticker across every portfolio.
+
+Notes are edited from the [Expanded Row](#expanded-row): the ✎ button next to NOTE opens a small modal with a multi-line text area (**SAVE** / **CANCEL**, Escape closes). Editing works the same on aggregated rows — there's no per-lot note to disambiguate. Clearing the text removes the note entirely.
+
+Notes don't affect any calculations or groupings and appear only in the expanded row.
 
 ### CSV import / export
 
@@ -510,8 +503,8 @@ NOTE  Bought on dip after earnings  ✎
 ALERTS  > 920  ✕    [>] [price] [+]
 ```
 
-- **NOTE** — free-text annotation. Click the ✎ button to edit inline: the value becomes an input field; press **Enter** or click away to save, **Escape** to cancel.
-- **ALERTS** — existing alerts with ✕ delete buttons, plus inline quick-add controls.
+- **NOTE** — free-text annotation for the ticker (see [Note field](#note-field)). Click the ✎ button to open the note editor modal. This is the only place notes can be edited.
+- **ALERTS** — existing alerts with ✕ delete buttons, plus inline quick-add controls. This is the only place alerts can be managed. The row is hidden for sold positions.
 
 ### Yahoo fundamentals & "More" overlay
 
@@ -545,7 +538,7 @@ Expanded rows are enabled for aggregated entries, with the following behavior on
 
 - **BROKER / BUY DATE:** BUY DATE is hidden in aggregation mode (positions in a group may have different purchase dates — the breakdown lives in the [aggregation detail modal](#aggregation-detail-modal)). BROKER shows the single broker name if all positions agree, or `N brokers` in dim style if the group spans multiple brokers.
 - **Attributes (CAT / REG / SEC):** the app enforces identical attributes across all instances of the same ticker, so the values are read from any one position in the aggregated group (the first one).
-- **Notes:** non-empty notes from all positions in the group are joined into a single read-only block. Editing is not available in aggregation mode — switch to a non-aggregated view to edit individual notes.
+- **Notes:** all positions in the group share the same note — notes are keyed by ticker, not by position. The ✎ button opens the same editor as on an individual row, so notes are fully editable in aggregation mode.
 - **Alerts:** all positions in the group share the same alert set — alerts are keyed by ticker, not by position. The list shown in the aggregated row's expansion is the same set you'd see on any individual row of the same ticker. Delete and add controls work as in normal mode.
 
 The dot indicators (yellow / sky-blue) appear if any position in the aggregated group has a triggered alert of the corresponding direction, following the same rules as for individual positions. The Yahoo fundamentals lines and the **More** button appear in aggregated rows just as in regular ones.
@@ -830,7 +823,7 @@ The worker is protected by a secret token passed in the `X-API-Token` request he
 
 ### Position structure
 
-A position is now a purely **transactional** record — it describes one lot you bought (and possibly sold). Everything about the *security* (its price, currency, name, market metadata, classification, ISIN, alerts) has moved to the ticker-keyed [Ticker data registry](#ticker-data-registry) and is read through helper functions (`getPositionCurrent`, `getPositionCurrencyCode`, `getTickerMeta`, etc.).
+A position is now a purely **transactional** record — it describes one lot you bought (and possibly sold). Everything about the *security* (its price, currency, name, market metadata, classification, ISIN, note, alerts) has moved to the ticker-keyed [Ticker data registry](#ticker-data-registry) and is read through helper functions (`getPositionCurrent`, `getPositionCurrencyCode`, `getTickerMeta`, etc.).
 
 ```json
 {
@@ -840,7 +833,6 @@ A position is now a purely **transactional** record — it describes one lot you
   "entry": 134.00,
   "purchaseDate": "2024-08-19",
   "broker": "ETrade",
-  "note": "core energy holding",
   "sold": false
 }
 ```
@@ -863,10 +855,9 @@ Fields:
 - `entry` — buy price per share.
 - `purchaseDate` — ISO `YYYY-MM-DD` (local timezone). Optional; defaults to today on add. Used for FIFO ordering inside the aggregation detail modal, the purchase-date filter, and display in the [Expanded Row](#expanded-row).
 - `broker` — explicit broker tag for this lot. Optional; when absent, `getPositionBroker(p)` resolves to the current default broker at read time. See [Brokers](#brokers).
-- `note` — optional free-text annotation. Position-level (each lot can carry its own note), unlike the ticker-level classification. Visible only in the expanded row and edit form.
 - `sold` — marks the lot as closed. A sold lot carries `sellPrice` and `sellCurrency` (frozen at sale); its price is not refreshed.
 
-Everything else a position used to carry — `current`, `currency`, `shortName`, `instrumentType`, `exchangeName`, `marketState`, `priceType`, `regularMarketPrice`, `previousClose`, plus `category` / `region` / `sector` / `isin` / `alerts` — is ticker-level and lives in the [Ticker data registry](#ticker-data-registry).
+Everything else a position used to carry — `current`, `currency`, `shortName`, `instrumentType`, `exchangeName`, `marketState`, `priceType`, `regularMarketPrice`, `previousClose`, plus `category` / `region` / `sector` / `isin` / `note` / `alerts` — is ticker-level and lives in the [Ticker data registry](#ticker-data-registry).
 
 ### Portfolio structure
 
@@ -893,7 +884,7 @@ The central consequence of the data refactor: a ticker-keyed registry holds **ev
 It stores three groups of fields:
 
 1. **Live market metadata** from Yahoo — refreshed on every price update: `current`, `currency`, `shortName`, `instrumentType`, `exchangeName`, `marketState`, `priceType`, `regularMarketPrice`, `previousClose`.
-2. **User classification** — `category`, `region`, `sector` (dictionary-backed) and `isin`.
+2. **User annotation** — `category`, `region`, `sector` (dictionary-backed), `isin`, and `note` (free text).
 3. **Alerts** — `alerts` array.
 
 ```json
@@ -912,6 +903,7 @@ It stores three groups of fields:
     "region": "US",
     "sector": "Technology",
     "isin": "US0378331005",
+    "note": "trim above 300",
     "alerts": [
       { "id": "1735420800123_a7k9x2", "condition": ">", "value": 250.00, "triggered": false }
     ]
@@ -930,6 +922,7 @@ Field semantics:
 - Market metadata is stored verbatim from Yahoo (numeric fields stay numeric). A `null`/`undefined` clears the field. Read via `getTickerMeta(ticker, field)` and the per-field wrappers (`getPositionCurrent`, `getPositionCurrencyCode`, `getPositionShortName`, etc.).
 - `category` / `region` / `sector` — free-string values chosen from dictionaries (see [Ticker classification fields](#ticker-classification-fields)); hand-typed values are trimmed. Absent means unclassified.
 - `isin` — one of three states: a real ISIN string; the marker `UNRESOLVED` (a provider was asked and returned nothing — don't re-ask); or absent (never looked up). A lookup fires only when the field is falsy, so both a known ISIN and the `UNRESOLVED` marker suppress re-querying. The helper `isKnownIsin(v)` treats any value starting with `UNRESOLVED` as a marker — so a future provider can use a suffixed variant (e.g. `UNRESOLVED_V2`) to auto-requery tickers still carrying the bare marker, without changing the check.
+- `note` — free-text annotation for the ticker (see [Note field](#note-field)). Absent when empty; saving an empty value removes the key.
 - `alerts` — array of alert objects `{ id, condition: ">" | "<", value, triggered }`. Absent means no alerts. `triggered` is recomputed on every price refresh and saved (the dot stays lit between sessions until the next refresh re-evaluates). Alert IDs are `Date.now() + '_' + shortRandom`.
 
 Storage rules: missing fields aren't stored (no `null` clutter); if an entry ends up with no fields, it's removed entirely.
@@ -937,7 +930,7 @@ Storage rules: missing fields aren't stored (no `null` clutter); if an entry end
 **Cleanup** — `pruneTickerData(ticker)` runs after operations that may orphan a ticker (sell, delete, move-to-archive, ticker rename, portfolio delete). Retention differs by field group:
 
 - **Alerts** are dropped when no live position of the ticker remains (non-sold in a regular portfolio, or any position in a watchlist). Realized portfolios don't keep alerts alive.
-- **Classification / ISIN / market metadata** are dropped only when no position of the ticker exists **anywhere**, including realized portfolios — closed positions still want their metadata for reporting.
+- **Classification / ISIN / note / market metadata** are dropped only when no position of the ticker exists **anywhere**, including realized portfolios — closed positions still want their metadata for reporting.
 
 The hook is idempotent.
 
@@ -950,7 +943,7 @@ Primary on-device storage:
 - `pt_bond_portfolios` — bond portfolios and positions (also used by deposit portfolios)
 - `pt_cash_portfolios` — cash portfolios and entries
 - `pt_cash_cat_dict` — shared dictionary of cash entry categories
-- `pt_ticker_data` — ticker-keyed registry with live market metadata, classification, ISIN, and alerts (see [Ticker data registry](#ticker-data-registry))
+- `pt_ticker_data` — ticker-keyed registry with live market metadata, classification, ISIN, note, and alerts (see [Ticker data registry](#ticker-data-registry))
 - `pt_current` — active portfolio ID
 - `pt_finnhub` — Cloudflare Worker URL
 - `pt_token` — API token for Cloudflare Worker

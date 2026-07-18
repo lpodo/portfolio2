@@ -62,6 +62,7 @@ function initPortfolios() {
   liftAttrsFromPositions();
   migrateSoldPositions();
   migrateMetaToTicker();
+  migrateNotesToTicker();
   stripMigratedFieldsFromPositions();
   stripNullPositionFields();
   // Restore last active portfolio
@@ -160,7 +161,7 @@ function stripMigratedFieldsFromPositions() {
 // records so a position carries only real data — consistent across
 // localStorage, cloud, and backups. Idempotent: only touches keys that are
 // present AND empty; real values are never removed.
-var NULLABLE_POSITION_FIELDS = ['note', 'purchaseDate', 'broker'];
+var NULLABLE_POSITION_FIELDS = ['purchaseDate', 'broker'];
 function stripNullPositionFields() {
   var changed = false;
   Object.keys(portfolios).forEach(function(pid) {
@@ -204,6 +205,28 @@ function migrateMetaToTicker() {
     });
   });
   saveTickerDataLS();
+}
+
+// Notes were originally per-position, but a note like "sell at 300" describes
+// the ticker, not one lot — and in aggregated view there was no lot to attach
+// it to. Move every position note up to the ticker (concatenating when several
+// lots of the same ticker carried notes) and drop the key from positions.
+// Idempotent: after the first run no position has a note key, so re-runs no-op.
+function migrateNotesToTicker() {
+  var changed = false;
+  Object.keys(portfolios).forEach(function(pid) {
+    (portfolios[pid].positions || []).forEach(function(pos) {
+      if (!('note' in pos)) return;
+      var n = pos.note;
+      if (n) {
+        var existing = getTickerAttr(pos.ticker, 'note');
+        setTickerAttr(pos.ticker, 'note', existing ? existing + ' • ' + n : n);
+      }
+      delete pos.note;
+      changed = true;
+    });
+  });
+  if (changed) { saveTickerDataLS(); savePortfolios(); }
 }
 
 // ── Alerts (thin wrappers over tickerData[ticker].alerts) ───────────────────
@@ -404,6 +427,7 @@ function migrateDicts() {
 }
 
 // ── Formatters ──────────────────────────────────────────────────────────────
+// YYYY-MM-DD in local timezone, used as default purchaseDate for new positions
 function todayLocalISO() {
   return new Date().toLocaleDateString('en-CA');
 }
@@ -453,6 +477,10 @@ function getPortfolios() {
 function savePortfolios() {
   try { localStorage.setItem('pt_portfolios', JSON.stringify(portfolios)); } catch(e) {}
 }
+// Loads from new key; one-time migration from legacy pt_ticker_alerts (flat
+// { ticker: [alerts] } shape) into new nested { ticker: { alerts: [...] } }.
+// Migration is destructive on the LS side — after successful move, the old
+// key is deleted so subsequent loads skip this path.
 function loadTickerDataLS() {
   try { tickerData = JSON.parse(localStorage.getItem('pt_ticker_data') || '{}'); } catch(e) { tickerData = {}; }
   // One-time migration from legacy per-ticker alerts key
@@ -517,6 +545,12 @@ function fetchFxRate(baseUrl, token, ticker) {
   fxRateInflight[ticker] = p;
   return p;
 }
+// Fetch ISIN for a ticker via the worker's /api/isin endpoint. Currently the
+// worker returns { isin: null } for everything — no free provider supplies
+// ISIN data (see worker comment). The pipeline stays intact so users can
+// enter ISINs manually and a real provider can be wired into the worker
+// later without touching the frontend. Returns the ISIN string on success,
+// null when unavailable, or throws on network/HTTP errors.
 function fetchIsin(ticker) {
   if (!ticker) return Promise.resolve(null);
   var baseUrl = getApiKey();
@@ -538,17 +572,39 @@ function fetchIsin(ticker) {
   });
 }
 
-// ── Position filtering (global active filter) ──────────────────────
-// Reads the activeFilter global (state lives in index). filterPositions is the
-// single choke point; each view applies its own gate on top.
+// ── Position filter ────────────────────────────────────────
+// A global, persisted filter for REGULAR ACTIVE portfolios. When active it
+// restricts which positions are shown AND which an aggregate operation acts on.
+// applyFilter is the single choke point — every display/operation path routes
+// its position list through it, so adding a view or a condition needs no new
+// wiring here. The activeFilter state itself lives in index.
+
+// True when the filter should apply in the current individual-portfolio
+// context: a filter is set AND the current portfolio is a regular active one
+// (not watchlist, not archive).
 function filterActive() {
   if (!activeFilter) return false;
   var pf = currentPortfolio();
   return !!pf && !pf.archive && !pf.watchlist;
 }
+// True when the filter should apply to a cross-portfolio view (ALL POSITIONS /
+// Σ SUMMARY). Same global filter, but the gate is the view — active summaries
+// filter, realized (archive) summaries don't. Callers pass whether the current
+// summary context is the realized one.
 function filterActiveForSummary(isRealized) {
   return !!activeFilter && !isRealized;
 }
+// Pure filter: reduce a position array to the filter's SET, with NO context
+// gate. Each active condition is a FULL predicate — including its own base
+// requirement — and predicates combine by AND (a position must satisfy every
+// active condition). Only conditions present in activeFilter apply.
+//   • purchaseDateFrom → entry != 0 AND purchaseDate present AND >= threshold
+//       (a qty-0 lot with an entry is a fully-sold buy; its date still matters)
+//   • broker           → qty != 0 AND getPositionBroker(p) === broker
+//       (broker is meaningless for a qty-0 lot, so it's excluded here)
+// This DEFINES the working set; each view then applies its own logic on top —
+// identical for individual portfolios and cross-portfolio views. Extensible:
+// new conditions slot in as further AND predicates.
 function filterPositions(posns) {
   if (!activeFilter) return posns;
   return posns.filter(function(p) {
@@ -564,10 +620,12 @@ function filterPositions(posns) {
     return true;
   });
 }
+// Individual-view filter: gate on the current portfolio, then filter.
 function applyFilter(posns) {
   if (!filterActive()) return posns;
   return filterPositions(posns);
 }
+// True if any condition is actually set (drives the lit filter icon).
 function hasActiveFilter() {
   return !!(activeFilter && (activeFilter.purchaseDateFrom || activeFilter.broker));
 }
@@ -624,6 +682,11 @@ function aggregatePositions(posns) {
   });
   return result;
 }
+// Shared USD market-total accumulator: sums a position array into USD close/
+// current values using the same price logic as the per-portfolio summary
+// (sold freezes at sellPrice; closeMode/currentMode pick close/current price).
+// fxRates maps currency→USD. Returns { closeUSD, currentUSD, hasAny }. Reused
+// by Σ SUMMARY (per-portfolio) and All Positions MARKET (whole set).
 function computeUsdMarketTotal(posns, fxRates) {
   var closeUSD = 0, currentUSD = 0, hasAny = false;
   (posns || []).forEach(function(pos) {
@@ -839,6 +902,7 @@ function countPositionsWithBroker(broker) {
   });
   return n;
 }
+// Lookup helpers used by the field-driven dict UI (which lives in index).
 function _dictHiddenId(field) {
   return field === 'cat' ? 'editCategory'
        : field === 'reg' ? 'editRegion'
@@ -1005,16 +1069,6 @@ function calcDeposit(dep, currencyCode) {
   var ret = dep.amount > 0 ? profit / dep.amount * 100 : null;
   return { profit: profit, ret: ret, annYield: annYield, maturityDate: maturityDate, isMatured: isMatured, currSym: CURRENCY_SYMBOLS[currencyCode] || currencyCode };
 }
-function findPortfolioForPosition(posId) {
-  for (var pid in portfolios) {
-    var port = portfolios[pid];
-    if (!port || !port.positions) continue;
-    for (var i = 0; i < port.positions.length; i++) {
-      if (port.positions[i].id === posId) return port;
-    }
-  }
-  return null;
-}
 function fetchWithTimeout(url, opts, ms) {
   ms = ms || 10000;
   var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -1026,6 +1080,8 @@ function fetchWithTimeout(url, opts, ms) {
   }
   return p;
 }
+// Parse "2600 FE0F" → "☀️". Returns null on invalid hex (caller treats as error).
+// Empty string input returns ''.
 function iconsCodeToSymbol(code) {
   if (code == null) return '';
   var trimmed = String(code).trim();
@@ -1040,6 +1096,7 @@ function iconsCodeToSymbol(code) {
   }
   return chars.join('');
 }
+// "☀️" → "2600 FE0F"
 function iconsSymbolToCode(symbol) {
   if (!symbol) return '';
   var codes = [];
@@ -1082,6 +1139,8 @@ function getMarketIcons() {
 function setMarketIcons(icons) {
   try { localStorage.setItem(MARKET_ICONS_STORAGE_KEY, JSON.stringify(icons)); } catch (e) {}
 }
+// Map (alert count, user's base) → CSS class. Returns null if n < 2 (no blink).
+// Progression: starts at user's base level, advances one level per extra alert, clamps at 'fast'.
 function blinkClassForCount(n) {
   if (n < 2) return null;
   var base = getBlinkPref();
@@ -1090,6 +1149,9 @@ function blinkClassForCount(n) {
   var idx = Math.min(BLINK_LEVELS.length - 1, startIdx + (n - 2));
   return 'alert-blink-' + BLINK_LEVELS[idx];
 }
+// Color for a triggered alert based on its condition direction.
+// '>' (price crossed above) → warm yellow.
+// '<' (price crossed below) → sky blue.
 function alertColorForCond(cond) {
   return cond === '<' ? '#5bd1f6' : '#f6c15b';
 }
