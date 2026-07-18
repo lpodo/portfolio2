@@ -346,7 +346,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.93';
+var APP_VERSION = 'v1.3.94';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4786,8 +4786,28 @@ window.chartSelectionOpen = false;
 // old "positions" item, with a MANAGE SETS button at the bottom.
 
 
+// Ticker universe offered in the sets modal. Honors the forced-global flag: the
+// filter's MANAGE SETS must offer the full all-portfolios union even when a
+// single portfolio is open. Temporarily borrows All Positions context.
+function getChartContextTickersForSets() {
+  if (!window._setsForceGlobal) return getChartUniqueTickers();
+  var savedView = viewMode;
+  viewMode = 'global-chart';           // makes isAllPositions() true → union
+  var t = getChartUniqueTickers();
+  viewMode = savedView;
+  return t;
+}
+
+// Context for SET operations (create/update/delete/list/ticker-source).
+// Normally the current view context, but when the sets modal is opened from the
+// filter we force the global store: the filter's sets are the All Positions
+// sets, no matter which portfolio is open.
+function getSetsCtx() {
+  return window._setsForceGlobal ? ALL_POSITIONS_CTX : getSelCtx();
+}
+
 function savePositionSets(ctx, sets) {
-  var c = ctx || getSelCtx();
+  var c = ctx || getSetsCtx();
   if (c === ALL_POSITIONS_CTX) {
     allPositionSets = sets;
     saveAllPositionSetsLS();
@@ -4801,23 +4821,23 @@ function savePositionSets(ctx, sets) {
 }
 
 function createPositionSet(name, tickers) {
-  var sets = getPositionSets().slice();
+  var sets = getPositionSets(getSetsCtx()).slice();
   var id = 'set_' + Date.now();
   sets.push({ id: id, name: (name || '').trim() || 'NEW SET', tickers: tickers || [] });
-  savePositionSets(getSelCtx(), sets);
+  savePositionSets(getSetsCtx(), sets);
   return id;
 }
 
 function updatePositionSet(setId, updates) {
-  var sets = getPositionSets().map(function(s) {
+  var sets = getPositionSets(getSetsCtx()).map(function(s) {
     return s.id === setId ? Object.assign({}, s, updates) : s;
   });
-  savePositionSets(getSelCtx(), sets);
+  savePositionSets(getSetsCtx(), sets);
 }
 
 function deletePositionSet(setId) {
-  var sets = getPositionSets().filter(function(s) { return s.id !== setId; });
-  savePositionSets(getSelCtx(), sets);
+  var sets = getPositionSets(getSetsCtx()).filter(function(s) { return s.id !== setId; });
+  savePositionSets(getSetsCtx(), sets);
   // If this set was selected anywhere, fall back
   if (getChartSelectedSet() === setId) setChartSelectedSet('portfolio');
   if (getFundamentalsSelectedSet() === setId) setFundamentalsSelectedSet(null);
@@ -5234,25 +5254,45 @@ function openPositionSetsModal() {
   if (existing) existing.remove();
   var modal = document.createElement('div');
   modal.id = 'positionSetsModal';
-  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:400;display:flex;align-items:flex-start;justify-content:center;padding:40px 12px;overflow-y:auto';
+  // Above the filter overlay (z 600) when opened from it; normal 400 otherwise.
+  var zed = window._setsForceGlobal ? 700 : 400;
+  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:' + zed + ';display:flex;align-items:flex-start;justify-content:center;padding:40px 12px;overflow-y:auto';
   modal.onclick = function(e) { if (e.target === modal) closePositionSetsModal(); };
   document.body.appendChild(modal);
   renderPositionSetsModal();
+}
+
+function openPositionSetsModalGlobal() {
+  window._setsForceGlobal = true;
+  openPositionSetsModal();
 }
 
 function closePositionSetsModal() {
   var m = document.getElementById('positionSetsModal');
   if (m) m.remove();
   window._editingSetId = null;
+  var wasGlobal = window._setsForceGlobal;
+  window._setsForceGlobal = false;
   render();
+  // If this was opened from the filter, refresh the filter's SET dropdown in
+  // place so a just-created set shows up, keeping the user's other choices.
+  if (wasGlobal) {
+    var sel = document.getElementById('filterSet');
+    if (sel) {
+      var keep = sel.value;
+      // A set the user had chosen may have been deleted → fall back to "any".
+      if (keep && !(allPositionSets || []).some(function(s) { return s.id === keep; })) keep = '';
+      sel.innerHTML = filterSetOptionsHtml(keep);
+    }
+  }
 }
 
 function renderPositionSetsModal() {
   var modal = document.getElementById('positionSetsModal');
   if (!modal) return;
-  var sets = getPositionSets();
+  var sets = getPositionSets(getSetsCtx());
   var editing = window._editingSetId;
-  var allTickers = getChartUniqueTickers().slice().sort(function(a, b) {
+  var allTickers = getChartContextTickersForSets().slice().sort(function(a, b) {
     return a.localeCompare(b);
   });
 
@@ -7161,17 +7201,29 @@ function toggleAggregated() {
   render();
 }
 
+// Options for the filter's SET dropdown, built from the global sets. Extracted
+// so the dropdown can be refreshed in place after MANAGE SETS adds/removes one.
+function filterSetOptionsHtml(curSet) {
+  return '<option value="">&mdash; any &mdash;</option>'
+    + (allPositionSets || []).map(function(s) {
+        var sel = s.id === curSet ? ' selected' : '';
+        return '<option value="' + s.id + '"' + sel + '>' + s.name.replace(/</g, '&lt;') + '</option>';
+      }).join('');
+}
+
 function openFilterModal() {
   var overlay = document.createElement('div');
   overlay.id = 'filterOverlay';
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:600;display:flex;align-items:flex-start;justify-content:center;padding-top:60px';
   var curDate = (activeFilter && activeFilter.purchaseDateFrom) || '';
   var curBroker = (activeFilter && activeFilter.broker) || '';
+  var curSet = (activeFilter && activeFilter.setId) || '';
   var brokerOpts = '<option value="">&mdash; any &mdash;</option>'
     + brokerDict.map(function(b) {
         var sel = b === curBroker ? ' selected' : '';
         return '<option value="' + b.replace(/"/g, '&quot;') + '"' + sel + '>' + b.replace(/</g, '&lt;') + '</option>';
       }).join('');
+  var setOpts = filterSetOptionsHtml(curSet);
   var fieldInputStyle = 'width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:13px;padding:7px 8px;outline:none';
   overlay.innerHTML =
     '<div style="background:var(--bg2);border:1px solid var(--border);padding:20px 24px;min-width:260px;max-width:85vw" onclick="event.stopPropagation()">'
@@ -7180,6 +7232,9 @@ function openFilterModal() {
     + '<input type="date" id="filterDateFrom" value="' + curDate + '" style="' + fieldInputStyle + '"></div>'
     + '<div class="field" style="margin-bottom:18px"><label>BROKER</label>'
     + '<select id="filterBroker" style="' + fieldInputStyle + '">' + brokerOpts + '</select></div>'
+    + '<div class="field" style="margin-bottom:8px"><label>SET</label>'
+    + '<select id="filterSet" style="' + fieldInputStyle + '">' + setOpts + '</select></div>'
+    + '<div style="margin-bottom:18px"><button class="btn" onclick="openPositionSetsModalGlobal()" style="font-size:9px;letter-spacing:2px;padding:4px 8px;color:var(--dim)">MANAGE SETS&hellip;</button></div>'
     + '<div style="display:flex;gap:10px">'
     + '<button class="btn-primary" onclick="applyFilterModal()" style="flex:1">APPLY</button>'
     + '<button class="btn" onclick="clearFilter()" style="flex:1">RESET</button>'
@@ -7192,10 +7247,13 @@ function openFilterModal() {
 function applyFilterModal() {
   var v = document.getElementById('filterDateFrom').value;
   var b = document.getElementById('filterBroker').value;
+  var setEl = document.getElementById('filterSet');
+  var s = setEl ? setEl.value : '';
   var f = {};
   if (v) f.purchaseDateFrom = v;
   if (b) f.broker = b;
-  if (f.purchaseDateFrom || f.broker) {
+  if (s) f.setId = s;
+  if (f.purchaseDateFrom || f.broker || f.setId) {
     activeFilter = f;
     localStorage.setItem('pt_filter', JSON.stringify(activeFilter));
   } else {

@@ -619,7 +619,15 @@ function filterActiveForSummary(isRealized) {
 // new conditions slot in as further AND predicates.
 function filterPositions(posns) {
   if (!activeFilter) return posns;
+  var setTickers = null;
+  if (activeFilter.setId) {
+    var set = (allPositionSets || []).find(function(s) { return s.id === activeFilter.setId; });
+    // A set that no longer exists filters nothing in (empty result), matching
+    // how a stale condition behaves: if the user picked it, honor it literally.
+    setTickers = set ? set.tickers : [];
+  }
   return posns.filter(function(p) {
+    if (setTickers && setTickers.indexOf(p.ticker) === -1) return false;
     if (activeFilter.purchaseDateFrom) {
       if (!p.entry) return false;
       if (!p.purchaseDate) return false;
@@ -639,7 +647,7 @@ function applyFilter(posns) {
 }
 // True if any condition is actually set (drives the lit filter icon).
 function hasActiveFilter() {
-  return !!(activeFilter && (activeFilter.purchaseDateFrom || activeFilter.broker));
+  return !!(activeFilter && (activeFilter.purchaseDateFrom || activeFilter.broker || activeFilter.setId));
 }
 
 // ── Position aggregation & market totals ────────────────────────
