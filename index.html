@@ -346,7 +346,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.96';
+var APP_VERSION = 'v1.3.97';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -9239,7 +9239,14 @@ function render() {
           + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (getPositionShortName(p) || '') + '</td>'
           + '</tr>';
       });
-      return weightRows;
+      // TOTAL foot built from the same wTotVal; weight is 100% by definition.
+      var foot = '<tr style="border-top:2px solid var(--border);font-weight:bold;color:var(--bright)">'
+        + '<td style="text-align:left;white-space:nowrap;padding:6px 4px">TOTAL</td>'
+        + '<td style="padding:6px 4px;white-space:nowrap">' + baseSym + f2(wTotVal) + '</td>'
+        + '<td style="padding:6px 4px;white-space:nowrap">' + fPctNoSign(wTotVal > 0 ? 100 : null) + '</td>'
+        + '<td></td>'
+        + '</tr>';
+      return { rows: weightRows, foot: foot };
     }
     var weightTableHtml = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
       + '<table style="border-collapse:collapse;font-size:13px">'
@@ -9250,11 +9257,14 @@ function render() {
       + '<th style="text-align:left;padding:5px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">NAME</th>'
       + '</tr></thead>'
       + '<tbody id="weightTbody"></tbody>'
+      + '<tfoot id="weightTfoot"></tfoot>'
       + '</table>'
       + '</div>';
     if (posFxNeeded.length === 0) {
       area.innerHTML = weightTableHtml + '<div id="totalsSlot">' + totalsHtml + '</div>';
-      document.getElementById('weightTbody').innerHTML = buildWeightRows({});
+      var wBuilt = buildWeightRows({});
+      document.getElementById('weightTbody').innerHTML = wBuilt.rows;
+      document.getElementById('weightTfoot').innerHTML = wBuilt.foot;
     } else {
       area.innerHTML = weightTableHtml + '<div id="totalsSlot">' + totalsHtml + '</div>';
       var wFxMap2 = {};
@@ -9268,7 +9278,10 @@ function render() {
       });
       Promise.all(wFxP).then(function() {
         var tb = document.getElementById('weightTbody');
-        if (tb) tb.innerHTML = buildWeightRows(wFxMap2);
+        var wBuilt2 = buildWeightRows(wFxMap2);
+        if (tb) tb.innerHTML = wBuilt2.rows;
+        var tf = document.getElementById('weightTfoot');
+        if (tf) tf.innerHTML = wBuilt2.foot;
       });
     }
     return;
@@ -9324,7 +9337,7 @@ function render() {
         if (weightSort.key === 'ticker') return weightSort.dir * a.ticker.localeCompare(b.ticker);
         return weightSort.dir * (a.valUSD > b.valUSD ? 1 : a.valUSD < b.valUSD ? -1 : 0);
       });
-      return rows.map(function(r) {
+      var rowsHtml = rows.map(function(r) {
         var nativeSym = CURRENCY_SYMBOLS[r.currency] || r.currency;
         return '<tr>'
           + '<td style="text-align:left;white-space:nowrap">' + r.ticker + '</td>'
@@ -9334,6 +9347,14 @@ function render() {
           + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + r.shortName + '</td>'
           + '</tr>';
       }).join('');
+      var foot = '<tr style="border-top:2px solid var(--border);font-weight:bold;color:var(--bright)">'
+        + '<td style="text-align:left;white-space:nowrap;padding:6px 4px">TOTAL</td>'
+        + '<td></td>'
+        + '<td style="padding:6px 4px;white-space:nowrap">$' + f2(totalValUSD) + '</td>'
+        + '<td style="padding:6px 4px;white-space:nowrap">' + fPctNoSign(totalValUSD > 0 ? 100 : null) + '</td>'
+        + '<td></td>'
+        + '</tr>';
+      return { rows: rowsHtml, foot: foot };
     }
 
     var gwTableHtml = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
@@ -9346,13 +9367,16 @@ function render() {
       + '<th style="text-align:left;padding:5px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">NAME</th>'
       + '</tr></thead>'
       + '<tbody id="gwTbody"></tbody>'
+      + '<tfoot id="gwTfoot"></tfoot>'
       + '</table>'
       + '</div>';
 
     area.innerHTML = gwTableHtml;
 
     if (gwNonUSD.length === 0) {
-      document.getElementById('gwTbody').innerHTML = buildGlobalWeightRows({});
+      var gwB = buildGlobalWeightRows({});
+      document.getElementById('gwTbody').innerHTML = gwB.rows;
+      document.getElementById('gwTfoot').innerHTML = gwB.foot;
     } else {
       var baseUrlGw = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
       var tokenGw = getToken();
@@ -9362,7 +9386,10 @@ function render() {
         });
       })).then(function() {
         var tb = document.getElementById('gwTbody');
-        if (tb) tb.innerHTML = buildGlobalWeightRows(gwFxRates);
+        var gwB2 = buildGlobalWeightRows(gwFxRates);
+        if (tb) tb.innerHTML = gwB2.rows;
+        var tf = document.getElementById('gwTfoot');
+        if (tf) tf.innerHTML = gwB2.foot;
       });
     }
     return;
