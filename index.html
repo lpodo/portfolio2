@@ -346,7 +346,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.94';
+var APP_VERSION = 'v1.3.95';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -5652,9 +5652,10 @@ function buildMoversView(area, opts) {
   Object.keys(portfolios).forEach(function(pid) {
     var p = portfolios[pid];
     if (p.archive) return;
-    // With an active filter the set is regular portfolios only — skip watchlist
-    // entirely. Without a filter, watchlist is included as before.
-    if (bmvDoFilter && p.watchlist) return;
+    // Watchlist is scanned under a filter too. Its positions are all qty=0 /
+    // entry=0, so the date guard (!entry) and broker guard (qty===0) drop them
+    // from date/broker filters unchanged — but a SET filter matches by ticker,
+    // which is exactly how a watchlist ticker added to a set becomes visible.
     var bmvPosns = bmvDoFilter ? filterPositions(p.positions || []) : (p.positions || []);
     bmvPosns.forEach(function(pos) {
       if (pos.sold) return;
