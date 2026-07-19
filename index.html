@@ -346,7 +346,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.4.1';
+var APP_VERSION = 'v1.4.2';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -5291,15 +5291,18 @@ function closePositionSetsModal() {
   var wasGlobal = window._setsForceGlobal;
   window._setsForceGlobal = false;
   render();
-  // If this was opened from the filter, refresh the filter's SET dropdown in
-  // place so a just-created set shows up, keeping the user's other choices.
+  // If this was opened from the filter, refresh the filter's custom SET
+  // dropdown in place so a just-created set shows up, keeping other choices.
   if (wasGlobal) {
-    var sel = document.getElementById('filterSet');
-    if (sel) {
-      var keep = sel.value;
+    var menu = document.getElementById('filterMenuSet');
+    if (menu) {
       // A set the user had chosen may have been deleted → fall back to "any".
-      if (keep && !(allPositionSets || []).some(function(s) { return s.id === keep; })) keep = '';
-      sel.innerHTML = filterSetOptionsHtml(keep);
+      if (window._filterSetVal && !(allPositionSets || []).some(function(s) { return s.id === window._filterSetVal; })) {
+        window._filterSetVal = '';
+      }
+      menu.outerHTML = filterSetMenuHtml();
+      var disp = document.getElementById('filterDispSet');
+      if (disp) disp.innerHTML = filterDropdownLabel('Set');
     }
   }
 }
@@ -7219,14 +7222,71 @@ function toggleAggregated() {
   render();
 }
 
-// Options for the filter's SET dropdown, built from the global sets. Extracted
-// so the dropdown can be refreshed in place after MANAGE SETS adds/removes one.
-function filterSetOptionsHtml(curSet) {
-  return '<option value="">&mdash; any &mdash;</option>'
-    + getPositionSets(ALL_POSITIONS_CTX).map(function(s) {
-        var sel = s.id === curSet ? ' selected' : '';
-        return '<option value="' + s.id + '"' + sel + '>' + s.name.replace(/</g, '&lt;') + '</option>';
-      }).join('');
+// Custom dropdown for the filter (broker/set), matching the chart set picker
+// and Add-form pickers — a trigger button + a dark absolute menu — instead of a
+// native <select>, whose mobile popup is oversized and off-theme.
+function filterDropdownTriggerHtml(which) {
+  var lc = which.toLowerCase();
+  var label = filterDropdownLabel(which);
+  return '<div id="filterTrig' + which + '" onclick="toggleFilterDrop(\'' + lc + '\')" '
+    + 'style="cursor:pointer;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:13px;padding:7px 8px;box-sizing:border-box;display:flex;justify-content:space-between;align-items:center;user-select:none">'
+    + '<span id="filterDisp' + which + '">' + label + '</span>'
+    + '<span style="font-size:9px;color:var(--dim);margin-left:6px">&#9660;</span>'
+    + '</div>';
+}
+function filterDropdownLabel(which) {
+  if (which === 'Broker') {
+    return window._filterBrokerVal
+      ? window._filterBrokerVal.replace(/</g, '&lt;')
+      : '<span style="color:var(--dim)">&mdash; any &mdash;</span>';
+  }
+  var sid = window._filterSetVal;
+  var set = sid ? getPositionSets(ALL_POSITIONS_CTX).find(function(s) { return s.id === sid; }) : null;
+  return set ? set.name.replace(/</g, '&lt;') : '<span style="color:var(--dim)">&mdash; any &mdash;</span>';
+}
+var _filterDropMenuStyle = 'display:none;position:absolute;left:0;right:0;top:100%;background:var(--bg2);border:1px solid var(--border);z-index:100;max-height:220px;overflow-y:auto';
+function filterDropOptionHtml(labelHtml, onclick, selected) {
+  return '<div onclick="' + onclick + '" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;color:' + (selected ? 'var(--green)' : 'var(--bright)') + '">' + labelHtml + '</div>';
+}
+function filterBrokerMenuHtml() {
+  var cur = window._filterBrokerVal;
+  var html = '<div id="filterMenuBroker" style="' + _filterDropMenuStyle + '">';
+  html += filterDropOptionHtml('&mdash; any &mdash;', "selectFilterBroker('')", !cur);
+  html += brokerDict.slice().sort(function(a, b) { return a.localeCompare(b); }).map(function(b) {
+    var esc = b.replace(/'/g, "\\'").replace(/</g, '&lt;');
+    return filterDropOptionHtml(b.replace(/</g, '&lt;'), "selectFilterBroker('" + esc + "')", b === cur);
+  }).join('');
+  html += '</div>';
+  return html;
+}
+function filterSetMenuHtml() {
+  var cur = window._filterSetVal;
+  var html = '<div id="filterMenuSet" style="' + _filterDropMenuStyle + '">';
+  html += filterDropOptionHtml('&mdash; any &mdash;', "selectFilterSet('')", !cur);
+  html += getPositionSets(ALL_POSITIONS_CTX).map(function(s) {
+    return filterDropOptionHtml(s.name.replace(/</g, '&lt;'), "selectFilterSet('" + s.id + "')", s.id === cur);
+  }).join('');
+  html += '<div style="border-top:1px solid var(--border)"></div>';
+  html += '<div onclick="openPositionSetsModalGlobal()" style="padding:10px 14px;cursor:pointer;font-size:10px;letter-spacing:2px;color:var(--dim)">MANAGE SETS&hellip;</div>';
+  html += '</div>';
+  return html;
+}
+function toggleFilterDrop(which) {
+  var other = which === 'broker' ? 'Set' : 'Broker';
+  var om = document.getElementById('filterMenu' + other);
+  if (om) om.style.display = 'none';
+  var m = document.getElementById('filterMenu' + (which === 'broker' ? 'Broker' : 'Set'));
+  if (m) m.style.display = m.style.display === 'none' ? 'block' : 'none';
+}
+function selectFilterBroker(v) {
+  window._filterBrokerVal = v;
+  document.getElementById('filterDispBroker').innerHTML = filterDropdownLabel('Broker');
+  var m = document.getElementById('filterMenuBroker'); if (m) m.style.display = 'none';
+}
+function selectFilterSet(v) {
+  window._filterSetVal = v;
+  document.getElementById('filterDispSet').innerHTML = filterDropdownLabel('Set');
+  var m = document.getElementById('filterMenuSet'); if (m) m.style.display = 'none';
 }
 
 function openFilterModal() {
@@ -7234,31 +7294,18 @@ function openFilterModal() {
   overlay.id = 'filterOverlay';
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:600;display:flex;align-items:flex-start;justify-content:center;padding-top:60px';
   var curDate = (activeFilter && activeFilter.purchaseDateFrom) || '';
-  var curBroker = (activeFilter && activeFilter.broker) || '';
-  var curSet = (activeFilter && activeFilter.setId) || '';
-  var brokerOpts = '<option value="">&mdash; any &mdash;</option>'
-    + brokerDict.map(function(b) {
-        var sel = b === curBroker ? ' selected' : '';
-        return '<option value="' + b.replace(/"/g, '&quot;') + '"' + sel + '>' + b.replace(/</g, '&lt;') + '</option>';
-      }).join('');
-  var setOpts = filterSetOptionsHtml(curSet);
+  window._filterBrokerVal = (activeFilter && activeFilter.broker) || '';
+  window._filterSetVal = (activeFilter && activeFilter.setId) || '';
   var fieldInputStyle = 'width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:13px;padding:7px 8px;outline:none';
-  // Selects need appearance:none or the OS draws an oversized native control
-  // with a large system font. Custom chevron via inline SVG background.
-  var chevron = "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' fill='none'/></svg>\")";
-  var selectStyle = fieldInputStyle
-    + ';-webkit-appearance:none;appearance:none;cursor:pointer'
-    + ';background-image:' + chevron + ';background-repeat:no-repeat;background-position:right 8px center;padding-right:26px';
   overlay.innerHTML =
     '<div style="background:var(--bg2);border:1px solid var(--border);padding:20px 24px;min-width:260px;max-width:85vw" onclick="event.stopPropagation()">'
     + '<div style="font-size:11px;letter-spacing:2px;color:var(--dim);margin-bottom:16px">FILTER</div>'
     + '<div class="field" style="margin-bottom:18px"><label>PURCHASE DATE FROM</label>'
     + '<input type="date" id="filterDateFrom" value="' + curDate + '" style="' + fieldInputStyle + '"></div>'
-    + '<div class="field" style="margin-bottom:18px"><label>BROKER</label>'
-    + '<select id="filterBroker" style="' + selectStyle + '">' + brokerOpts + '</select></div>'
-    + '<div class="field" style="margin-bottom:8px"><label>SET</label>'
-    + '<select id="filterSet" style="' + selectStyle + '">' + setOpts + '</select></div>'
-    + '<div style="margin-bottom:18px"><button class="btn" onclick="openPositionSetsModalGlobal()" style="font-size:9px;letter-spacing:2px;padding:4px 8px;color:var(--dim)">MANAGE SETS&hellip;</button></div>'
+    + '<div class="field" style="margin-bottom:18px;position:relative"><label>BROKER</label>'
+    + filterDropdownTriggerHtml('Broker') + filterBrokerMenuHtml() + '</div>'
+    + '<div class="field" style="margin-bottom:18px;position:relative"><label>SET</label>'
+    + filterDropdownTriggerHtml('Set') + filterSetMenuHtml() + '</div>'
     + '<div style="display:flex;gap:10px">'
     + '<button class="btn-primary" onclick="applyFilterModal()" style="flex:1">APPLY</button>'
     + '<button class="btn" onclick="clearFilter()" style="flex:1">RESET</button>'
@@ -7270,9 +7317,8 @@ function openFilterModal() {
 
 function applyFilterModal() {
   var v = document.getElementById('filterDateFrom').value;
-  var b = document.getElementById('filterBroker').value;
-  var setEl = document.getElementById('filterSet');
-  var s = setEl ? setEl.value : '';
+  var b = window._filterBrokerVal || '';
+  var s = window._filterSetVal || '';
   var f = {};
   if (v) f.purchaseDateFrom = v;
   if (b) f.broker = b;
