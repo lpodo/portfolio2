@@ -973,9 +973,14 @@ function getSelCtx() {
 }
 function getPositionSets(ctx) {
   var c = ctx || getSelCtx();
-  if (c === ALL_POSITIONS_CTX) return allPositionSets || [];
-  var p = portfolios[c];
-  return (p && p.positionSets) ? p.positionSets : [];
+  var list;
+  if (c === ALL_POSITIONS_CTX) list = allPositionSets || [];
+  else { var p = portfolios[c]; list = (p && p.positionSets) ? p.positionSets : []; }
+  // Sorted copy (A-Z by name) — storage order is left untouched; callers that
+  // mutate work by id, so reordering here is safe.
+  return list.slice().sort(function(a, b) {
+    return (a.name || '').localeCompare(b.name || '');
+  });
 }
 function getChartSelectedSet() {
   // Returns 'portfolio' | setId | null

@@ -234,10 +234,11 @@ Positions without a `broker` field land in the subgroup of the current default b
 
 A global, persistent filter narrows the set of positions shown across every view at once. Toggle it via the **funnel icon** in the app's top bar (next to Refresh). The icon appears only in contexts where the filter applies — individual regular portfolios and the active cross-portfolio views; it's hidden on watchlists, realized portfolios, and the realized ALL POSITIONS view. It's highlighted when a filter is active, dim otherwise. Tapping it opens the filter modal.
 
-Two conditions are available, combined with AND:
+Three conditions are available, combined with AND:
 
 - **PURCHASE DATE FROM** — keeps only positions bought on or after the given date. (Positions with no entry price or no purchase date are excluded by this condition.)
 - **BROKER** — keeps only positions at the selected broker. (qty=0 watchlist candidates are excluded by this condition, since broker is meaningless for them.)
+- **SET** — keeps only positions whose ticker is in the chosen [global set](#global-sets).
 
 **APPLY** saves the filter; **RESET** clears it. The filter persists in localStorage (`pt_filter`) across sessions.
 
@@ -264,14 +265,20 @@ A cross-portfolio view at the **position** level — the union of positions from
 - In the **STOCKS** tab — collects positions from all regular equity portfolios and watchlists.
 - In the **REALIZED** tab — collects sold positions from all stock realized portfolios.
 
-The ⋮ dropdown shows four views in the STOCKS context and two in REALIZED:
+The ⋮ dropdown offers, in the STOCKS context: **P&L**, **MARKET** (default), **ALERTS**, **WEIGHTS**, **CHART**, **FUNDAMENTALS**, **ANALYTICS**. In REALIZED only **P&L**, **WEIGHTS**, and **ANALYTICS** apply.
 
-- **MARKET** (stocks default) — same columns and CLOSE/CURRENT menus as the regular [MARKET](#market) view, but built from all positions across portfolios. Default sort: Δ% absolute descending (biggest movers first).
-- **ALERTS** (stocks only) — MARKET filtered to positions that have at least one alert set. See [ALERTS view](#alerts-view).
-- **WEIGHTS** (realized default) — TICKER / VALUE (native currency, dimmed) / VALUE (\$) (USD-converted) / WEIGHT % / NAME. All non-USD values converted using live FX rates. Sortable by TICKER, VALUE (\$), or WEIGHT.
-- **ANALYTICS** — same two-dropdown layout as the per-portfolio [Analytics](#analytics) view, but data is aggregated across all positions in the context. In REALIZED only the P&L and WEIGHTS subviews are available.
+- **P&L** — the standard P&L table over the whole union.
+- **MARKET** — same columns and CLOSE/CURRENT menus as the regular [MARKET](#market) view. Default sort: Δ% absolute descending (biggest movers first).
+- **ALERTS** — MARKET filtered to positions whose ticker has at least one alert. See [ALERTS view](#alerts-view).
+- **WEIGHTS** (realized default) — TICKER / VALUE (native, dimmed) / VALUE (\$) / WEIGHT % / NAME, sortable.
+- **CHART / FUNDAMENTALS** — same as the per-portfolio [Chart](#charts) and [Fundamentals](#fundamentals) views, but the ticker set is chosen from **global sets** (see below).
+- **ANALYTICS** — same two-dropdown layout as the per-portfolio [Analytics](#analytics), aggregated across the union.
 
-ALL POSITIONS is excluded from FUNDAMENTALS, CHART, and P&L views (those operate on a single portfolio or aggregate by portfolio, not by position across portfolios).
+### Global sets
+
+Just as each portfolio has its own [position sets](#position-sets) for Chart and Fundamentals, ALL POSITIONS has its own **global sets** — named ticker subsets that span every portfolio. They're managed the same way (**MANAGE SETS…** in the set picker) but stored separately in localStorage (`pt_all_sets`) and cloud-synced as a top-level field. The ALL POSITIONS Chart and Fundamentals views pick their tickers from these sets.
+
+Global sets also drive a third [filter](#filters) condition: **SET** — restrict any filtered view to the tickers of a chosen global set.
 
 ## Price Alerts
 
@@ -712,7 +719,8 @@ Backup format:
   "secDict": ["Energy", "Technology", ...],
   "cashCatDict": ["Salary", "Dividend", ...],
   "brokerDict": ["ETrade", "IB", ...],
-  "defaultBroker": "ETrade"
+  "defaultBroker": "ETrade",
+  "allPositionSets": [ ... ]
 }
 ```
 
@@ -967,7 +975,8 @@ Primary on-device storage:
 - `pt_close_mode` — close column mode: `prev` (Prev.Close), `reg` (Reg.Price), or a historical period (`5d`, `1mo`, `3mo`, `6mo`, `1y`, `5y`); default `prev`
 - `pt_current_mode` — current column mode: `cur` (Current) or `reg` (Reg.Price); default `cur`
 - `pt_analytics_subview` — Analytics subview: `pnl` / `market` / `chart` / `weights`; default `weights`
-- `pt_filter` — global position filter: `{ purchaseDateFrom?, broker? }`; absent when no filter is set (see [Filters](#filters))
+- `pt_filter` — global position filter: `{ purchaseDateFrom?, broker?, setId? }`; absent when no filter is set (see [Filters](#filters))
+- `pt_all_sets` — global sets for the ALL POSITIONS Chart/Fundamentals views (see [Global sets](#global-sets)); also cloud-synced
 - `pt_chart_set_{portfolioId}` — currently selected set in the Chart view (a set ID or the string `portfolio` for PORTFOLIO mode)
 - `pt_fund_set_{portfolioId}` — currently selected set in the Fundamentals view (a set ID, or absent for "no selection")
 - `chart_hist_{ticker}_{range}` — historical price cache (daily TTL)

@@ -346,7 +346,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.4.0';
+var APP_VERSION = 'v1.4.1';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -7223,7 +7223,7 @@ function toggleAggregated() {
 // so the dropdown can be refreshed in place after MANAGE SETS adds/removes one.
 function filterSetOptionsHtml(curSet) {
   return '<option value="">&mdash; any &mdash;</option>'
-    + (allPositionSets || []).map(function(s) {
+    + getPositionSets(ALL_POSITIONS_CTX).map(function(s) {
         var sel = s.id === curSet ? ' selected' : '';
         return '<option value="' + s.id + '"' + sel + '>' + s.name.replace(/</g, '&lt;') + '</option>';
       }).join('');
@@ -7243,15 +7243,21 @@ function openFilterModal() {
       }).join('');
   var setOpts = filterSetOptionsHtml(curSet);
   var fieldInputStyle = 'width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:13px;padding:7px 8px;outline:none';
+  // Selects need appearance:none or the OS draws an oversized native control
+  // with a large system font. Custom chevron via inline SVG background.
+  var chevron = "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' fill='none'/></svg>\")";
+  var selectStyle = fieldInputStyle
+    + ';-webkit-appearance:none;appearance:none;cursor:pointer'
+    + ';background-image:' + chevron + ';background-repeat:no-repeat;background-position:right 8px center;padding-right:26px';
   overlay.innerHTML =
     '<div style="background:var(--bg2);border:1px solid var(--border);padding:20px 24px;min-width:260px;max-width:85vw" onclick="event.stopPropagation()">'
     + '<div style="font-size:11px;letter-spacing:2px;color:var(--dim);margin-bottom:16px">FILTER</div>'
     + '<div class="field" style="margin-bottom:18px"><label>PURCHASE DATE FROM</label>'
     + '<input type="date" id="filterDateFrom" value="' + curDate + '" style="' + fieldInputStyle + '"></div>'
     + '<div class="field" style="margin-bottom:18px"><label>BROKER</label>'
-    + '<select id="filterBroker" style="' + fieldInputStyle + '">' + brokerOpts + '</select></div>'
+    + '<select id="filterBroker" style="' + selectStyle + '">' + brokerOpts + '</select></div>'
     + '<div class="field" style="margin-bottom:8px"><label>SET</label>'
-    + '<select id="filterSet" style="' + fieldInputStyle + '">' + setOpts + '</select></div>'
+    + '<select id="filterSet" style="' + selectStyle + '">' + setOpts + '</select></div>'
     + '<div style="margin-bottom:18px"><button class="btn" onclick="openPositionSetsModalGlobal()" style="font-size:9px;letter-spacing:2px;padding:4px 8px;color:var(--dim)">MANAGE SETS&hellip;</button></div>'
     + '<div style="display:flex;gap:10px">'
     + '<button class="btn-primary" onclick="applyFilterModal()" style="flex:1">APPLY</button>'
