@@ -346,7 +346,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.4.4';
+var APP_VERSION = 'v1.4.5';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -5327,7 +5327,7 @@ function renderPositionSetsModal() {
     var missingHtml = missing.length === 0 ? '' :
       '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:12px 0 6px;display:flex;justify-content:space-between;align-items:center">'
       + '<span>NOT CURRENTLY HELD</span>'
-      + '<button onclick="setsModalClearMissing()" class="btn" style="font-size:9px;padding:3px 8px" title="Remove all">&#129529;</button>'
+      + '<button onclick="setsModalClearMissing()" class="btn-icon" style="font-size:14px;padding:0 5px" title="Remove all">&#129529;</button>'
       + '</div>'
       + '<div style="display:flex;flex-direction:column;gap:5px;max-height:140px;overflow-y:auto;border:1px solid var(--border);padding:8px;background:var(--bg2)">'
       + missing.map(function(t) {
@@ -5384,13 +5384,13 @@ function renderPositionSetsModal() {
           ? '<div style="font-size:11px;color:var(--dim)">empty set</div>'
           : tks.map(function(t) {
               var present = allTickers.indexOf(t) !== -1;
-              return '<span style="font-size:11px;letter-spacing:1px;padding:2px 7px;border:1px solid var(--border);color:' + (present ? 'var(--bright)' : 'var(--dim)') + '">' + t + '</span>';
+              return '<span style="font-size:11px;letter-spacing:1px;color:' + (present ? 'var(--bright)' : 'var(--dim)') + '">' + t + '</span>';
             }).join('');
         var broom = anyMissing
-          ? '<button onclick="clearMissingFromSet(&apos;' + s.id + '&apos;)" class="btn" style="font-size:9px;padding:2px 7px;margin-left:6px" title="Remove not-held">&#129529;</button>'
+          ? '<button onclick="clearMissingFromSet(&apos;' + s.id + '&apos;)" class="btn-icon" style="font-size:14px;padding:0 5px;margin-left:4px" title="Remove not-held">&#129529;</button>'
           : '';
         return row
-          + '<div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;padding:2px 12px 10px;border-bottom:1px solid var(--border)">' + body + broom + '</div>';
+          + '<div style="display:flex;flex-wrap:wrap;gap:5px 14px;align-items:center;padding:2px 12px 10px;border-bottom:1px solid var(--border)">' + body + broom + '</div>';
       }).join('');
 
   var newRowHtml = editing === '_new'
