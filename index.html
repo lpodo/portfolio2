@@ -346,7 +346,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.4.3';
+var APP_VERSION = 'v1.4.4';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -5321,6 +5321,22 @@ function renderPositionSetsModal() {
   function renderEditForm(set) {
     var checked = set ? (set.tickers || []) : [];
     var nameVal = set ? set.name : '';
+    // Tickers in the set but no longer in the universe (held nowhere now).
+    var missing = checked.filter(function(t) { return allTickers.indexOf(t) === -1; })
+      .slice().sort(function(a, b) { return a.localeCompare(b); });
+    var missingHtml = missing.length === 0 ? '' :
+      '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:12px 0 6px;display:flex;justify-content:space-between;align-items:center">'
+      + '<span>NOT CURRENTLY HELD</span>'
+      + '<button onclick="setsModalClearMissing()" class="btn" style="font-size:9px;padding:3px 8px" title="Remove all">&#129529;</button>'
+      + '</div>'
+      + '<div style="display:flex;flex-direction:column;gap:5px;max-height:140px;overflow-y:auto;border:1px solid var(--border);padding:8px;background:var(--bg2)">'
+      + missing.map(function(t) {
+          return '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;color:var(--dim)">'
+            + '<input type="checkbox" id="setcb_' + t + '" checked style="cursor:pointer" data-missing="1">'
+            + '<span>' + t + '</span>'
+            + '</label>';
+        }).join('')
+      + '</div>';
     return '<div style="padding:10px 12px;background:var(--bg);border:1px solid var(--border)">'
       + '<div class="field"><label>NAME</label><input type="text" id="setNameInput" value="' + nameVal + '" style="width:100%;box-sizing:border-box" autocomplete="off" oninput="this.value = this.value.toUpperCase()"></div>'
       + (allTickers.length === 0
@@ -5342,6 +5358,7 @@ function renderPositionSetsModal() {
                   + '</label>';
               }).join('')
             + '</div>')
+      + missingHtml
       + '<div style="display:flex;gap:8px;margin-top:12px">'
       + '<button onclick="savePositionSetFromModal()" class="btn btn-green" style="padding:5px 14px">SAVE</button>'
       + '<button onclick="cancelEditPositionSet()" class="btn" style="padding:5px 14px;color:var(--dim)">CANCEL</button>'
@@ -5362,14 +5379,18 @@ function renderPositionSetsModal() {
           + '</div>';
         if (!isExpanded) return row;
         var tks = (s.tickers || []).slice().sort(function(a, b) { return a.localeCompare(b); });
+        var anyMissing = tks.some(function(t) { return allTickers.indexOf(t) === -1; });
         var body = tks.length === 0
           ? '<div style="font-size:11px;color:var(--dim)">empty set</div>'
           : tks.map(function(t) {
               var present = allTickers.indexOf(t) !== -1;
               return '<span style="font-size:11px;letter-spacing:1px;padding:2px 7px;border:1px solid var(--border);color:' + (present ? 'var(--bright)' : 'var(--dim)') + '">' + t + '</span>';
             }).join('');
+        var broom = anyMissing
+          ? '<button onclick="clearMissingFromSet(&apos;' + s.id + '&apos;)" class="btn" style="font-size:9px;padding:2px 7px;margin-left:6px" title="Remove not-held">&#129529;</button>'
+          : '';
         return row
-          + '<div style="display:flex;flex-wrap:wrap;gap:5px;padding:2px 12px 10px;border-bottom:1px solid var(--border)">' + body + '</div>';
+          + '<div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;padding:2px 12px 10px;border-bottom:1px solid var(--border)">' + body + broom + '</div>';
       }).join('');
 
   var newRowHtml = editing === '_new'
@@ -5402,6 +5423,21 @@ function cancelEditPositionSet() {
   renderPositionSetsModal();
 }
 
+function setsModalClearMissing() {
+  // Edit form: uncheck every not-currently-held ticker. SAVE commits removal.
+  var boxes = document.querySelectorAll('input[data-missing="1"]');
+  for (var i = 0; i < boxes.length; i++) boxes[i].checked = false;
+}
+function clearMissingFromSet(setId) {
+  // Preview: remove tickers no longer held, straight away (no SAVE here).
+  var set = getPositionSets(getSetsCtx()).find(function(s) { return s.id === setId; });
+  if (!set) return;
+  var universe = getChartContextTickersForSets();
+  var kept = (set.tickers || []).filter(function(t) { return universe.indexOf(t) !== -1; });
+  updatePositionSet(setId, { tickers: kept });
+  renderPositionSetsModal();
+}
+
 function setsModalSelectAll() {
   getChartUniqueTickers().forEach(function(t) {
     var cb = document.getElementById('setcb_' + t);
@@ -5419,8 +5455,21 @@ function savePositionSetFromModal() {
   var nameInput = document.getElementById('setNameInput');
   var name = (nameInput.value || '').trim().toUpperCase();
   if (!name) { alert('Set name is required'); return; }
-  var allTickers = getChartUniqueTickers();
-  var selected = allTickers.filter(function(t) {
+  // Candidate tickers: the current universe plus any of this set's own tickers
+  // that are no longer held (they get checkboxes in the NOT-CURRENTLY-HELD
+  // group). Collect whatever is checked across both, so missing tickers left
+  // checked survive and unchecked ones are removed.
+  var universe = getChartUniqueTickers();
+  var editingSet = window._editingSetId && window._editingSetId !== '_new'
+    ? getPositionSets(getSetsCtx()).find(function(s) { return s.id === window._editingSetId; })
+    : null;
+  var candidates = universe.slice();
+  if (editingSet) {
+    (editingSet.tickers || []).forEach(function(t) {
+      if (candidates.indexOf(t) === -1) candidates.push(t);
+    });
+  }
+  var selected = candidates.filter(function(t) {
     var cb = document.getElementById('setcb_' + t);
     return cb && cb.checked;
   });
