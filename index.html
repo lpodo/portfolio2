@@ -346,7 +346,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.4.2';
+var APP_VERSION = 'v1.4.3';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4922,6 +4922,7 @@ window.chartRange = '1mo';
 // checkboxes. Used from chart and fundamentals view menus.
 
 window._editingSetId = null;  // null = not editing; '_new' = adding; setId = editing existing
+window._expandedSetId = null; // set whose contents are previewed read-only
 
 // ── Aggregation detail modal ───────────────────────────────────────────────
 // Shows the individual positions that make up a ×n aggregated row in P&L.
@@ -5288,6 +5289,7 @@ function closePositionSetsModal() {
   var m = document.getElementById('positionSetsModal');
   if (m) m.remove();
   window._editingSetId = null;
+  window._expandedSetId = null;
   var wasGlobal = window._setsForceGlobal;
   window._setsForceGlobal = false;
   render();
@@ -5352,11 +5354,22 @@ function renderPositionSetsModal() {
     : sets.map(function(s) {
         if (s.id === editing) return renderEditForm(s);
         var count = (s.tickers || []).filter(function(t) { return allTickers.indexOf(t) !== -1; }).length;
-        return '<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--border)">'
-          + '<div style="flex:1;font-size:12px"><span style="color:var(--bright);letter-spacing:1px">' + s.name + '</span> <span style="color:var(--dim);font-size:10px">' + count + (count === 1 ? ' ticker' : ' tickers') + '</span></div>'
+        var isExpanded = window._expandedSetId === s.id;
+        var row = '<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid ' + (isExpanded ? 'transparent' : 'var(--border)') + '">'
+          + '<div style="flex:1;font-size:12px;cursor:pointer" onclick="toggleSetPreview(&apos;' + s.id + '&apos;)"><span style="color:var(--bright);letter-spacing:1px">' + s.name + '</span> <span style="color:var(--dim);font-size:10px">' + count + (count === 1 ? ' ticker' : ' tickers') + '</span></div>'
           + '<button class="btn-icon" onclick="startEditPositionSet(&apos;' + s.id + '&apos;)" style="font-size:13px;padding:4px 7px">&#9998;</button>'
           + '<button class="btn-icon" onclick="confirmDeletePositionSet(&apos;' + s.id + '&apos;)" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
           + '</div>';
+        if (!isExpanded) return row;
+        var tks = (s.tickers || []).slice().sort(function(a, b) { return a.localeCompare(b); });
+        var body = tks.length === 0
+          ? '<div style="font-size:11px;color:var(--dim)">empty set</div>'
+          : tks.map(function(t) {
+              var present = allTickers.indexOf(t) !== -1;
+              return '<span style="font-size:11px;letter-spacing:1px;padding:2px 7px;border:1px solid var(--border);color:' + (present ? 'var(--bright)' : 'var(--dim)') + '">' + t + '</span>';
+            }).join('');
+        return row
+          + '<div style="display:flex;flex-wrap:wrap;gap:5px;padding:2px 12px 10px;border-bottom:1px solid var(--border)">' + body + '</div>';
       }).join('');
 
   var newRowHtml = editing === '_new'
@@ -5373,6 +5386,14 @@ function renderPositionSetsModal() {
 
 function startEditPositionSet(setId) {
   window._editingSetId = setId;
+  window._expandedSetId = null; // editing supersedes preview
+  renderPositionSetsModal();
+}
+
+// Tap a set name to preview its tickers read-only (helps spot the few checked
+// tickers in a long list without entering edit mode).
+function toggleSetPreview(setId) {
+  window._expandedSetId = (window._expandedSetId === setId) ? null : setId;
   renderPositionSetsModal();
 }
 
