@@ -196,6 +196,8 @@ export default {
     //   - Business Insider's scrape is unreliable (mismatched/garbage rows)
     //   - Twelve Data gates isin/cusip behind a paid add-on on every tier
     //     (free responses return the literal "request_access_via_add_ons")
+    //   - Financial Modeling Prep only returns ISIN on paid plans; the free
+    //     tier omits it entirely
     // The frontend keeps the full ISIN pipeline (per-ticker storage, Add/Edit
     // fields, analytics rubric) — users enter ISINs manually. This endpoint
     // stays so the frontend contract is unchanged and a real provider can be
@@ -204,6 +206,33 @@ export default {
       const t = url.searchParams.get('ticker');
       if (!t) return json({ error: 'ticker is required' }, 400);
       return json({ isin: null });
+    }
+
+    // Trading hours: /api/hours?ticker=X — returns just the current trading
+    // period (pre/regular/post) and the exchange timezone. Fetched on demand.
+    if (url.pathname === '/api/hours') {
+      const t = url.searchParams.get('ticker');
+      if (!t) return json({ error: 'ticker is required' }, 400);
+      try {
+        const r = await fetch(
+          `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?interval=1d&range=1d`,
+          { headers: yahooHeaders() }
+        );
+        if (!r.ok) return json({ error: `Yahoo HTTP ${r.status}` }, 502);
+        const d = await r.json();
+        const meta = d?.chart?.result?.[0]?.meta;
+        if (!meta) return json({ error: `No data for ${t}` }, 404);
+        return json({
+          ticker: meta.symbol || t,
+          exchangeName: meta.fullExchangeName || meta.exchangeName || null,
+          exchangeTimezoneName: meta.exchangeTimezoneName || null,
+          timezone: meta.timezone || null,
+          gmtoffset: meta.gmtoffset != null ? meta.gmtoffset : null,
+          tradingPeriod: meta.currentTradingPeriod || null
+        });
+      } catch (err) {
+        return json({ error: err.message || 'Failed' }, 500);
+      }
     }
 
     if (url.pathname !== '/api/quote') {
