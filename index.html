@@ -346,7 +346,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.4.5';
+var APP_VERSION = 'v1.4.6';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4531,6 +4531,95 @@ var MARKET_ICONS_STORAGE_KEY = 'pt_market_icons';
 
 
 
+// The market-status table cell. Always clickable (opens trading hours), with a
+// comfortable tap target — independent of whether the state currently has an
+// icon symbol, since icons are user-configurable per state.
+function marketIconCell(p) {
+  if (p.sold) {
+    return '<td style="width:16px;padding:0 2px;text-align:center"><span style="color:#7090b0;font-size:13px">&#8960;</span></td>' + staleColHtml(p);
+  }
+  var t = p.ticker.replace(/'/g, "\\'");
+  return '<td onclick="showMarketHours(\'' + t + '\')" title="trading hours" '
+    + 'style="width:16px;padding:6px 6px;text-align:center;cursor:pointer;-webkit-tap-highlight-color:transparent">'
+    + marketIcon(getPositionMarketState(p)) + '</td>' + staleColHtml(p);
+}
+
+// Trading-hours popover. Fetches on click (no cache — the period is day-bound
+// and the request is user-initiated, so freshness beats saving one call).
+function showMarketHours(ticker) {
+  var existing = document.getElementById('marketHoursPop');
+  if (existing) existing.remove();
+  var overlay = document.createElement('div');
+  overlay.id = 'marketHoursPop';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:650;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.onclick = function() { overlay.remove(); };
+  overlay.innerHTML = '<div onclick="event.stopPropagation()" style="background:var(--bg2);border:1px solid var(--border);padding:18px 22px;min-width:240px;max-width:90vw">'
+    + '<div style="font-size:11px;letter-spacing:2px;color:var(--dim);margin-bottom:14px">' + ticker.replace(/</g, '&lt;') + ' &middot; TRADING HOURS</div>'
+    + '<div id="marketHoursBody" style="font-size:12px;color:var(--dim)">Loading&hellip;</div>'
+    + '</div>';
+  document.body.appendChild(overlay);
+
+  var baseUrl = getApiKey();
+  if (!baseUrl) { setMarketHoursBody('<span style="color:var(--red)">No API configured</span>'); return; }
+  baseUrl = baseUrl.replace(/\/+$/, '');
+  var token = getToken();
+  var opts = {};
+  if (token) opts.headers = { 'X-API-Token': token };
+  fetch(baseUrl + '/api/hours?ticker=' + encodeURIComponent(ticker), opts)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (!d || d.error || !d.tradingPeriod) {
+        setMarketHoursBody('<span style="color:var(--red)">' + ((d && d.error) || 'No hours available') + '</span>');
+        return;
+      }
+      setMarketHoursBody(renderMarketHoursBody(d));
+    })
+    .catch(function() { setMarketHoursBody('<span style="color:var(--red)">Failed to load</span>'); });
+}
+function setMarketHoursBody(html) {
+  var el = document.getElementById('marketHoursBody');
+  if (el) el.innerHTML = html;
+}
+// Format a Unix timestamp in a fixed UTC offset (seconds), 24h HH:MM.
+function fmtHoursAt(unixSec, offsetSec) {
+  var d = new Date((unixSec + offsetSec) * 1000);
+  var hh = d.getUTCHours(), mm = d.getUTCMinutes();
+  return (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm;
+}
+// Format a Unix timestamp in the user's local zone, 24h, with short tz label.
+function fmtHoursLocal(unixSec) {
+  var d = new Date(unixSec * 1000);
+  var hh = d.getHours(), mm = d.getMinutes();
+  var tz = '';
+  try {
+    var m = d.toLocaleTimeString('en-US', { timeZoneName: 'short' }).match(/([A-Z]{2,5})$/);
+    if (m) tz = ' ' + m[1];
+  } catch (e) {}
+  return (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm + tz;
+}
+function renderMarketHoursBody(d) {
+  var tp = d.tradingPeriod;
+  var exTz = d.timezone || '';
+  var rows = ['pre', 'regular', 'post'].map(function(key) {
+    var seg = tp[key];
+    var label = key.charAt(0).toUpperCase() + key.slice(1);
+    if (!seg || seg.start == null || seg.end == null) {
+      return '<div style="margin-bottom:8px"><span style="display:inline-block;width:64px;color:var(--dim)">' + label + '</span><span style="color:var(--dim)">&mdash;</span></div>';
+    }
+    var off = seg.gmtoffset != null ? seg.gmtoffset : (d.gmtoffset || 0);
+    var segTz = seg.timezone || exTz;
+    var exchange = fmtHoursAt(seg.start, off) + '\u2013' + fmtHoursAt(seg.end, off) + ' ' + segTz;
+    var local = fmtHoursLocal(seg.start) + '\u2013' + fmtHoursLocal(seg.end);
+    return '<div style="margin-bottom:10px">'
+      + '<span style="display:inline-block;width:64px;color:var(--dim);font-size:10px;letter-spacing:1px">' + label.toUpperCase() + '</span>'
+      + '<span style="color:var(--bright)">' + exchange + '</span>'
+      + '<div style="margin-left:64px;color:var(--dim);font-size:10px;margin-top:1px">' + local + '</div>'
+      + '</div>';
+  }).join('');
+  var head = d.exchangeName ? '<div style="font-size:10px;color:var(--dim);margin-bottom:10px">' + d.exchangeName.replace(/</g, '&lt;') + '</div>' : '';
+  return head + rows;
+}
+
 function marketIcon(state) {
   if (!state) return '';
   var icons = getMarketIcons();
@@ -5794,7 +5883,7 @@ function buildMoversView(area, opts) {
       + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.close ? ('' + x.close.toFixed(2)) : '—') + '</td>'
       + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.cur ? ('' + x.cur.toFixed(2)) : '—') + '</td>'
       + '<td style="text-align:right;padding:5px 4px;white-space:nowrap" class="' + cls + '">' + (x.delta >= 0 ? '+' : '') + x.delta.toFixed(2) + '%</td>'
-      + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(getPositionMarketState(p)) + '</td>' + staleColHtml(p)
+      + marketIconCell(p)
       + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (getPositionShortName(p) || '') + '</td>'
       + '</tr>'
       + (isExpanded ? '<tr><td colspan="7" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>' : '');
@@ -7549,7 +7638,7 @@ function render() {
         + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.close ? x.close.toFixed(2) : '—') + '</td>'
         + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.cur ? x.cur.toFixed(2) : '—') + '</td>'
         + '<td style="text-align:right;padding:5px 4px;white-space:nowrap" class="' + cls + '">' + (x.delta >= 0 ? '+' : '') + x.delta.toFixed(2) + '%</td>'
-        + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(getPositionMarketState(p)) + '</td>' + staleColHtml(p)
+        + marketIconCell(p)
         + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (getPositionShortName(p) || '') + '</td>'
         + '</tr>'
         + (isExpanded ? '<tr><td colspan="7" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>' : '');
@@ -7721,7 +7810,7 @@ function render() {
       + '<td>' + curEditCell + '</td>'
       + '<td class="' + cls(pnl) + '">' + (p.qty === 0 ? '<span style="color:var(--dim)">&mdash;</span>' : fSign(pnl !== null ? pnl * p.qty : null)) + '</td>'
       + '<td class="' + cls(pnlPct) + '">' + fPct(pnlPct) + '</td>'
-      + '<td style="width:16px;padding:0 2px;text-align:center">' + (p.sold ? '<span style="color:#7090b0;font-size:13px">&#8960;</span>' : marketIcon(getPositionMarketState(p))) + '</td>' + staleColHtml(p)
+      + marketIconCell(p)
       + '<td style="white-space:nowrap;text-align:left">' + sellAction + '</td>'
       + '<td style="white-space:nowrap;text-align:center">' + moveBtn + '</td>'
       + '<td style="white-space:nowrap;text-align:center">' + editBtn + '</td>'
@@ -9039,7 +9128,7 @@ function render() {
         + '<td style="white-space:nowrap">' + (close ? getPositionCurrencySymbol(p) + f2(close) : '&mdash;') + '</td>'
         + '<td style="white-space:nowrap">' + (price ? getPositionCurrencySymbol(p) + f2(price) : '&mdash;') + '</td>'
         + '<td class="' + deltaClass + '" style="white-space:nowrap">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
-        + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(getPositionMarketState(p)) + '</td>' + staleColHtml(p)
+        + marketIconCell(p)
         + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (getPositionShortName(p) || '') + '</td>'
         + '<td style="white-space:nowrap">'
           + '<button class="btn-icon" onclick="removePosition(' + p.id + ')" style="color:var(--red)">&#10005;</button>'
@@ -9131,7 +9220,7 @@ function render() {
         + '<td style="text-align:right;padding:5px 4px">' + (regPrice !== null ? getPositionCurrencySymbol(p) + f2(regPrice) : '&mdash;') + '</td>'
         + '<td style="text-align:right;padding:5px 4px">' + getPositionCurrencySymbol(p) + f2(mktCurrent) + '</td>'
         + '<td style="text-align:right;padding:5px 4px" class="' + deltaClass + '">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
-        + '<td style="width:16px;padding:0 2px;text-align:center">' + (p.sold ? '<span style="color:#7090b0;font-size:13px">&#8960;</span>' : marketIcon(getPositionMarketState(p))) + '</td>' + staleColHtml(p)
+        + marketIconCell(p)
         + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (getPositionShortName(p) || '') + '</td>'
         + '</tr>'
         + mktExpandedRow;
