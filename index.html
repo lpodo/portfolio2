@@ -346,7 +346,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.4.7';
+var APP_VERSION = 'v1.4.8';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4605,22 +4605,35 @@ function fmtHoursLocal(unixSec) {
 function renderMarketHoursBody(d) {
   var tp = d.tradingPeriod;
   var exTz = d.timezone || '';
-  return ['pre', 'regular', 'post'].map(function(key) {
+  var now = Math.floor(Date.now() / 1000);
+  // Which period is active now — check regular first so it wins on a boundary
+  // shared with pre/post (now == pre.end == regular.start → regular, not pre).
+  var activeKey = null;
+  ['regular', 'pre', 'post'].forEach(function(key) {
+    if (activeKey) return;
+    var seg = tp[key];
+    if (seg && seg.start != null && seg.end != null && seg.start !== seg.end
+        && now >= seg.start && now < seg.end) {
+      activeKey = key;
+    }
+  });
+  var body = ['pre', 'regular', 'post'].map(function(key) {
     var seg = tp[key];
     var label = key.toUpperCase();
-    if (!seg || seg.start == null || seg.end == null) {
-      return '<div style="margin-bottom:8px"><span style="display:inline-block;width:60px;color:var(--dim);font-size:10px;letter-spacing:1px">' + label + '</span><span style="color:var(--dim)">&mdash;</span></div>';
-    }
+    if (!seg || seg.start == null || seg.end == null) return '';
+    if (seg.start === seg.end) return ''; // zero-length period — omit
     var off = seg.gmtoffset != null ? seg.gmtoffset : (d.gmtoffset || 0);
     var segTz = seg.timezone || exTz;
     var exchange = fmtHoursAt(seg.start, off) + '\u2013' + fmtHoursAt(seg.end, off) + ' ' + segTz;
     var local = fmtHoursLocal(seg.start) + '\u2013' + fmtHoursLocal(seg.end);
+    var exColor = key === activeKey ? 'var(--green)' : 'var(--bright)';
     return '<div style="margin-bottom:9px;white-space:nowrap">'
       + '<span style="display:inline-block;width:60px;color:var(--dim);font-size:10px;letter-spacing:1px">' + label + '</span>'
-      + '<span style="color:var(--bright)">' + exchange + '</span>'
+      + '<span style="color:' + exColor + '">' + exchange + '</span>'
       + '<span style="color:var(--dim);margin-left:8px">(' + local + ')</span>'
       + '</div>';
   }).join('');
+  return body || '<span style="color:var(--dim)">No trading hours for today</span>';
 }
 
 function marketIcon(state) {
