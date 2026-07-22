@@ -346,7 +346,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.3.91';
+var APP_VERSION = 'v1.4.8';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -599,7 +599,7 @@ function stalePortfolioColHtml(pid) {
 // individual portfolio). Bonds/cash/archive-summary are separate contexts and
 // not part of either group.
 var SUMMARY_BY_PORTFOLIO_VIEWS = ['summary', 'summary-market', 'summary-chart'];
-var ALL_POSITIONS_VIEWS = ['summary-movers', 'summary-alerts', 'global-weight', 'summary-analytics'];
+var ALL_POSITIONS_VIEWS = ['summary-movers', 'summary-alerts', 'global-weight', 'summary-analytics', 'global-chart', 'global-fundamentals', 'global-main'];
 var REALIZED_ALL_POSITIONS_VIEWS = ['realized-weight', 'realized-analytics'];
 
 
@@ -2596,12 +2596,20 @@ function deletePortfolio(id) {
   (p.positions || []).forEach(function(pos) { if (pos.ticker) portfolioTickers[pos.ticker] = true; });
   delete portfolios[id];
   Object.keys(portfolioTickers).forEach(pruneTickerData);
-  savePortfolios();
-  save();
-  if (currentPortfolioId === id) {
+  // If we're deleting the portfolio we're currently in, move currentPortfolioId
+  // to a survivor BEFORE saving. saveLocal() writes positions into
+  // portfolios[currentPortfolioId]; if that still pointed at the deleted one it
+  // would throw and abort save() before the cloud push, so the deletion would
+  // never sync.
+  var wasCurrent = (currentPortfolioId === id);
+  if (wasCurrent) {
     currentPortfolioId = Object.keys(portfolios)[0];
     localStorage.setItem('pt_current', currentPortfolioId);
     loadLocal();
+  }
+  savePortfolios();
+  save();
+  if (wasCurrent) {
     editId = null; expandedId = null; loadingSet = {};
     setTitleForCurrentView();
     render();
@@ -2746,6 +2754,7 @@ function backupData() {
     regDict: regDict,
     secDict: secDict,
     cashCatDict: cashCatDict,
+    allPositionSets: allPositionSets,
     brokerDict: brokerDict,
     defaultBroker: _defaultBroker || null,
     tickerData: tickerData
@@ -2789,6 +2798,7 @@ function restoreData(event) {
       if (data.regDict && Array.isArray(data.regDict)) { regDict = data.regDict; }
       if (data.secDict && Array.isArray(data.secDict)) { secDict = data.secDict; }
       if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
+      if (data.allPositionSets && Array.isArray(data.allPositionSets)) { allPositionSets = data.allPositionSets; saveAllPositionSetsLS(); }
       if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
       if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
       migrateLegacyTickerAlertsFromCloud(data);
@@ -2937,7 +2947,7 @@ function cloudSave() {
 }
 
 function _doCloudSave(key, binId) {
-  var plaintext = JSON.stringify({ portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerData: tickerData });
+  var plaintext = JSON.stringify({ portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, allPositionSets: allPositionSets, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerData: tickerData });
   var encKey = getEncKey();
 
   function doSend(body) {
@@ -3032,6 +3042,7 @@ function cloudLoadKV(callback) {
           if (data.regDict && Array.isArray(data.regDict)) { regDict = data.regDict; }
           if (data.secDict && Array.isArray(data.secDict)) { secDict = data.secDict; }
           if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
+          if (data.allPositionSets && Array.isArray(data.allPositionSets)) { allPositionSets = data.allPositionSets; saveAllPositionSetsLS(); }
           if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
           if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
           migrateLegacyTickerAlertsFromCloud(data);
@@ -3080,7 +3091,7 @@ function cloudSaveKV() {
   var token = getToken();
   var kvKey = getKvKey();
   if (!baseUrl || !kvKey) return;
-  var payload = { portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerData: tickerData };
+  var payload = { portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, allPositionSets: allPositionSets, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerData: tickerData };
   var encKey = getEncKey();
   function doSave(body) {
     fetch(baseUrl + '/api/kv', {
@@ -3272,6 +3283,7 @@ function cloudLoad(callback) {
         if (data.regDict && Array.isArray(data.regDict)) { regDict = data.regDict; }
         if (data.secDict && Array.isArray(data.secDict)) { secDict = data.secDict; }
         if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
+        if (data.allPositionSets && Array.isArray(data.allPositionSets)) { allPositionSets = data.allPositionSets; saveAllPositionSetsLS(); }
         if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
         if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
         migrateLegacyTickerAlertsFromCloud(data);
@@ -4443,10 +4455,10 @@ function toggleViewMenu() {
     var isCrossPortfolio = inAllPositions || inSummaryByPortfolio || inRealizedAllPositions;
     var isWL = !isCrossPortfolio && currentPortfolio() && currentPortfolio().watchlist;
     var isArchive = !isCrossPortfolio && !isWL && currentPortfolio() && currentPortfolio().archive;
-    document.getElementById('vmMain').style.display = (inAllPositions || inRealizedAllPositions || isWL) ? 'none' : '';
+    document.getElementById('vmMain').style.display = (inRealizedAllPositions || isWL) ? 'none' : '';
     document.getElementById('vmMarket').style.display = (inAllPositions || inRealizedAllPositions || isArchive) ? 'none' : '';
-    document.getElementById('vmChart').style.display = (inAllPositions || inRealizedAllPositions || isArchive) ? 'none' : '';
-    document.getElementById('vmFundamentals').style.display = (isCrossPortfolio || isArchive) ? 'none' : '';
+    document.getElementById('vmChart').style.display = (inRealizedAllPositions || isArchive) ? 'none' : '';
+    document.getElementById('vmFundamentals').style.display = ((inSummaryByPortfolio || inRealizedAllPositions) || isArchive) ? 'none' : '';
     document.getElementById('vmMarketTotal').style.display = inAllPositions ? '' : 'none';
     document.getElementById('vmAlerts').style.display = (inSummaryByPortfolio || inRealizedAllPositions || isArchive) ? 'none' : '';
     document.getElementById('vmGlobalWeight').style.display = (inAllPositions || inRealizedAllPositions) ? '' : 'none';
@@ -4474,6 +4486,9 @@ function setView(mode) {
     viewMode = mode === 'alerts'        ? 'summary-alerts' :
                mode === 'analytics'     ? 'summary-analytics' :
                mode === 'global-weight' ? 'global-weight' :
+               mode === 'chart'         ? 'global-chart' :
+               mode === 'fundamentals'  ? 'global-fundamentals' :
+               mode === 'main'          ? 'global-main' :
                'summary-movers';
     // MARKET (movers) and ALERTS share the same sort state; both default
     // to absdelta desc on entry (largest movers first / most-moved alerts first).
@@ -4494,11 +4509,12 @@ function setView(mode) {
   ['vmMain','vmMarket','vmMarketTotal','vmWeight','vmGlobalWeight','vmChart','vmFundamentals','vmAnalytics','vmAlerts'].forEach(function(id) {
     document.getElementById(id).style.color = '';
   });
-  var activeId = viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMarketTotal' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'realized-analytics' ? 'vmAnalytics' : viewMode === 'summary-alerts' ? 'vmAlerts' : viewMode === 'summary' ? 'vmMain' : viewMode === 'global-weight' ? 'vmGlobalWeight' : viewMode === 'realized-weight' ? 'vmGlobalWeight' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'fundamentals' ? 'vmFundamentals' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMarket' : viewMode === 'alerts' ? 'vmAlerts' : 'vmMarket';
+  var activeId = viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMarketTotal' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'realized-analytics' ? 'vmAnalytics' : viewMode === 'summary-alerts' ? 'vmAlerts' : viewMode === 'summary' ? 'vmMain' : viewMode === 'global-main' ? 'vmMain' : viewMode === 'global-fundamentals' ? 'vmFundamentals' : viewMode === 'global-chart' ? 'vmChart' : viewMode === 'global-weight' ? 'vmGlobalWeight' : viewMode === 'realized-weight' ? 'vmGlobalWeight' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'fundamentals' ? 'vmFundamentals' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMarket' : viewMode === 'alerts' ? 'vmAlerts' : 'vmMarket';
   document.getElementById(activeId).style.color = 'var(--green)';
   document.getElementById('viewMenu').style.display = 'none';
   // Refresh prices when entering chart view (updates today's point)
-  if (viewMode === 'chart' || viewMode === 'summary-chart') refreshAll();
+  if (viewMode === 'global-chart' || viewMode === 'global-fundamentals' || viewMode === 'global-main') refreshAllPortfolios();
+  else if (viewMode === 'chart' || viewMode === 'summary-chart') refreshAll();
   render();
 }
 // Close menu on outside click
@@ -4514,6 +4530,111 @@ var MARKET_ICONS_DEFAULTS = { regular: '', pre: '🌤️', post: '🌙', closed:
 var MARKET_ICONS_STORAGE_KEY = 'pt_market_icons';
 
 
+
+// The market-status table cell. Always clickable (opens trading hours), with a
+// comfortable tap target — independent of whether the state currently has an
+// icon symbol, since icons are user-configurable per state.
+function marketIconCell(p) {
+  if (p.sold) {
+    return '<td style="width:16px;padding:0 2px;text-align:center"><span style="color:#7090b0;font-size:13px">&#8960;</span></td>' + staleColHtml(p);
+  }
+  var t = p.ticker.replace(/'/g, "\\'");
+  return '<td onclick="showMarketHours(\'' + t + '\')" title="trading hours" '
+    + 'style="width:16px;padding:6px 6px;text-align:center;cursor:pointer;-webkit-tap-highlight-color:transparent">'
+    + marketIcon(getPositionMarketState(p)) + '</td>' + staleColHtml(p);
+}
+
+// Trading-hours popover. Fetches on click (no cache — the period is day-bound
+// and the request is user-initiated, so freshness beats saving one call).
+function showMarketHours(ticker) {
+  var existing = document.getElementById('marketHoursPop');
+  if (existing) existing.remove();
+  var overlay = document.createElement('div');
+  overlay.id = 'marketHoursPop';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:650;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.onclick = function() { overlay.remove(); };
+  overlay.innerHTML = '<div onclick="event.stopPropagation()" style="background:var(--bg2);border:1px solid var(--border);padding:18px 16px;min-width:240px;max-width:90vw">'
+    + '<div id="marketHoursHdr" style="font-size:11px;letter-spacing:2px;color:var(--dim);margin-bottom:14px">' + ticker.replace(/</g, '&lt;') + ' &middot; TRADING HOURS</div>'
+    + '<div id="marketHoursBody" style="font-size:12px;color:var(--dim)">Loading&hellip;</div>'
+    + '</div>';
+  document.body.appendChild(overlay);
+
+  var baseUrl = getApiKey();
+  if (!baseUrl) { setMarketHoursBody('<span style="color:var(--red)">No API configured</span>'); return; }
+  baseUrl = baseUrl.replace(/\/+$/, '');
+  var token = getToken();
+  var opts = {};
+  if (token) opts.headers = { 'X-API-Token': token };
+  fetch(baseUrl + '/api/hours?ticker=' + encodeURIComponent(ticker), opts)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (!d || d.error || !d.tradingPeriod) {
+        setMarketHoursBody('<span style="color:var(--red)">' + ((d && d.error) || 'No hours available') + '</span>');
+        return;
+      }
+      setMarketHoursBody(renderMarketHoursBody(d));
+      // Header gets the exchange name once known: TICKER · KSE · TRADING HOURS.
+      var hdr = document.getElementById('marketHoursHdr');
+      if (hdr && d.exchangeName) {
+        hdr.innerHTML = ticker.replace(/</g, '&lt;') + ' &middot; ' + d.exchangeName.replace(/</g, '&lt;') + ' &middot; TRADING HOURS';
+      }
+    })
+    .catch(function() { setMarketHoursBody('<span style="color:var(--red)">Failed to load</span>'); });
+}
+function setMarketHoursBody(html) {
+  var el = document.getElementById('marketHoursBody');
+  if (el) el.innerHTML = html;
+}
+// Format a Unix timestamp in a fixed UTC offset (seconds), 24h HH:MM.
+function fmtHoursAt(unixSec, offsetSec) {
+  var d = new Date((unixSec + offsetSec) * 1000);
+  var hh = d.getUTCHours(), mm = d.getUTCMinutes();
+  return (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm;
+}
+// Format a Unix timestamp in the user's local zone, 24h, with short tz label.
+function fmtHoursLocal(unixSec) {
+  var d = new Date(unixSec * 1000);
+  var hh = d.getHours(), mm = d.getMinutes();
+  var tz = '';
+  try {
+    var m = d.toLocaleTimeString('en-US', { timeZoneName: 'short' }).match(/([A-Z]{2,5})$/);
+    if (m) tz = ' ' + m[1];
+  } catch (e) {}
+  return (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm + tz;
+}
+function renderMarketHoursBody(d) {
+  var tp = d.tradingPeriod;
+  var exTz = d.timezone || '';
+  var now = Math.floor(Date.now() / 1000);
+  // Which period is active now — check regular first so it wins on a boundary
+  // shared with pre/post (now == pre.end == regular.start → regular, not pre).
+  var activeKey = null;
+  ['regular', 'pre', 'post'].forEach(function(key) {
+    if (activeKey) return;
+    var seg = tp[key];
+    if (seg && seg.start != null && seg.end != null && seg.start !== seg.end
+        && now >= seg.start && now < seg.end) {
+      activeKey = key;
+    }
+  });
+  var body = ['pre', 'regular', 'post'].map(function(key) {
+    var seg = tp[key];
+    var label = key.toUpperCase();
+    if (!seg || seg.start == null || seg.end == null) return '';
+    if (seg.start === seg.end) return ''; // zero-length period — omit
+    var off = seg.gmtoffset != null ? seg.gmtoffset : (d.gmtoffset || 0);
+    var segTz = seg.timezone || exTz;
+    var exchange = fmtHoursAt(seg.start, off) + '\u2013' + fmtHoursAt(seg.end, off) + ' ' + segTz;
+    var local = fmtHoursLocal(seg.start) + '\u2013' + fmtHoursLocal(seg.end);
+    var exColor = key === activeKey ? 'var(--green)' : 'var(--bright)';
+    return '<div style="margin-bottom:9px;white-space:nowrap">'
+      + '<span style="display:inline-block;width:60px;color:var(--dim);font-size:10px;letter-spacing:1px">' + label + '</span>'
+      + '<span style="color:' + exColor + '">' + exchange + '</span>'
+      + '<span style="color:var(--dim);margin-left:8px">(' + local + ')</span>'
+      + '</div>';
+  }).join('');
+  return body || '<span style="color:var(--dim)">No trading hours for today</span>';
+}
 
 function marketIcon(state) {
   if (!state) return '';
@@ -4779,31 +4900,58 @@ window.chartSelectionOpen = false;
 // old "positions" item, with a MANAGE SETS button at the bottom.
 
 
-function savePositionSets(portfolioId, sets) {
-  var p = portfolios[portfolioId || currentPortfolioId];
+// Ticker universe offered in the sets modal. Honors the forced-global flag: the
+// filter's MANAGE SETS must offer the full all-portfolios union even when a
+// single portfolio is open. Temporarily borrows All Positions context.
+function getChartContextTickersForSets() {
+  if (!window._setsForceGlobal) return getChartUniqueTickers();
+  var savedView = viewMode;
+  viewMode = 'global-chart';           // makes isAllPositions() true → union
+  var t = getChartUniqueTickers();
+  viewMode = savedView;
+  return t;
+}
+
+// Context for SET operations (create/update/delete/list/ticker-source).
+// Normally the current view context, but when the sets modal is opened from the
+// filter we force the global store: the filter's sets are the All Positions
+// sets, no matter which portfolio is open.
+function getSetsCtx() {
+  return window._setsForceGlobal ? ALL_POSITIONS_CTX : getSelCtx();
+}
+
+function savePositionSets(ctx, sets) {
+  var c = ctx || getSetsCtx();
+  if (c === ALL_POSITIONS_CTX) {
+    allPositionSets = sets;
+    saveAllPositionSetsLS();
+    save();
+    return;
+  }
+  var p = portfolios[c];
   if (!p) return;
   p.positionSets = sets;
   save();
 }
 
 function createPositionSet(name, tickers) {
-  var sets = getPositionSets().slice();
+  var sets = getPositionSets(getSetsCtx()).slice();
   var id = 'set_' + Date.now();
   sets.push({ id: id, name: (name || '').trim() || 'NEW SET', tickers: tickers || [] });
-  savePositionSets(currentPortfolioId, sets);
+  savePositionSets(getSetsCtx(), sets);
   return id;
 }
 
 function updatePositionSet(setId, updates) {
-  var sets = getPositionSets().map(function(s) {
+  var sets = getPositionSets(getSetsCtx()).map(function(s) {
     return s.id === setId ? Object.assign({}, s, updates) : s;
   });
-  savePositionSets(currentPortfolioId, sets);
+  savePositionSets(getSetsCtx(), sets);
 }
 
 function deletePositionSet(setId) {
-  var sets = getPositionSets().filter(function(s) { return s.id !== setId; });
-  savePositionSets(currentPortfolioId, sets);
+  var sets = getPositionSets(getSetsCtx()).filter(function(s) { return s.id !== setId; });
+  savePositionSets(getSetsCtx(), sets);
   // If this set was selected anywhere, fall back
   if (getChartSelectedSet() === setId) setChartSelectedSet('portfolio');
   if (getFundamentalsSelectedSet() === setId) setFundamentalsSelectedSet(null);
@@ -4879,6 +5027,7 @@ window.chartRange = '1mo';
 // checkboxes. Used from chart and fundamentals view menus.
 
 window._editingSetId = null;  // null = not editing; '_new' = adding; setId = editing existing
+window._expandedSetId = null; // set whose contents are previewed read-only
 
 // ── Aggregation detail modal ───────────────────────────────────────────────
 // Shows the individual positions that make up a ×n aggregated row in P&L.
@@ -4890,12 +5039,18 @@ window._editingSetId = null;  // null = not editing; '_new' = adding; setId = ed
 // by index to avoid escaping broker names through inline onclick handlers.
 var _aggOverlayState = null;
 
-function showAggDetail(ticker, soldFlag) {
+function showAggDetail(ticker, soldFlag, curCode) {
   var isSold = soldFlag === 1 || soldFlag === '1' || soldFlag === true;
+  var aggIsAll = isAllPositions();
   // Collect the visible (filtered) positions matching this aggregation, so the
-  // detail list matches the ×N count and what move/delete act on.
-  var allPositions = applyFilter(positions).filter(function(p) {
-    return p.ticker === ticker && (isSold ? !!p.sold : (!p.sold && p.qty > 0));
+  // detail list matches the ×N count and what move/delete act on. In All
+  // Positions the source is the cross-portfolio union, not one portfolio.
+  var aggSource = aggIsAll ? getMainContextPositions() : positions;
+  var allPositions = applyFilter(aggSource).filter(function(p) {
+    if (p.ticker !== ticker) return false;
+    // curCode scopes to ticker+currency (the aggregation key) when provided.
+    if (curCode && getPositionCurrencyCode(p) !== curCode) return false;
+    return isSold ? !!p.sold : (!p.sold && p.qty > 0);
   });
   if (!allPositions.length) return;
 
@@ -4991,7 +5146,7 @@ function showAggDetail(ticker, soldFlag) {
   // table grows beyond its container and scrolls horizontally inside the
   // wrapper, never pushing SELL or the broker label off-screen.
   function brokerSectionHtml(bd, idx) {
-    var sellBtn = isSold ? '' :
+    var sellBtn = (isSold || aggIsAll) ? '' :
       '<button id="aggSellBtn_' + idx + '" class="btn" onclick="showAggSellForm(' + idx + ')" style="padding:5px 14px;font-size:9px;letter-spacing:1px;border-color:var(--border);color:var(--bright)">SELL</button>';
     // Wrap BROKER + name in one span so flex space-between can't split them.
     var brokerLabel = '<span>'
@@ -5031,7 +5186,9 @@ function showAggDetail(ticker, soldFlag) {
   // labelled inputs, SELL + CANCEL on one row.
   // For sold: MOVE TO REALIZED (acts on all sold positions regardless of broker).
   var actionHtml;
-  if (isSold) {
+  if (aggIsAll) {
+    actionHtml = ''; // cross-portfolio detail is read-only (no sell/archive)
+  } else if (isSold) {
     actionHtml = '<div style="margin-top:14px;padding:0 8px;display:flex;justify-content:flex-end">'
       + '<button class="btn" onclick="showArchiveMenuAgg(\'' + ticker + '\', this)">&#8863; MOVE TO REALIZED</button>'
       + '</div>';
@@ -5220,29 +5377,71 @@ function openPositionSetsModal() {
   if (existing) existing.remove();
   var modal = document.createElement('div');
   modal.id = 'positionSetsModal';
-  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:400;display:flex;align-items:flex-start;justify-content:center;padding:40px 12px;overflow-y:auto';
+  // Above the filter overlay (z 600) when opened from it; normal 400 otherwise.
+  var zed = window._setsForceGlobal ? 700 : 400;
+  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:' + zed + ';display:flex;align-items:flex-start;justify-content:center;padding:40px 12px;overflow-y:auto';
   modal.onclick = function(e) { if (e.target === modal) closePositionSetsModal(); };
   document.body.appendChild(modal);
   renderPositionSetsModal();
+}
+
+function openPositionSetsModalGlobal() {
+  window._setsForceGlobal = true;
+  openPositionSetsModal();
 }
 
 function closePositionSetsModal() {
   var m = document.getElementById('positionSetsModal');
   if (m) m.remove();
   window._editingSetId = null;
+  window._expandedSetId = null;
+  var wasGlobal = window._setsForceGlobal;
+  window._setsForceGlobal = false;
   render();
+  // If this was opened from the filter, refresh the filter's custom SET
+  // dropdown in place so a just-created set shows up, keeping other choices.
+  if (wasGlobal) {
+    var menu = document.getElementById('filterMenuSet');
+    if (menu) {
+      // A set the user had chosen may have been deleted → fall back to "any".
+      if (window._filterSetVal && !(allPositionSets || []).some(function(s) { return s.id === window._filterSetVal; })) {
+        window._filterSetVal = '';
+      }
+      menu.outerHTML = filterSetMenuHtml();
+      var disp = document.getElementById('filterDispSet');
+      if (disp) disp.innerHTML = filterDropdownLabel('Set');
+    }
+  }
 }
 
 function renderPositionSetsModal() {
   var modal = document.getElementById('positionSetsModal');
   if (!modal) return;
-  var sets = getPositionSets();
+  var sets = getPositionSets(getSetsCtx());
   var editing = window._editingSetId;
-  var allTickers = getChartUniqueTickers();
+  var allTickers = getChartContextTickersForSets().slice().sort(function(a, b) {
+    return a.localeCompare(b);
+  });
 
   function renderEditForm(set) {
     var checked = set ? (set.tickers || []) : [];
     var nameVal = set ? set.name : '';
+    // Tickers in the set but no longer in the universe (held nowhere now).
+    var missing = checked.filter(function(t) { return allTickers.indexOf(t) === -1; })
+      .slice().sort(function(a, b) { return a.localeCompare(b); });
+    var missingHtml = missing.length === 0 ? '' :
+      '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:12px 0 6px;display:flex;justify-content:space-between;align-items:center">'
+      + '<span>NOT CURRENTLY HELD</span>'
+      + '<button onclick="setsModalClearMissing()" class="btn-icon" style="font-size:14px;padding:0 5px" title="Remove all">&#129529;</button>'
+      + '</div>'
+      + '<div style="display:flex;flex-direction:column;gap:5px;max-height:140px;overflow-y:auto;border:1px solid var(--border);padding:8px;background:var(--bg2)">'
+      + missing.map(function(t) {
+          return '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;color:var(--dim)">'
+            + '<input type="checkbox" id="setcb_' + t + '" checked style="cursor:pointer" data-missing="1">'
+            + '<span>' + t + '</span>'
+            + '</label>';
+        }).join('')
+      + '</div>';
     return '<div style="padding:10px 12px;background:var(--bg);border:1px solid var(--border)">'
       + '<div class="field"><label>NAME</label><input type="text" id="setNameInput" value="' + nameVal + '" style="width:100%;box-sizing:border-box" autocomplete="off" oninput="this.value = this.value.toUpperCase()"></div>'
       + (allTickers.length === 0
@@ -5264,6 +5463,7 @@ function renderPositionSetsModal() {
                   + '</label>';
               }).join('')
             + '</div>')
+      + missingHtml
       + '<div style="display:flex;gap:8px;margin-top:12px">'
       + '<button onclick="savePositionSetFromModal()" class="btn btn-green" style="padding:5px 14px">SAVE</button>'
       + '<button onclick="cancelEditPositionSet()" class="btn" style="padding:5px 14px;color:var(--dim)">CANCEL</button>'
@@ -5276,11 +5476,26 @@ function renderPositionSetsModal() {
     : sets.map(function(s) {
         if (s.id === editing) return renderEditForm(s);
         var count = (s.tickers || []).filter(function(t) { return allTickers.indexOf(t) !== -1; }).length;
-        return '<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--border)">'
-          + '<div style="flex:1;font-size:12px"><span style="color:var(--bright);letter-spacing:1px">' + s.name + '</span> <span style="color:var(--dim);font-size:10px">' + count + (count === 1 ? ' ticker' : ' tickers') + '</span></div>'
+        var isExpanded = window._expandedSetId === s.id;
+        var row = '<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid ' + (isExpanded ? 'transparent' : 'var(--border)') + '">'
+          + '<div style="flex:1;font-size:12px;cursor:pointer" onclick="toggleSetPreview(&apos;' + s.id + '&apos;)"><span style="color:var(--bright);letter-spacing:1px">' + s.name + '</span> <span style="color:var(--dim);font-size:10px">' + count + (count === 1 ? ' ticker' : ' tickers') + '</span></div>'
           + '<button class="btn-icon" onclick="startEditPositionSet(&apos;' + s.id + '&apos;)" style="font-size:13px;padding:4px 7px">&#9998;</button>'
           + '<button class="btn-icon" onclick="confirmDeletePositionSet(&apos;' + s.id + '&apos;)" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
           + '</div>';
+        if (!isExpanded) return row;
+        var tks = (s.tickers || []).slice().sort(function(a, b) { return a.localeCompare(b); });
+        var anyMissing = tks.some(function(t) { return allTickers.indexOf(t) === -1; });
+        var body = tks.length === 0
+          ? '<div style="font-size:11px;color:var(--dim)">empty set</div>'
+          : tks.map(function(t) {
+              var present = allTickers.indexOf(t) !== -1;
+              return '<span style="font-size:11px;letter-spacing:1px;color:' + (present ? 'var(--bright)' : 'var(--dim)') + '">' + t + '</span>';
+            }).join('');
+        var broom = anyMissing
+          ? '<button onclick="clearMissingFromSet(&apos;' + s.id + '&apos;)" class="btn-icon" style="font-size:14px;padding:0 5px;margin-left:4px" title="Remove not-held">&#129529;</button>'
+          : '';
+        return row
+          + '<div style="display:flex;flex-wrap:wrap;gap:5px 14px;align-items:center;padding:2px 12px 10px;border-bottom:1px solid var(--border)">' + body + broom + '</div>';
       }).join('');
 
   var newRowHtml = editing === '_new'
@@ -5297,11 +5512,34 @@ function renderPositionSetsModal() {
 
 function startEditPositionSet(setId) {
   window._editingSetId = setId;
+  window._expandedSetId = null; // editing supersedes preview
+  renderPositionSetsModal();
+}
+
+// Tap a set name to preview its tickers read-only (helps spot the few checked
+// tickers in a long list without entering edit mode).
+function toggleSetPreview(setId) {
+  window._expandedSetId = (window._expandedSetId === setId) ? null : setId;
   renderPositionSetsModal();
 }
 
 function cancelEditPositionSet() {
   window._editingSetId = null;
+  renderPositionSetsModal();
+}
+
+function setsModalClearMissing() {
+  // Edit form: uncheck every not-currently-held ticker. SAVE commits removal.
+  var boxes = document.querySelectorAll('input[data-missing="1"]');
+  for (var i = 0; i < boxes.length; i++) boxes[i].checked = false;
+}
+function clearMissingFromSet(setId) {
+  // Preview: remove tickers no longer held, straight away (no SAVE here).
+  var set = getPositionSets(getSetsCtx()).find(function(s) { return s.id === setId; });
+  if (!set) return;
+  var universe = getChartContextTickersForSets();
+  var kept = (set.tickers || []).filter(function(t) { return universe.indexOf(t) !== -1; });
+  updatePositionSet(setId, { tickers: kept });
   renderPositionSetsModal();
 }
 
@@ -5322,8 +5560,21 @@ function savePositionSetFromModal() {
   var nameInput = document.getElementById('setNameInput');
   var name = (nameInput.value || '').trim().toUpperCase();
   if (!name) { alert('Set name is required'); return; }
-  var allTickers = getChartUniqueTickers();
-  var selected = allTickers.filter(function(t) {
+  // Candidate tickers: the current universe plus any of this set's own tickers
+  // that are no longer held (they get checkboxes in the NOT-CURRENTLY-HELD
+  // group). Collect whatever is checked across both, so missing tickers left
+  // checked survive and unchecked ones are removed.
+  var universe = getChartUniqueTickers();
+  var editingSet = window._editingSetId && window._editingSetId !== '_new'
+    ? getPositionSets(getSetsCtx()).find(function(s) { return s.id === window._editingSetId; })
+    : null;
+  var candidates = universe.slice();
+  if (editingSet) {
+    (editingSet.tickers || []).forEach(function(t) {
+      if (candidates.indexOf(t) === -1) candidates.push(t);
+    });
+  }
+  var selected = candidates.filter(function(t) {
     var cb = document.getElementById('setcb_' + t);
     return cb && cb.checked;
   });
@@ -5370,9 +5621,10 @@ function getFundamentalsSelection() {
 // startup. So in practice positions get tagged through normal use without
 // any dedicated migration code.
 function filterFundamentalsTickers(tickers) {
+  var ctxPositions = getChartContextPositions();
   var equity = [], skipped = 0;
   tickers.forEach(function(t) {
-    var pos = positions.find(function(p) { return p.ticker === t; });
+    var pos = ctxPositions.find(function(p) { return p.ticker === t; });
     var it = pos && getPositionInstrumentType(pos);
     if (!it || it === 'EQUITY') {
       equity.push(t);
@@ -5384,10 +5636,10 @@ function filterFundamentalsTickers(tickers) {
 }
 
 function getFundamentalsUniqueTickers() {
-  // Same shape as chart: unique tickers from current portfolio
+  // Same universe as the chart: current portfolio, or the All Positions union.
   var seen = {};
   var result = [];
-  (positions || []).forEach(function(p) {
+  getChartContextPositions().forEach(function(p) {
     if (!seen[p.ticker]) { seen[p.ticker] = true; result.push(p.ticker); }
   });
   return result;
@@ -5595,9 +5847,10 @@ function buildMoversView(area, opts) {
   Object.keys(portfolios).forEach(function(pid) {
     var p = portfolios[pid];
     if (p.archive) return;
-    // With an active filter the set is regular portfolios only — skip watchlist
-    // entirely. Without a filter, watchlist is included as before.
-    if (bmvDoFilter && p.watchlist) return;
+    // Watchlist is scanned under a filter too. Its positions are all qty=0 /
+    // entry=0, so the date guard (!entry) and broker guard (qty===0) drop them
+    // from date/broker filters unchanged — but a SET filter matches by ticker,
+    // which is exactly how a watchlist ticker added to a set becomes visible.
     var bmvPosns = bmvDoFilter ? filterPositions(p.positions || []) : (p.positions || []);
     bmvPosns.forEach(function(pos) {
       if (pos.sold) return;
@@ -5646,7 +5899,7 @@ function buildMoversView(area, opts) {
       + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.close ? ('' + x.close.toFixed(2)) : '—') + '</td>'
       + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.cur ? ('' + x.cur.toFixed(2)) : '—') + '</td>'
       + '<td style="text-align:right;padding:5px 4px;white-space:nowrap" class="' + cls + '">' + (x.delta >= 0 ? '+' : '') + x.delta.toFixed(2) + '%</td>'
-      + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(getPositionMarketState(p)) + '</td>' + staleColHtml(p)
+      + marketIconCell(p)
       + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (getPositionShortName(p) || '') + '</td>'
       + '</tr>'
       + (isExpanded ? '<tr><td colspan="7" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>' : '');
@@ -7105,7 +7358,7 @@ function updateViewMenuBtn() {
   if (!btn) return;
   var labels = { 'main': 'P&L', 'weight': 'WEIGHTS', 'global-weight': 'WEIGHTS', 'market': 'MARKET', 'movers': 'MARKET', 'chart': 'CHART', 'fundamentals': 'FUNDAMENTALS', 'analytics': 'ANALYTICS', 'alerts': 'ALERTS',
     'summary': 'P&L', 'summary-market': 'MARKET', 'summary-chart': 'CHART', 'summary-analytics': 'ANALYTICS', 'summary-movers': 'MARKET', 'summary-alerts': 'ALERTS',
-    'realized-weight': 'WEIGHTS', 'realized-analytics': 'ANALYTICS' };
+    'realized-weight': 'WEIGHTS', 'realized-analytics': 'ANALYTICS', 'global-chart': 'CHART', 'global-fundamentals': 'FUNDAMENTALS', 'global-main': 'P&L' };
   var label = labels[viewMode] || 'P&L';
   if (viewMode === 'main' && currentPortfolio() && currentPortfolio().watchlist) label = 'MARKET';
   btn.textContent = label;
@@ -7144,25 +7397,90 @@ function toggleAggregated() {
   render();
 }
 
+// Custom dropdown for the filter (broker/set), matching the chart set picker
+// and Add-form pickers — a trigger button + a dark absolute menu — instead of a
+// native <select>, whose mobile popup is oversized and off-theme.
+function filterDropdownTriggerHtml(which) {
+  var lc = which.toLowerCase();
+  var label = filterDropdownLabel(which);
+  return '<div id="filterTrig' + which + '" onclick="toggleFilterDrop(\'' + lc + '\')" '
+    + 'style="cursor:pointer;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:13px;padding:7px 8px;box-sizing:border-box;display:flex;justify-content:space-between;align-items:center;user-select:none">'
+    + '<span id="filterDisp' + which + '">' + label + '</span>'
+    + '<span style="font-size:9px;color:var(--dim);margin-left:6px">&#9660;</span>'
+    + '</div>';
+}
+function filterDropdownLabel(which) {
+  if (which === 'Broker') {
+    return window._filterBrokerVal
+      ? window._filterBrokerVal.replace(/</g, '&lt;')
+      : '<span style="color:var(--dim)">&mdash; any &mdash;</span>';
+  }
+  var sid = window._filterSetVal;
+  var set = sid ? getPositionSets(ALL_POSITIONS_CTX).find(function(s) { return s.id === sid; }) : null;
+  return set ? set.name.replace(/</g, '&lt;') : '<span style="color:var(--dim)">&mdash; any &mdash;</span>';
+}
+var _filterDropMenuStyle = 'display:none;position:absolute;left:0;right:0;top:100%;background:var(--bg2);border:1px solid var(--border);z-index:100;max-height:220px;overflow-y:auto';
+function filterDropOptionHtml(labelHtml, onclick, selected) {
+  return '<div onclick="' + onclick + '" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;color:' + (selected ? 'var(--green)' : 'var(--bright)') + '">' + labelHtml + '</div>';
+}
+function filterBrokerMenuHtml() {
+  var cur = window._filterBrokerVal;
+  var html = '<div id="filterMenuBroker" style="' + _filterDropMenuStyle + '">';
+  html += filterDropOptionHtml('&mdash; any &mdash;', "selectFilterBroker('')", !cur);
+  html += brokerDict.slice().sort(function(a, b) { return a.localeCompare(b); }).map(function(b) {
+    var esc = b.replace(/'/g, "\\'").replace(/</g, '&lt;');
+    return filterDropOptionHtml(b.replace(/</g, '&lt;'), "selectFilterBroker('" + esc + "')", b === cur);
+  }).join('');
+  html += '</div>';
+  return html;
+}
+function filterSetMenuHtml() {
+  var cur = window._filterSetVal;
+  var html = '<div id="filterMenuSet" style="' + _filterDropMenuStyle + '">';
+  html += filterDropOptionHtml('&mdash; any &mdash;', "selectFilterSet('')", !cur);
+  html += getPositionSets(ALL_POSITIONS_CTX).map(function(s) {
+    return filterDropOptionHtml(s.name.replace(/</g, '&lt;'), "selectFilterSet('" + s.id + "')", s.id === cur);
+  }).join('');
+  html += '<div style="border-top:1px solid var(--border)"></div>';
+  html += '<div onclick="openPositionSetsModalGlobal()" style="padding:10px 14px;cursor:pointer;font-size:10px;letter-spacing:2px;color:var(--dim)">MANAGE SETS&hellip;</div>';
+  html += '</div>';
+  return html;
+}
+function toggleFilterDrop(which) {
+  var other = which === 'broker' ? 'Set' : 'Broker';
+  var om = document.getElementById('filterMenu' + other);
+  if (om) om.style.display = 'none';
+  var m = document.getElementById('filterMenu' + (which === 'broker' ? 'Broker' : 'Set'));
+  if (m) m.style.display = m.style.display === 'none' ? 'block' : 'none';
+}
+function selectFilterBroker(v) {
+  window._filterBrokerVal = v;
+  document.getElementById('filterDispBroker').innerHTML = filterDropdownLabel('Broker');
+  var m = document.getElementById('filterMenuBroker'); if (m) m.style.display = 'none';
+}
+function selectFilterSet(v) {
+  window._filterSetVal = v;
+  document.getElementById('filterDispSet').innerHTML = filterDropdownLabel('Set');
+  var m = document.getElementById('filterMenuSet'); if (m) m.style.display = 'none';
+}
+
 function openFilterModal() {
   var overlay = document.createElement('div');
   overlay.id = 'filterOverlay';
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:600;display:flex;align-items:flex-start;justify-content:center;padding-top:60px';
   var curDate = (activeFilter && activeFilter.purchaseDateFrom) || '';
-  var curBroker = (activeFilter && activeFilter.broker) || '';
-  var brokerOpts = '<option value="">&mdash; any &mdash;</option>'
-    + brokerDict.map(function(b) {
-        var sel = b === curBroker ? ' selected' : '';
-        return '<option value="' + b.replace(/"/g, '&quot;') + '"' + sel + '>' + b.replace(/</g, '&lt;') + '</option>';
-      }).join('');
+  window._filterBrokerVal = (activeFilter && activeFilter.broker) || '';
+  window._filterSetVal = (activeFilter && activeFilter.setId) || '';
   var fieldInputStyle = 'width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:13px;padding:7px 8px;outline:none';
   overlay.innerHTML =
     '<div style="background:var(--bg2);border:1px solid var(--border);padding:20px 24px;min-width:260px;max-width:85vw" onclick="event.stopPropagation()">'
     + '<div style="font-size:11px;letter-spacing:2px;color:var(--dim);margin-bottom:16px">FILTER</div>'
     + '<div class="field" style="margin-bottom:18px"><label>PURCHASE DATE FROM</label>'
     + '<input type="date" id="filterDateFrom" value="' + curDate + '" style="' + fieldInputStyle + '"></div>'
-    + '<div class="field" style="margin-bottom:18px"><label>BROKER</label>'
-    + '<select id="filterBroker" style="' + fieldInputStyle + '">' + brokerOpts + '</select></div>'
+    + '<div class="field" style="margin-bottom:18px;position:relative"><label>BROKER</label>'
+    + filterDropdownTriggerHtml('Broker') + filterBrokerMenuHtml() + '</div>'
+    + '<div class="field" style="margin-bottom:18px;position:relative"><label>SET</label>'
+    + filterDropdownTriggerHtml('Set') + filterSetMenuHtml() + '</div>'
     + '<div style="display:flex;gap:10px">'
     + '<button class="btn-primary" onclick="applyFilterModal()" style="flex:1">APPLY</button>'
     + '<button class="btn" onclick="clearFilter()" style="flex:1">RESET</button>'
@@ -7174,11 +7492,13 @@ function openFilterModal() {
 
 function applyFilterModal() {
   var v = document.getElementById('filterDateFrom').value;
-  var b = document.getElementById('filterBroker').value;
+  var b = window._filterBrokerVal || '';
+  var s = window._filterSetVal || '';
   var f = {};
   if (v) f.purchaseDateFrom = v;
   if (b) f.broker = b;
-  if (f.purchaseDateFrom || f.broker) {
+  if (s) f.setId = s;
+  if (f.purchaseDateFrom || f.broker || f.setId) {
     activeFilter = f;
     localStorage.setItem('pt_filter', JSON.stringify(activeFilter));
   } else {
@@ -7334,7 +7654,7 @@ function render() {
         + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.close ? x.close.toFixed(2) : '—') + '</td>'
         + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.cur ? x.cur.toFixed(2) : '—') + '</td>'
         + '<td style="text-align:right;padding:5px 4px;white-space:nowrap" class="' + cls + '">' + (x.delta >= 0 ? '+' : '') + x.delta.toFixed(2) + '%</td>'
-        + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(getPositionMarketState(p)) + '</td>' + staleColHtml(p)
+        + marketIconCell(p)
         + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (getPositionShortName(p) || '') + '</td>'
         + '</tr>'
         + (isExpanded ? '<tr><td colspan="7" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>' : '');
@@ -7432,12 +7752,15 @@ function render() {
     return;
   }
 
-  if (positions.length === 0 && ['cash','bonds','bond-summary','archive-summary'].indexOf(viewMode) === -1) {
+  var mainEmptyCheck = (viewMode === 'global-main') ? getMainContextPositions() : positions;
+  if (mainEmptyCheck.length === 0 && ['cash','bonds','bond-summary','archive-summary'].indexOf(viewMode) === -1) {
     area.innerHTML = '<div class="empty">NO POSITIONS &mdash; ADD ONE BELOW</div>';
     return;
   }
 
-  var rowsSource = getSortedForRender();
+  var mainIsAll = isAllPositions();
+  var mainSource = mainIsAll ? getMainContextPositions() : positions;
+  var rowsSource = getSortedForRender(mainSource);
   var rows = '';
   rowsSource.forEach(function(entry) {
     var p = entry.pos; var isAgg = entry.agg; var aggCount = entry.count || 1; var aggGroup = entry.group || null;
@@ -7465,7 +7788,15 @@ function render() {
       : curCell;
 
     var sellAction, moveBtn, editBtn, deleteBtn;
-    if (isEdit) {
+    if (mainIsAll) {
+      // Cross-portfolio view: no per-lot actions (they resolve by id within one
+      // portfolio's positions). ×N opens a read-only breakdown, scoped to this
+      // row's ticker+currency.
+      sellAction = isAgg
+        ? '<button class="btn-icon" onclick="showAggDetail(\'' + p.ticker + '\',' + (p.sold ? '1' : '0') + ',\'' + getPositionCurrencyCode(p) + '\')" style="font-size:12px;letter-spacing:1px;color:var(--bright);padding:0 4px;cursor:pointer;background:none;border:none;font-family:var(--font)">&times;' + aggCount + '</button>'
+        : '';
+      moveBtn = ''; editBtn = ''; deleteBtn = '';
+    } else if (isEdit) {
       sellAction = '<button class="btn-icon" style="color:var(--green)" onclick="saveEdit(' + p.id + ')">&#10003;</button>'
         + '<button class="btn-icon" onclick="cancelEdit()">&#10005;</button>';
       moveBtn = ''; editBtn = ''; deleteBtn = '';
@@ -7495,7 +7826,7 @@ function render() {
       + '<td>' + curEditCell + '</td>'
       + '<td class="' + cls(pnl) + '">' + (p.qty === 0 ? '<span style="color:var(--dim)">&mdash;</span>' : fSign(pnl !== null ? pnl * p.qty : null)) + '</td>'
       + '<td class="' + cls(pnlPct) + '">' + fPct(pnlPct) + '</td>'
-      + '<td style="width:16px;padding:0 2px;text-align:center">' + (p.sold ? '<span style="color:#7090b0;font-size:13px">&#8960;</span>' : marketIcon(getPositionMarketState(p))) + '</td>' + staleColHtml(p)
+      + marketIconCell(p)
       + '<td style="white-space:nowrap;text-align:left">' + sellAction + '</td>'
       + '<td style="white-space:nowrap;text-align:center">' + moveBtn + '</td>'
       + '<td style="white-space:nowrap;text-align:center">' + editBtn + '</td>'
@@ -7526,10 +7857,10 @@ function render() {
   });
 
   var totCost = 0, totVal = 0, hasAny = false;
-  var baseCode = (currentPortfolio().currencyCode || 'USD').toUpperCase();
-  var baseSym = getCurrency();
+  var baseCode = mainIsAll ? 'USD' : (currentPortfolio().currencyCode || 'USD').toUpperCase();
+  var baseSym = mainIsAll ? '$' : getCurrency();
   // Totals reflect the filter (a filtered view shows the totals of that slice).
-  var tPosns = applyFilter(positions);
+  var tPosns = applyFilter(mainSource);
   // Get unique non-base currencies in this portfolio
   var posFxNeeded = [];
   tPosns.forEach(function(p) {
@@ -8813,7 +9144,7 @@ function render() {
         + '<td style="white-space:nowrap">' + (close ? getPositionCurrencySymbol(p) + f2(close) : '&mdash;') + '</td>'
         + '<td style="white-space:nowrap">' + (price ? getPositionCurrencySymbol(p) + f2(price) : '&mdash;') + '</td>'
         + '<td class="' + deltaClass + '" style="white-space:nowrap">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
-        + '<td style="width:16px;padding:0 2px;text-align:center">' + marketIcon(getPositionMarketState(p)) + '</td>' + staleColHtml(p)
+        + marketIconCell(p)
         + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (getPositionShortName(p) || '') + '</td>'
         + '<td style="white-space:nowrap">'
           + '<button class="btn-icon" onclick="removePosition(' + p.id + ')" style="color:var(--red)">&#10005;</button>'
@@ -8905,7 +9236,7 @@ function render() {
         + '<td style="text-align:right;padding:5px 4px">' + (regPrice !== null ? getPositionCurrencySymbol(p) + f2(regPrice) : '&mdash;') + '</td>'
         + '<td style="text-align:right;padding:5px 4px">' + getPositionCurrencySymbol(p) + f2(mktCurrent) + '</td>'
         + '<td style="text-align:right;padding:5px 4px" class="' + deltaClass + '">' + (delta !== null ? fSign(delta) + '%' : '&mdash;') + '</td>'
-        + '<td style="width:16px;padding:0 2px;text-align:center">' + (p.sold ? '<span style="color:#7090b0;font-size:13px">&#8960;</span>' : marketIcon(getPositionMarketState(p))) + '</td>' + staleColHtml(p)
+        + marketIconCell(p)
         + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (getPositionShortName(p) || '') + '</td>'
         + '</tr>'
         + mktExpandedRow;
@@ -8953,14 +9284,17 @@ function render() {
   }
 
   // Chart view
-  if (viewMode === 'chart') {
+  if (viewMode === 'chart' || viewMode === 'global-chart') {
     var chartRange = window.chartRange || '1mo';
     var sets = getPositionSets();
     var selSetId = getChartSelectedSet();
+    // No aggregate "PORTFOLIO" line exists for a watchlist (nothing is owned)
+    // or for ALL POSITIONS (it spans many portfolios) — those are set-only.
+    var noPortfolioOpt = isWatchlist() || isAllPositions();
     // Watchlist: 'portfolio' pseudo-value doesn't apply (WL has no aggregate
     // "portfolio" concept, only individual sets). If the saved selection is
     // 'portfolio' or points to a deleted set, fall back to the first set.
-    if (isWatchlist()) {
+    if (noPortfolioOpt) {
       var invalid = selSetId === 'portfolio'
         || (selSetId && !sets.find(function(s) { return s.id === selSetId; }));
       if (invalid) {
@@ -8990,10 +9324,10 @@ function render() {
       + '<div style="position:relative">'
       + '<button onclick="toggleChartViewMenu()" style="font-size:9px;letter-spacing:1px;padding:4px 8px;cursor:pointer;font-family:var(--font);' + chartBtnStyle + '">' + selLabel + '</button>'
       + '<div id="chartViewMenu" style="display:none;position:absolute;right:0;top:100%;background:var(--bg2);border:1px solid var(--border);z-index:100;min-width:140px">'
-      + (isWatchlist() ? '' :
+      + (noPortfolioOpt ? '' :
           '<div onclick="setChartSelectionPortfolio()" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;color:' + (selSetId === 'portfolio' ? 'var(--green)' : 'var(--bright)') + '">PORTFOLIO</div>'
         )
-      + (sets.length > 0 ? (isWatchlist() ? '' : '<div style="border-top:1px solid var(--border)"></div>') : '')
+      + (sets.length > 0 ? (noPortfolioOpt ? '' : '<div style="border-top:1px solid var(--border)"></div>') : '')
       + sets.map(function(s) {
           return '<div onclick="setChartSelectionSet(&apos;' + s.id + '&apos;)" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;color:' + (selSetId === s.id ? 'var(--green)' : 'var(--bright)') + '">' + s.name + '</div>';
         }).join('')
@@ -9003,7 +9337,7 @@ function render() {
       + '</div>'
       + '<div id="chartArea" style="min-height:200px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px">Loading...</div>';
 
-    if (selSetId === 'portfolio' && !isWatchlist()) {
+    if (selSetId === 'portfolio' && !noPortfolioOpt) {
       loadChartData(chartRange);
     } else if (selSet) {
       var tickers = selSet.tickers.filter(function(t) { return getChartUniqueTickers().indexOf(t) !== -1; });
@@ -9020,7 +9354,7 @@ function render() {
   }
 
   // Fundamentals view
-  if (viewMode === 'fundamentals') {
+  if (viewMode === 'fundamentals' || viewMode === 'global-fundamentals') {
     var fSubView = window.fundamentalsSubView || 'targets';
     var fAllTickers = getFundamentalsUniqueTickers();
     var sets = getPositionSets();
@@ -9152,7 +9486,14 @@ function render() {
           + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (getPositionShortName(p) || '') + '</td>'
           + '</tr>';
       });
-      return weightRows;
+      // TOTAL foot built from the same wTotVal; weight is 100% by definition.
+      var foot = '<tr style="border-top:2px solid var(--border);font-weight:bold;color:var(--bright)">'
+        + '<td style="text-align:left;white-space:nowrap;padding:6px 4px">TOTAL</td>'
+        + '<td style="padding:6px 4px;white-space:nowrap">' + baseSym + f2(wTotVal) + '</td>'
+        + '<td style="padding:6px 4px;white-space:nowrap">' + fPctNoSign(wTotVal > 0 ? 100 : null) + '</td>'
+        + '<td></td>'
+        + '</tr>';
+      return { rows: weightRows, foot: foot };
     }
     var weightTableHtml = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
       + '<table style="border-collapse:collapse;font-size:13px">'
@@ -9163,11 +9504,14 @@ function render() {
       + '<th style="text-align:left;padding:5px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">NAME</th>'
       + '</tr></thead>'
       + '<tbody id="weightTbody"></tbody>'
+      + '<tfoot id="weightTfoot"></tfoot>'
       + '</table>'
       + '</div>';
     if (posFxNeeded.length === 0) {
       area.innerHTML = weightTableHtml + '<div id="totalsSlot">' + totalsHtml + '</div>';
-      document.getElementById('weightTbody').innerHTML = buildWeightRows({});
+      var wBuilt = buildWeightRows({});
+      document.getElementById('weightTbody').innerHTML = wBuilt.rows;
+      document.getElementById('weightTfoot').innerHTML = wBuilt.foot;
     } else {
       area.innerHTML = weightTableHtml + '<div id="totalsSlot">' + totalsHtml + '</div>';
       var wFxMap2 = {};
@@ -9181,7 +9525,10 @@ function render() {
       });
       Promise.all(wFxP).then(function() {
         var tb = document.getElementById('weightTbody');
-        if (tb) tb.innerHTML = buildWeightRows(wFxMap2);
+        var wBuilt2 = buildWeightRows(wFxMap2);
+        if (tb) tb.innerHTML = wBuilt2.rows;
+        var tf = document.getElementById('weightTfoot');
+        if (tf) tf.innerHTML = wBuilt2.foot;
       });
     }
     return;
@@ -9237,7 +9584,7 @@ function render() {
         if (weightSort.key === 'ticker') return weightSort.dir * a.ticker.localeCompare(b.ticker);
         return weightSort.dir * (a.valUSD > b.valUSD ? 1 : a.valUSD < b.valUSD ? -1 : 0);
       });
-      return rows.map(function(r) {
+      var rowsHtml = rows.map(function(r) {
         var nativeSym = CURRENCY_SYMBOLS[r.currency] || r.currency;
         return '<tr>'
           + '<td style="text-align:left;white-space:nowrap">' + r.ticker + '</td>'
@@ -9247,6 +9594,14 @@ function render() {
           + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + r.shortName + '</td>'
           + '</tr>';
       }).join('');
+      var foot = '<tr style="border-top:2px solid var(--border);font-weight:bold;color:var(--bright)">'
+        + '<td style="text-align:left;white-space:nowrap;padding:6px 4px">TOTAL</td>'
+        + '<td></td>'
+        + '<td style="padding:6px 4px;white-space:nowrap">$' + f2(totalValUSD) + '</td>'
+        + '<td style="padding:6px 4px;white-space:nowrap">' + fPctNoSign(totalValUSD > 0 ? 100 : null) + '</td>'
+        + '<td></td>'
+        + '</tr>';
+      return { rows: rowsHtml, foot: foot };
     }
 
     var gwTableHtml = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
@@ -9259,13 +9614,16 @@ function render() {
       + '<th style="text-align:left;padding:5px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">NAME</th>'
       + '</tr></thead>'
       + '<tbody id="gwTbody"></tbody>'
+      + '<tfoot id="gwTfoot"></tfoot>'
       + '</table>'
       + '</div>';
 
     area.innerHTML = gwTableHtml;
 
     if (gwNonUSD.length === 0) {
-      document.getElementById('gwTbody').innerHTML = buildGlobalWeightRows({});
+      var gwB = buildGlobalWeightRows({});
+      document.getElementById('gwTbody').innerHTML = gwB.rows;
+      document.getElementById('gwTfoot').innerHTML = gwB.foot;
     } else {
       var baseUrlGw = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
       var tokenGw = getToken();
@@ -9275,7 +9633,10 @@ function render() {
         });
       })).then(function() {
         var tb = document.getElementById('gwTbody');
-        if (tb) tb.innerHTML = buildGlobalWeightRows(gwFxRates);
+        var gwB2 = buildGlobalWeightRows(gwFxRates);
+        if (tb) tb.innerHTML = gwB2.rows;
+        var tf = document.getElementById('gwTfoot');
+        if (tf) tf.innerHTML = gwB2.foot;
       });
     }
     return;
@@ -9333,6 +9694,7 @@ loadCloudDirty();
 loadLocal();
 loadDicts();
 migrateDicts();
+loadAllPositionSetsLS();
 cashPortfolios = getCashPortfolios();
 var _restoredView = restoreLastView();
 setTitleForCurrentView();
