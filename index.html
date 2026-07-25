@@ -39,6 +39,7 @@
       <div onclick="setView('global-weight')" id="vmGlobalWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">WEIGHTS</div>
       <div onclick="setView('weight')" id="vmWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">WEIGHTS</div>
       <div onclick="setView('analytics')" id="vmAnalytics" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">ANALYTICS</div>
+      <div onclick="setView('calendar')" id="vmCalendar" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">CALENDAR</div>
     </div>
   </div>
 </div>
@@ -346,7 +347,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.4.9';
+var APP_VERSION = 'v1.4.10';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -599,7 +600,7 @@ function stalePortfolioColHtml(pid) {
 // individual portfolio). Bonds/cash/archive-summary are separate contexts and
 // not part of either group.
 var SUMMARY_BY_PORTFOLIO_VIEWS = ['summary', 'summary-market', 'summary-chart'];
-var ALL_POSITIONS_VIEWS = ['summary-movers', 'summary-alerts', 'global-weight', 'summary-analytics', 'global-chart', 'global-fundamentals', 'global-main'];
+var ALL_POSITIONS_VIEWS = ['summary-movers', 'summary-alerts', 'global-weight', 'summary-analytics', 'global-chart', 'global-fundamentals', 'global-main', 'global-calendar'];
 var REALIZED_ALL_POSITIONS_VIEWS = ['realized-weight', 'realized-analytics'];
 
 
@@ -4469,6 +4470,7 @@ function toggleViewMenu() {
     document.getElementById('vmMarket').style.display = (inAllPositions || inRealizedAllPositions || isArchive) ? 'none' : '';
     document.getElementById('vmChart').style.display = (inRealizedAllPositions || isArchive) ? 'none' : '';
     document.getElementById('vmFundamentals').style.display = ((inSummaryByPortfolio || inRealizedAllPositions) || isArchive) ? 'none' : '';
+    document.getElementById('vmCalendar').style.display = ((inSummaryByPortfolio || inRealizedAllPositions) || isArchive) ? 'none' : '';
     document.getElementById('vmMarketTotal').style.display = inAllPositions ? '' : 'none';
     document.getElementById('vmAlerts').style.display = (inSummaryByPortfolio || inRealizedAllPositions || isArchive) ? 'none' : '';
     document.getElementById('vmGlobalWeight').style.display = (inAllPositions || inRealizedAllPositions) ? '' : 'none';
@@ -4499,6 +4501,7 @@ function setView(mode) {
                mode === 'chart'         ? 'global-chart' :
                mode === 'fundamentals'  ? 'global-fundamentals' :
                mode === 'main'          ? 'global-main' :
+               mode === 'calendar'      ? 'global-calendar' :
                'summary-movers';
     // MARKET (movers) and ALERTS share the same sort state; both default
     // to absdelta desc on entry (largest movers first / most-moved alerts first).
@@ -4519,11 +4522,11 @@ function setView(mode) {
   ['vmMain','vmMarket','vmMarketTotal','vmWeight','vmGlobalWeight','vmChart','vmFundamentals','vmAnalytics','vmAlerts'].forEach(function(id) {
     document.getElementById(id).style.color = '';
   });
-  var activeId = viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMarketTotal' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'realized-analytics' ? 'vmAnalytics' : viewMode === 'summary-alerts' ? 'vmAlerts' : viewMode === 'summary' ? 'vmMain' : viewMode === 'global-main' ? 'vmMain' : viewMode === 'global-fundamentals' ? 'vmFundamentals' : viewMode === 'global-chart' ? 'vmChart' : viewMode === 'global-weight' ? 'vmGlobalWeight' : viewMode === 'realized-weight' ? 'vmGlobalWeight' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'fundamentals' ? 'vmFundamentals' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMarket' : viewMode === 'alerts' ? 'vmAlerts' : 'vmMarket';
+  var activeId = viewMode === 'global-calendar' ? 'vmCalendar' : viewMode === 'calendar' ? 'vmCalendar' : viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMarketTotal' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'realized-analytics' ? 'vmAnalytics' : viewMode === 'summary-alerts' ? 'vmAlerts' : viewMode === 'summary' ? 'vmMain' : viewMode === 'global-main' ? 'vmMain' : viewMode === 'global-fundamentals' ? 'vmFundamentals' : viewMode === 'global-chart' ? 'vmChart' : viewMode === 'global-weight' ? 'vmGlobalWeight' : viewMode === 'realized-weight' ? 'vmGlobalWeight' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'fundamentals' ? 'vmFundamentals' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMarket' : viewMode === 'alerts' ? 'vmAlerts' : 'vmMarket';
   document.getElementById(activeId).style.color = 'var(--green)';
   document.getElementById('viewMenu').style.display = 'none';
   // Refresh prices when entering chart view (updates today's point)
-  if (viewMode === 'global-chart' || viewMode === 'global-fundamentals' || viewMode === 'global-main') refreshAllPortfolios();
+  if (viewMode === 'global-chart' || viewMode === 'global-fundamentals' || viewMode === 'global-main' || viewMode === 'global-calendar') refreshAllPortfolios();
   else if (viewMode === 'chart' || viewMode === 'summary-chart') refreshAll();
   render();
 }
@@ -4594,6 +4597,20 @@ function showMarketHours(ticker) {
 function setMarketHoursBody(html) {
   var el = document.getElementById('marketHoursBody');
   if (el) el.innerHTML = html;
+}
+// Format an ISO date (or 'ISO - ISO' range) for the calendar: '15 Feb 2026'.
+function calFmtDate(s) {
+  var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function one(iso) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+    if (!m) return iso;
+    return parseInt(m[3], 10) + ' ' + MON[parseInt(m[2], 10) - 1] + ' ' + m[1];
+  }
+  if (s.indexOf(' \u2013 ') !== -1) {
+    var parts = s.split(' \u2013 ');
+    return one(parts[0]) + ' \u2013 ' + one(parts[1]);
+  }
+  return one(s);
 }
 // Format a Unix timestamp in a fixed UTC offset (seconds), 24h HH:MM.
 function fmtHoursAt(unixSec, offsetSec) {
@@ -7368,7 +7385,7 @@ function updateViewMenuBtn() {
   if (!btn) return;
   var labels = { 'main': 'P&L', 'weight': 'WEIGHTS', 'global-weight': 'WEIGHTS', 'market': 'MARKET', 'movers': 'MARKET', 'chart': 'CHART', 'fundamentals': 'FUNDAMENTALS', 'analytics': 'ANALYTICS', 'alerts': 'ALERTS',
     'summary': 'P&L', 'summary-market': 'MARKET', 'summary-chart': 'CHART', 'summary-analytics': 'ANALYTICS', 'summary-movers': 'MARKET', 'summary-alerts': 'ALERTS',
-    'realized-weight': 'WEIGHTS', 'realized-analytics': 'ANALYTICS', 'global-chart': 'CHART', 'global-fundamentals': 'FUNDAMENTALS', 'global-main': 'P&L' };
+    'realized-weight': 'WEIGHTS', 'realized-analytics': 'ANALYTICS', 'global-chart': 'CHART', 'global-fundamentals': 'FUNDAMENTALS', 'global-main': 'P&L', 'global-calendar': 'CALENDAR' };
   var label = labels[viewMode] || 'P&L';
   if (viewMode === 'main' && currentPortfolio() && currentPortfolio().watchlist) label = 'MARKET';
   btn.textContent = label;
@@ -9463,7 +9480,72 @@ function render() {
     return;
   }
 
-  // Weight view
+  // Earnings calendar (equity only; portfolio or All Positions union)
+  if (viewMode === 'calendar' || viewMode === 'global-calendar') {
+    var calTickersAll = getFundamentalsUniqueTickers();
+    var calFiltered = filterFundamentalsTickers(calTickersAll);
+    var calTickers = calFiltered.equity;
+
+    if (!getApiKey()) {
+      area.innerHTML = '<div class="empty">API not configured</div>';
+      return;
+    }
+    if (calTickers.length === 0) {
+      area.innerHTML = '<div class="empty">NO EQUITY POSITIONS</div>';
+      return;
+    }
+
+    // Pull dates from cache; missing tickers trigger a background fetch (via
+    // getEarningsDates) and count as "pending" so we can show a loading state.
+    var calByDate = {};        // firstDateISO -> { display: rangeString, tickers: [] }
+    var calPending = 0, calResolved = 0, calNoDate = [];
+    calTickers.forEach(function(t) {
+      if (typeof isEarningsCached === 'function' && !isEarningsCached(t)) {
+        calPending++;
+        if (typeof getEarningsDates === 'function') getEarningsDates(t); // kicks off fetch
+        return;
+      }
+      calResolved++;
+      var dates = (typeof getEarningsDates === 'function') ? getEarningsDates(t) : null;
+      if (!dates || !dates.length) { calNoDate.push(t); return; }
+      var first = dates[0];
+      var display = dates.length > 1 ? (dates[0] + ' \u2013 ' + dates[dates.length - 1]) : dates[0];
+      if (!calByDate[first]) calByDate[first] = { display: display, tickers: [] };
+      calByDate[first].tickers.push(t);
+    });
+
+    var calKeys = Object.keys(calByDate).sort(); // ISO dates sort chronologically
+    var todayISO = todayLocalISO();
+    var calRows = calKeys.map(function(dateKey) {
+      var grp = calByDate[dateKey];
+      var isPast = dateKey < todayISO;
+      var color = isPast ? 'var(--dim)' : 'var(--bright)';
+      var tickersStr = grp.tickers.slice().sort(function(a, b) { return a.localeCompare(b); }).join(', ');
+      return '<tr style="border-bottom:1px solid var(--border)">'
+        + '<td style="padding:8px 10px;white-space:nowrap;color:' + color + ';vertical-align:top;font-size:12px">' + calFmtDate(grp.display) + '</td>'
+        + '<td style="padding:8px 10px;color:' + color + ';font-size:12px;letter-spacing:1px">' + tickersStr + '</td>'
+        + '</tr>';
+    }).join('');
+
+    var calHead = '<div style="font-size:11px;letter-spacing:2px;color:var(--dim);padding:10px 12px">EARNINGS CALENDAR</div>';
+    var calBody;
+    if (calRows) {
+      calBody = '<div class="table-wrap"><table style="width:100%;border-collapse:collapse">' + calRows + '</table></div>';
+    } else if (calPending > 0) {
+      calBody = '<div class="empty">Loading&hellip;</div>';
+    } else {
+      calBody = '<div class="empty">No earnings dates available</div>';
+    }
+    var calFoot = '';
+    if (calPending > 0 && calRows) calFoot = '<div style="font-size:10px;color:var(--dim);padding:8px 12px">Loading ' + calPending + ' more&hellip;</div>';
+    var calNoteNoDate = (calNoDate.length && calPending === 0)
+      ? '<div style="font-size:10px;color:var(--dim);padding:8px 12px">No date: ' + calNoDate.slice().sort().join(', ') + '</div>'
+      : '';
+    area.innerHTML = calHead + calBody + calFoot + calNoteNoDate;
+    return;
+  }
+
+// Weight view
   if (viewMode === 'weight') {
     function buildWeightRows(wFxMap) {
       var weightSource = isAggregated() ? aggregatePositions(applyFilter(positions)) : getSorted().map(function(p) { return { agg: false, pos: p }; });

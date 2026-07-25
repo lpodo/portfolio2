@@ -6,8 +6,8 @@
 
 /* ── Constants ──────────────────────────────────────────────────────────── */
 var FUND_CACHE_TTL  = 4 * 60 * 60 * 1000;
-var FUND_CACHE_VER  = 2; // bumped from 1: GBp normalization added; old cache for UK stocks had pence-valued fields
-var FUND_ROW_MODS   = 'price,financialData,defaultKeyStatistics,recommendationTrend,upgradeDowngradeHistory';
+var FUND_CACHE_VER  = 3; // bumped from 2: added earningsDates (calendarEvents) for the CALENDAR view
+var FUND_ROW_MODS   = 'price,financialData,defaultKeyStatistics,recommendationTrend,upgradeDowngradeHistory,calendarEvents';
 var FUND_ACCENT     = '#5b9cf6';
 var FUND_HIST_DAYS  = 100;
 var FUND_HIST_DFLT  = 30;
@@ -262,6 +262,19 @@ function fundFetchRow(ticker) {
         }
       }
 
+      // Next earnings date(s) for the CALENDAR view — 1 date, or 2 for a range.
+      var ce = (result && result.calendarEvents) || null;
+      var edRaw = ce && ce.earnings && ce.earnings.earningsDate;
+      var earningsDates = null;
+      if (Array.isArray(edRaw) && edRaw.length) {
+        earningsDates = edRaw.map(function(v) {
+          if (v && typeof v === 'object' && 'raw' in v && typeof v.raw === 'number') return fundUnixDate(v.raw);
+          if (typeof v === 'number') return fundUnixDate(v);
+          return null;
+        }).filter(Boolean);
+        if (!earningsDates.length) earningsDates = null;
+      }
+
       // Always cache (including nulls for ETFs) to avoid repeated fetches.
       // Schema is flat — raw Yahoo modules are extracted into individual
       // parameters and the modules themselves are discarded.
@@ -275,7 +288,8 @@ function fundFetchRow(ticker) {
         currentPrice:    px(fd  ? fundRawNum(fd.currentPrice)      : null),
         trailingEps:     dks ? fundRawNum(dks.trailingEps)      : null,
         forwardPE:       px(dks ? fundRawNum(dks.forwardPE)        : null),
-        targets:         targets
+        targets:         targets,
+        earningsDates:   earningsDates
       });
     })
     .catch(function() { if (timer) clearTimeout(timer); }); // Network error / timeout: don't cache, allow retry next time
@@ -2041,6 +2055,30 @@ function buildFundamentalsEpsTable(tickers) {
     + '<tbody>' + rows + '</tbody>'
     + '</table></div>';
 }
+
+// For the CALENDAR view: cached earnings date(s) as ISO strings, or null.
+// On a cache miss, start a background fetch (deduped) and return null; the
+// caller re-renders when data arrives (same pattern as buildFundamentalsRows).
+function getEarningsDates(ticker) {
+  if (!fundWorkerBase() || !fundWorkerToken()) return null;
+  var cached = fundCacheGet(ticker);
+  if (cached) return cached.earningsDates || null;
+  if (!fundInflight[ticker]) {
+    fundInflight[ticker] = fundFetchRow(ticker).then(function() {
+      delete fundInflight[ticker];
+      if (typeof render === 'function') render();
+    });
+  }
+  return null;
+}
+// Whether a ticker's row data is cached yet (calendar shows a loading state
+// until all requested tickers have resolved).
+function isEarningsCached(ticker) {
+  return !!fundCacheGet(ticker);
+}
+
+window.getEarningsDates = getEarningsDates;
+window.isEarningsCached = isEarningsCached;
 
 window.buildFundamentalsEarningsTable = buildFundamentalsEarningsTable;
 window.buildFundamentalsEpsTable      = buildFundamentalsEpsTable;
