@@ -347,7 +347,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.4.12';
+var APP_VERSION = 'v1.4.14';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -2415,6 +2415,7 @@ function switchToSummary() {
   closeSwitcher();
   if (getApiKey()) refreshAllPortfolios();
   render();
+  updateViewMenuActive();
 }
 
 function switchToAllPositions() {
@@ -2430,6 +2431,7 @@ function switchToAllPositions() {
   closeSwitcher();
   if (getApiKey()) refreshAllPortfolios();
   render();
+  updateViewMenuActive();
 }
 
 function switchToRealizedAllPositions() {
@@ -2444,6 +2446,7 @@ function switchToRealizedAllPositions() {
   document.getElementById('refreshAllBtn').style.display = '';
   closeSwitcher();
   render();
+  updateViewMenuActive();
 }
 
 function switchToBondSummary() {
@@ -2494,6 +2497,7 @@ function switchPortfolio(id) {
   updateAddForm();
   closeSwitcher();
   render();
+  updateViewMenuActive();
   if (getApiKey()) refreshAll();
 }
 function addPortfolio() {
@@ -4481,6 +4485,19 @@ function toggleViewMenu() {
     menu.style.display = 'none';
   }
 }
+// Reset all view-menu items and highlight the one matching the current
+// viewMode. Called from setView and from portfolio/context switches (which
+// change viewMode's default without going through setView).
+function updateViewMenuActive() {
+  ['vmMain','vmMarket','vmMarketTotal','vmWeight','vmGlobalWeight','vmChart','vmFundamentals','vmAnalytics','vmAlerts','vmCalendar'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.color = '';
+  });
+  var activeId = viewMode === 'global-calendar' ? 'vmCalendar' : viewMode === 'calendar' ? 'vmCalendar' : viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMarketTotal' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'realized-analytics' ? 'vmAnalytics' : viewMode === 'summary-alerts' ? 'vmAlerts' : viewMode === 'summary' ? 'vmMain' : viewMode === 'global-main' ? 'vmMain' : viewMode === 'global-fundamentals' ? 'vmFundamentals' : viewMode === 'global-chart' ? 'vmChart' : viewMode === 'global-weight' ? 'vmGlobalWeight' : viewMode === 'realized-weight' ? 'vmGlobalWeight' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'fundamentals' ? 'vmFundamentals' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMarket' : viewMode === 'alerts' ? 'vmAlerts' : 'vmMarket';
+  var activeEl = document.getElementById(activeId);
+  if (activeEl) activeEl.style.color = 'var(--green)';
+}
+
 function setView(mode) {
   // Reset fundamentals view state on entry (no persistence per spec)
   if (mode === 'fundamentals') resetFundamentalsState();
@@ -4519,12 +4536,7 @@ function setView(mode) {
     // MARKET and ALERTS share marketSort; both default to portfolio order on entry.
     if (mode === 'market' || mode === 'alerts') marketSort = { key: null, dir: -1 };
   }
-  ['vmMain','vmMarket','vmMarketTotal','vmWeight','vmGlobalWeight','vmChart','vmFundamentals','vmAnalytics','vmAlerts','vmCalendar'].forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) el.style.color = '';
-  });
-  var activeId = viewMode === 'global-calendar' ? 'vmCalendar' : viewMode === 'calendar' ? 'vmCalendar' : viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMarketTotal' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'realized-analytics' ? 'vmAnalytics' : viewMode === 'summary-alerts' ? 'vmAlerts' : viewMode === 'summary' ? 'vmMain' : viewMode === 'global-main' ? 'vmMain' : viewMode === 'global-fundamentals' ? 'vmFundamentals' : viewMode === 'global-chart' ? 'vmChart' : viewMode === 'global-weight' ? 'vmGlobalWeight' : viewMode === 'realized-weight' ? 'vmGlobalWeight' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'fundamentals' ? 'vmFundamentals' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMarket' : viewMode === 'alerts' ? 'vmAlerts' : 'vmMarket';
-  document.getElementById(activeId).style.color = 'var(--green)';
+  updateViewMenuActive();
   document.getElementById('viewMenu').style.display = 'none';
   // Refresh prices when entering chart view (updates today's point)
   if (viewMode === 'global-chart' || viewMode === 'global-fundamentals' || viewMode === 'global-main' || viewMode === 'global-calendar') refreshAllPortfolios();
@@ -9796,6 +9808,7 @@ var _fDateEl = document.getElementById('fDate');
 if (_fDateEl) _fDateEl.value = todayLocalISO();
 renderAddBrokerSlot();
 render();
+updateViewMenuActive();
 if (_restoredView && _restoredView.switcherOpen) {
   setTimeout(function() {
     var sw = document.getElementById('portfolioSwitcher');
