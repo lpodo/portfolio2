@@ -347,7 +347,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.4.10';
+var APP_VERSION = 'v1.4.11';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -9145,7 +9145,7 @@ function render() {
   // cross-portfolio contexts (their handlers come later in render but we
   // can't reach them if this watchlist branch fires first when currentPortfolio
   // is still a watchlist — e.g. after switching from WL to ALL POSITIONS).
-  if (isWatchlist() && !isCrossPortfolioContext() && viewMode !== 'chart' && viewMode !== 'fundamentals') {
+  if (isWatchlist() && !isCrossPortfolioContext() && viewMode !== 'chart' && viewMode !== 'fundamentals' && viewMode !== 'calendar') {
     // ALERTS in WL is a strict subset of WL MARKET — same render (watchlistSort,
     // same columns), filtered to positions with at least one alert set.
     var wlIsAlerts = viewMode === 'alerts';
