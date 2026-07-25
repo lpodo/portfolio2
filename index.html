@@ -347,7 +347,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.4.11';
+var APP_VERSION = 'v1.4.12';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4519,8 +4519,9 @@ function setView(mode) {
     // MARKET and ALERTS share marketSort; both default to portfolio order on entry.
     if (mode === 'market' || mode === 'alerts') marketSort = { key: null, dir: -1 };
   }
-  ['vmMain','vmMarket','vmMarketTotal','vmWeight','vmGlobalWeight','vmChart','vmFundamentals','vmAnalytics','vmAlerts'].forEach(function(id) {
-    document.getElementById(id).style.color = '';
+  ['vmMain','vmMarket','vmMarketTotal','vmWeight','vmGlobalWeight','vmChart','vmFundamentals','vmAnalytics','vmAlerts','vmCalendar'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.color = '';
   });
   var activeId = viewMode === 'global-calendar' ? 'vmCalendar' : viewMode === 'calendar' ? 'vmCalendar' : viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMarketTotal' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'realized-analytics' ? 'vmAnalytics' : viewMode === 'summary-alerts' ? 'vmAlerts' : viewMode === 'summary' ? 'vmMain' : viewMode === 'global-main' ? 'vmMain' : viewMode === 'global-fundamentals' ? 'vmFundamentals' : viewMode === 'global-chart' ? 'vmChart' : viewMode === 'global-weight' ? 'vmGlobalWeight' : viewMode === 'realized-weight' ? 'vmGlobalWeight' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'fundamentals' ? 'vmFundamentals' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMarket' : viewMode === 'alerts' ? 'vmAlerts' : 'vmMarket';
   document.getElementById(activeId).style.color = 'var(--green)';
@@ -7383,7 +7384,7 @@ function renderMultiChart(lines) {
 function updateViewMenuBtn() {
   var btn = document.getElementById('viewMenuBtn');
   if (!btn) return;
-  var labels = { 'main': 'P&L', 'weight': 'WEIGHTS', 'global-weight': 'WEIGHTS', 'market': 'MARKET', 'movers': 'MARKET', 'chart': 'CHART', 'fundamentals': 'FUNDAMENTALS', 'analytics': 'ANALYTICS', 'alerts': 'ALERTS',
+  var labels = { 'main': 'P&L', 'weight': 'WEIGHTS', 'global-weight': 'WEIGHTS', 'market': 'MARKET', 'movers': 'MARKET', 'chart': 'CHART', 'fundamentals': 'FUNDAMENTALS', 'analytics': 'ANALYTICS', 'alerts': 'ALERTS', 'calendar': 'CALENDAR',
     'summary': 'P&L', 'summary-market': 'MARKET', 'summary-chart': 'CHART', 'summary-analytics': 'ANALYTICS', 'summary-movers': 'MARKET', 'summary-alerts': 'ALERTS',
     'realized-weight': 'WEIGHTS', 'realized-analytics': 'ANALYTICS', 'global-chart': 'CHART', 'global-fundamentals': 'FUNDAMENTALS', 'global-main': 'P&L', 'global-calendar': 'CALENDAR' };
   var label = labels[viewMode] || 'P&L';
