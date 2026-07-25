@@ -346,7 +346,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.4.8';
+var APP_VERSION = 'v1.4.9';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4342,6 +4342,16 @@ function refreshAll() {
   }
 
   if (viewMode === 'summary') {
+    refreshAllPortfolios().finally(function() {
+      btn.classList.remove('spinning');
+      btn.disabled = false;
+    });
+    return;
+  }
+  // All Positions shows tickers from every portfolio, and price/market state
+  // are ticker-level — refreshing only the current portfolio's tickers would
+  // leave the rest stale and make the button look like it does nothing.
+  if (isAllPositions()) {
     refreshAllPortfolios().finally(function() {
       btn.classList.remove('spinning');
       btn.disabled = false;
