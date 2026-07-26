@@ -24,6 +24,7 @@ A PWA stock portfolio tracker with a Cloudflare Worker backend. Supports all maj
   - [Charts](#charts)
   - [Position sets](#position-sets)
   - [Fundamentals](#fundamentals)
+  - [Calendar](#calendar)
   - [Analytics](#analytics)
   - [Expanded Row](#expanded-row)
   - [Bonds & Deposits](#bonds--deposits)
@@ -170,7 +171,7 @@ Brokers feed three downstream features:
 - 🌙 — post-market (POST)
 - ✦ — market closed (CLOSED)
 
-Market state icons can be changed via Settings.
+Market state icons can be changed via Settings. Tapping the icon opens a **trading-hours** popover for that ticker — pre / regular / post session times shown both in the exchange's timezone and your local one, with the active period highlighted (fetched live from the worker's `/api/hours` endpoint).
 
 ## View Modes
 
@@ -265,7 +266,7 @@ A cross-portfolio view at the **position** level — the union of positions from
 - In the **STOCKS** tab — collects positions from all regular equity portfolios and watchlists.
 - In the **REALIZED** tab — collects sold positions from all stock realized portfolios.
 
-The ⋮ dropdown offers, in the STOCKS context: **P&L**, **MARKET** (default), **ALERTS**, **WEIGHTS**, **CHART**, **FUNDAMENTALS**, **ANALYTICS**. In REALIZED only **P&L**, **WEIGHTS**, and **ANALYTICS** apply.
+The ⋮ dropdown offers, in the STOCKS context: **P&L**, **MARKET** (default), **ALERTS**, **WEIGHTS**, **CHART**, **FUNDAMENTALS**, **CALENDAR**, **ANALYTICS**. In REALIZED only **P&L**, **WEIGHTS**, and **ANALYTICS** apply.
 
 - **P&L** — the standard P&L table over the whole union.
 - **MARKET** — same columns and CLOSE/CURRENT menus as the regular [MARKET](#market) view. Default sort: Δ% absolute descending (biggest movers first).
@@ -398,6 +399,10 @@ Tap a ticker in any of the four tabs to toggle a minimal sub-row beneath it, hol
 ### Rendering behavior
 
 When valid cached data exists for the selected tickers, tables render instantly. For any ticker without cache, the corresponding row shows `…` and a single fetch to the worker is triggered asynchronously; the view repaints itself when data arrives. Requests are deduplicated — two parallel fetches for the same ticker cannot start. ETFs and other instruments without earnings/targets are cached as `null`, so they aren't refetched on every open.
+
+## Calendar
+
+Available via dropdown menu → CALENDAR for individual portfolios and the ALL POSITIONS view. Lists the upcoming (and recent) earnings dates for the equity positions in scope, grouped by date and sorted chronologically, with each date's tickers listed alongside; past dates are dimmed. Dates are read from the shared earnings cache (same source as the Fundamentals view), so tickers already loaded appear instantly while any missing ones fetch in the background and fill in. Non-equity instruments are skipped; tickers with no scheduled date are noted separately.
 
 ## Analytics
 
@@ -813,6 +818,7 @@ Market state (`REGULAR` / `PRE` / `POST` / `CLOSED`) is determined from `current
 - `/api/profile?ticker=AAPL` — sector/industry/country from Yahoo `assetProfile`. Returns nulls for ETFs and when Yahoo blocks the request.
 - `/api/quotesummary?ticker=AAPL&modules=financialData,defaultKeyStatistics,recommendationTrend,upgradeDowngradeHistory` — Yahoo Finance fundamentals via the `quoteSummary` API. Returns raw module data under `quoteSummary.result[0]`. Requires a Yahoo crumb token for auth; the worker fetches and caches the crumb in-memory automatically. If Yahoo returns 404 for a multi-module request (some ETFs lack certain modules), the worker falls back to per-module fetches and merges what succeeds. Used by the **Expanded Row** fundamentals lines and the **More** overlay.
 - `/api/isin?ticker=AAPL` — ISIN lookup. Currently a **stub**: always returns `{ isin: null }`. No free provider supplies ISIN data reliably (Yahoo doesn't return it, Business Insider scrapes are noisy, Twelve Data gates the field behind a paid add-on). The endpoint stays so the frontend contract is unchanged — users enter ISINs manually via the ✎ Edit form, and a real provider can be wired in later by editing only this handler. The frontend caches a negative result with the `UNRESOLVED` marker so it won't re-query (see [Ticker data registry](#ticker-data-registry)).
+- `/api/hours?ticker=AAPL` — trading periods for the ticker's exchange (pre / regular / post start & end as Unix timestamps, plus `timezone` and `exchangeName`). Powers the trading-hours popover on the market-state icon. Fetched fresh per click, not cached.
 - `/api/debug?ticker=AAPL` — processed result (same logic as `/api/quote`).
 - `/api/debug1?ticker=AAPL` — raw meta from the Yahoo 1d request.
 - `/api/debug2?ticker=AAPL` — last candles + pre/post windows from the 5d request.
