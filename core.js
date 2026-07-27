@@ -65,6 +65,7 @@ function initPortfolios() {
   migrateNotesToTicker();
   stripMigratedFieldsFromPositions();
   stripNullPositionFields();
+  stripTradeFieldsFromZeroQty();
   // Restore last active portfolio
   currentPortfolioId = localStorage.getItem('pt_current');
   if (!currentPortfolioId || !portfolios[currentPortfolioId]) {
@@ -169,6 +170,27 @@ function stripNullPositionFields() {
       NULLABLE_POSITION_FIELDS.forEach(function(f) {
         if (f in pos && !pos[f]) { delete pos[f]; changed = true; }
       });
+    });
+  });
+  if (changed) savePortfolios();
+}
+
+// Migration: remove trade fields that cannot apply to an observe-only lot.
+// A qty=0 position has no broker, and with no entry price it has no purchase
+// date either — the same rule the add/edit paths now enforce. This converges
+// records written by older versions, notably watchlist adds: the form hid the
+// broker/date inputs but addPosition still read them, so those positions were
+// stored with today's date and a stale broker. Sold positions are skipped —
+// they always carry a real qty, so this is a no-op for them, and the guard
+// keeps a data anomaly from ever costing their historical trade fields.
+// Idempotent: only touches keys that are physically present.
+function stripTradeFieldsFromZeroQty() {
+  var changed = false;
+  Object.keys(portfolios).forEach(function(pid) {
+    (portfolios[pid].positions || []).forEach(function(pos) {
+      if (pos.sold || pos.qty !== 0) return;
+      if ('broker' in pos) { delete pos.broker; changed = true; }
+      if (!pos.entry && 'purchaseDate' in pos) { delete pos.purchaseDate; changed = true; }
     });
   });
   if (changed) savePortfolios();
@@ -468,6 +490,15 @@ function getDefaultBroker() {
 }
 function getPositionBroker(p) {
   return p.broker || getDefaultBroker();
+}
+
+// Broker as shown to the user. A broker only means something for an actual
+// trade: with qty != 0 an unset broker falls back to the current default,
+// while a qty=0 (observe-only) position has no broker at all — callers render
+// a dash. Display only; filters and grouping keep using getPositionBroker.
+function getPositionBrokerDisplay(p) {
+  if (!p || p.qty === 0) return null;
+  return getPositionBroker(p);
 }
 
 // ── Local storage primitives ─────────────────────────────────────

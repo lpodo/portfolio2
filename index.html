@@ -347,7 +347,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.4.14';
+var APP_VERSION = 'v1.4.15';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -2813,6 +2813,7 @@ function restoreData(event) {
       migrateNotesToTicker();
       stripMigratedFieldsFromPositions();
       stripNullPositionFields();
+      stripTradeFieldsFromZeroQty();
       saveTickerDataLS();
       saveDicts();
       currentPortfolioId = Object.keys(portfolios)[0];
@@ -3057,6 +3058,7 @@ function cloudLoadKV(callback) {
           migrateNotesToTicker();
           stripMigratedFieldsFromPositions();
           stripNullPositionFields();
+          stripTradeFieldsFromZeroQty();
           saveTickerDataLS();
           saveDicts();
           savePortfolios();
@@ -3298,6 +3300,7 @@ function cloudLoad(callback) {
         migrateNotesToTicker();
         stripMigratedFieldsFromPositions();
         stripNullPositionFields();
+        stripTradeFieldsFromZeroQty();
         saveTickerDataLS();
         saveDicts();
         savePortfolios();
@@ -3542,6 +3545,14 @@ function addPosition() {
     }
   }
   if (isWatchlist()) { qty = 0; entry = 0; current = null; }
+  // Trade fields only apply to an actual trade: a qty=0 (observe-only) lot has
+  // no broker, and with no entry price it has no purchase date either. Applied
+  // after the watchlist normalization above, so hidden inputs can't leak their
+  // values (the watchlist form hides both fields but they still hold defaults).
+  if (qty === 0) {
+    broker = null;
+    if (!entry) purchaseDate = null;
+  }
   var isSold = !!(currentPortfolio().archive);
 
   function doAddPosition(extraFields) {
@@ -3872,21 +3883,18 @@ function buildExpandedInner(p) {
   var isSecurity = isRealSecurity(p);
   var isinRaw = getTickerIsin(p.ticker);
   var isinDisplay = isKnownIsin(isinRaw) ? isinRaw : '—';
-  // Meta row: BROKER · BUY DATE · ISIN appear only for real securities (and
-  // BROKER/BUY DATE only when qty>0). EXCHANGE · TYPE are appended in ALL cases
-  // — including non-securities, where this row previously didn't render at all.
-  // The row scrolls horizontally rather than wrapping when it gets long.
+  // Meta row: BROKER · BUY DATE · ISIN appear for real securities regardless of
+  // qty — a qty=0 (observe-only) position shows dashes rather than hiding the
+  // fields, so the row keeps the same shape everywhere. EXCHANGE · TYPE are
+  // appended in ALL cases — including non-securities, where this row previously
+  // didn't render at all. The row scrolls horizontally rather than wrapping.
   var exTypeHtml = '<span style="white-space:nowrap"><span style="opacity:0.6">EXCHANGE</span> <span style="color:var(--bright)">' + (getPositionExchange(p) || '—') + '</span></span>'
     + '<span style="white-space:nowrap"><span style="opacity:0.6">TYPE</span> <span style="color:var(--bright)">' + (getPositionInstrumentType(p) || '—') + '</span></span>';
   var row1Parts = '';
   if (isSecurity) {
-    if (p.qty > 0) {
-      row1Parts = '<span style="white-space:nowrap"><span style="opacity:0.6">BROKER</span> <span style="color:var(--bright)">' + (getPositionBroker(p) || 'default') + '</span></span>'
-        + '<span style="white-space:nowrap"><span style="opacity:0.6">BUY DATE</span> <span style="color:var(--bright)">' + (p.purchaseDate || '—') + '</span></span>'
-        + '<span style="white-space:nowrap"><span style="opacity:0.6">ISIN</span> <span style="color:var(--bright)">' + isinDisplay + '</span></span>';
-    } else {
-      row1Parts = '<span style="white-space:nowrap"><span style="opacity:0.6">ISIN</span> <span style="color:var(--bright)">' + isinDisplay + '</span></span>';
-    }
+    row1Parts = '<span style="white-space:nowrap"><span style="opacity:0.6">BROKER</span> <span style="color:var(--bright)">' + (getPositionBrokerDisplay(p) || '—') + '</span></span>'
+      + '<span style="white-space:nowrap"><span style="opacity:0.6">BUY DATE</span> <span style="color:var(--bright)">' + (p.purchaseDate || '—') + '</span></span>'
+      + '<span style="white-space:nowrap"><span style="opacity:0.6">ISIN</span> <span style="color:var(--bright)">' + isinDisplay + '</span></span>';
   }
   row1Parts += exTypeHtml;
   var row1Html = '<div style="display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;font-size:10px;color:var(--dim);letter-spacing:1px">' + row1Parts + '</div>';
@@ -3925,12 +3933,12 @@ function buildExpandedInner(p) {
 
 function buildExpandedInnerAgg(p, group) {
   var first = group[0];
-  // For aggregations: broker may span multiple values across positions.
-  // If all share the same broker, show its name (bright). If multiple,
-  // show count like "2 brokers" in dim — clearly a meta-description, not
-  // a real broker name. BUY DATE is intentionally hidden for aggregations:
-  // it varies across positions and isn't informative at the group level.
-  // First two rows (BROKER+ISIN + CAT/REG/SEC) only for real securities —
+  // For aggregations: broker and buy date may span multiple values across
+  // positions. If all share one value, show it (bright). If several, show a
+  // count like "2 brokers" / "2 dates" in dim — clearly a meta-description,
+  // not a real value. A missing date counts as its own value, so a mix of
+  // dated and undated lots reads as ambiguous instead of borrowing one date.
+  // First two rows (BROKER+DATE+ISIN + CAT/REG/SEC) only for real securities —
   // same rule as buildExpandedInner. All positions in the agg share the
   // same ticker so any one of them determines the security kind.
   var isSecurity = isRealSecurity(p);
@@ -3942,6 +3950,14 @@ function buildExpandedInnerAgg(p, group) {
   var brokerValueHtml = brokerKeys.length === 1
     ? '<span style="color:var(--bright)">' + brokerKeys[0] + '</span>'
     : '<span style="color:var(--dim)">' + brokerKeys.length + ' brokers</span>';
+  var dateSet = {};
+  group.forEach(function(g) {
+    dateSet[g.purchaseDate || '—'] = true;
+  });
+  var dateKeys = Object.keys(dateSet);
+  var dateValueHtml = dateKeys.length === 1
+    ? '<span style="color:var(--bright)">' + dateKeys[0] + '</span>'
+    : '<span style="color:var(--dim)">' + dateKeys.length + ' dates</span>';
   var isinRaw = getTickerIsin(p.ticker);
   var isinDisplay = isKnownIsin(isinRaw) ? isinRaw : '—';
   var exTypeHtml = '<span style="white-space:nowrap"><span style="opacity:0.6">EXCHANGE</span> <span style="color:var(--bright)">' + (getPositionExchange(p) || '—') + '</span></span>'
@@ -3949,6 +3965,7 @@ function buildExpandedInnerAgg(p, group) {
   var aggRow1Parts = '';
   if (isSecurity) {
     aggRow1Parts = '<span style="white-space:nowrap"><span style="opacity:0.6">BROKER</span> ' + brokerValueHtml + '</span>'
+      + '<span style="white-space:nowrap"><span style="opacity:0.6">BUY DATE</span> ' + dateValueHtml + '</span>'
       + '<span style="white-space:nowrap"><span style="opacity:0.6">ISIN</span> <span style="color:var(--bright)">' + isinDisplay + '</span></span>';
   }
   aggRow1Parts += exTypeHtml;
@@ -4074,6 +4091,12 @@ function saveEdit(id) {
   var catEl = document.getElementById('editCategory'); var regEl = document.getElementById('editRegion'); var secEl = document.getElementById('editSector'); var dateEl = document.getElementById('editDate'); var broEl = document.getElementById('editBroker');
   var purchaseDate = dateEl ? (dateEl.value.trim() || null) : pos.purchaseDate;
   var broker   = broEl ? (broEl.value.trim() || null) : pos.broker;
+  // Same rule as add, against the edited values: a qty=0 lot keeps no broker,
+  // and with no entry price no purchase date either.
+  if (qty === 0) {
+    broker = null;
+    if (!entry) purchaseDate = null;
+  }
   // Category/region/sector are ticker-level — write straight to tickerData.
   // Every position of this ticker (in any portfolio) picks up the change at
   // render time, so there's no per-position copy or cross-portfolio sync.
