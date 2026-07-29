@@ -347,7 +347,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.4.18';
+var APP_VERSION = 'v1.4.19';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4857,7 +4857,14 @@ function computeSummaryMarketRows(smPids, fxRates) {
       }
     });
     if (!hasPos) {
-      rows += '<tr><td style="text-align:left;white-space:nowrap">' + p.name + '</td>' + stalePortfolioColHtml(pid) + '<td colspan="4" style="color:var(--dim)">—</td></tr>';
+      // The name stays clickable even when nothing here matches the filter —
+      // same as the summary P&L table, which dashes out the values but always
+      // lets you open the portfolio.
+      rows += '<tr>'
+        + '<td style="text-align:left;white-space:nowrap;cursor:pointer" onclick="switchPortfolio(&apos;' + pid + '&apos;)">' + p.name + '</td>'
+        + stalePortfolioColHtml(pid)
+        + '<td colspan="4" style="color:var(--dim)">&mdash;</td>'
+        + '</tr>';
       return;
     }
     var delta = currentVal - closeVal;
