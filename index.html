@@ -347,7 +347,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.4.16';
+var APP_VERSION = 'v1.4.17';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -3449,14 +3449,6 @@ function updateSettingsUI() {
 }
 function showKeyStatus() { updateSettingsUI(); }
 
-var __priceType = 'regular';
-var __marketState = 'CLOSED';
-var __regularMarketPrice = null;
-var __previousClose = null;
-var __currency = null;
-var __shortName = null;
-var __instrumentType = null;
-var __exchangeName = null;
 function fetchPrice(ticker) {
   var baseUrl = getApiKey();
   if (!baseUrl) return Promise.reject(new Error('no_key'));
@@ -3476,16 +3468,24 @@ function fetchPrice(ticker) {
     return r.json();
   }).then(function(data) {
     if (!data || !data.price || data.error) throw new Error(data.error || 'no_price');
-    __priceType = data.priceType || 'regular';
-    __marketState = data.marketState || 'CLOSED';
-    __regularMarketPrice = data.regularMarketPrice || data.price;
-    __previousClose = data.previousClose || null;
-    __currency = data.currency || null;
-    __shortName = data.shortName || null;
-    __instrumentType = data.instrumentType || null;
-    __exchangeName = data.exchangeName || null;
     setBackendStatus(true);
-    return data.price;
+    // Resolve with the whole quote. These fields used to be written to shared
+    // module-level variables that the caller read in a later microtask — with
+    // parallel refreshes another response could overwrite them in between, so
+    // a ticker could be saved with another ticker's marketState or
+    // instrumentType. Travelling by the promise value gives each call its own
+    // copy, the way `price` always did.
+    return {
+      price:              data.price,
+      priceType:          data.priceType || 'regular',
+      marketState:        data.marketState || 'CLOSED',
+      regularMarketPrice: data.regularMarketPrice || data.price,
+      previousClose:      data.previousClose || null,
+      currency:           data.currency || null,
+      shortName:          data.shortName || null,
+      instrumentType:     data.instrumentType || null,
+      exchangeName:       data.exchangeName || null
+    };
   }).catch(function(err) {
     if (timer) clearTimeout(timer);
     setBackendStatus(false);
@@ -4145,7 +4145,8 @@ function refreshTicker(ticker, silent) {
   // as are the per-ticker savePortfolios and the ISIN-resolution render. This
   // turns N full re-renders (2 per ticker) into a single render by the caller.
   if (!silent) render();
-  return fetchPrice(ticker).then(function(price) {
+  return fetchPrice(ticker).then(function(q) {
+    var price = q.price;
     markPriceFresh(ticker);
     // Capture pre-update metadata from any one live position of this ticker,
     // to detect whether this refresh changed persistent metadata (which must
@@ -4172,20 +4173,20 @@ function refreshTicker(ticker, silent) {
     // response; instrumentType/exchangeName are written only when non-empty so
     // a sparse response doesn't wipe a previously-known value. Refresh no
     // longer touches position objects at all.
-    setTickerMeta(ticker, 'priceType', __priceType);
-    setTickerMeta(ticker, 'marketState', __marketState);
-    setTickerMeta(ticker, 'regularMarketPrice', __regularMarketPrice);
-    setTickerMeta(ticker, 'previousClose', __previousClose);
-    setTickerMeta(ticker, 'shortName', __shortName);
+    setTickerMeta(ticker, 'priceType', q.priceType);
+    setTickerMeta(ticker, 'marketState', q.marketState);
+    setTickerMeta(ticker, 'regularMarketPrice', q.regularMarketPrice);
+    setTickerMeta(ticker, 'previousClose', q.previousClose);
+    setTickerMeta(ticker, 'shortName', q.shortName);
     setTickerMeta(ticker, 'current', price);
-    setTickerMeta(ticker, 'currency', __currency);
-    if (__instrumentType) setTickerMeta(ticker, 'instrumentType', __instrumentType);
-    if (__exchangeName) setTickerMeta(ticker, 'exchangeName', __exchangeName);
+    setTickerMeta(ticker, 'currency', q.currency);
+    if (q.instrumentType) setTickerMeta(ticker, 'instrumentType', q.instrumentType);
+    if (q.exchangeName) setTickerMeta(ticker, 'exchangeName', q.exchangeName);
     // Metadata changed → local state is ahead of cloud. Price refreshes don't
     // auto-save to cloud, so record each changed field (with from/to) for the
     // manual-sync modal. Compare the effective post-refresh value per field.
     if (metaBefore) {
-      var metaAfter = { currency: __currency || null, shortName: __shortName || null, instrumentType: __instrumentType || metaBefore.instrumentType || null, exchangeName: __exchangeName || metaBefore.exchangeName || null };
+      var metaAfter = { currency: q.currency || null, shortName: q.shortName || null, instrumentType: q.instrumentType || metaBefore.instrumentType || null, exchangeName: q.exchangeName || metaBefore.exchangeName || null };
       ['currency', 'shortName', 'instrumentType', 'exchangeName'].forEach(function(f) {
         if (metaAfter[f] !== metaBefore[f]) recordCloudDirty(ticker, f, metaBefore[f], metaAfter[f]);
       });
@@ -4202,7 +4203,7 @@ function refreshTicker(ticker, silent) {
     // Only performed for real securities (EQUITY/ETF); other instrument
     // types (indices, futures, crypto, currencies) have no meaningful ISIN
     // and are skipped entirely. If Yahoo hasn't classified the ticker yet
-    // (__instrumentType null) we also skip — a later refresh picks it up.
+    // (instrumentType null) we also skip — a later refresh picks it up.
     //
     // The worker currently returns null for everything (no free ISIN
     // provider), so a real lookup resolves to the 'UNRESOLVED' marker on
@@ -4217,7 +4218,7 @@ function refreshTicker(ticker, silent) {
     var isOtherProviderMarker = currentIsin && typeof currentIsin === 'string'
       && currentIsin.indexOf('UNRESOLVED') === 0
       && currentIsin !== CURRENT_ISIN_MARKER;
-    var isEligibleForIsin = __instrumentType === 'EQUITY' || __instrumentType === 'ETF';
+    var isEligibleForIsin = q.instrumentType === 'EQUITY' || q.instrumentType === 'ETF';
     if (isEligibleForIsin && (!currentIsin || isOtherProviderMarker)) {
       fetchIsin(ticker).then(function(isin) {
         var newVal = isin || CURRENT_ISIN_MARKER;
@@ -4274,15 +4275,16 @@ function refreshAllPortfolios() {
     });
   });
   var allPromises = tickers.map(function(ticker) {
-    return fetchPrice(ticker).then(function(price) {
+    return fetchPrice(ticker).then(function(q) {
+      var price = q.price;
       markPriceFresh(ticker);
       setTickerMeta(ticker, 'current', price);
-      setTickerMeta(ticker, 'priceType', __priceType);
-      setTickerMeta(ticker, 'marketState', __marketState);
-      setTickerMeta(ticker, 'regularMarketPrice', __regularMarketPrice);
-      setTickerMeta(ticker, 'previousClose', __previousClose);
-      if (__instrumentType) setTickerMeta(ticker, 'instrumentType', __instrumentType);
-      if (__exchangeName) setTickerMeta(ticker, 'exchangeName', __exchangeName);
+      setTickerMeta(ticker, 'priceType', q.priceType);
+      setTickerMeta(ticker, 'marketState', q.marketState);
+      setTickerMeta(ticker, 'regularMarketPrice', q.regularMarketPrice);
+      setTickerMeta(ticker, 'previousClose', q.previousClose);
+      if (q.instrumentType) setTickerMeta(ticker, 'instrumentType', q.instrumentType);
+      if (q.exchangeName) setTickerMeta(ticker, 'exchangeName', q.exchangeName);
       // Update triggered state for this ticker's alerts.
       var tAlerts = getTickerAlerts(ticker);
       if (tAlerts.length) {
