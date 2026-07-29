@@ -347,7 +347,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.4.17';
+var APP_VERSION = 'v1.4.18';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4310,73 +4310,16 @@ function refreshAll() {
   btn.classList.add('spinning');
   btn.disabled = true;
   if (viewMode === 'summary-market') {
-    // Collect all unique position currencies for FX
-    var smFxRates = {};
-    var smNonUSD = [];
-    var smPids = Object.keys(portfolios).filter(function(pid) { return !portfolios[pid].watchlist && !portfolios[pid].archive; }).sort(function(a, b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
-    var smScanDoFilter = filterActiveForSummary(false);
-    smPids.forEach(function(pid) {
-      var p = portfolios[pid];
-      var base = (p.currencyCode || 'USD').toUpperCase();
-      if (base !== 'USD' && smNonUSD.indexOf(base) === -1) smNonUSD.push(base);
-      var smScanPosns = smScanDoFilter ? filterPositions(p.positions || []) : (p.positions || []);
-      smScanPosns.forEach(function(pos) {
-        var c = getPositionCurrencyCode(pos, base);
-        if (c !== 'USD' && smNonUSD.indexOf(c) === -1) smNonUSD.push(c);
-      });
-    });
-
-    function buildSummaryMarketStats(fxRates) {
-      var smRes = computeSummaryMarketRows(smPids, fxRates);
-      var rows = smRes.rows, totCloseUSD = smRes.totCloseUSD, totCurrentUSD = smRes.totCurrentUSD, hasAny = smRes.hasAny;
-      var totDelta = totCurrentUSD - totCloseUSD;
-      var totDeltaPct = totCloseUSD > 0 ? totDelta / totCloseUSD * 100 : null;
-      var tClass = totDelta >= 0 ? 'pos' : 'neg';
-      area.innerHTML = '<div class="table-wrap"><table>'
-        + '<thead><tr>'
-        + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO</th>'
-        + '<th style="width:0;padding:0;border-bottom:1px solid var(--border)"></th>'
-        + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
-        + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
-        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">&#916;</th>'
-        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">&#916;%</th>'
-        + '</tr></thead>'
-        + '<tbody>' + rows + '</tbody>'
-        + '</table></div>'
-        + (hasAny ? '<div class="totals-bar">'
-          + '<div class="total-block"><div class="total-label">AT CLOSE</div><div class="total-value" style="color:var(--bright)">$' + f2(totCloseUSD) + '</div></div>'
-          + '<div class="total-block"><div class="total-label">CURRENT</div><div class="total-value" style="color:var(--bright)">$' + f2(totCurrentUSD) + '</div></div>'
-          + '<div class="total-block"><div class="total-label">&#916;</div><div class="total-value ' + tClass + '">' + fSign(totDelta) + '</div></div>'
-          + '<div class="total-block"><div class="total-label">&#916;%</div><div class="total-value ' + tClass + '">' + (totDeltaPct !== null ? fSign(totDeltaPct) + '%' : '—') + '</div></div>'
-          + '</div>' : '');
-      var smAllTickers = [];
-      var smHistDoFilter = filterActiveForSummary(false);
-      smPids.forEach(function(pid2) {
-        var smHistPosns = smHistDoFilter ? filterPositions(portfolios[pid2].positions || []) : (portfolios[pid2].positions || []);
-        smHistPosns.forEach(function(pos2) {
-          if (!pos2.sold && pos2.qty > 0 && smAllTickers.indexOf(pos2.ticker) === -1) smAllTickers.push(pos2.ticker);
-        });
-      });
-      fetchHistoricalIfNeeded(smAllTickers);
-    }
-
-    if (smNonUSD.length === 0) {
-      buildSummaryMarketStats({});
+    // Refresh prices like every other view, then let render() rebuild the
+    // table — its own summary-market branch already does the FX fetch and the
+    // historical top-up, so this branch used to duplicate all of it while
+    // never fetching a single quote. (Switching views deliberately doesn't
+    // refetch prices; that's independent of what this button does.)
+    var smRefresh = refreshAllPortfolios();
+    (smRefresh || Promise.resolve()).finally(function() {
       btn.classList.remove('spinning');
       btn.disabled = false;
-    } else {
-      var smBaseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
-      var smToken = getToken();
-      var smFxP = smNonUSD.map(function(code) {
-        return fetchFxRate(smBaseUrl, smToken, code + 'USD=X').then(function(rate) {
-          if (rate) smFxRates[code] = rate;
-        });
-      });
-      Promise.all(smFxP).then(function() { buildSummaryMarketStats(smFxRates); }).finally(function() {
-        btn.classList.remove('spinning');
-        btn.disabled = false;
-      });
-    }
+    });
     return;
   }
 
