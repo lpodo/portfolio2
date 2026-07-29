@@ -347,7 +347,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.4.15';
+var APP_VERSION = 'v1.4.16';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4255,34 +4255,43 @@ function refreshStaleInPortfolio(pid) {
 
 function refreshAllPortfolios() {
   if (!getApiKey()) return;
-  var allPromises = [];
+  // Price and market state are ticker-level, so one fetch per unique ticker is
+  // enough — this used to fire one request per position, meaning a ticker held
+  // in several portfolios, or split into several lots, was fetched that many
+  // times with every response writing the same value to the same record.
+  // When a filter is active the sweep narrows to the filtered slice; applyFilter
+  // is a no-op wherever the filter doesn't apply, so those contexts stay full.
+  var seen = {};
+  var tickers = [];
   Object.keys(portfolios).forEach(function(pid) {
     var portfolio = portfolios[pid];
     if (!portfolio.positions) return;
     if (portfolio.archive) return;
-    portfolio.positions.forEach(function(p) {
-      if (p.sold) return;
-      var promise = fetchPrice(p.ticker).then(function(price) {
-        markPriceFresh(p.ticker);
-        setTickerMeta(p.ticker, 'current', price);
-        setTickerMeta(p.ticker, 'priceType', __priceType);
-        setTickerMeta(p.ticker, 'marketState', __marketState);
-        setTickerMeta(p.ticker, 'regularMarketPrice', __regularMarketPrice);
-        setTickerMeta(p.ticker, 'previousClose', __previousClose);
-        if (__instrumentType) setTickerMeta(p.ticker, 'instrumentType', __instrumentType);
-        if (__exchangeName) setTickerMeta(p.ticker, 'exchangeName', __exchangeName);
-        // Update triggered state for this ticker's alerts. Multiple positions
-        // of same ticker re-run this redundantly per position; idempotent.
-        var tAlerts = getTickerAlerts(p.ticker);
-        if (tAlerts.length) {
-          setTickerAlerts(p.ticker, tAlerts.map(function(a) {
-            return Object.assign({}, a, { triggered: a.condition === '>' ? price > a.value : price < a.value });
-          }));
-        }
-      }).catch(function() {
-        markPriceStale(p.ticker);
-      });
-      allPromises.push(promise);
+    applyFilter(portfolio.positions).forEach(function(p) {
+      if (p.sold || seen[p.ticker]) return;
+      seen[p.ticker] = true;
+      tickers.push(p.ticker);
+    });
+  });
+  var allPromises = tickers.map(function(ticker) {
+    return fetchPrice(ticker).then(function(price) {
+      markPriceFresh(ticker);
+      setTickerMeta(ticker, 'current', price);
+      setTickerMeta(ticker, 'priceType', __priceType);
+      setTickerMeta(ticker, 'marketState', __marketState);
+      setTickerMeta(ticker, 'regularMarketPrice', __regularMarketPrice);
+      setTickerMeta(ticker, 'previousClose', __previousClose);
+      if (__instrumentType) setTickerMeta(ticker, 'instrumentType', __instrumentType);
+      if (__exchangeName) setTickerMeta(ticker, 'exchangeName', __exchangeName);
+      // Update triggered state for this ticker's alerts.
+      var tAlerts = getTickerAlerts(ticker);
+      if (tAlerts.length) {
+        setTickerAlerts(ticker, tAlerts.map(function(a) {
+          return Object.assign({}, a, { triggered: a.condition === '>' ? price > a.value : price < a.value });
+        }));
+      }
+    }).catch(function() {
+      markPriceStale(ticker);
     });
   });
   return Promise.all(allPromises).then(function() {
@@ -4391,7 +4400,7 @@ function refreshAll() {
   // and one result render at the end — instead of 2 renders per ticker.
   var seenTickers = {};
   var uniqueTickers = [];
-  positions.forEach(function(p) {
+  applyFilter(positions).forEach(function(p) {
     if (p.sold || seenTickers[p.ticker]) return;
     seenTickers[p.ticker] = true;
     uniqueTickers.push(p.ticker);
@@ -7572,6 +7581,10 @@ function applyFilterModal() {
   if (ov) document.body.removeChild(ov);
   expandedId = null;
   render();
+  // The visible set just changed, so refresh it. Under a filter that's the
+  // narrow slice; clearing the filter widens it back to everything — which is
+  // exactly the moment the tickers skipped by a narrow sweep become visible.
+  if (getApiKey()) refreshAll();
 }
 
 function clearFilter() {
@@ -7581,6 +7594,8 @@ function clearFilter() {
   if (ov) document.body.removeChild(ov);
   expandedId = null;
   render();
+  // Everything is visible again — sweep the full set (see applyFilterModal).
+  if (getApiKey()) refreshAll();
 }
 
 
