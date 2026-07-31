@@ -347,7 +347,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.4.14';
+var APP_VERSION = 'v1.4.19';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -2813,6 +2813,7 @@ function restoreData(event) {
       migrateNotesToTicker();
       stripMigratedFieldsFromPositions();
       stripNullPositionFields();
+      stripTradeFieldsFromZeroQty();
       saveTickerDataLS();
       saveDicts();
       currentPortfolioId = Object.keys(portfolios)[0];
@@ -3057,6 +3058,7 @@ function cloudLoadKV(callback) {
           migrateNotesToTicker();
           stripMigratedFieldsFromPositions();
           stripNullPositionFields();
+          stripTradeFieldsFromZeroQty();
           saveTickerDataLS();
           saveDicts();
           savePortfolios();
@@ -3298,6 +3300,7 @@ function cloudLoad(callback) {
         migrateNotesToTicker();
         stripMigratedFieldsFromPositions();
         stripNullPositionFields();
+        stripTradeFieldsFromZeroQty();
         saveTickerDataLS();
         saveDicts();
         savePortfolios();
@@ -3446,14 +3449,6 @@ function updateSettingsUI() {
 }
 function showKeyStatus() { updateSettingsUI(); }
 
-var __priceType = 'regular';
-var __marketState = 'CLOSED';
-var __regularMarketPrice = null;
-var __previousClose = null;
-var __currency = null;
-var __shortName = null;
-var __instrumentType = null;
-var __exchangeName = null;
 function fetchPrice(ticker) {
   var baseUrl = getApiKey();
   if (!baseUrl) return Promise.reject(new Error('no_key'));
@@ -3473,16 +3468,24 @@ function fetchPrice(ticker) {
     return r.json();
   }).then(function(data) {
     if (!data || !data.price || data.error) throw new Error(data.error || 'no_price');
-    __priceType = data.priceType || 'regular';
-    __marketState = data.marketState || 'CLOSED';
-    __regularMarketPrice = data.regularMarketPrice || data.price;
-    __previousClose = data.previousClose || null;
-    __currency = data.currency || null;
-    __shortName = data.shortName || null;
-    __instrumentType = data.instrumentType || null;
-    __exchangeName = data.exchangeName || null;
     setBackendStatus(true);
-    return data.price;
+    // Resolve with the whole quote. These fields used to be written to shared
+    // module-level variables that the caller read in a later microtask — with
+    // parallel refreshes another response could overwrite them in between, so
+    // a ticker could be saved with another ticker's marketState or
+    // instrumentType. Travelling by the promise value gives each call its own
+    // copy, the way `price` always did.
+    return {
+      price:              data.price,
+      priceType:          data.priceType || 'regular',
+      marketState:        data.marketState || 'CLOSED',
+      regularMarketPrice: data.regularMarketPrice || data.price,
+      previousClose:      data.previousClose || null,
+      currency:           data.currency || null,
+      shortName:          data.shortName || null,
+      instrumentType:     data.instrumentType || null,
+      exchangeName:       data.exchangeName || null
+    };
   }).catch(function(err) {
     if (timer) clearTimeout(timer);
     setBackendStatus(false);
@@ -3542,6 +3545,14 @@ function addPosition() {
     }
   }
   if (isWatchlist()) { qty = 0; entry = 0; current = null; }
+  // Trade fields only apply to an actual trade: a qty=0 (observe-only) lot has
+  // no broker, and with no entry price it has no purchase date either. Applied
+  // after the watchlist normalization above, so hidden inputs can't leak their
+  // values (the watchlist form hides both fields but they still hold defaults).
+  if (qty === 0) {
+    broker = null;
+    if (!entry) purchaseDate = null;
+  }
   var isSold = !!(currentPortfolio().archive);
 
   function doAddPosition(extraFields) {
@@ -3872,21 +3883,18 @@ function buildExpandedInner(p) {
   var isSecurity = isRealSecurity(p);
   var isinRaw = getTickerIsin(p.ticker);
   var isinDisplay = isKnownIsin(isinRaw) ? isinRaw : '—';
-  // Meta row: BROKER · BUY DATE · ISIN appear only for real securities (and
-  // BROKER/BUY DATE only when qty>0). EXCHANGE · TYPE are appended in ALL cases
-  // — including non-securities, where this row previously didn't render at all.
-  // The row scrolls horizontally rather than wrapping when it gets long.
+  // Meta row: BROKER · BUY DATE · ISIN appear for real securities regardless of
+  // qty — a qty=0 (observe-only) position shows dashes rather than hiding the
+  // fields, so the row keeps the same shape everywhere. EXCHANGE · TYPE are
+  // appended in ALL cases — including non-securities, where this row previously
+  // didn't render at all. The row scrolls horizontally rather than wrapping.
   var exTypeHtml = '<span style="white-space:nowrap"><span style="opacity:0.6">EXCHANGE</span> <span style="color:var(--bright)">' + (getPositionExchange(p) || '—') + '</span></span>'
     + '<span style="white-space:nowrap"><span style="opacity:0.6">TYPE</span> <span style="color:var(--bright)">' + (getPositionInstrumentType(p) || '—') + '</span></span>';
   var row1Parts = '';
   if (isSecurity) {
-    if (p.qty > 0) {
-      row1Parts = '<span style="white-space:nowrap"><span style="opacity:0.6">BROKER</span> <span style="color:var(--bright)">' + (getPositionBroker(p) || 'default') + '</span></span>'
-        + '<span style="white-space:nowrap"><span style="opacity:0.6">BUY DATE</span> <span style="color:var(--bright)">' + (p.purchaseDate || '—') + '</span></span>'
-        + '<span style="white-space:nowrap"><span style="opacity:0.6">ISIN</span> <span style="color:var(--bright)">' + isinDisplay + '</span></span>';
-    } else {
-      row1Parts = '<span style="white-space:nowrap"><span style="opacity:0.6">ISIN</span> <span style="color:var(--bright)">' + isinDisplay + '</span></span>';
-    }
+    row1Parts = '<span style="white-space:nowrap"><span style="opacity:0.6">BROKER</span> <span style="color:var(--bright)">' + (getPositionBrokerDisplay(p) || '—') + '</span></span>'
+      + '<span style="white-space:nowrap"><span style="opacity:0.6">BUY DATE</span> <span style="color:var(--bright)">' + (p.purchaseDate || '—') + '</span></span>'
+      + '<span style="white-space:nowrap"><span style="opacity:0.6">ISIN</span> <span style="color:var(--bright)">' + isinDisplay + '</span></span>';
   }
   row1Parts += exTypeHtml;
   var row1Html = '<div style="display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;font-size:10px;color:var(--dim);letter-spacing:1px">' + row1Parts + '</div>';
@@ -3925,12 +3933,12 @@ function buildExpandedInner(p) {
 
 function buildExpandedInnerAgg(p, group) {
   var first = group[0];
-  // For aggregations: broker may span multiple values across positions.
-  // If all share the same broker, show its name (bright). If multiple,
-  // show count like "2 brokers" in dim — clearly a meta-description, not
-  // a real broker name. BUY DATE is intentionally hidden for aggregations:
-  // it varies across positions and isn't informative at the group level.
-  // First two rows (BROKER+ISIN + CAT/REG/SEC) only for real securities —
+  // For aggregations: broker and buy date may span multiple values across
+  // positions. If all share one value, show it (bright). If several, show a
+  // count like "2 brokers" / "2 dates" in dim — clearly a meta-description,
+  // not a real value. A missing date counts as its own value, so a mix of
+  // dated and undated lots reads as ambiguous instead of borrowing one date.
+  // First two rows (BROKER+DATE+ISIN + CAT/REG/SEC) only for real securities —
   // same rule as buildExpandedInner. All positions in the agg share the
   // same ticker so any one of them determines the security kind.
   var isSecurity = isRealSecurity(p);
@@ -3942,6 +3950,14 @@ function buildExpandedInnerAgg(p, group) {
   var brokerValueHtml = brokerKeys.length === 1
     ? '<span style="color:var(--bright)">' + brokerKeys[0] + '</span>'
     : '<span style="color:var(--dim)">' + brokerKeys.length + ' brokers</span>';
+  var dateSet = {};
+  group.forEach(function(g) {
+    dateSet[g.purchaseDate || '—'] = true;
+  });
+  var dateKeys = Object.keys(dateSet);
+  var dateValueHtml = dateKeys.length === 1
+    ? '<span style="color:var(--bright)">' + dateKeys[0] + '</span>'
+    : '<span style="color:var(--dim)">' + dateKeys.length + ' dates</span>';
   var isinRaw = getTickerIsin(p.ticker);
   var isinDisplay = isKnownIsin(isinRaw) ? isinRaw : '—';
   var exTypeHtml = '<span style="white-space:nowrap"><span style="opacity:0.6">EXCHANGE</span> <span style="color:var(--bright)">' + (getPositionExchange(p) || '—') + '</span></span>'
@@ -3949,6 +3965,7 @@ function buildExpandedInnerAgg(p, group) {
   var aggRow1Parts = '';
   if (isSecurity) {
     aggRow1Parts = '<span style="white-space:nowrap"><span style="opacity:0.6">BROKER</span> ' + brokerValueHtml + '</span>'
+      + '<span style="white-space:nowrap"><span style="opacity:0.6">BUY DATE</span> ' + dateValueHtml + '</span>'
       + '<span style="white-space:nowrap"><span style="opacity:0.6">ISIN</span> <span style="color:var(--bright)">' + isinDisplay + '</span></span>';
   }
   aggRow1Parts += exTypeHtml;
@@ -4074,6 +4091,12 @@ function saveEdit(id) {
   var catEl = document.getElementById('editCategory'); var regEl = document.getElementById('editRegion'); var secEl = document.getElementById('editSector'); var dateEl = document.getElementById('editDate'); var broEl = document.getElementById('editBroker');
   var purchaseDate = dateEl ? (dateEl.value.trim() || null) : pos.purchaseDate;
   var broker   = broEl ? (broEl.value.trim() || null) : pos.broker;
+  // Same rule as add, against the edited values: a qty=0 lot keeps no broker,
+  // and with no entry price no purchase date either.
+  if (qty === 0) {
+    broker = null;
+    if (!entry) purchaseDate = null;
+  }
   // Category/region/sector are ticker-level — write straight to tickerData.
   // Every position of this ticker (in any portfolio) picks up the change at
   // render time, so there's no per-position copy or cross-portfolio sync.
@@ -4122,7 +4145,8 @@ function refreshTicker(ticker, silent) {
   // as are the per-ticker savePortfolios and the ISIN-resolution render. This
   // turns N full re-renders (2 per ticker) into a single render by the caller.
   if (!silent) render();
-  return fetchPrice(ticker).then(function(price) {
+  return fetchPrice(ticker).then(function(q) {
+    var price = q.price;
     markPriceFresh(ticker);
     // Capture pre-update metadata from any one live position of this ticker,
     // to detect whether this refresh changed persistent metadata (which must
@@ -4149,20 +4173,20 @@ function refreshTicker(ticker, silent) {
     // response; instrumentType/exchangeName are written only when non-empty so
     // a sparse response doesn't wipe a previously-known value. Refresh no
     // longer touches position objects at all.
-    setTickerMeta(ticker, 'priceType', __priceType);
-    setTickerMeta(ticker, 'marketState', __marketState);
-    setTickerMeta(ticker, 'regularMarketPrice', __regularMarketPrice);
-    setTickerMeta(ticker, 'previousClose', __previousClose);
-    setTickerMeta(ticker, 'shortName', __shortName);
+    setTickerMeta(ticker, 'priceType', q.priceType);
+    setTickerMeta(ticker, 'marketState', q.marketState);
+    setTickerMeta(ticker, 'regularMarketPrice', q.regularMarketPrice);
+    setTickerMeta(ticker, 'previousClose', q.previousClose);
+    setTickerMeta(ticker, 'shortName', q.shortName);
     setTickerMeta(ticker, 'current', price);
-    setTickerMeta(ticker, 'currency', __currency);
-    if (__instrumentType) setTickerMeta(ticker, 'instrumentType', __instrumentType);
-    if (__exchangeName) setTickerMeta(ticker, 'exchangeName', __exchangeName);
+    setTickerMeta(ticker, 'currency', q.currency);
+    if (q.instrumentType) setTickerMeta(ticker, 'instrumentType', q.instrumentType);
+    if (q.exchangeName) setTickerMeta(ticker, 'exchangeName', q.exchangeName);
     // Metadata changed → local state is ahead of cloud. Price refreshes don't
     // auto-save to cloud, so record each changed field (with from/to) for the
     // manual-sync modal. Compare the effective post-refresh value per field.
     if (metaBefore) {
-      var metaAfter = { currency: __currency || null, shortName: __shortName || null, instrumentType: __instrumentType || metaBefore.instrumentType || null, exchangeName: __exchangeName || metaBefore.exchangeName || null };
+      var metaAfter = { currency: q.currency || null, shortName: q.shortName || null, instrumentType: q.instrumentType || metaBefore.instrumentType || null, exchangeName: q.exchangeName || metaBefore.exchangeName || null };
       ['currency', 'shortName', 'instrumentType', 'exchangeName'].forEach(function(f) {
         if (metaAfter[f] !== metaBefore[f]) recordCloudDirty(ticker, f, metaBefore[f], metaAfter[f]);
       });
@@ -4179,7 +4203,7 @@ function refreshTicker(ticker, silent) {
     // Only performed for real securities (EQUITY/ETF); other instrument
     // types (indices, futures, crypto, currencies) have no meaningful ISIN
     // and are skipped entirely. If Yahoo hasn't classified the ticker yet
-    // (__instrumentType null) we also skip — a later refresh picks it up.
+    // (instrumentType null) we also skip — a later refresh picks it up.
     //
     // The worker currently returns null for everything (no free ISIN
     // provider), so a real lookup resolves to the 'UNRESOLVED' marker on
@@ -4194,7 +4218,7 @@ function refreshTicker(ticker, silent) {
     var isOtherProviderMarker = currentIsin && typeof currentIsin === 'string'
       && currentIsin.indexOf('UNRESOLVED') === 0
       && currentIsin !== CURRENT_ISIN_MARKER;
-    var isEligibleForIsin = __instrumentType === 'EQUITY' || __instrumentType === 'ETF';
+    var isEligibleForIsin = q.instrumentType === 'EQUITY' || q.instrumentType === 'ETF';
     if (isEligibleForIsin && (!currentIsin || isOtherProviderMarker)) {
       fetchIsin(ticker).then(function(isin) {
         var newVal = isin || CURRENT_ISIN_MARKER;
@@ -4232,34 +4256,44 @@ function refreshStaleInPortfolio(pid) {
 
 function refreshAllPortfolios() {
   if (!getApiKey()) return;
-  var allPromises = [];
+  // Price and market state are ticker-level, so one fetch per unique ticker is
+  // enough — this used to fire one request per position, meaning a ticker held
+  // in several portfolios, or split into several lots, was fetched that many
+  // times with every response writing the same value to the same record.
+  // When a filter is active the sweep narrows to the filtered slice; applyFilter
+  // is a no-op wherever the filter doesn't apply, so those contexts stay full.
+  var seen = {};
+  var tickers = [];
   Object.keys(portfolios).forEach(function(pid) {
     var portfolio = portfolios[pid];
     if (!portfolio.positions) return;
     if (portfolio.archive) return;
-    portfolio.positions.forEach(function(p) {
-      if (p.sold) return;
-      var promise = fetchPrice(p.ticker).then(function(price) {
-        markPriceFresh(p.ticker);
-        setTickerMeta(p.ticker, 'current', price);
-        setTickerMeta(p.ticker, 'priceType', __priceType);
-        setTickerMeta(p.ticker, 'marketState', __marketState);
-        setTickerMeta(p.ticker, 'regularMarketPrice', __regularMarketPrice);
-        setTickerMeta(p.ticker, 'previousClose', __previousClose);
-        if (__instrumentType) setTickerMeta(p.ticker, 'instrumentType', __instrumentType);
-        if (__exchangeName) setTickerMeta(p.ticker, 'exchangeName', __exchangeName);
-        // Update triggered state for this ticker's alerts. Multiple positions
-        // of same ticker re-run this redundantly per position; idempotent.
-        var tAlerts = getTickerAlerts(p.ticker);
-        if (tAlerts.length) {
-          setTickerAlerts(p.ticker, tAlerts.map(function(a) {
-            return Object.assign({}, a, { triggered: a.condition === '>' ? price > a.value : price < a.value });
-          }));
-        }
-      }).catch(function() {
-        markPriceStale(p.ticker);
-      });
-      allPromises.push(promise);
+    applyFilter(portfolio.positions).forEach(function(p) {
+      if (p.sold || seen[p.ticker]) return;
+      seen[p.ticker] = true;
+      tickers.push(p.ticker);
+    });
+  });
+  var allPromises = tickers.map(function(ticker) {
+    return fetchPrice(ticker).then(function(q) {
+      var price = q.price;
+      markPriceFresh(ticker);
+      setTickerMeta(ticker, 'current', price);
+      setTickerMeta(ticker, 'priceType', q.priceType);
+      setTickerMeta(ticker, 'marketState', q.marketState);
+      setTickerMeta(ticker, 'regularMarketPrice', q.regularMarketPrice);
+      setTickerMeta(ticker, 'previousClose', q.previousClose);
+      if (q.instrumentType) setTickerMeta(ticker, 'instrumentType', q.instrumentType);
+      if (q.exchangeName) setTickerMeta(ticker, 'exchangeName', q.exchangeName);
+      // Update triggered state for this ticker's alerts.
+      var tAlerts = getTickerAlerts(ticker);
+      if (tAlerts.length) {
+        setTickerAlerts(ticker, tAlerts.map(function(a) {
+          return Object.assign({}, a, { triggered: a.condition === '>' ? price > a.value : price < a.value });
+        }));
+      }
+    }).catch(function() {
+      markPriceStale(ticker);
     });
   });
   return Promise.all(allPromises).then(function() {
@@ -4276,73 +4310,16 @@ function refreshAll() {
   btn.classList.add('spinning');
   btn.disabled = true;
   if (viewMode === 'summary-market') {
-    // Collect all unique position currencies for FX
-    var smFxRates = {};
-    var smNonUSD = [];
-    var smPids = Object.keys(portfolios).filter(function(pid) { return !portfolios[pid].watchlist && !portfolios[pid].archive; }).sort(function(a, b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
-    var smScanDoFilter = filterActiveForSummary(false);
-    smPids.forEach(function(pid) {
-      var p = portfolios[pid];
-      var base = (p.currencyCode || 'USD').toUpperCase();
-      if (base !== 'USD' && smNonUSD.indexOf(base) === -1) smNonUSD.push(base);
-      var smScanPosns = smScanDoFilter ? filterPositions(p.positions || []) : (p.positions || []);
-      smScanPosns.forEach(function(pos) {
-        var c = getPositionCurrencyCode(pos, base);
-        if (c !== 'USD' && smNonUSD.indexOf(c) === -1) smNonUSD.push(c);
-      });
-    });
-
-    function buildSummaryMarketStats(fxRates) {
-      var smRes = computeSummaryMarketRows(smPids, fxRates);
-      var rows = smRes.rows, totCloseUSD = smRes.totCloseUSD, totCurrentUSD = smRes.totCurrentUSD, hasAny = smRes.hasAny;
-      var totDelta = totCurrentUSD - totCloseUSD;
-      var totDeltaPct = totCloseUSD > 0 ? totDelta / totCloseUSD * 100 : null;
-      var tClass = totDelta >= 0 ? 'pos' : 'neg';
-      area.innerHTML = '<div class="table-wrap"><table>'
-        + '<thead><tr>'
-        + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">PORTFOLIO</th>'
-        + '<th style="width:0;padding:0;border-bottom:1px solid var(--border)"></th>'
-        + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
-        + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCurrentModeMenu(this)">' + (currentMode === 'reg' ? 'REG.PRICE' : 'CURRENT') + '</th>'
-        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">&#916;</th>'
-        + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)">&#916;%</th>'
-        + '</tr></thead>'
-        + '<tbody>' + rows + '</tbody>'
-        + '</table></div>'
-        + (hasAny ? '<div class="totals-bar">'
-          + '<div class="total-block"><div class="total-label">AT CLOSE</div><div class="total-value" style="color:var(--bright)">$' + f2(totCloseUSD) + '</div></div>'
-          + '<div class="total-block"><div class="total-label">CURRENT</div><div class="total-value" style="color:var(--bright)">$' + f2(totCurrentUSD) + '</div></div>'
-          + '<div class="total-block"><div class="total-label">&#916;</div><div class="total-value ' + tClass + '">' + fSign(totDelta) + '</div></div>'
-          + '<div class="total-block"><div class="total-label">&#916;%</div><div class="total-value ' + tClass + '">' + (totDeltaPct !== null ? fSign(totDeltaPct) + '%' : '—') + '</div></div>'
-          + '</div>' : '');
-      var smAllTickers = [];
-      var smHistDoFilter = filterActiveForSummary(false);
-      smPids.forEach(function(pid2) {
-        var smHistPosns = smHistDoFilter ? filterPositions(portfolios[pid2].positions || []) : (portfolios[pid2].positions || []);
-        smHistPosns.forEach(function(pos2) {
-          if (!pos2.sold && pos2.qty > 0 && smAllTickers.indexOf(pos2.ticker) === -1) smAllTickers.push(pos2.ticker);
-        });
-      });
-      fetchHistoricalIfNeeded(smAllTickers);
-    }
-
-    if (smNonUSD.length === 0) {
-      buildSummaryMarketStats({});
+    // Refresh prices like every other view, then let render() rebuild the
+    // table — its own summary-market branch already does the FX fetch and the
+    // historical top-up, so this branch used to duplicate all of it while
+    // never fetching a single quote. (Switching views deliberately doesn't
+    // refetch prices; that's independent of what this button does.)
+    var smRefresh = refreshAllPortfolios();
+    (smRefresh || Promise.resolve()).finally(function() {
       btn.classList.remove('spinning');
       btn.disabled = false;
-    } else {
-      var smBaseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
-      var smToken = getToken();
-      var smFxP = smNonUSD.map(function(code) {
-        return fetchFxRate(smBaseUrl, smToken, code + 'USD=X').then(function(rate) {
-          if (rate) smFxRates[code] = rate;
-        });
-      });
-      Promise.all(smFxP).then(function() { buildSummaryMarketStats(smFxRates); }).finally(function() {
-        btn.classList.remove('spinning');
-        btn.disabled = false;
-      });
-    }
+    });
     return;
   }
 
@@ -4368,7 +4345,7 @@ function refreshAll() {
   // and one result render at the end — instead of 2 renders per ticker.
   var seenTickers = {};
   var uniqueTickers = [];
-  positions.forEach(function(p) {
+  applyFilter(positions).forEach(function(p) {
     if (p.sold || seenTickers[p.ticker]) return;
     seenTickers[p.ticker] = true;
     uniqueTickers.push(p.ticker);
@@ -4880,7 +4857,14 @@ function computeSummaryMarketRows(smPids, fxRates) {
       }
     });
     if (!hasPos) {
-      rows += '<tr><td style="text-align:left;white-space:nowrap">' + p.name + '</td>' + stalePortfolioColHtml(pid) + '<td colspan="4" style="color:var(--dim)">—</td></tr>';
+      // The name stays clickable even when nothing here matches the filter —
+      // same as the summary P&L table, which dashes out the values but always
+      // lets you open the portfolio.
+      rows += '<tr>'
+        + '<td style="text-align:left;white-space:nowrap;cursor:pointer" onclick="switchPortfolio(&apos;' + pid + '&apos;)">' + p.name + '</td>'
+        + stalePortfolioColHtml(pid)
+        + '<td colspan="4" style="color:var(--dim)">&mdash;</td>'
+        + '</tr>';
       return;
     }
     var delta = currentVal - closeVal;
@@ -7549,6 +7533,10 @@ function applyFilterModal() {
   if (ov) document.body.removeChild(ov);
   expandedId = null;
   render();
+  // The visible set just changed, so refresh it. Under a filter that's the
+  // narrow slice; clearing the filter widens it back to everything — which is
+  // exactly the moment the tickers skipped by a narrow sweep become visible.
+  if (getApiKey()) refreshAll();
 }
 
 function clearFilter() {
@@ -7558,6 +7546,8 @@ function clearFilter() {
   if (ov) document.body.removeChild(ov);
   expandedId = null;
   render();
+  // Everything is visible again — sweep the full set (see applyFilterModal).
+  if (getApiKey()) refreshAll();
 }
 
 
