@@ -347,7 +347,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.4.19';
+var APP_VERSION = 'v1.4.20';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -2650,6 +2650,24 @@ async function deriveKey(password, salt) {
   );
 }
 
+// Byte/base64 conversion. String.fromCharCode takes each byte as a separate
+// argument, so passing a whole buffer (via .apply or spread) throws RangeError
+// once it grows past ~128 KB — which would silently break cloud encryption as
+// the portfolio grows. Converting in chunks has no size limit.
+function bytesToBase64(bytes) {
+  var CHUNK = 8192, out = '';
+  for (var i = 0; i < bytes.length; i += CHUNK) {
+    out += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(out);
+}
+function base64ToBytes(b64) {
+  var raw = atob(b64);
+  var bytes = new Uint8Array(raw.length);
+  for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  return bytes;
+}
+
 async function encryptData(plaintext, password) {
   var salt = crypto.getRandomValues(new Uint8Array(16));
   var iv = crypto.getRandomValues(new Uint8Array(12));
@@ -2659,11 +2677,11 @@ async function encryptData(plaintext, password) {
   // Pack: salt(16) + iv(12) + ciphertext
   var buf = new Uint8Array(16 + 12 + ciphertext.byteLength);
   buf.set(salt, 0); buf.set(iv, 16); buf.set(new Uint8Array(ciphertext), 28);
-  return btoa(String.fromCharCode.apply(null, buf));
+  return bytesToBase64(buf);
 }
 
 async function decryptData(b64, password) {
-  var buf = new Uint8Array(atob(b64).split('').map(function(c) { return c.charCodeAt(0); }));
+  var buf = base64ToBytes(b64);
   var salt = buf.slice(0, 16);
   var iv = buf.slice(16, 28);
   var ciphertext = buf.slice(28);
@@ -3366,42 +3384,8 @@ function save() {
 
 
 // --- AES-GCM Cloud Encryption ---
-// (getEncKey/saveEncKey live with the ENC KEY UI above.)
-
-async function deriveKey(password, salt) {
-  var enc = new TextEncoder();
-  var keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
-  return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: salt, iterations: 100000, hash: 'SHA-256' },
-    keyMaterial,
-    { name: 'AES-GCM', length: 256 },
-    false, ['encrypt', 'decrypt']
-  );
-}
-
-async function encryptData(plaintext, password) {
-  var enc = new TextEncoder();
-  var salt = crypto.getRandomValues(new Uint8Array(16));
-  var iv = crypto.getRandomValues(new Uint8Array(12));
-  var key = await deriveKey(password, salt);
-  var ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, enc.encode(plaintext));
-  // Pack: salt(16) + iv(12) + ciphertext → base64
-  var combined = new Uint8Array(16 + 12 + ciphertext.byteLength);
-  combined.set(salt, 0);
-  combined.set(iv, 16);
-  combined.set(new Uint8Array(ciphertext), 28);
-  return btoa(String.fromCharCode(...combined));
-}
-
-async function decryptData(b64, password) {
-  var bytes = Uint8Array.from(atob(b64), function(c) { return c.charCodeAt(0); });
-  var salt = bytes.slice(0, 16);
-  var iv = bytes.slice(16, 28);
-  var ciphertext = bytes.slice(28);
-  var key = await deriveKey(password, salt);
-  var plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, key, ciphertext);
-  return new TextDecoder().decode(plain);
-}
+// (getEncKey/saveEncKey live with the ENC KEY UI above;
+//  deriveKey/encryptData/decryptData live with them too.)
 
 
 function saveResetDelta() {
