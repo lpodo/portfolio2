@@ -482,14 +482,9 @@ Tapping/clicking the **ticker name** in any market-style view toggles an expanda
 
 The first row always ends with **EXCHANGE** and **TYPE**, shown for every position including non-securities. What precedes them depends on the instrument type:
 
-- **Real security (`EQUITY` / `ETF`) with qty>0** — two rows:
+- **Real security (`EQUITY` / `ETF`)** — two rows. Unset fields show `—` rather than disappearing, so the row keeps the same shape everywhere:
   ```
   BROKER  ETrade   BUY DATE  2024-08-19   ISIN  US26884L1098   EXCHANGE  NMS   TYPE  EQUITY
-    CAT  AI & Semi    REG  US    SEC  Technology
-  ```
-- **Real security in a watchlist (qty=0)** — trade fields make no sense, so BROKER/BUY DATE drop:
-  ```
-  ISIN  US26884L1098   EXCHANGE  NMS   TYPE  EQUITY
     CAT  AI & Semi    REG  US    SEC  Technology
   ```
 - **Non-security** (`INDEX`, `CURRENCY`, `FUTURE`, `CRYPTO`, etc.) — only EXCHANGE and TYPE, no second row (no company-level classification):
@@ -548,7 +543,7 @@ A full-screen overlay with additional Yahoo Finance information, organized into 
 
 Expanded rows are enabled for aggregated entries, with the following behavior on the four metadata lines:
 
-- **BROKER / BUY DATE:** BUY DATE is hidden in aggregation mode (positions in a group may have different purchase dates — the breakdown lives in the [aggregation detail modal](#aggregation-detail-modal)). BROKER shows the single broker name if all positions agree, or `N brokers` in dim style if the group spans multiple brokers.
+- **BROKER / BUY DATE:** each shows the single shared value if all positions in the group agree, or a dim count (`2 brokers`, `2 dates`) if they differ. A missing date counts as its own value, so a mix of dated and undated lots reads as ambiguous rather than borrowing one date. The per-lot breakdown lives in the [aggregation detail modal](#aggregation-detail-modal).
 - **Attributes (CAT / REG / SEC):** the app enforces identical attributes across all instances of the same ticker, so the values are read from any one position in the aggregated group (the first one).
 - **Notes:** all positions in the group share the same note — notes are keyed by ticker, not by position. The ✎ button opens the same editor as on an individual row, so notes are fully editable in aggregation mode.
 - **Alerts:** all positions in the group share the same alert set — alerts are keyed by ticker, not by position. The list shown in the aggregated row's expansion is the same set you'd see on any individual row of the same ticker. Delete and add controls work as in normal mode.
