@@ -6,7 +6,7 @@ A PWA stock portfolio tracker with a Cloudflare Worker backend. Supports all maj
 
 | | |
 |---|---|
-| **Frontend** | Static HTML/JS SPA (`index.html` + `core.js` + `fundamentals.js`), hostable anywhere static (GitHub Pages, Vercel, Cloudflare Pages, Netlify, plain S3, etc.). Reference deployment: `lpodo.github.io/portfolio2` |
+| **Frontend** | Static HTML/JS SPA (`index.html` + `core.js` + `fundamentals.js`), hostable on any static host that serves over HTTPS (GitHub Pages, Vercel, Cloudflare Pages, Netlify, etc.). Reference deployment: `lpodo.github.io/portfolio2` |
 | **Price backend** | Cloudflare Workers — `portfolio2.lpodolskiy.workers.dev` |
 | **Repository** | `lpodo/portfolio2` |
 | **App** | PWA — installable on Android/iOS as a home screen app |
@@ -52,8 +52,8 @@ A PWA stock portfolio tracker with a Cloudflare Worker backend. Supports all maj
 ### Managing portfolios
 
 - Multiple portfolios — tap the name in the header to switch, add, rename, or delete.
-- Currency symbol per portfolio — set at creation, editable via rename.
-- **Position counts** in the portfolio switcher show unique active tickers only (excluding sold and qty=0). The Σ SUMMARY count shows globally unique tickers across all non-watchlist portfolios — a ticker held in multiple portfolios is counted once.
+- **Base currency per portfolio** — the currency all of the portfolio's totals, weights, and P&L are reported in. Individual positions keep their own native currency and are converted into it via live FX rates (see [Multi-currency portfolios](#multi-currency-portfolios)). Set at creation, editable via rename.
+- **Position counts** in the portfolio switcher show unique active tickers only (excluding sold and qty=0). The ALL POSITIONS count shows globally unique tickers across all non-watchlist portfolios — a ticker held in multiple portfolios is counted once.
 
 ### Portfolio switcher tabs
 
