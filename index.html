@@ -267,21 +267,22 @@
     </button>
   </div>
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">ALERT CHECKS (APPLY TO ALL DEVICES)</div>
-  <div class="key-row" style="align-items:center">
-    <label style="display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap">
-      <input type="checkbox" id="alertChkEnable" onchange="setAlertChecksEnabled(this.checked)" style="cursor:pointer">
+  <div class="key-row" style="align-items:center;gap:0">
+    <label style="display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;margin:0">
+      <input type="checkbox" id="alertChkEnable" onchange="setAlertChecksEnabled(this.checked)" style="cursor:pointer;margin:0">
       <span>ENABLE</span>
     </label>
-    <label style="margin-left:8px">EVERY</label>
-    <div id="alertChkEveryWrap" style="position:relative;flex:1"></div>
+    <div style="flex:1"></div>
+    <label style="margin:0 6px 0 0;white-space:nowrap">EVERY</label>
+    <div id="alertChkEveryWrap" style="position:relative;width:96px"></div>
   </div>
-  <div class="key-row" id="alertChkWindowRow" style="margin-top:6px;align-items:center">
-    <label>FROM</label>
-    <div id="alertChkFromWrap" style="position:relative;flex:1"></div>
-    <label style="margin-left:8px">TO</label>
-    <div id="alertChkToWrap" style="position:relative;flex:1"></div>
+  <div class="key-row" id="alertChkWindowRow" style="margin-top:6px;align-items:center;gap:0">
+    <label style="margin:0 6px 0 0">FROM</label>
+    <div id="alertChkFromWrap" style="position:relative;width:84px"></div>
+    <label style="margin:0 6px 0 10px">TO</label>
+    <div id="alertChkToWrap" style="position:relative;width:84px"></div>
+    <span id="alertChkTz" style="font-size:10px;color:var(--dim);margin-left:8px;white-space:nowrap"></span>
   </div>
-  <div class="api-status" id="alertChkStatus" style="font-size:10px"></div>
 
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">BACKUP / RESTORE</div>
   <div style="display:flex;gap:8px">
@@ -364,7 +365,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.3';
+var APP_VERSION = 'v1.5.5';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4114,14 +4115,15 @@ function renderAlertCheckSettings() {
   document.getElementById('alertChkToWrap').innerHTML =
     alertChkPicker('To', hourLabel(alertCheckSettings.toHour), hourOptions('to', 24, alertCheckSettings.toHour), !on);
 
+  // The window row dims as a whole: the zone labels those hours, so it belongs
+  // with them rather than staying bright on its own.
   var row = document.getElementById('alertChkWindowRow');
   if (row) row.style.opacity = on ? '1' : '0.5';
 
-  var status = document.getElementById('alertChkStatus');
-  if (status) {
-    status.style.color = 'var(--dim)';
-    status.textContent = on ? alertCheckSettings.tz : 'Checks off — no notifications.';
-  }
+  // Always populated — the zone describes the hours in the pickers, so it's
+  // there before any choice is made.
+  var tzEl = document.getElementById('alertChkTz');
+  if (tzEl) tzEl.textContent = alertCheckSettings.tz || localTimeZoneName();
 }
 
 function toggleAlertChkDrop(name) {
