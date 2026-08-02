@@ -266,6 +266,28 @@
       &#8593; OVERWRITE CLOUD
     </button>
   </div>
+  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">ALERT CHECKS</div>
+  <div style="font-size:9px;color:var(--dim);margin-bottom:8px;line-height:1.5">
+    Checked on the server, so these apply to all your devices.
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:8px">
+    <button class="btn" id="alertChkOff" onclick="setAlertChecksEnabled(false)" style="flex:1;padding:6px;font-size:10px;letter-spacing:1px">OFF</button>
+    <button class="btn" id="alertChkOn" onclick="setAlertChecksEnabled(true)" style="flex:1;padding:6px;font-size:10px;letter-spacing:1px">ON</button>
+  </div>
+  <div id="alertChkFields">
+    <div class="key-row">
+      <label>FROM</label>
+      <select id="alertChkFrom" onchange="saveAlertCheckSettings()" style="font-size:11px"></select>
+      <label style="margin-left:6px">TO</label>
+      <select id="alertChkTo" onchange="saveAlertCheckSettings()" style="font-size:11px"></select>
+    </div>
+    <div class="key-row" style="margin-top:6px">
+      <label>EVERY</label>
+      <select id="alertChkEvery" onchange="saveAlertCheckSettings()" style="font-size:11px"></select>
+    </div>
+    <div class="api-status" id="alertChkStatus" style="font-size:10px"></div>
+  </div>
+
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">BACKUP / RESTORE</div>
   <div style="display:flex;gap:8px">
     <button class="btn btn-green" onclick="backupData()" style="flex:1;padding:9px;font-size:11px;letter-spacing:1px">
@@ -347,7 +369,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.1';
+var APP_VERSION = 'v1.5.2';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -3422,7 +3444,7 @@ function toggleSettings() {
   var o = document.getElementById('overlay');
   p.classList.toggle('open');
   o.classList.toggle('open');
-  if (p.classList.contains('open')) renderDictsPanel();
+  if (p.classList.contains('open')) { renderDictsPanel(); renderAlertCheckSettings(); }
 }
 function closeSettings() {
   document.getElementById('settingsPanel').classList.remove('open');
@@ -4026,14 +4048,100 @@ function buildExpandedInnerLite(p, group) {
 // Alerts travel OUTSIDE the encrypted blob, as a plaintext sibling in the cloud
 // record, so a scheduled worker can evaluate them while the app is closed.
 // That means they're read from the outer record, not the decrypted payload.
+// ── Alert check settings UI ─────────────────────────────────────────────────
+var ALERT_CHECK_PERIODS = [
+  { v: 5,   label: '5 min' },
+  { v: 10,  label: '10 min' },
+  { v: 15,  label: '15 min' },
+  { v: 30,  label: '30 min' },
+  { v: 60,  label: '1 h' },
+  { v: 180, label: '3 h' },
+  { v: 360, label: '6 h' }
+];
+
+function renderAlertCheckSettings() {
+  var fromEl = document.getElementById('alertChkFrom');
+  if (!fromEl) return;
+  var toEl = document.getElementById('alertChkTo');
+  var everyEl = document.getElementById('alertChkEvery');
+
+  function hourOpts(sel, maxHour) {
+    var h = '';
+    for (var i = 0; i <= maxHour; i++) {
+      h += '<option value="' + i + '"' + (i === sel ? ' selected' : '') + '>'
+        + (i < 10 ? '0' : '') + i + ':00</option>';
+    }
+    return h;
+  }
+  // TO offers 24:00 to mean "end of day"; FROM stops at 23:00.
+  fromEl.innerHTML = hourOpts(alertCheckSettings.fromHour, 23);
+  toEl.innerHTML = hourOpts(alertCheckSettings.toHour, 24);
+  everyEl.innerHTML = ALERT_CHECK_PERIODS.map(function(p) {
+    return '<option value="' + p.v + '"' + (p.v === alertCheckSettings.everyMinutes ? ' selected' : '') + '>' + p.label + '</option>';
+  }).join('');
+
+  var on = !!alertCheckSettings.enabled;
+  var onBtn = document.getElementById('alertChkOn');
+  var offBtn = document.getElementById('alertChkOff');
+  if (onBtn)  onBtn.style.color  = on ? 'var(--green)' : 'var(--dim)';
+  if (offBtn) offBtn.style.color = on ? 'var(--dim)' : 'var(--bright)';
+  var fields = document.getElementById('alertChkFields');
+  if (fields) fields.style.opacity = on ? '1' : '0.4';
+
+  var status = document.getElementById('alertChkStatus');
+  if (status) {
+    if (!on) {
+      status.textContent = 'Server checks off — no notifications.';
+      status.style.color = 'var(--dim)';
+    } else {
+      var f = alertCheckSettings.fromHour, t = alertCheckSettings.toHour;
+      var wrap = (t < f) ? ' (through midnight)' : '';
+      var span = (f === t) ? 'around the clock'
+        : (f < 10 ? '0' : '') + f + ':00\u2013' + (t < 10 ? '0' : '') + t + ':00' + wrap;
+      status.textContent = span + ', ' + alertCheckSettings.tz;
+      status.style.color = 'var(--dim)';
+    }
+  }
+}
+
+function setAlertChecksEnabled(on) {
+  alertCheckSettings.enabled = !!on;
+  if (!alertCheckSettings.tz) alertCheckSettings.tz = localTimeZoneName();
+  saveAlertCheckSettingsLS();
+  renderAlertCheckSettings();
+  save();
+}
+
+function saveAlertCheckSettings() {
+  var fromEl = document.getElementById('alertChkFrom');
+  var toEl = document.getElementById('alertChkTo');
+  var everyEl = document.getElementById('alertChkEvery');
+  if (!fromEl || !toEl || !everyEl) return;
+  alertCheckSettings.fromHour = parseInt(fromEl.value, 10);
+  alertCheckSettings.toHour = parseInt(toEl.value, 10);
+  alertCheckSettings.everyMinutes = parseInt(everyEl.value, 10);
+  // Refresh the zone from the device — travelling shouldn't leave a stale one.
+  alertCheckSettings.tz = localTimeZoneName();
+  saveAlertCheckSettingsLS();
+  renderAlertCheckSettings();
+  save();
+}
+
 function applyCloudAlerts(data) {
   if (!data || !data.alerts || typeof data.alerts !== 'object') return;
   var items = data.alerts.items;
   if (items && typeof items === 'object') { alertStore = items; saveAlertsLS(); }
+  var st = data.alerts.settings;
+  if (st && typeof st === 'object') {
+    alertCheckSettings = Object.assign({}, ALERT_CHECK_DEFAULTS, st);
+    if (!alertCheckSettings.tz) alertCheckSettings.tz = localTimeZoneName();
+    saveAlertCheckSettingsLS();
+    renderAlertCheckSettings();
+  }
 }
 // What gets written as that sibling field.
 function alertsCloudPayload() {
-  return { items: alertStore };
+  return { items: alertStore, settings: alertCheckSettings };
 }
 
 function quickAddAlert(ticker) {

@@ -58,6 +58,7 @@ function initPortfolios() {
   // in place before the migrations below, which move data between them.
   loadTickerDataLS();
   loadAlertsLS();
+  loadAlertCheckSettingsLS();
   // Lift any position-level category/region/sector into tickerData and strip
   // them from positions. Idempotent and cheap — safe to run every startup;
   // this also cleans up stray null attribute keys left by older versions.
@@ -262,6 +263,38 @@ function migrateNotesToTicker() {
 // There is no stored `triggered` flag — it is derived from the current price
 // when rendering, which keeps the dot consistent with the price on screen and
 // means a price refresh never has to rewrite the alert list.
+// Settings for the scheduled server-side alert check. They live with the
+// alerts because the worker reads both from the same place, and they're shared
+// across devices — there is one server-side check, so one set of settings.
+//   enabled       off means the worker skips this key entirely
+//   fromHour/toHour   daily window; toHour < fromHour crosses midnight
+//                     (7 → 1), equal hours mean around the clock
+//   everyMinutes  how often to check within the window
+//   tz            IANA zone name, not an offset, so the window survives DST
+var ALERT_CHECK_DEFAULTS = { enabled: false, fromHour: 7, toHour: 24, everyMinutes: 10, tz: '' };
+var alertCheckSettings = {};
+
+function loadAlertCheckSettingsLS() {
+  var v = null;
+  try { v = JSON.parse(localStorage.getItem('pt_alert_checks')); } catch(e) {}
+  alertCheckSettings = Object.assign({}, ALERT_CHECK_DEFAULTS, (v && typeof v === 'object') ? v : {});
+  if (!alertCheckSettings.tz) alertCheckSettings.tz = localTimeZoneName();
+}
+function saveAlertCheckSettingsLS() {
+  try { localStorage.setItem('pt_alert_checks', JSON.stringify(alertCheckSettings)); } catch(e) {}
+}
+function localTimeZoneName() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; }
+  catch(e) { return 'UTC'; }
+}
+// Whether a given hour falls inside the configured window. Equal bounds mean
+// around the clock; a to-hour below the from-hour wraps past midnight.
+function isHourInCheckWindow(hour, fromHour, toHour) {
+  if (fromHour === toHour) return true;
+  if (fromHour < toHour) return hour >= fromHour && hour < toHour;
+  return hour >= fromHour || hour < toHour;
+}
+
 var alertStore = {};
 
 function loadAlertsLS() {
