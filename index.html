@@ -266,27 +266,22 @@
       &#8593; OVERWRITE CLOUD
     </button>
   </div>
-  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">ALERT CHECKS</div>
-  <div style="font-size:9px;color:var(--dim);margin-bottom:8px;line-height:1.5">
-    Checked on the server, so these apply to all your devices.
+  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">ALERT CHECKS (APPLY TO ALL DEVICES)</div>
+  <div class="key-row" style="align-items:center">
+    <label style="display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap">
+      <input type="checkbox" id="alertChkEnable" onchange="setAlertChecksEnabled(this.checked)" style="cursor:pointer">
+      <span>ENABLE</span>
+    </label>
+    <label style="margin-left:8px">EVERY</label>
+    <div id="alertChkEveryWrap" style="position:relative;flex:1"></div>
   </div>
-  <div style="display:flex;gap:8px;margin-bottom:8px">
-    <button class="btn" id="alertChkOff" onclick="setAlertChecksEnabled(false)" style="flex:1;padding:6px;font-size:10px;letter-spacing:1px">OFF</button>
-    <button class="btn" id="alertChkOn" onclick="setAlertChecksEnabled(true)" style="flex:1;padding:6px;font-size:10px;letter-spacing:1px">ON</button>
+  <div class="key-row" id="alertChkWindowRow" style="margin-top:6px;align-items:center">
+    <label>FROM</label>
+    <div id="alertChkFromWrap" style="position:relative;flex:1"></div>
+    <label style="margin-left:8px">TO</label>
+    <div id="alertChkToWrap" style="position:relative;flex:1"></div>
   </div>
-  <div id="alertChkFields">
-    <div class="key-row">
-      <label>FROM</label>
-      <select id="alertChkFrom" onchange="saveAlertCheckSettings()" style="font-size:11px"></select>
-      <label style="margin-left:6px">TO</label>
-      <select id="alertChkTo" onchange="saveAlertCheckSettings()" style="font-size:11px"></select>
-    </div>
-    <div class="key-row" style="margin-top:6px">
-      <label>EVERY</label>
-      <select id="alertChkEvery" onchange="saveAlertCheckSettings()" style="font-size:11px"></select>
-    </div>
-    <div class="api-status" id="alertChkStatus" style="font-size:10px"></div>
-  </div>
+  <div class="api-status" id="alertChkStatus" style="font-size:10px"></div>
 
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">BACKUP / RESTORE</div>
   <div style="display:flex;gap:8px">
@@ -369,7 +364,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.2';
+var APP_VERSION = 'v1.5.3';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4058,68 +4053,99 @@ var ALERT_CHECK_PERIODS = [
   { v: 180, label: '3 h' },
   { v: 360, label: '6 h' }
 ];
+var _alertChkMenuStyle = 'display:none;position:absolute;left:0;right:0;top:100%;background:var(--bg2);border:1px solid var(--border);z-index:100;max-height:220px;overflow-y:auto';
+
+function hourLabel(h) { return (h < 10 ? '0' : '') + h + ':00'; }
+function periodLabel(v) {
+  for (var i = 0; i < ALERT_CHECK_PERIODS.length; i++) {
+    if (ALERT_CHECK_PERIODS[i].v === v) return ALERT_CHECK_PERIODS[i].label;
+  }
+  return v + ' min';
+}
+
+// One picker: a trigger showing the current value plus a dark menu below it.
+// `disabled` renders it dim and drops the click handler entirely.
+function alertChkPicker(name, currentLabel, options, disabled) {
+  var trigStyle = 'background:var(--bg);border:1px solid var(--border);color:'
+    + (disabled ? 'var(--dim)' : 'var(--bright)')
+    + ';font-family:var(--font);font-size:12px;padding:6px 8px;box-sizing:border-box;'
+    + 'display:flex;justify-content:space-between;align-items:center;user-select:none;'
+    + (disabled ? 'cursor:default;opacity:0.5' : 'cursor:pointer');
+  var onclick = disabled ? '' : ' onclick="toggleAlertChkDrop(\'' + name + '\')"';
+  var html = '<div id="alertChkTrig' + name + '"' + onclick + ' style="' + trigStyle + '">'
+    + '<span>' + currentLabel + '</span>'
+    + '<span style="font-size:9px;color:var(--dim);margin-left:6px">&#9660;</span>'
+    + '</div>';
+  if (disabled) return html;
+  html += '<div id="alertChkMenu' + name + '" style="' + _alertChkMenuStyle + '">';
+  html += options.map(function(o) {
+    var sel = o.selected ? 'var(--green)' : 'var(--bright)';
+    return '<div onclick="' + o.action + '" style="padding:9px 12px;cursor:pointer;font-size:11px;letter-spacing:1px;color:' + sel + '">' + o.label + '</div>';
+  }).join('');
+  html += '</div>';
+  return html;
+}
 
 function renderAlertCheckSettings() {
-  var fromEl = document.getElementById('alertChkFrom');
-  if (!fromEl) return;
-  var toEl = document.getElementById('alertChkTo');
-  var everyEl = document.getElementById('alertChkEvery');
-
-  function hourOpts(sel, maxHour) {
-    var h = '';
-    for (var i = 0; i <= maxHour; i++) {
-      h += '<option value="' + i + '"' + (i === sel ? ' selected' : '') + '>'
-        + (i < 10 ? '0' : '') + i + ':00</option>';
-    }
-    return h;
-  }
-  // TO offers 24:00 to mean "end of day"; FROM stops at 23:00.
-  fromEl.innerHTML = hourOpts(alertCheckSettings.fromHour, 23);
-  toEl.innerHTML = hourOpts(alertCheckSettings.toHour, 24);
-  everyEl.innerHTML = ALERT_CHECK_PERIODS.map(function(p) {
-    return '<option value="' + p.v + '"' + (p.v === alertCheckSettings.everyMinutes ? ' selected' : '') + '>' + p.label + '</option>';
-  }).join('');
-
+  var everyWrap = document.getElementById('alertChkEveryWrap');
+  if (!everyWrap) return;
   var on = !!alertCheckSettings.enabled;
-  var onBtn = document.getElementById('alertChkOn');
-  var offBtn = document.getElementById('alertChkOff');
-  if (onBtn)  onBtn.style.color  = on ? 'var(--green)' : 'var(--dim)';
-  if (offBtn) offBtn.style.color = on ? 'var(--dim)' : 'var(--bright)';
-  var fields = document.getElementById('alertChkFields');
-  if (fields) fields.style.opacity = on ? '1' : '0.4';
+
+  var cb = document.getElementById('alertChkEnable');
+  if (cb) cb.checked = on;
+
+  // EVERY stays usable whether or not checks are on, so the period can be set
+  // before enabling; the window pickers follow the checkbox.
+  everyWrap.innerHTML = alertChkPicker('Every', periodLabel(alertCheckSettings.everyMinutes),
+    ALERT_CHECK_PERIODS.map(function(p) {
+      return { label: p.label, action: 'pickAlertChkEvery(' + p.v + ')', selected: p.v === alertCheckSettings.everyMinutes };
+    }), false);
+
+  function hourOptions(kind, maxHour, cur) {
+    var opts = [];
+    for (var i = 0; i <= maxHour; i++) {
+      opts.push({ label: hourLabel(i), action: 'pickAlertChkHour(\'' + kind + '\',' + i + ')', selected: i === cur });
+    }
+    return opts;
+  }
+  // TO offers 24:00 to mean end of day; FROM stops at 23:00.
+  document.getElementById('alertChkFromWrap').innerHTML =
+    alertChkPicker('From', hourLabel(alertCheckSettings.fromHour), hourOptions('from', 23, alertCheckSettings.fromHour), !on);
+  document.getElementById('alertChkToWrap').innerHTML =
+    alertChkPicker('To', hourLabel(alertCheckSettings.toHour), hourOptions('to', 24, alertCheckSettings.toHour), !on);
+
+  var row = document.getElementById('alertChkWindowRow');
+  if (row) row.style.opacity = on ? '1' : '0.5';
 
   var status = document.getElementById('alertChkStatus');
   if (status) {
-    if (!on) {
-      status.textContent = 'Server checks off — no notifications.';
-      status.style.color = 'var(--dim)';
-    } else {
-      var f = alertCheckSettings.fromHour, t = alertCheckSettings.toHour;
-      var wrap = (t < f) ? ' (through midnight)' : '';
-      var span = (f === t) ? 'around the clock'
-        : (f < 10 ? '0' : '') + f + ':00\u2013' + (t < 10 ? '0' : '') + t + ':00' + wrap;
-      status.textContent = span + ', ' + alertCheckSettings.tz;
-      status.style.color = 'var(--dim)';
-    }
+    status.style.color = 'var(--dim)';
+    status.textContent = on ? alertCheckSettings.tz : 'Checks off — no notifications.';
   }
 }
 
+function toggleAlertChkDrop(name) {
+  ['Every', 'From', 'To'].forEach(function(n) {
+    var m = document.getElementById('alertChkMenu' + n);
+    if (!m) return;
+    if (n === name) m.style.display = (m.style.display === 'none' ? 'block' : 'none');
+    else m.style.display = 'none';
+  });
+}
+function pickAlertChkEvery(v) {
+  alertCheckSettings.everyMinutes = v;
+  commitAlertCheckSettings();
+}
+function pickAlertChkHour(kind, v) {
+  if (kind === 'from') alertCheckSettings.fromHour = v;
+  else alertCheckSettings.toHour = v;
+  commitAlertCheckSettings();
+}
 function setAlertChecksEnabled(on) {
   alertCheckSettings.enabled = !!on;
-  if (!alertCheckSettings.tz) alertCheckSettings.tz = localTimeZoneName();
-  saveAlertCheckSettingsLS();
-  renderAlertCheckSettings();
-  save();
+  commitAlertCheckSettings();
 }
-
-function saveAlertCheckSettings() {
-  var fromEl = document.getElementById('alertChkFrom');
-  var toEl = document.getElementById('alertChkTo');
-  var everyEl = document.getElementById('alertChkEvery');
-  if (!fromEl || !toEl || !everyEl) return;
-  alertCheckSettings.fromHour = parseInt(fromEl.value, 10);
-  alertCheckSettings.toHour = parseInt(toEl.value, 10);
-  alertCheckSettings.everyMinutes = parseInt(everyEl.value, 10);
+function commitAlertCheckSettings() {
   // Refresh the zone from the device — travelling shouldn't leave a stale one.
   alertCheckSettings.tz = localTimeZoneName();
   saveAlertCheckSettingsLS();
