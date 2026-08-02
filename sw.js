@@ -4,7 +4,7 @@
 // picks them up on the next load without a bump. Independent of APP_VERSION
 // in index.html (that one is the user-facing version stamp; this one controls
 // cache invalidation).
-var CACHE = 'portfolio-2026-07-12-v403';
+var CACHE = 'portfolio-2026-08-02-v403';
 
 self.addEventListener('install', function(e) {
   // Pre-cache with cache:'reload' on each Request — forces network bypass of
