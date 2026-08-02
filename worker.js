@@ -86,21 +86,65 @@ export default {
       });
     }
 
-    // KV endpoints
+    // KV endpoints.
+    //
+    // A record is stored under two prefixed keys:
+    //   data:<key>    the blob the client sends (encrypted when a key is set)
+    //   alerts:<key>  alerts in plaintext, so the scheduled handler can read
+    //                 them without pulling — or decrypting — the whole record
+    //
+    // The split is invisible to the client: GET stitches both back together,
+    // PUT takes the record apart. Records written before the split live under
+    // the bare key; GET falls back to it and the next PUT migrates them.
+    const dataKeyFor   = (k) => 'data:' + k;
+    const alertsKeyFor = (k) => 'alerts:' + k;
+
     if (url.pathname === '/api/kv') {
       const kvKey = request.headers.get('X-KV-Key');
       if (!kvKey) return json({ error: 'X-KV-Key required' }, 400);
       if (!env.PORTFOLIO_KV) return json({ error: 'KV not configured' }, 503);
 
       if (request.method === 'GET') {
-        const { value, metadata } = await env.PORTFOLIO_KV.getWithMetadata(kvKey);
+        let { value, metadata } = await env.PORTFOLIO_KV.getWithMetadata(dataKeyFor(kvKey));
+        if (value === null) {
+          // Pre-split record.
+          ({ value, metadata } = await env.PORTFOLIO_KV.getWithMetadata(kvKey));
+        }
         if (value === null) return json({ error: 'not_found' }, 404);
-        return json({ data: JSON.parse(value), updatedAt: metadata?.updatedAt || null });
+
+        let record;
+        try { record = JSON.parse(value); }
+        catch { return json({ error: 'corrupt_record' }, 500); }
+
+        const alertsRaw = await env.PORTFOLIO_KV.get(alertsKeyFor(kvKey));
+        if (alertsRaw !== null) {
+          try { record.alerts = JSON.parse(alertsRaw); } catch {}
+        }
+        return json({ data: record, updatedAt: metadata?.updatedAt || null });
       }
+
       if (request.method === 'PUT') {
         const body = await request.text();
         const now = new Date().toISOString();
-        await env.PORTFOLIO_KV.put(kvKey, body, { metadata: { updatedAt: now } });
+
+        let record;
+        try { record = JSON.parse(body); }
+        catch { return json({ error: 'invalid_json' }, 400); }
+
+        const alerts = record.alerts;
+        delete record.alerts;
+
+        // Alerts first: it's the smaller write, so if the pair is interrupted
+        // the larger blob is the one left behind, not the alerts.
+        // No alerts field means "this build doesn't know about alerts" — leave
+        // the key alone. Clearing them is expressed as an empty items object.
+        if (alerts !== undefined) {
+          await env.PORTFOLIO_KV.put(alertsKeyFor(kvKey), JSON.stringify(alerts));
+        }
+        await env.PORTFOLIO_KV.put(dataKeyFor(kvKey), JSON.stringify(record), { metadata: { updatedAt: now } });
+        // Drop the pre-split copy so there's only one source of truth.
+        await env.PORTFOLIO_KV.delete(kvKey);
+
         return json({ ok: true, updatedAt: now });
       }
     }
@@ -109,7 +153,8 @@ export default {
       const kvKey = request.headers.get('X-KV-Key');
       if (!kvKey) return json({ error: 'X-KV-Key required' }, 400);
       if (!env.PORTFOLIO_KV) return json({ error: 'KV not configured' }, 503);
-      const { metadata } = await env.PORTFOLIO_KV.getWithMetadata(kvKey);
+      let { metadata } = await env.PORTFOLIO_KV.getWithMetadata(dataKeyFor(kvKey));
+      if (!metadata) ({ metadata } = await env.PORTFOLIO_KV.getWithMetadata(kvKey));
       return json({ updatedAt: metadata?.updatedAt || null });
     }
 
