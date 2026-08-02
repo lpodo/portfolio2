@@ -54,8 +54,10 @@ function initPortfolios() {
     portfolios[id] = { name: 'MY PORTFOLIO', positions: legacy };
     savePortfolios();
   }
-  // Load ticker-level alerts from localStorage
+  // Load ticker-level data and the alerts store from localStorage. Both must be
+  // in place before the migrations below, which move data between them.
   loadTickerDataLS();
+  loadAlertsLS();
   // Lift any position-level category/region/sector into tickerData and strip
   // them from positions. Idempotent and cheap — safe to run every startup;
   // this also cleans up stray null attribute keys left by older versions.
@@ -66,6 +68,7 @@ function initPortfolios() {
   stripMigratedFieldsFromPositions();
   stripNullPositionFields();
   stripTradeFieldsFromZeroQty();
+  migrateAlertsToOwnStore();
   // Restore last active portfolio
   currentPortfolioId = localStorage.getItem('pt_current');
   if (!currentPortfolioId || !portfolios[currentPortfolioId]) {
@@ -251,35 +254,69 @@ function migrateNotesToTicker() {
   if (changed) { saveTickerDataLS(); savePortfolios(); }
 }
 
-// ── Alerts (thin wrappers over tickerData[ticker].alerts) ───────────────────
+// ── Alerts ──────────────────────────────────────────────────────────────────
+// Alerts live in their own top-level store rather than inside tickerData: the
+// cloud record carries them as a plaintext sibling of the encrypted blob, so a
+// scheduled worker can evaluate them while the app is closed.
+// Shape: { ticker: [ { id, condition, value }, ... ] }.
+// There is no stored `triggered` flag — it is derived from the current price
+// when rendering, which keeps the dot consistent with the price on screen and
+// means a price refresh never has to rewrite the alert list.
+var alertStore = {};
+
+function loadAlertsLS() {
+  try {
+    var v = JSON.parse(localStorage.getItem('pt_alerts'));
+    if (v && typeof v === 'object') alertStore = v;
+  } catch(e) {}
+}
+function saveAlertsLS() {
+  try { localStorage.setItem('pt_alerts', JSON.stringify(alertStore)); } catch(e) {}
+}
+
 function getTickerAlerts(ticker) {
   if (!ticker) return [];
-  var d = tickerData[ticker];
-  return (d && d.alerts && d.alerts.length) ? d.alerts : [];
+  var arr = alertStore[ticker];
+  return (arr && arr.length) ? arr : [];
 }
 function setTickerAlerts(ticker, arr) {
   if (!ticker) return;
-  if (arr && arr.length) {
-    if (!tickerData[ticker]) tickerData[ticker] = {};
-    tickerData[ticker].alerts = arr;
-  } else if (tickerData[ticker]) {
-    delete tickerData[ticker].alerts;
-    if (!Object.keys(tickerData[ticker]).length) delete tickerData[ticker];
-  }
+  if (arr && arr.length) alertStore[ticker] = arr;
+  else delete alertStore[ticker];
 }
 function addTickerAlert(ticker, alertObj) {
   if (!ticker || !alertObj) return;
-  if (!tickerData[ticker]) tickerData[ticker] = {};
-  if (!tickerData[ticker].alerts) tickerData[ticker].alerts = [];
-  tickerData[ticker].alerts.push(alertObj);
+  if (!alertStore[ticker]) alertStore[ticker] = [];
+  alertStore[ticker].push(alertObj);
 }
 function removeTickerAlert(ticker, id) {
-  if (!ticker || !tickerData[ticker] || !tickerData[ticker].alerts) return;
-  tickerData[ticker].alerts = tickerData[ticker].alerts.filter(function(a) { return a.id !== id; });
-  if (!tickerData[ticker].alerts.length) {
-    delete tickerData[ticker].alerts;
-    if (!Object.keys(tickerData[ticker]).length) delete tickerData[ticker];
-  }
+  if (!ticker || !alertStore[ticker]) return;
+  alertStore[ticker] = alertStore[ticker].filter(function(a) { return a.id !== id; });
+  if (!alertStore[ticker].length) delete alertStore[ticker];
+}
+
+// Migration: alerts used to live in tickerData[ticker].alerts. Move them into
+// the top-level store, dropping the stored `triggered` flag (now derived).
+// Self-healing — runs at startup and after every cloud load, so data written by
+// an older build, restored from an old backup, or synced from another device
+// converges on the new shape.
+function migrateAlertsToOwnStore() {
+  var changed = false;
+  Object.keys(tickerData).forEach(function(t) {
+    var arr = tickerData[t] && tickerData[t].alerts;
+    if (!arr || !arr.length) return;
+    if (!alertStore[t]) alertStore[t] = [];
+    arr.forEach(function(a) {
+      if (!a || !a.id) return;
+      var exists = alertStore[t].some(function(x) { return x.id === a.id; });
+      if (exists) return;
+      alertStore[t].push({ id: a.id, condition: a.condition, value: a.value });
+    });
+    delete tickerData[t].alerts;
+    if (!Object.keys(tickerData[t]).length) delete tickerData[t];
+    changed = true;
+  });
+  if (changed) { saveAlertsLS(); saveTickerDataLS(); }
 }
 // ── Ticker-level attributes: category / region / sector ────────────────────
 // These describe the security, not the trade, so they live on the ticker

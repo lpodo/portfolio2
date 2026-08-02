@@ -347,7 +347,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.4.20';
+var APP_VERSION = 'v1.4.21';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -401,7 +401,10 @@ var tickerData = {};
 // If all fields end up empty, the whole ticker entry is removed.
 // Idempotent — safely callable for any ticker.
 function pruneTickerData(ticker) {
-  if (!ticker || !tickerData[ticker]) return;
+  // Runs when the ticker has EITHER a tickerData entry or alerts: alerts now
+  // live in their own store, so a ticker can have alerts with no tickerData
+  // left, and those still need pruning.
+  if (!ticker || (!tickerData[ticker] && !alertStore[ticker])) return;
   var hasLiveOrWL = false;
   var hasAnywhere = false;
   Object.keys(portfolios).forEach(function(pid) {
@@ -414,7 +417,8 @@ function pruneTickerData(ticker) {
       if (!pos.sold) hasLiveOrWL = true;
     });
   });
-  if (!hasLiveOrWL && tickerData[ticker].alerts) delete tickerData[ticker].alerts;
+  if (!hasLiveOrWL && alertStore[ticker]) { delete alertStore[ticker]; saveAlertsLS(); }
+  if (!tickerData[ticker]) return;
   if (!hasAnywhere) {
     delete tickerData[ticker].isin;
     delete tickerData[ticker].category;
@@ -2780,7 +2784,8 @@ function backupData() {
     allPositionSets: allPositionSets,
     brokerDict: brokerDict,
     defaultBroker: _defaultBroker || null,
-    tickerData: tickerData
+    tickerData: tickerData,
+    alerts: alertsCloudPayload()
   };
   var json = JSON.stringify(data, null, 2);
   var blob = new Blob([json], { type: 'application/json' });
@@ -2822,6 +2827,10 @@ function restoreData(event) {
       if (data.secDict && Array.isArray(data.secDict)) { secDict = data.secDict; }
       if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
       if (data.allPositionSets && Array.isArray(data.allPositionSets)) { allPositionSets = data.allPositionSets; saveAllPositionSetsLS(); }
+      // Same shape as the cloud record, so the same reader applies. Backups
+      // written before alerts moved out carry them inside tickerData instead —
+      // migrateAlertsToOwnStore picks those up on the next init.
+      applyCloudAlerts(data);
       if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
       if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
       migrateLegacyTickerAlertsFromCloud(data);
@@ -2832,6 +2841,7 @@ function restoreData(event) {
       stripMigratedFieldsFromPositions();
       stripNullPositionFields();
       stripTradeFieldsFromZeroQty();
+      migrateAlertsToOwnStore();
       saveTickerDataLS();
       saveDicts();
       currentPortfolioId = Object.keys(portfolios)[0];
@@ -2971,7 +2981,8 @@ function cloudSave() {
 }
 
 function _doCloudSave(key, binId) {
-  var plaintext = JSON.stringify({ portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, allPositionSets: allPositionSets, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerData: tickerData });
+  var plainObj = { portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, allPositionSets: allPositionSets, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerData: tickerData };
+  var plaintext = JSON.stringify(plainObj);
   var encKey = getEncKey();
 
   function doSend(body) {
@@ -3019,10 +3030,10 @@ function _doCloudSave(key, binId) {
 
   if (encKey) {
     encryptData(plaintext, encKey).then(function(encrypted) {
-      doSend(JSON.stringify({ encrypted: encrypted }));
+      doSend(JSON.stringify({ encrypted: encrypted, alerts: alertsCloudPayload() }));
     }).catch(function() { updateJbStatus('✗ Encryption error', 'var(--red)'); });
   } else {
-    doSend(plaintext);
+    doSend(JSON.stringify(Object.assign({}, plainObj, { alerts: alertsCloudPayload() })));
   }
 }
 
@@ -3077,6 +3088,7 @@ function cloudLoadKV(callback) {
           stripMigratedFieldsFromPositions();
           stripNullPositionFields();
           stripTradeFieldsFromZeroQty();
+          migrateAlertsToOwnStore();
           saveTickerDataLS();
           saveDicts();
           savePortfolios();
@@ -3090,6 +3102,7 @@ function cloudLoadKV(callback) {
           callback(true);
         } else { callback(false); }
       }
+      applyCloudAlerts(data);
       if (data && data.encrypted) {
         var encKey = getEncKey();
         if (!encKey) { updateJbStatus('✗ Encrypted — enter ENC KEY', 'var(--red)'); callback(false); return; }
@@ -3138,9 +3151,13 @@ function cloudSaveKV() {
       updateJbStatus(msg, 'var(--red)');
     });
   }
+  // Alerts ride alongside the blob in plaintext (see alertsCloudPayload) so the
+  // scheduled worker can evaluate them without the encryption key.
   if (encKey) {
-    encryptData(JSON.stringify(payload), encKey).then(function(enc) { doSave({ encrypted: enc }); });
-  } else { doSave(payload); }
+    encryptData(JSON.stringify(payload), encKey).then(function(enc) {
+      doSave({ encrypted: enc, alerts: alertsCloudPayload() });
+    });
+  } else { doSave(Object.assign({}, payload, { alerts: alertsCloudPayload() })); }
 }
 
 function autoCloudLoad(callback) {
@@ -3319,6 +3336,7 @@ function cloudLoad(callback) {
         stripMigratedFieldsFromPositions();
         stripNullPositionFields();
         stripTradeFieldsFromZeroQty();
+        migrateAlertsToOwnStore();
         saveTickerDataLS();
         saveDicts();
         savePortfolios();
@@ -3343,6 +3361,7 @@ function cloudLoad(callback) {
       } else { callback(false); }
     }
 
+    applyCloudAlerts(data);
     if (data && data.encrypted) {
       var encKey = getEncKey();
       if (!encKey) {
@@ -3819,7 +3838,7 @@ function removeAggPositions(ticker, soldFlag) {
 function deleteAlert(ticker, alertId) {
   if (!ticker) return;
   removeTickerAlert(ticker, alertId);
-  saveTickerDataLS();
+  saveAlertsLS();
   save();
   render();
 }
@@ -3830,12 +3849,20 @@ function deleteAlert(ticker, alertId) {
 // Solid for 1 alert; blinks for 2+ with progressive speed (starts at user's
 // BASE BLINK PERIOD setting, steps faster per extra alert, clamps at 'fast').
 // Sky-blue dot (down trigger) is rendered first if present.
-function getAlertDotsHtml(alerts) {
+// Whether an alert's condition holds at the current price. Derived rather than
+// stored, so it always matches the price on screen.
+function isAlertTriggered(ticker, alert) {
+  if (!ticker || !alert) return false;
+  var price = getTickerCurrentPrice(ticker);
+  if (price === null || price === undefined) return false;
+  return alert.condition === '>' ? price > alert.value : price < alert.value;
+}
+function getAlertDotsHtml(ticker, alerts) {
   if (!alerts || !alerts.length) return '';
   var downCount = 0, upCount = 0;
   for (var i = 0; i < alerts.length; i++) {
     var a = alerts[i];
-    if (!a || !a.triggered) continue;
+    if (!a || !isAlertTriggered(ticker, a)) continue;
     if      (a.condition === '<') downCount++;
     else if (a.condition === '>') upCount++;
   }
@@ -3855,7 +3882,7 @@ function getAlertDotsHtml(alerts) {
 // and apply to any active sibling, but the sold row itself shouldn't show them).
 function getAlertDotsHtmlForPosition(p) {
   if (!p || p.sold) return '';
-  return getAlertDotsHtml(getTickerAlerts(p.ticker));
+  return getAlertDotsHtml(p.ticker, getTickerAlerts(p.ticker));
 }
 
 function buildExpandedInner(p) {
@@ -3902,7 +3929,7 @@ function buildExpandedInner(p) {
       + (function() {
           var alerts = getTickerAlerts(p.ticker);
           return alerts.length ? alerts.map(function(a) {
-            var color = a.triggered ? alertColorForCond(a.condition) : 'var(--bright)';
+            var color = isAlertTriggered(p.ticker, a) ? alertColorForCond(a.condition) : 'var(--bright)';
             return '<span style="font-size:10px;color:' + color + '">' + a.condition + ' ' + a.value + '</span>'
               + '<span onclick="deleteAlert(\'' + p.ticker + '\',\'' + a.id + '\')" style="cursor:pointer;font-size:11px;color:var(--dim);margin-left:-6px">&#10005;</span>';
           }).join('') : '';
@@ -3972,7 +3999,7 @@ function buildExpandedInnerAgg(p, group) {
     html += '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
       + '<span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
       + allAlerts.map(function(a) {
-          var color = a.triggered ? alertColorForCond(a.condition) : 'var(--bright)';
+          var color = isAlertTriggered(p.ticker, a) ? alertColorForCond(a.condition) : 'var(--bright)';
           return '<span style="font-size:10px;color:' + color + '">' + a.condition + ' ' + a.value + '</span>'
             + '<span onclick="deleteAlert(\'' + p.ticker + '\',\'' + a.id + '\')" style="cursor:pointer;font-size:11px;color:var(--dim);margin-left:-6px">&#10005;</span>';
         }).join('')
@@ -3996,15 +4023,26 @@ function buildExpandedInnerLite(p, group) {
     + '</div>';
 }
 
+// Alerts travel OUTSIDE the encrypted blob, as a plaintext sibling in the cloud
+// record, so a scheduled worker can evaluate them while the app is closed.
+// That means they're read from the outer record, not the decrypted payload.
+function applyCloudAlerts(data) {
+  if (!data || !data.alerts || typeof data.alerts !== 'object') return;
+  var items = data.alerts.items;
+  if (items && typeof items === 'object') { alertStore = items; saveAlertsLS(); }
+}
+// What gets written as that sibling field.
+function alertsCloudPayload() {
+  return { items: alertStore };
+}
+
 function quickAddAlert(ticker) {
   if (!ticker) return;
   var cond = _alertCondQuick;
   var val = parseFloat(document.getElementById('quickAlertVal').value);
   if (isNaN(val) || val <= 0) return;
-  var curPrice = getTickerCurrentPrice(ticker);
-  var triggered = curPrice != null ? (cond === '>' ? curPrice > val : curPrice < val) : false;
-  addTickerAlert(ticker, { id: newAlertId(), condition: cond, value: val, triggered: triggered });
-  saveTickerDataLS();
+  addTickerAlert(ticker, { id: newAlertId(), condition: cond, value: val });
+  saveAlertsLS();
   save();
   render();
 }
@@ -4176,13 +4214,6 @@ function refreshTicker(ticker, silent) {
       });
     }
     positions = (portfolios[currentPortfolioId] && portfolios[currentPortfolioId].positions) || positions;
-    var tAlerts = getTickerAlerts(ticker);
-    if (tAlerts.length) {
-      setTickerAlerts(ticker, tAlerts.map(function(a) {
-        return Object.assign({}, a, { triggered: a.condition === '>' ? price > a.value : price < a.value });
-      }));
-      if (!silent) saveTickerDataLS();
-    }
     // ISIN — fire-and-forget lookup via the worker's /api/isin endpoint.
     // Only performed for real securities (EQUITY/ETF); other instrument
     // types (indices, futures, crypto, currencies) have no meaningful ISIN
@@ -4269,13 +4300,6 @@ function refreshAllPortfolios() {
       setTickerMeta(ticker, 'previousClose', q.previousClose);
       if (q.instrumentType) setTickerMeta(ticker, 'instrumentType', q.instrumentType);
       if (q.exchangeName) setTickerMeta(ticker, 'exchangeName', q.exchangeName);
-      // Update triggered state for this ticker's alerts.
-      var tAlerts = getTickerAlerts(ticker);
-      if (tAlerts.length) {
-        setTickerAlerts(ticker, tAlerts.map(function(a) {
-          return Object.assign({}, a, { triggered: a.condition === '>' ? price > a.value : price < a.value });
-        }));
-      }
     }).catch(function() {
       markPriceStale(ticker);
     });
