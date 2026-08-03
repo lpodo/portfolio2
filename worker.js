@@ -436,12 +436,54 @@ async function checkOneUser(env, userKey, now) {
     if (!previously[h.id]) newlyFired.push(h);
   }
 
+  // Notify only what just crossed — an alert that keeps holding stays quiet
+  // until the price moves back and crosses again.
+  let sent = 0, failed = 0;
+  if (newlyFired.length) {
+    const subs = Array.isArray(payload.subscriptions) ? payload.subscriptions : [];
+    if (subs.length && env.VAPID_PRIVATE_KEY) {
+      const dead = [];
+      for (const alert of newlyFired) {
+        const arrow = alert.condition === '>' ? 'above' : 'below';
+        const message = {
+          title: `${alert.ticker} ${arrow} ${alert.value}`,
+          body: `now ${alert.price}`,
+          tag: 'pt-alert-' + alert.id,
+          ticker: alert.ticker
+        };
+        for (const sub of subs) {
+          try {
+            const res = await sendPush(env, sub, message);
+            if (res.ok) sent++;
+            else {
+              failed++;
+              // Gone for good — the device uninstalled or reset its subscription.
+              if (res.status === 404 || res.status === 410) dead.push(sub.endpoint);
+            }
+          } catch { failed++; }
+        }
+      }
+      if (dead.length) {
+        // Re-read: this payload was loaded before the fetches and sends, so
+        // writing it back wholesale could clobber an alert the app saved in
+        // the meantime. Only the subscription list is ours to change here.
+        let fresh = payload;
+        try { fresh = JSON.parse(await env.PORTFOLIO_KV.get(ALERT_PREFIX + userKey)) || payload; } catch {}
+        const current = Array.isArray(fresh.subscriptions) ? fresh.subscriptions : [];
+        fresh.subscriptions = current.filter(s => dead.indexOf(s.endpoint) === -1);
+        await env.PORTFOLIO_KV.put(ALERT_PREFIX + userKey, JSON.stringify(fresh));
+      }
+    }
+  }
+
   await env.PORTFOLIO_KV.put(stateKey, JSON.stringify({
     lastSlot: slot,
     lastRun: now.toISOString(),
     localTime: `${pad2(local.hour)}:${pad2(local.minute)} ${tz}`,
     checked: tickers.length,
     priced: Object.keys(prices).length,
+    sent,
+    failed,
     holding: nowHolding,
     newlyFired,
     lastResult: holding
