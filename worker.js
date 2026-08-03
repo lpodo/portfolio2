@@ -294,8 +294,152 @@ export default {
     } catch (err) {
       return json({ error: err.message || 'Failed to fetch quote' }, 500);
     }
+  },
+
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runAlertChecks(env));
   }
 };
+
+// ── Scheduled alert checks ──────────────────────────────────────────────────
+// Cron fires on a fixed short interval; the per-user settings decide whether
+// this tick actually does anything. Nothing is notified yet — this step only
+// records what would fire, so the logic can be verified from KV.
+
+const ALERT_PREFIX = 'alerts:';
+const CHECK_PREFIX = 'check:';
+
+async function runAlertChecks(env) {
+  if (!env.PORTFOLIO_KV) return;
+  const now = new Date();
+  const list = await env.PORTFOLIO_KV.list({ prefix: ALERT_PREFIX });
+
+  for (const entry of list.keys) {
+    const userKey = entry.name.slice(ALERT_PREFIX.length);
+    try { await checkOneUser(env, userKey, now); }
+    catch (err) { /* one user's failure must not stop the rest */ }
+  }
+}
+
+async function checkOneUser(env, userKey, now) {
+  const raw = await env.PORTFOLIO_KV.get(ALERT_PREFIX + userKey);
+  if (!raw) return;
+
+  let payload;
+  try { payload = JSON.parse(raw); } catch { return; }
+
+  const settings = payload.settings || {};
+  if (!settings.enabled) return;
+
+  const items = payload.items || {};
+  const tickers = Object.keys(items).filter(t => (items[t] || []).length);
+  if (!tickers.length) return;
+
+  const tz = settings.tz || 'UTC';
+  const local = zonedParts(now, tz);
+  const fromHour = numOr(settings.fromHour, 0);
+  const toHour = numOr(settings.toHour, 24);
+  if (!isInWindow(local.minuteOfDay, fromHour, toHour)) return;
+
+  const stateKey = CHECK_PREFIX + userKey;
+  let state = {};
+  try { state = JSON.parse(await env.PORTFOLIO_KV.get(stateKey)) || {}; } catch {}
+
+  const every = numOr(settings.everyMinutes, 10);
+  const slot = currentSlot(local, fromHour, every);
+  if (state.lastSlot === slot) return;
+
+  // Price only the tickers that carry alerts.
+  const prices = {};
+  await Promise.all(tickers.map(async t => {
+    try {
+      const q = await getQuote(t);
+      if (q && !q.error && typeof q.price === 'number') prices[t] = q.price;
+    } catch {}
+  }));
+
+  const holding = [];
+  for (const t of tickers) {
+    const price = prices[t];
+    if (typeof price !== 'number') continue;
+    for (const a of items[t]) {
+      if (!a || !a.id) continue;
+      const hit = a.condition === '>' ? price > a.value : price < a.value;
+      if (hit) holding.push({ id: a.id, ticker: t, condition: a.condition, value: a.value, price });
+    }
+  }
+
+  // Which of these weren't already holding last time — the ones that would be
+  // notified once notifications are wired up.
+  const previously = state.holding || {};
+  const nowHolding = {};
+  const newlyFired = [];
+  for (const h of holding) {
+    nowHolding[h.id] = true;
+    if (!previously[h.id]) newlyFired.push(h);
+  }
+
+  await env.PORTFOLIO_KV.put(stateKey, JSON.stringify({
+    lastSlot: slot,
+    lastRun: now.toISOString(),
+    localTime: `${pad2(local.hour)}:${pad2(local.minute)} ${tz}`,
+    checked: tickers.length,
+    priced: Object.keys(prices).length,
+    holding: nowHolding,
+    newlyFired,
+    lastResult: holding
+  }));
+}
+
+// Slots are counted from the window's start rather than from the previous run,
+// so checks land on a stable grid (07:00, 07:10, …) and a late tick can't shift
+// everything after it. Seconds are folded in and rounded to the nearest minute,
+// so a tick arriving a few seconds early or late still lands in its own slot.
+function currentSlot(local, fromHour, everyMinutes) {
+  const minutesFromStart = (local.minuteOfDay - fromHour * 60 + 1440) % 1440;
+  return Math.floor(minutesFromStart / everyMinutes);
+}
+
+// Window bounds are compared in minutes, not whole hours, and the upper bound
+// is inclusive: a window ending at 01:00 covers 01:00 exactly, where comparing
+// hours would have stretched it to 01:59. Equal bounds mean around the clock;
+// a to-hour below the from-hour crosses midnight.
+function isInWindow(minuteOfDay, fromHour, toHour) {
+  if (fromHour === toHour) return true;
+  const from = fromHour * 60, to = toHour * 60;
+  // Midnight carries minuteOfDay 0, so a window ending at 24:00 would miss the
+  // very moment it names. Read that 0 as the end of the day instead, keeping
+  // the end inclusive whether it's written 24:00 or 01:00.
+  const m = (toHour === 24 && minuteOfDay === 0) ? 1440 : minuteOfDay;
+  return from < to
+    ? (m >= from && m <= to)
+    : (m >= from || m <= to);
+}
+
+// Wall-clock time in an IANA zone, with seconds rounded into the minute count.
+// Using the zone name rather than a stored offset keeps the window correct
+// across DST changes.
+function zonedParts(date, tz) {
+  let hour, minute, second;
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz, hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit'
+    });
+    const parts = {};
+    for (const p of fmt.formatToParts(date)) parts[p.type] = p.value;
+    hour = parseInt(parts.hour, 10) % 24;
+    minute = parseInt(parts.minute, 10);
+    second = parseInt(parts.second, 10);
+  } catch {
+    hour = date.getUTCHours();
+    minute = date.getUTCMinutes();
+    second = date.getUTCSeconds();
+  }
+  return { hour, minute, minuteOfDay: (hour * 60 + minute + Math.round(second / 60)) % 1440 };
+}
+
+function numOr(v, fallback) { return typeof v === 'number' && isFinite(v) ? v : fallback; }
+function pad2(n) { return (n < 10 ? '0' : '') + n; }
 
 async function getQuote(ticker) {
   // Step 1: fast request

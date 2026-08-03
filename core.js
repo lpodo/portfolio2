@@ -287,12 +287,19 @@ function localTimeZoneName() {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; }
   catch(e) { return 'UTC'; }
 }
-// Whether a given hour falls inside the configured window. Equal bounds mean
-// around the clock; a to-hour below the from-hour wraps past midnight.
-function isHourInCheckWindow(hour, fromHour, toHour) {
+// Whether a moment falls inside the configured window. Bounds are compared in
+// minutes with the upper end inclusive, matching the worker: a window ending at
+// 01:00 covers 01:00 exactly rather than stretching to 01:59. Equal bounds mean
+// around the clock; a to-hour below the from-hour crosses midnight.
+function isInCheckWindow(minuteOfDay, fromHour, toHour) {
   if (fromHour === toHour) return true;
-  if (fromHour < toHour) return hour >= fromHour && hour < toHour;
-  return hour >= fromHour || hour < toHour;
+  var from = fromHour * 60, to = toHour * 60;
+  // Midnight carries minuteOfDay 0, so a window ending at 24:00 would miss the
+  // very moment it names — read that 0 as the end of the day instead.
+  var m = (toHour === 24 && minuteOfDay === 0) ? 1440 : minuteOfDay;
+  return from < to
+    ? (m >= from && m <= to)
+    : (m >= from || m <= to);
 }
 
 var alertStore = {};

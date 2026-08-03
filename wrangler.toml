@@ -5,3 +5,9 @@ compatibility_date = "2024-01-01"
 [[kv_namespaces]]
 binding = "PORTFOLIO_KV"
 id = "f36d8de334a942d4a6a6462735fda047"
+
+# Alert checks. Cron only sets the finest possible grid — the per-user settings
+# (window, period, on/off) decide whether a given tick does any work, so this
+# stays fixed regardless of what anyone picks in the app.
+[triggers]
+crons = ["*/5 * * * *"]
