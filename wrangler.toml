@@ -11,3 +11,11 @@ id = "f36d8de334a942d4a6a6462735fda047"
 # stays fixed regardless of what anyone picks in the app.
 [triggers]
 crons = ["*/5 * * * *"]
+
+# Web Push identity. The public key is handed to the browser when it subscribes,
+# so it isn't a secret. Its private counterpart signs each send and lives in the
+# worker's encrypted variables as VAPID_PRIVATE_KEY — never in this file.
+# VAPID_SUBJECT identifies the sender to the push service.
+[vars]
+VAPID_PUBLIC_KEY = "BIs7kud2cxZb4G31iehi5fVhgAMYztdbfOOls_1hOgSDL2x7ZDK4WEhbFT98O0jFLEh3ldR7EcPKcQeA0BwIuXg"
+VAPID_SUBJECT = "mailto:lpodolskiy@gmail.com"
