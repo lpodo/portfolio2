@@ -369,6 +369,8 @@ export default {
     try {
       const result = await getQuote(t);
       if (result.error) return json(result, 404);
+      // _cost is bookkeeping for the scheduler's request budget, not client data.
+      delete result._cost;
       return json(result);
     } catch (err) {
       return json({ error: err.message || 'Failed to fetch quote' }, 500);
@@ -426,31 +428,44 @@ async function checkOneUser(env, userKey, now) {
 
   const every = numOr(settings.everyMinutes, 10);
   const slot = currentSlot(local, fromHour, every);
-  if (state.lastSlot === slot) return;
 
-  // A worker invocation is capped at 50 subrequests, and a quote costs up to
-  // two, so pricing everything at once leaves nothing for the sends — they
-  // throw rather than deliver. Price a bounded slice per run and rotate the
-  // starting point, so every ticker is covered across successive runs while
-  // each run keeps headroom for notifications.
-  const MAX_TICKERS_PER_RUN = 15;
-  const startAt = tickers.length > MAX_TICKERS_PER_RUN
-    ? (numOr(state.rotateFrom, 0) % tickers.length)
-    : 0;
-  const slice = tickers.length > MAX_TICKERS_PER_RUN
-    ? Array.from({ length: MAX_TICKERS_PER_RUN }, (_, i) => tickers[(startAt + i) % tickers.length])
-    : tickers;
+  // Cloudflare allows 50 subrequests per invocation. Quotes cost one request in
+  // an active session and two outside it, so counting tickers rather than
+  // requests would waste half the budget during market hours. Walk the ring
+  // spending up to QUOTE_BUDGET, keeping the rest for sends and KV writes.
+  const QUOTE_BUDGET = 35;
 
+  const total = tickers.length;
+  const freshSlot = state.lastSlot !== slot;
+  // A new slot means everything is due again; within a slot we carry on with
+  // whatever the previous tick didn't reach.
+  const remaining = freshSlot ? total : numOr(state.remaining, 0);
+  if (remaining <= 0) return;      // slot already fully covered
+
+  let cursor = numOr(state.cursor, 0) % (total || 1);
   const prices = {};
-  await Promise.all(slice.map(async t => {
+  const visited = [];
+  let spent = 0;
+
+  // Sequential: the cost of each quote is only known after it returns, so the
+  // budget can be tracked but not planned.
+  while (visited.length < remaining && spent + 2 <= QUOTE_BUDGET) {
+    const t = tickers[cursor % total];
     try {
       const q = await getQuote(t);
+      spent += numOr(q && q._cost, 2);
       if (q && !q.error && typeof q.price === 'number') prices[t] = q.price;
-    } catch {}
-  }));
+    } catch {
+      spent += 2;
+    }
+    visited.push(t);
+    cursor = (cursor + 1) % total;
+  }
+
+  const leftover = remaining - visited.length;
 
   const holding = [];
-  for (const t of slice) {
+  for (const t of visited) {
     const price = prices[t];
     if (typeof price !== 'number') continue;
     for (const a of items[t]) {
@@ -466,7 +481,7 @@ async function checkOneUser(env, userKey, now) {
   // came round.
   const previously = state.holding || {};
   const pricedIds = {};
-  for (const t of slice) for (const a of items[t] || []) if (a && a.id) pricedIds[a.id] = true;
+  for (const t of visited) for (const a of items[t] || []) if (a && a.id) pricedIds[a.id] = true;
 
   const nowHolding = {};
   for (const id of Object.keys(previously)) {
@@ -533,10 +548,13 @@ async function checkOneUser(env, userKey, now) {
     lastSlot: slot,
     lastRun: now.toISOString(),
     localTime: `${pad2(local.hour)}:${pad2(local.minute)} ${tz}`,
-    checked: tickers.length,
-    pricedThisRun: slice.length,
+    checked: total,
+    visited: visited.length,
+    leftover,
+    spent,
+    cursor,
+    remaining: leftover,
     priced: Object.keys(prices).length,
-    rotateFrom: (startAt + slice.length) % (tickers.length || 1),
     sent,
     failed,
     sendNote,
@@ -624,6 +642,7 @@ async function getQuote(ticker) {
   // Step 2: are we in active regular session with trades?
   if (regular && now >= regular.start && now < regular.end && regularMarketTime >= regular.start) {
     return {
+      _cost: 1,
       ticker: meta.symbol || ticker,
       price: regularMarketPrice,
       priceType: 'regular',
@@ -674,6 +693,7 @@ async function getQuote(ticker) {
       if (rawCurrency === 'GBp') lastPrice = lastPrice / 100;
       const priceType = (Math.abs(lastPrice - regularMarketPrice) < 0.005) ? 'regular' : 'extended';
       return {
+        _cost: 2,
         ticker: meta.symbol || ticker,
         price: lastPrice,
         priceType,
@@ -692,6 +712,7 @@ async function getQuote(ticker) {
 
   // Fallback: return regular close
   return {
+    _cost: 2,
     ticker: meta.symbol || ticker,
     price: regularMarketPrice,
     priceType: 'regular',
