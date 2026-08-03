@@ -3,6 +3,10 @@
 // Crumb cache (in-memory, per isolate, shared across requests)
 let crumbCache = { crumb: null, cookie: null, expires: 0 };
 const CRUMB_TTL_MS = 30 * 60 * 1000;
+// Upstream calls had no timeout at all. That was harmless when each request
+// served one ticker, but the scheduler now walks tickers in sequence, so one
+// slow response would hold up everything behind it.
+const QUOTE_TIMEOUT_MS = 5000;
 
 export default {
   async fetch(request, env, ctx) {
@@ -434,6 +438,11 @@ async function checkOneUser(env, userKey, now) {
   // requests would waste half the budget during market hours. Walk the ring
   // spending up to QUOTE_BUDGET, keeping the rest for sends and KV writes.
   const QUOTE_BUDGET = 35;
+  // State is written at the very end, so an over-long round would lose the
+  // cursor and the record of what was already notified — and re-notify next
+  // time. Stop on the clock too, the same orderly way as running out of budget.
+  const WALK_DEADLINE_MS = 60000;
+  const walkStarted = Date.now();
 
   const total = tickers.length;
   const freshSlot = state.lastSlot !== slot;
@@ -446,23 +455,29 @@ async function checkOneUser(env, userKey, now) {
   const prices = {};
   const visited = [];
   let spent = 0;
+  let attempted = 0;
 
   // Sequential: the cost of each quote is only known after it returns, so the
   // budget can be tracked but not planned.
-  while (visited.length < remaining && spent + 2 <= QUOTE_BUDGET) {
+  while (attempted < remaining
+         && spent + 2 <= QUOTE_BUDGET
+         && Date.now() - walkStarted < WALK_DEADLINE_MS) {
     const t = tickers[cursor % total];
     try {
       const q = await getQuote(t);
       spent += numOr(q && q._cost, 2);
-      if (q && !q.error && typeof q.price === 'number') prices[t] = q.price;
+      // A quote that didn't arrive counts as not visited: leaving it out of
+      // `visited` keeps its alerts on their previous state instead of reading
+      // as "stopped holding", which would fire again once the price returns.
+      if (q && !q.error && typeof q.price === 'number') { prices[t] = q.price; visited.push(t); }
     } catch {
       spent += 2;
     }
-    visited.push(t);
+    attempted++;
     cursor = (cursor + 1) % total;
   }
 
-  const leftover = remaining - visited.length;
+  const leftover = remaining - attempted;
 
   const holding = [];
   for (const t of visited) {
@@ -619,7 +634,7 @@ async function getQuote(ticker) {
   // Step 1: fast request
   const r1 = await fetch(
     `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`,
-    { headers: yahooHeaders() }
+    { headers: yahooHeaders(), signal: AbortSignal.timeout(QUOTE_TIMEOUT_MS) }
   );
   if (!r1.ok) return { error: `Yahoo HTTP ${r1.status}` };
 
@@ -669,7 +684,7 @@ async function getQuote(ticker) {
   // Step 3: all other cases — get last candle from extended data
   const r2 = await fetch(
     `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=5d&includePrePost=true`,
-    { headers: yahooHeaders() }
+    { headers: yahooHeaders(), signal: AbortSignal.timeout(QUOTE_TIMEOUT_MS) }
   );
 
   if (r2.ok) {
