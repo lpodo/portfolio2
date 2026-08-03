@@ -428,9 +428,21 @@ async function checkOneUser(env, userKey, now) {
   const slot = currentSlot(local, fromHour, every);
   if (state.lastSlot === slot) return;
 
-  // Price only the tickers that carry alerts.
+  // A worker invocation is capped at 50 subrequests, and a quote costs up to
+  // two, so pricing everything at once leaves nothing for the sends — they
+  // throw rather than deliver. Price a bounded slice per run and rotate the
+  // starting point, so every ticker is covered across successive runs while
+  // each run keeps headroom for notifications.
+  const MAX_TICKERS_PER_RUN = 15;
+  const startAt = tickers.length > MAX_TICKERS_PER_RUN
+    ? (numOr(state.rotateFrom, 0) % tickers.length)
+    : 0;
+  const slice = tickers.length > MAX_TICKERS_PER_RUN
+    ? Array.from({ length: MAX_TICKERS_PER_RUN }, (_, i) => tickers[(startAt + i) % tickers.length])
+    : tickers;
+
   const prices = {};
-  await Promise.all(tickers.map(async t => {
+  await Promise.all(slice.map(async t => {
     try {
       const q = await getQuote(t);
       if (q && !q.error && typeof q.price === 'number') prices[t] = q.price;
@@ -438,7 +450,7 @@ async function checkOneUser(env, userKey, now) {
   }));
 
   const holding = [];
-  for (const t of tickers) {
+  for (const t of slice) {
     const price = prices[t];
     if (typeof price !== 'number') continue;
     for (const a of items[t]) {
@@ -448,10 +460,18 @@ async function checkOneUser(env, userKey, now) {
     }
   }
 
-  // Which of these weren't already holding last time — the ones that would be
-  // notified once notifications are wired up.
+  // Which of these weren't already holding last time — the ones to notify.
+  // Alerts outside this run's slice keep their previous state: dropping them
+  // would look like they stopped holding, and they'd re-notify next time they
+  // came round.
   const previously = state.holding || {};
+  const pricedIds = {};
+  for (const t of slice) for (const a of items[t] || []) if (a && a.id) pricedIds[a.id] = true;
+
   const nowHolding = {};
+  for (const id of Object.keys(previously)) {
+    if (!pricedIds[id]) nowHolding[id] = true; // untouched this run
+  }
   const newlyFired = [];
   for (const h of holding) {
     nowHolding[h.id] = true;
@@ -514,7 +534,9 @@ async function checkOneUser(env, userKey, now) {
     lastRun: now.toISOString(),
     localTime: `${pad2(local.hour)}:${pad2(local.minute)} ${tz}`,
     checked: tickers.length,
+    pricedThisRun: slice.length,
     priced: Object.keys(prices).length,
+    rotateFrom: (startAt + slice.length) % (tickers.length || 1),
     sent,
     failed,
     sendNote,
