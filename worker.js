@@ -255,6 +255,63 @@ export default {
 
     // Trading hours: /api/hours?ticker=X — returns just the current trading
     // period (pre/regular/post) and the exchange timezone. Fetched on demand.
+    // Web Push: the client asks for the public key rather than embedding a
+    // copy, so the pair only ever lives in the worker's config.
+    if (url.pathname === '/api/push/key') {
+      return json({ key: env.VAPID_PUBLIC_KEY || null });
+    }
+
+    // Store (or clear) this device's push subscription. Subscriptions live
+    // beside the alerts, in the same plaintext record the scheduler reads.
+    if (url.pathname === '/api/push/subscribe') {
+      const kvKey = request.headers.get('X-KV-Key');
+      if (!kvKey) return json({ error: 'X-KV-Key required' }, 400);
+      if (!env.PORTFOLIO_KV) return json({ error: 'KV not configured' }, 503);
+
+      let body;
+      try { body = await request.json(); }
+      catch { return json({ error: 'invalid_json' }, 400); }
+
+      const alertsKey = 'alerts:' + kvKey;
+      let payload = {};
+      try { payload = JSON.parse(await env.PORTFOLIO_KV.get(alertsKey)) || {}; } catch {}
+
+      const subs = Array.isArray(payload.subscriptions) ? payload.subscriptions : [];
+      // Keyed by endpoint: re-subscribing on the same device replaces its entry
+      // instead of piling up duplicates.
+      const kept = subs.filter(s => s && s.endpoint !== body.endpoint);
+      if (body.subscription) kept.push(body.subscription);
+
+      payload.subscriptions = kept;
+      await env.PORTFOLIO_KV.put(alertsKey, JSON.stringify(payload));
+      return json({ ok: true, count: kept.length });
+    }
+
+    // Temporary: send a notification to every stored subscription on demand,
+    // so delivery can be checked before the scheduler drives it.
+    if (url.pathname === '/api/push/test') {
+      const kvKey = request.headers.get('X-KV-Key');
+      if (!kvKey) return json({ error: 'X-KV-Key required' }, 400);
+      if (!env.PORTFOLIO_KV) return json({ error: 'KV not configured' }, 503);
+      if (!env.VAPID_PRIVATE_KEY) return json({ error: 'VAPID_PRIVATE_KEY not set' }, 503);
+
+      let payload = {};
+      try { payload = JSON.parse(await env.PORTFOLIO_KV.get('alerts:' + kvKey)) || {}; } catch {}
+      const subs = Array.isArray(payload.subscriptions) ? payload.subscriptions : [];
+      if (!subs.length) return json({ error: 'no subscriptions' }, 404);
+
+      const results = [];
+      for (const sub of subs) {
+        const r = await sendPush(env, sub, {
+          title: 'Portfolio Terminal',
+          body: 'Test notification — push is working.',
+          tag: 'pt-test'
+        });
+        results.push({ status: r.status, ok: r.ok });
+      }
+      return json({ sent: results.length, results });
+    }
+
     if (url.pathname === '/api/hours') {
       const t = url.searchParams.get('ticker');
       if (!t) return json({ error: 'ticker is required' }, 400);
@@ -662,4 +719,113 @@ async function fetchQuoteSummary(ticker, modules) {
   return anySuccess
     ? { quoteSummary: { result: [merged], error: null } }
     : combined;
+}
+
+// ── Web Push (RFC 8291 payload encryption + RFC 8292 VAPID) ─────────────────
+// No libraries: the whole exchange is ECDH + HKDF + AES-128-GCM, all of which
+// WebCrypto provides. Each send needs a fresh ephemeral key pair.
+
+function b64uToBytes(s) {
+  const pad = s.replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(pad + '==='.slice((pad.length + 3) % 4));
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+function bytesToB64u(bytes) {
+  let s = '';
+  const CH = 8192;
+  for (let i = 0; i < bytes.length; i += CH) s += String.fromCharCode(...bytes.subarray(i, i + CH));
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function concatBytes(...parts) {
+  let len = 0;
+  for (const p of parts) len += p.length;
+  const out = new Uint8Array(len);
+  let at = 0;
+  for (const p of parts) { out.set(p, at); at += p.length; }
+  return out;
+}
+
+async function hkdf(salt, ikm, info, length) {
+  const key = await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'HKDF', hash: 'SHA-256', salt, info }, key, length * 8
+  );
+  return new Uint8Array(bits);
+}
+
+// VAPID: a short-lived JWT proving the sender holds the private key that
+// matches the public key the browser stored at subscribe time.
+async function vapidHeader(env, audience) {
+  const header = bytesToB64u(new TextEncoder().encode(JSON.stringify({ typ: 'JWT', alg: 'ES256' })));
+  const claims = bytesToB64u(new TextEncoder().encode(JSON.stringify({
+    aud: audience,
+    exp: Math.floor(Date.now() / 1000) + 12 * 3600,
+    sub: env.VAPID_SUBJECT || 'mailto:admin@example.com'
+  })));
+  const signingInput = new TextEncoder().encode(header + '.' + claims);
+
+  const pub = b64uToBytes(env.VAPID_PUBLIC_KEY);
+  const jwk = {
+    kty: 'EC', crv: 'P-256', ext: true,
+    d: env.VAPID_PRIVATE_KEY,
+    x: bytesToB64u(pub.subarray(1, 33)),
+    y: bytesToB64u(pub.subarray(33, 65))
+  };
+  const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+  const sig = new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, signingInput));
+  return 'vapid t=' + header + '.' + claims + '.' + bytesToB64u(sig) + ', k=' + env.VAPID_PUBLIC_KEY;
+}
+
+// aes128gcm: derive a shared secret with the subscription's public key, expand
+// it into a content key and nonce, then encrypt the payload into the body
+// format the push service forwards verbatim.
+async function encryptPayload(subscription, plaintext) {
+  const clientPub = b64uToBytes(subscription.keys.p256dh);
+  const authSecret = b64uToBytes(subscription.keys.auth);
+
+  const localPair = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const localPubRaw = new Uint8Array(await crypto.subtle.exportKey('raw', localPair.publicKey));
+
+  const clientKey = await crypto.subtle.importKey('raw', clientPub, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+  const shared = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: clientKey }, localPair.privateKey, 256));
+
+  // The auth secret binds the derivation to this subscription.
+  const prkInfo = concatBytes(
+    new TextEncoder().encode('WebPush: info\0'), clientPub, localPubRaw
+  );
+  const ikm = await hkdf(authSecret, shared, prkInfo, 32);
+
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const cek = await hkdf(salt, ikm, new TextEncoder().encode('Content-Encoding: aes128gcm\0'), 16);
+  const nonce = await hkdf(salt, ikm, new TextEncoder().encode('Content-Encoding: nonce\0'), 12);
+
+  const aesKey = await crypto.subtle.importKey('raw', cek, 'AES-GCM', false, ['encrypt']);
+  // A single record, so the padding delimiter is 0x02 (last record).
+  const padded = concatBytes(new TextEncoder().encode(plaintext), new Uint8Array([2]));
+  const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, aesKey, padded));
+
+  // Header: salt(16) | record size(4) | key id length(1) | key id
+  const rs = new Uint8Array(4);
+  new DataView(rs.buffer).setUint32(0, 4096);
+  return concatBytes(salt, rs, new Uint8Array([localPubRaw.length]), localPubRaw, ciphertext);
+}
+
+async function sendPush(env, subscription, message) {
+  const endpoint = new URL(subscription.endpoint);
+  const audience = endpoint.origin;
+  const body = await encryptPayload(subscription, JSON.stringify(message));
+  const auth = await vapidHeader(env, audience);
+
+  return fetch(subscription.endpoint, {
+    method: 'POST',
+    headers: {
+      'Authorization': auth,
+      'Content-Encoding': 'aes128gcm',
+      'Content-Type': 'application/octet-stream',
+      'TTL': '86400'
+    },
+    body
+  });
 }

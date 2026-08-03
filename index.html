@@ -283,6 +283,11 @@
     <div id="alertChkToWrap" style="position:relative;width:84px"></div>
     <span id="alertChkTz" style="font-size:10px;color:var(--dim);margin-left:8px;white-space:nowrap"></span>
   </div>
+  <div class="key-row" id="pushRow" style="margin-top:8px;align-items:center;gap:0">
+    <button class="btn" id="pushToggleBtn" onclick="togglePushSubscription()" style="padding:5px 12px;font-size:10px;letter-spacing:1px">NOTIFICATIONS</button>
+    <button class="btn" id="pushTestBtn" onclick="sendTestPush()" style="padding:5px 12px;font-size:10px;letter-spacing:1px;margin-left:8px;color:var(--dim)">TEST</button>
+    <span id="pushStatus" style="font-size:10px;color:var(--dim);margin-left:8px"></span>
+  </div>
 
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">BACKUP / RESTORE</div>
   <div style="display:flex;gap:8px">
@@ -365,7 +370,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.8';
+var APP_VERSION = 'v1.5.9';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -3440,7 +3445,7 @@ function toggleSettings() {
   var o = document.getElementById('overlay');
   p.classList.toggle('open');
   o.classList.toggle('open');
-  if (p.classList.contains('open')) { renderDictsPanel(); renderAlertCheckSettings(); }
+  if (p.classList.contains('open')) { renderDictsPanel(); renderAlertCheckSettings(); renderPushStatus(); }
 }
 function closeSettings() {
   document.getElementById('settingsPanel').classList.remove('open');
@@ -4044,6 +4049,119 @@ function buildExpandedInnerLite(p, group) {
 // Alerts travel OUTSIDE the encrypted blob, as a plaintext sibling in the cloud
 // record, so a scheduled worker can evaluate them while the app is closed.
 // That means they're read from the outer record, not the decrypted payload.
+// ── Push notifications ──────────────────────────────────────────────────────
+// Subscription state is read from the browser each time rather than cached, so
+// it stays truthful when permission is revoked outside the app.
+function pushSupported() {
+  return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+}
+
+function renderPushStatus() {
+  var btn = document.getElementById('pushToggleBtn');
+  if (!btn) return;
+  var statusEl = document.getElementById('pushStatus');
+  var testBtn = document.getElementById('pushTestBtn');
+
+  if (!pushSupported()) {
+    btn.style.color = 'var(--dim)';
+    if (statusEl) statusEl.textContent = 'not supported';
+    if (testBtn) testBtn.style.display = 'none';
+    return;
+  }
+  if (Notification.permission === 'denied') {
+    btn.style.color = 'var(--dim)';
+    if (statusEl) statusEl.textContent = 'blocked in browser settings';
+    if (testBtn) testBtn.style.display = 'none';
+    return;
+  }
+  navigator.serviceWorker.ready.then(function(reg) {
+    return reg.pushManager.getSubscription();
+  }).then(function(sub) {
+    btn.style.color = sub ? 'var(--green)' : 'var(--bright)';
+    btn.textContent = sub ? 'NOTIFICATIONS ON' : 'NOTIFICATIONS';
+    if (statusEl) statusEl.textContent = sub ? '' : 'off';
+    if (testBtn) testBtn.style.display = sub ? '' : 'none';
+  }).catch(function() {});
+}
+
+function togglePushSubscription() {
+  if (!pushSupported()) { alert('This browser does not support notifications'); return; }
+  var statusEl = document.getElementById('pushStatus');
+  function say(msg, color) {
+    if (statusEl) { statusEl.textContent = msg; statusEl.style.color = color || 'var(--dim)'; }
+  }
+
+  navigator.serviceWorker.ready.then(function(reg) {
+    return reg.pushManager.getSubscription().then(function(existing) {
+      if (existing) {
+        // Unsubscribe: drop it here and on the server.
+        var endpoint = existing.endpoint;
+        return existing.unsubscribe().then(function() {
+          return pushServerCall('/api/push/subscribe', { endpoint: endpoint, subscription: null });
+        }).then(function() { say('off'); renderPushStatus(); });
+      }
+      return Notification.requestPermission().then(function(perm) {
+        if (perm !== 'granted') { say('permission denied', 'var(--red)'); renderPushStatus(); return; }
+        say('subscribing…');
+        return pushServerCall('/api/push/key', null, 'GET').then(function(res) {
+          if (!res || !res.key) throw new Error('server has no VAPID key');
+          return reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(res.key)
+          });
+        }).then(function(sub) {
+          var json = sub.toJSON();
+          return pushServerCall('/api/push/subscribe', {
+            endpoint: sub.endpoint,
+            subscription: { endpoint: sub.endpoint, keys: json.keys }
+          });
+        }).then(function() { say(''); renderPushStatus(); });
+      });
+    });
+  }).catch(function(e) { say(String(e.message || e), 'var(--red)'); });
+}
+
+function sendTestPush() {
+  var statusEl = document.getElementById('pushStatus');
+  if (statusEl) { statusEl.textContent = 'sending…'; statusEl.style.color = 'var(--dim)'; }
+  pushServerCall('/api/push/test', null, 'POST').then(function(res) {
+    if (statusEl) {
+      var ok = res && res.results && res.results.some(function(r) { return r.ok; });
+      statusEl.textContent = ok ? 'sent' : (res && res.error) || 'failed';
+      statusEl.style.color = ok ? 'var(--green)' : 'var(--red)';
+    }
+  }).catch(function(e) {
+    if (statusEl) { statusEl.textContent = String(e.message || e); statusEl.style.color = 'var(--red)'; }
+  });
+}
+
+// The push endpoints live on the same worker and use the same auth as the rest.
+function pushServerCall(path, body, method) {
+  var base = getApiKey();
+  if (!base) return Promise.reject(new Error('API not configured'));
+  base = base.replace(/\/+$/, '');
+  var opts = { method: method || 'POST', headers: {} };
+  var token = getToken();
+  if (token) opts.headers['X-API-Token'] = token;
+  var kvKey = getKvKey();
+  if (kvKey) opts.headers['X-KV-Key'] = kvKey;
+  if (body) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+  return fetch(base + path, opts).then(function(r) { return r.json(); });
+}
+
+// applicationServerKey wants raw bytes, not the base64url string.
+function urlBase64ToUint8Array(base64String) {
+  var padding = '='.repeat((4 - base64String.length % 4) % 4);
+  var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  var raw = atob(base64);
+  var out = new Uint8Array(raw.length);
+  for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
 // ── Alert check settings UI ─────────────────────────────────────────────────
 var ALERT_CHECK_PERIODS = [
   { v: 5,   label: '5 min' },
