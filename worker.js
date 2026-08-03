@@ -118,7 +118,13 @@ export default {
 
         const alertsRaw = await env.PORTFOLIO_KV.get(alertsKeyFor(kvKey));
         if (alertsRaw !== null) {
-          try { record.alerts = JSON.parse(alertsRaw); } catch {}
+          try {
+            const parsed = JSON.parse(alertsRaw);
+            // Subscriptions stay server-side: the client neither reads nor
+            // sends them, so there's no reason for endpoints to travel out.
+            if (parsed && typeof parsed === 'object') delete parsed.subscriptions;
+            record.alerts = parsed;
+          } catch {}
         }
         return json({ data: record, updatedAt: metadata?.updatedAt || null });
       }
@@ -139,7 +145,17 @@ export default {
         // No alerts field means "this build doesn't know about alerts" — leave
         // the key alone. Clearing them is expressed as an empty items object.
         if (alerts !== undefined) {
-          await env.PORTFOLIO_KV.put(alertsKeyFor(kvKey), JSON.stringify(alerts));
+          // Subscriptions are the worker's own: the client never sends them, so
+          // writing its payload verbatim would wipe whatever /api/push/subscribe
+          // stored — leaving checks with nobody to notify. Carry them over.
+          let existingSubs;
+          try {
+            const prev = JSON.parse(await env.PORTFOLIO_KV.get(alertsKeyFor(kvKey)));
+            if (prev && Array.isArray(prev.subscriptions)) existingSubs = prev.subscriptions;
+          } catch {}
+          const merged = (alerts && typeof alerts === 'object') ? { ...alerts } : {};
+          if (existingSubs && !Array.isArray(merged.subscriptions)) merged.subscriptions = existingSubs;
+          await env.PORTFOLIO_KV.put(alertsKeyFor(kvKey), JSON.stringify(merged));
         }
         await env.PORTFOLIO_KV.put(dataKeyFor(kvKey), JSON.stringify(record), { metadata: { updatedAt: now } });
         // Drop the pre-split copy so there's only one source of truth.
