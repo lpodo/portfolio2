@@ -318,12 +318,18 @@ export default {
 
       const results = [];
       for (const sub of subs) {
-        const r = await sendPush(env, sub, {
-          title: 'Portfolio Terminal',
-          body: 'Test notification — push is working.',
-          tag: 'pt-test'
-        });
-        results.push({ status: r.status, ok: r.ok });
+        try {
+          const r = await sendPush(env, sub, {
+            title: 'Portfolio Terminal',
+            body: 'Test notification — push is working.',
+            tag: 'pt-test'
+          });
+          let detail = '';
+          if (!r.ok) { try { detail = (await r.text()).slice(0, 200); } catch {} }
+          results.push({ status: r.status, ok: r.ok, detail });
+        } catch (err) {
+          results.push({ status: 0, ok: false, detail: 'threw: ' + (err && err.message ? err.message : String(err)) });
+        }
       }
       return json({ sent: results.length, results });
     }
@@ -455,10 +461,14 @@ async function checkOneUser(env, userKey, now) {
   // Notify only what just crossed — an alert that keeps holding stays quiet
   // until the price moves back and crosses again.
   let sent = 0, failed = 0;
+  let sendNote = '';
   if (newlyFired.length) {
     const subs = Array.isArray(payload.subscriptions) ? payload.subscriptions : [];
-    if (subs.length && env.VAPID_PRIVATE_KEY) {
+    if (!subs.length) sendNote = 'no subscriptions stored';
+    else if (!env.VAPID_PRIVATE_KEY) sendNote = 'VAPID_PRIVATE_KEY not set';
+    else {
       const dead = [];
+      const errors = [];
       for (const alert of newlyFired) {
         const arrow = alert.condition === '>' ? 'above' : 'below';
         const message = {
@@ -473,12 +483,19 @@ async function checkOneUser(env, userKey, now) {
             if (res.ok) sent++;
             else {
               failed++;
+              let detail = '';
+              try { detail = (await res.text()).slice(0, 200); } catch {}
+              errors.push(`${res.status} ${detail}`);
               // Gone for good — the device uninstalled or reset its subscription.
               if (res.status === 404 || res.status === 410) dead.push(sub.endpoint);
             }
-          } catch { failed++; }
+          } catch (err) {
+            failed++;
+            errors.push('threw: ' + (err && err.message ? err.message : String(err)));
+          }
         }
       }
+      if (errors.length) sendNote = errors.slice(0, 3).join(' | ');
       if (dead.length) {
         // Re-read: this payload was loaded before the fetches and sends, so
         // writing it back wholesale could clobber an alert the app saved in
@@ -500,6 +517,8 @@ async function checkOneUser(env, userKey, now) {
     priced: Object.keys(prices).length,
     sent,
     failed,
+    sendNote,
+    subs: Array.isArray(payload.subscriptions) ? payload.subscriptions.length : 0,
     holding: nowHolding,
     newlyFired,
     lastResult: holding
