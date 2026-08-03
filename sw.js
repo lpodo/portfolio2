@@ -4,7 +4,7 @@
 // picks them up on the next load without a bump. Independent of APP_VERSION
 // in index.html (that one is the user-facing version stamp; this one controls
 // cache invalidation).
-var CACHE = 'portfolio-2026-08-03-v407';
+var CACHE = 'portfolio-2026-08-03-v408';
 
 self.addEventListener('install', function(e) {
   // Pre-cache with cache:'reload' on each Request — forces network bypass of
@@ -20,6 +20,7 @@ self.addEventListener('install', function(e) {
         new Request('./core.js',        { cache: 'reload' }),
         new Request('./manifest.json',  { cache: 'reload' }),
         new Request('./icon-192.png',   { cache: 'reload' }),
+        new Request('./badge-96.png',   { cache: 'reload' }),
         new Request('./fundamentals.js',{ cache: 'reload' })
       ]);
     })
@@ -101,7 +102,9 @@ self.addEventListener('push', function(e) {
   var options = {
     body: data.body || '',
     icon: './icon-192.png',
-    badge: './icon-192.png',
+    // Android tints the badge by its alpha channel — an opaque square would
+    // come out as a solid white block, so this one is a transparent silhouette.
+    badge: './badge-96.png',
     tag: data.tag || 'pt-alert',
     // A repeat notification for the same ticker should announce itself rather
     // than silently replacing the previous one.
