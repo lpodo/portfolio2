@@ -210,7 +210,10 @@
 
 <!-- Settings panel -->
 <div class="settings-panel" id="settingsPanel">
-  <div class="settings-title">&#9881; Settings</div>
+  <div class="settings-title" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+    <span>&#9881; Settings</span>
+    <button class="btn-icon" onclick="closeSettings()" title="Close" style="font-size:16px;padding:0 4px">&#10005;</button>
+  </div>
 
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">PRICE SOURCE — BACKEND URL</div>
   <div class="key-row">
@@ -266,27 +269,37 @@
       &#8593; OVERWRITE CLOUD
     </button>
   </div>
-  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">ALERT CHECKS (APPLY TO ALL DEVICES)</div>
-  <div class="key-row" style="align-items:center;gap:0">
-    <label style="display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;margin:0">
+  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">SERVER-SIDE ALERT CHECKS</div>
+  <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;margin-bottom:8px">
+    <label style="display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;font-size:9px;color:var(--dim);letter-spacing:2px;margin:0;min-width:0">
       <input type="checkbox" id="alertChkEnable" onchange="setAlertChecksEnabled(this.checked)" style="cursor:pointer;margin:0">
       <span>ENABLE</span>
     </label>
-    <div style="flex:1"></div>
-    <label style="margin:0 6px 0 0;white-space:nowrap">EVERY</label>
-    <div id="alertChkEveryWrap" style="position:relative;width:96px"></div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <label style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:0;min-width:0">EVERY</label>
+      <div id="alertChkEveryWrap" style="position:relative;width:92px"></div>
+    </div>
   </div>
-  <div class="key-row" id="alertChkWindowRow" style="margin-top:6px;align-items:center;gap:0">
-    <label style="margin:0 6px 0 0">FROM</label>
-    <div id="alertChkFromWrap" style="position:relative;width:84px"></div>
-    <label style="margin:0 6px 0 10px">TO</label>
-    <div id="alertChkToWrap" style="position:relative;width:84px"></div>
-    <span id="alertChkTz" style="font-size:10px;color:var(--dim);margin-left:8px;white-space:nowrap"></span>
+  <div id="alertChkWindowRow" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px">
+    <div style="display:flex;align-items:center;gap:6px">
+      <label style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:0;min-width:0">FROM</label>
+      <div id="alertChkFromWrap" style="position:relative;width:82px"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <label style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:0;min-width:0">TO</label>
+      <div id="alertChkToWrap" style="position:relative;width:82px"></div>
+    </div>
+    <span id="alertChkTz" style="font-size:10px;color:var(--dim)"></span>
   </div>
-  <div class="key-row" id="pushRow" style="margin-top:8px;align-items:center;gap:0">
-    <button class="btn" id="pushToggleBtn" onclick="togglePushSubscription()" style="padding:5px 12px;font-size:10px;letter-spacing:1px">NOTIFICATIONS</button>
-    <button class="btn" id="pushTestBtn" onclick="sendTestPush()" style="padding:5px 12px;font-size:10px;letter-spacing:1px;margin-left:8px;color:var(--dim)">TEST</button>
-    <span id="pushStatus" style="font-size:10px;color:var(--dim);margin-left:8px"></span>
+
+  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">PUSH NOTIFICATIONS</div>
+  <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px">
+    <label style="display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;font-size:9px;color:var(--dim);letter-spacing:2px;margin:0;min-width:0">
+      <input type="checkbox" id="pushEnable" onchange="togglePushSubscription()" style="cursor:pointer;margin:0">
+      <span>SUBSCRIBE</span>
+    </label>
+    <button class="btn" id="pushTestBtn" onclick="sendTestPush()" style="padding:4px 12px;font-size:9px;letter-spacing:2px;color:var(--dim)">TEST</button>
+    <span id="pushStatus" style="font-size:10px;color:var(--dim)"></span>
   </div>
 
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">BACKUP / RESTORE</div>
@@ -370,7 +383,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.17';
+var APP_VERSION = 'v1.5.18';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4075,30 +4088,25 @@ function pushSupported() {
 }
 
 function renderPushStatus() {
-  var btn = document.getElementById('pushToggleBtn');
-  if (!btn) return;
+  var cb = document.getElementById('pushEnable');
+  if (!cb) return;
   var statusEl = document.getElementById('pushStatus');
   var testBtn = document.getElementById('pushTestBtn');
 
-  if (!pushSupported()) {
-    btn.style.color = 'var(--dim)';
-    if (statusEl) statusEl.textContent = 'not supported';
-    if (testBtn) testBtn.style.display = 'none';
-    return;
+  function set(checked, disabled, note) {
+    cb.checked = checked;
+    cb.disabled = disabled;
+    if (statusEl) statusEl.textContent = note || '';
+    if (testBtn) testBtn.style.display = checked ? '' : 'none';
   }
-  if (Notification.permission === 'denied') {
-    btn.style.color = 'var(--dim)';
-    if (statusEl) statusEl.textContent = 'blocked in browser settings';
-    if (testBtn) testBtn.style.display = 'none';
-    return;
-  }
+
+  if (!pushSupported()) { set(false, true, 'not supported'); return; }
+  if (Notification.permission === 'denied') { set(false, true, 'blocked in browser settings'); return; }
+
   navigator.serviceWorker.ready.then(function(reg) {
     return reg.pushManager.getSubscription();
   }).then(function(sub) {
-    btn.style.color = sub ? 'var(--green)' : 'var(--bright)';
-    btn.textContent = sub ? 'NOTIFICATIONS ON' : 'NOTIFICATIONS';
-    if (statusEl) statusEl.textContent = sub ? '' : 'off';
-    if (testBtn) testBtn.style.display = sub ? '' : 'none';
+    set(!!sub, false, '');
   }).catch(function() {});
 }
 
@@ -4136,7 +4144,12 @@ function togglePushSubscription() {
         }).then(function() { say(''); renderPushStatus(); });
       });
     });
-  }).catch(function(e) { say(String(e.message || e), 'var(--red)'); });
+  }).catch(function(e) {
+    // The checkbox flips before this runs, so a failed subscribe must put it
+    // back — otherwise it would claim a subscription that doesn't exist.
+    say(String(e.message || e), 'var(--red)');
+    renderPushStatus();
+  });
 }
 
 function sendTestPush() {
