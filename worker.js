@@ -534,13 +534,38 @@ async function checkOneUser(env, userKey, now) {
     else {
       const dead = [];
       const errors = [];
-      for (const alert of newlyFired) {
-        const arrow = alert.condition === '>' ? 'above' : 'below';
+
+      // Group by ticker and direction: two thresholds crossing in the same run
+      // should read as one event, not two near-identical notifications.
+      const groups = {};
+      for (const a of newlyFired) {
+        const key = a.ticker + a.condition;
+        if (!groups[key]) groups[key] = { ticker: a.ticker, condition: a.condition, price: a.price, values: [] };
+        groups[key].values.push(a.value);
+      }
+
+      for (const g of Object.values(groups)) {
+        const arrow = g.condition === '>' ? 'above' : 'below';
+        const mark = g.condition === '>' ? '\u25B2' : '\u25BC';
+        const crossed = g.values.slice().sort((x, y) => x - y).join(', ');
+
+        // The full ladder for this direction only: an opposite-direction
+        // threshold ticked here would mean the reverse and read as a
+        // contradiction.
+        const ladder = (items[g.ticker] || [])
+          .filter(a => a && a.condition === g.condition)
+          .sort((x, y) => x.value - y.value)
+          .map(a => {
+            const holds = g.condition === '>' ? g.price > a.value : g.price < a.value;
+            return `${a.value} ${holds ? '\u2713' : '\u2717'}`;
+          })
+          .join('  ');
+
         const message = {
-          title: `${alert.ticker} ${arrow} ${alert.value}`,
-          body: `now ${alert.price}`,
-          tag: 'pt-alert-' + alert.id,
-          ticker: alert.ticker
+          title: `${g.ticker} ${arrow} ${crossed} ${mark}${g.price}`,
+          body: ladder,
+          tag: 'pt-alert-' + g.ticker + g.condition,
+          ticker: g.ticker
         };
         for (const sub of subs) {
           try {
