@@ -275,6 +275,21 @@ export default {
 
     // Trading hours: /api/hours?ticker=X — returns just the current trading
     // period (pre/regular/post) and the exchange timezone. Fetched on demand.
+    // Just the alerts record — the settings are shared across devices, so the
+    // settings panel refreshes them on open without pulling the whole blob.
+    if (url.pathname === '/api/alerts') {
+      const kvKey = request.headers.get('X-KV-Key');
+      if (!kvKey) return json({ error: 'X-KV-Key required' }, 400);
+      if (!env.PORTFOLIO_KV) return json({ error: 'KV not configured' }, 503);
+      const raw = await env.PORTFOLIO_KV.get(alertsKeyFor(kvKey));
+      if (raw === null) return json({ alerts: null });
+      let parsed = null;
+      try { parsed = JSON.parse(raw); } catch {}
+      // Subscriptions stay server-side.
+      if (parsed && typeof parsed === 'object') delete parsed.subscriptions;
+      return json({ alerts: parsed });
+    }
+
     // Web Push: the client asks for the public key rather than embedding a
     // copy, so the pair only ever lives in the worker's config.
     if (url.pathname === '/api/push/key') {

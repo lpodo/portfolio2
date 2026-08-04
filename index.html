@@ -370,7 +370,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.16';
+var APP_VERSION = 'v1.5.17';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -3440,12 +3440,30 @@ function saveApiKey() {
   localStorage.setItem('pt_finnhub', k);
   updateSettingsUI();
 }
+// The check settings are shared — another device may have changed them since
+// this one last loaded. Refresh on open so the panel doesn't show a stale copy.
+// Deliberately not gated on the local enabled flag: that flag is part of what
+// might be stale, so trusting it could keep a device from ever catching up.
+function refreshAlertSettingsFromCloud() {
+  if (!getApiKey() || !getKvKey()) return;
+  pushServerCall('/api/alerts', null, 'GET').then(function(res) {
+    if (!res || !res.alerts) return;
+    var st = res.alerts.settings;
+    if (st && typeof st === 'object') {
+      alertCheckSettings = Object.assign({}, ALERT_CHECK_DEFAULTS, st);
+      if (!alertCheckSettings.tz) alertCheckSettings.tz = localTimeZoneName();
+      saveAlertCheckSettingsLS();
+      renderAlertCheckSettings();
+    }
+  }).catch(function() { /* offline: the local copy is the best we have */ });
+}
+
 function toggleSettings() {
   var p = document.getElementById('settingsPanel');
   var o = document.getElementById('overlay');
   p.classList.toggle('open');
   o.classList.toggle('open');
-  if (p.classList.contains('open')) { renderDictsPanel(); renderAlertCheckSettings(); renderPushStatus(); }
+  if (p.classList.contains('open')) { renderDictsPanel(); renderAlertCheckSettings(); renderPushStatus(); refreshAlertSettingsFromCloud(); }
 }
 function closeSettings() {
   document.getElementById('settingsPanel').classList.remove('open');
@@ -4135,7 +4153,8 @@ function sendTestPush() {
   });
 }
 
-// The push endpoints live on the same worker and use the same auth as the rest.
+// Worker endpoints that take the same auth as the rest of the cloud calls
+// (push subscription, test send, and the alerts record).
 function pushServerCall(path, body, method) {
   var base = getApiKey();
   if (!base) return Promise.reject(new Error('API not configured'));
