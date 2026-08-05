@@ -291,6 +291,12 @@
     </div>
     <span id="alertChkTz" style="font-size:10px;color:var(--dim)"></span>
   </div>
+  <div id="alertChkMoversRow" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;margin-top:8px">
+    <div style="display:flex;align-items:center;gap:6px">
+      <label style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:0;min-width:0">TOP MOVERS</label>
+      <div id="alertChkMoversWrap" style="position:relative;width:92px"></div>
+    </div>
+  </div>
 
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">PUSH NOTIFICATIONS</div>
   <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px">
@@ -383,7 +389,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.26';
+var APP_VERSION = 'v1.5.31';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4305,6 +4311,20 @@ function alertChkPicker(name, currentLabel, options, disabled) {
   return html;
 }
 
+// Movers can't be sent more often than prices are gathered, so the list starts
+// at the alert period. 'none' switches them off.
+function moversOptionsFor(everyMinutes) {
+  var opts = [{ v: 0, label: 'none' }];
+  ALERT_CHECK_PERIODS.forEach(function(p) {
+    if (p.v >= everyMinutes) opts.push(p);
+  });
+  return opts;
+}
+function moversLabel(v) {
+  if (!v) return 'none';
+  return periodLabel(v);
+}
+
 function renderAlertCheckSettings() {
   var everyWrap = document.getElementById('alertChkEveryWrap');
   if (!everyWrap) return;
@@ -4335,8 +4355,16 @@ function renderAlertCheckSettings() {
 
   // The window row dims as a whole: the zone labels those hours, so it belongs
   // with them rather than staying bright on its own.
+  document.getElementById('alertChkMoversWrap').innerHTML =
+    alertChkPicker('Movers', moversLabel(alertCheckSettings.moversMinutes),
+      moversOptionsFor(alertCheckSettings.everyMinutes).map(function(o) {
+        return { label: o.label, action: 'pickAlertChkMovers(' + o.v + ')', selected: o.v === alertCheckSettings.moversMinutes };
+      }), !on);
+
   var row = document.getElementById('alertChkWindowRow');
   if (row) row.style.opacity = on ? '1' : '0.5';
+  var mrow = document.getElementById('alertChkMoversRow');
+  if (mrow) mrow.style.opacity = on ? '1' : '0.5';
 
   // Always populated — the zone describes the hours in the pickers, so it's
   // there before any choice is made.
@@ -4345,7 +4373,7 @@ function renderAlertCheckSettings() {
 }
 
 function toggleAlertChkDrop(name) {
-  ['Every', 'From', 'To'].forEach(function(n) {
+  ['Every', 'From', 'To', 'Movers'].forEach(function(n) {
     var m = document.getElementById('alertChkMenu' + n);
     if (!m) return;
     if (n === name) m.style.display = (m.style.display === 'none' ? 'block' : 'none');
@@ -4354,6 +4382,14 @@ function toggleAlertChkDrop(name) {
 }
 function pickAlertChkEvery(v) {
   alertCheckSettings.everyMinutes = v;
+  // Movers can't outpace the gathering they depend on — lift the choice if the
+  // new period overtakes it.
+  var m = alertCheckSettings.moversMinutes;
+  if (m && m < v) alertCheckSettings.moversMinutes = v;
+  commitAlertCheckSettings();
+}
+function pickAlertChkMovers(v) {
+  alertCheckSettings.moversMinutes = v;
   commitAlertCheckSettings();
 }
 function pickAlertChkHour(kind, v) {
@@ -5280,21 +5316,21 @@ window.chartViewType = 'portfolio'; // 'portfolio' or 'positions'
 window.chartSelectionOpen = false;
 
 // ── Position sets (per-portfolio named subsets of tickers) ──────────────────
-// Stored in portfolio JSON as positionSets: [{id, name, tickers: [...]}].
+// Stored in portfolio JSON as positionSets: [{id, name, tickers: [...], pinned}].
 // Each set identifies positions by ticker (not id) — durable across re-adds.
-// Used in chart and fundamentals views; menu shows sets in place of the
-// old "positions" item, with a MANAGE SETS button at the bottom.
+//
+// Global sets are subsets of ALL POSITIONS and belong to the portfolio switcher:
+// pinning one makes it a view of its own there, with the same modes a portfolio
+// has. Chart, fundamentals and the filter are consumers of the same sets.
+// Per-portfolio sets still exist and are scoped to their portfolio.
 
 
-// Ticker universe offered in the sets modal. Honors the forced-global flag: the
-// filter's MANAGE SETS must offer the full all-portfolios union even when a
-// single portfolio is open. Temporarily borrows All Positions context.
-// The universe the sets modal offers. Sets are global, so this must be the
-// full union regardless of where the modal was opened from — including from
-// inside a set's own view, where the context would otherwise narrow the union
-// down to that very set and leave nothing to add.
-function getChartContextTickersForSets() {
-  if (!window._setsForceGlobal) return getChartUniqueTickers();
+// Ticker universe the sets modal offers. Global sets span every portfolio, so
+// this is the full union whenever the modal manages them — including when it's
+// opened from inside a set's own view, where the live context would narrow the
+// union down to that very set and leave nothing to add.
+function getSetsUniverseTickers() {
+  if (!window._managingGlobalSets) return getChartUniqueTickers();
   var savedView = viewMode;
   var savedSet = currentSetId;
   viewMode = 'global-chart';           // makes isAllPositions() true → union
@@ -5305,12 +5341,11 @@ function getChartContextTickersForSets() {
   return t;
 }
 
-// Context for SET operations (create/update/delete/list/ticker-source).
-// Normally the current view context, but when the sets modal is opened from the
-// filter we force the global store: the filter's sets are the All Positions
-// sets, no matter which portfolio is open.
+// Context for set operations (create/update/delete/list/ticker-source).
+// The switcher and the filter both manage the global store regardless of which
+// portfolio happens to be open; elsewhere sets belong to the current view.
 function getSetsCtx() {
-  return window._setsForceGlobal ? ALL_POSITIONS_CTX : getSelCtx();
+  return window._managingGlobalSets ? ALL_POSITIONS_CTX : getSelCtx();
 }
 
 function savePositionSets(ctx, sets) {
@@ -5773,15 +5808,18 @@ function openPositionSetsModal(editSetId) {
   var modal = document.createElement('div');
   modal.id = 'positionSetsModal';
   // Above the filter overlay (z 600) when opened from it; normal 400 otherwise.
-  var zed = window._setsForceGlobal ? 700 : 400;
+  var zed = window._managingGlobalSets ? 700 : 400;
   modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:' + zed + ';display:flex;align-items:flex-start;justify-content:center;padding:40px 12px;overflow-y:auto';
   modal.onclick = function(e) { if (e.target === modal) closePositionSetsModal(); };
   document.body.appendChild(modal);
   renderPositionSetsModal();
 }
 
+// Opens the modal on the global sets — used by the switcher's ＋ and by the
+// filter's MANAGE SETS, both of which deal with ALL POSITIONS subsets rather
+// than the open portfolio's own sets.
 function openPositionSetsModalGlobal() {
-  window._setsForceGlobal = true;
+  window._managingGlobalSets = true;
   openPositionSetsModal();
 }
 
@@ -5790,8 +5828,8 @@ function closePositionSetsModal() {
   if (m) m.remove();
   window._editingSetId = null;
   window._expandedSetId = null;
-  var wasGlobal = window._setsForceGlobal;
-  window._setsForceGlobal = false;
+  var wasGlobal = window._managingGlobalSets;
+  window._managingGlobalSets = false;
   render();
   // If this was opened from the filter, refresh the filter's custom SET
   // dropdown in place so a just-created set shows up, keeping other choices.
@@ -5814,7 +5852,7 @@ function renderPositionSetsModal() {
   if (!modal) return;
   var sets = getPositionSets(getSetsCtx());
   var editing = window._editingSetId;
-  var allTickers = getChartContextTickersForSets().slice().sort(function(a, b) {
+  var allTickers = getSetsUniverseTickers().slice().sort(function(a, b) {
     return a.localeCompare(b);
   });
 
@@ -5874,7 +5912,7 @@ function renderPositionSetsModal() {
         var isExpanded = window._expandedSetId === s.id;
         var row = '<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid ' + (isExpanded ? 'transparent' : 'var(--border)') + '">'
           + '<div style="flex:1;font-size:12px;cursor:pointer" onclick="toggleSetPreview(&apos;' + s.id + '&apos;)"><span style="color:var(--bright);letter-spacing:1px">' + s.name + '</span> <span style="color:var(--dim);font-size:10px">' + count + (count === 1 ? ' ticker' : ' tickers') + '</span></div>'
-          + setPinButtonHtml(s)
+          + (getSetsCtx() === ALL_POSITIONS_CTX ? setPinButtonHtml(s) : '')
           + '<button class="btn-icon" onclick="startEditPositionSet(&apos;' + s.id + '&apos;)" style="font-size:13px;padding:4px 7px">&#9998;</button>'
           + '<button class="btn-icon" onclick="confirmDeletePositionSet(&apos;' + s.id + '&apos;)" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
           + '</div>';
@@ -5927,18 +5965,18 @@ function setPinButtonHtml(s) {
 // The switcher deals in global sets, so both handlers force that context —
 // otherwise the lookups would resolve against the last-opened portfolio's sets.
 function editSetFromSwitcher(setId) {
-  window._setsForceGlobal = true;
+  window._managingGlobalSets = true;
   closeSwitcher();
   openPositionSetsModal(setId);
 }
 
 function deleteSetFromSwitcher(setId) {
-  window._setsForceGlobal = true;
+  window._managingGlobalSets = true;
   var set = getPositionSets(ALL_POSITIONS_CTX).find(function(s) { return s.id === setId; });
-  if (!set) { window._setsForceGlobal = false; return; }
-  if (!confirm('Delete set "' + set.name + '"?')) { window._setsForceGlobal = false; return; }
+  if (!set) { window._managingGlobalSets = false; return; }
+  if (!confirm('Delete set "' + set.name + '"?')) { window._managingGlobalSets = false; return; }
   deletePositionSet(setId);
-  window._setsForceGlobal = false;
+  window._managingGlobalSets = false;
   // Viewing the set that just went away — step back to what it was built on.
   if (currentSetId === setId) { currentSetId = null; switchToAllPositions(); }
   renderSwitcher();
@@ -5982,7 +6020,7 @@ function clearMissingFromSet(setId) {
   // Preview: remove tickers no longer held, straight away (no SAVE here).
   var set = getPositionSets(getSetsCtx()).find(function(s) { return s.id === setId; });
   if (!set) return;
-  var universe = getChartContextTickersForSets();
+  var universe = getSetsUniverseTickers();
   var kept = (set.tickers || []).filter(function(t) { return universe.indexOf(t) !== -1; });
   updatePositionSet(setId, { tickers: kept });
   renderPositionSetsModal();
@@ -6011,7 +6049,7 @@ function savePositionSetFromModal() {
   // checked survive and unchecked ones are removed.
   // The same universe the form listed — not the raw context one, which narrows
   // to the open set and would silently drop every addition.
-  var universe = getChartContextTickersForSets();
+  var universe = getSetsUniverseTickers();
   var editingSet = window._editingSetId && window._editingSetId !== '_new'
     ? getPositionSets(getSetsCtx()).find(function(s) { return s.id === window._editingSetId; })
     : null;
@@ -6055,7 +6093,8 @@ function getFundamentalsSelKey() {
 function getFundamentalsSelection() {
   var sel = getFundamentalsSelectedSet();
   if (!sel) return [];
-  var set = getPositionSets().find(function(s) { return s.id === sel; });
+  // Same context the selection key used — see getChartSelection.
+  var set = getPositionSets(getSelCtx()).find(function(s) { return s.id === sel; });
   if (!set) return [];
   var allTickers = getFundamentalsUniqueTickers();
   return set.tickers.filter(function(t) { return allTickers.indexOf(t) !== -1; });

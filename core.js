@@ -271,7 +271,7 @@ function migrateNotesToTicker() {
 //                     (7 → 1), equal hours mean around the clock
 //   everyMinutes  how often to check within the window
 //   tz            IANA zone name, not an offset, so the window survives DST
-var ALERT_CHECK_DEFAULTS = { enabled: false, fromHour: 7, toHour: 24, everyMinutes: 10, tz: '' };
+var ALERT_CHECK_DEFAULTS = { enabled: false, fromHour: 7, toHour: 24, everyMinutes: 10, moversMinutes: 0, tz: '' };
 var alertCheckSettings = {};
 
 function loadAlertCheckSettingsLS() {
@@ -1130,6 +1130,9 @@ function ctxPortfolioPositions(pid) {
   return list.filter(function(pos) { return wanted[pos.ticker]; });
 }
 
+// Context key for per-view selections (chart set, fundamentals set, sets list).
+// An open pinned set shares the ALL POSITIONS key: it's a subset of it and
+// reuses its views, so their chart/fundamentals selections are the same one.
 function getSelCtx() {
   return isAllPositions() ? ALL_POSITIONS_CTX : currentPortfolioId;
 }
@@ -1200,7 +1203,9 @@ function getChartSelection() {
   // selected. 'portfolio' is handled separately (returns all unique tickers).
   var sel = getChartSelectedSet();
   if (sel === 'portfolio') return getChartUniqueTickers();
-  var set = getPositionSets().find(function(s) { return s.id === sel; });
+  // The id came from the selection key, which is scoped by getSelCtx() — look
+  // it up in that same context rather than relying on the default matching.
+  var set = getPositionSets(getSelCtx()).find(function(s) { return s.id === sel; });
   if (!set) return [];
   // Filter to tickers actually present in current portfolio
   var allTickers = getChartUniqueTickers();
