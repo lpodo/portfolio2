@@ -512,11 +512,15 @@ async function checkOneUser(env, userKey, now) {
   // came round.
   const previously = state.holding || {};
   const pricedIds = {};
+  const liveIds = {};
+  for (const t of tickers) for (const a of items[t] || []) if (a && a.id) liveIds[a.id] = true;
   for (const t of visited) for (const a of items[t] || []) if (a && a.id) pricedIds[a.id] = true;
 
   const nowHolding = {};
   for (const id of Object.keys(previously)) {
-    if (!pricedIds[id]) nowHolding[id] = true; // untouched this run
+    // Deleted alerts are dropped here: without the liveIds check their state
+    // would be carried forward on every run, since they can never be priced.
+    if (!pricedIds[id] && liveIds[id]) nowHolding[id] = true; // untouched this run
   }
   const newlyFired = [];
   for (const h of holding) {
@@ -524,11 +528,27 @@ async function checkOneUser(env, userKey, now) {
     if (!previously[h.id]) newlyFired.push(h);
   }
 
+  // The reverse transition: held before, priced this run, no longer holds.
+  // A deleted alert doesn't qualify — it didn't come back, it's just gone.
+  const holdingNow = {};
+  for (const h of holding) holdingNow[h.id] = true;
+  const released = [];
+  for (const t of visited) {
+    const price = prices[t];
+    if (typeof price !== 'number') continue;
+    for (const a of items[t] || []) {
+      if (!a || !a.id) continue;
+      if (previously[a.id] && !holdingNow[a.id]) {
+        released.push({ id: a.id, ticker: t, condition: a.condition, value: a.value, price });
+      }
+    }
+  }
+
   // Notify only what just crossed — an alert that keeps holding stays quiet
   // until the price moves back and crosses again.
   let sent = 0, failed = 0;
   let sendNote = '';
-  if (newlyFired.length) {
+  if (newlyFired.length || released.length) {
     const subs = Array.isArray(payload.subscriptions) ? payload.subscriptions : [];
     if (!subs.length) sendNote = 'no subscriptions stored';
     else if (!env.VAPID_PRIVATE_KEY) sendNote = 'VAPID_PRIVATE_KEY not set';
@@ -538,46 +558,20 @@ async function checkOneUser(env, userKey, now) {
 
       // Group by ticker and direction: two thresholds crossing in the same run
       // should read as one event, not two near-identical notifications.
-      const groups = {};
-      for (const a of newlyFired) {
-        const key = a.ticker + a.condition;
-        if (!groups[key]) groups[key] = { ticker: a.ticker, condition: a.condition, price: a.price, values: [] };
-        groups[key].values.push(a.value);
+      function groupBy(list) {
+        const out = {};
+        for (const a of list) {
+          const key = a.ticker + a.condition;
+          if (!out[key]) out[key] = { ticker: a.ticker, condition: a.condition, price: a.price, values: [] };
+          out[key].values.push(a.value);
+        }
+        return Object.values(out);
       }
 
-      for (const g of Object.values(groups)) {
-        const arrow = g.condition === '>' ? 'above' : 'below';
-        const mark = g.condition === '>' ? '\u25B2' : '\u25BC';
-        const crossed = g.values.slice().sort((x, y) => x - y).join(', ');
-        const q = quotes[g.ticker] || {};
+      const messages = groupBy(newlyFired).map(g => buildAlertMessage(g, items, quotes, false))
+        .concat(groupBy(released).map(g => buildAlertMessage(g, items, quotes, true)));
 
-        // Change since the previous close, when there is one to compare with.
-        let delta = '';
-        if (typeof q.previousClose === 'number' && q.previousClose !== 0) {
-          const diff = g.price - q.previousClose;
-          const pct = (diff / q.previousClose) * 100;
-          const sign = diff >= 0 ? '+' : '\u2212';
-          delta = ` ${sign}${Math.abs(diff).toFixed(2)} (${sign}${Math.abs(pct).toFixed(2)}%)`;
-        }
-
-        // The full ladder for this direction only: an opposite-direction
-        // threshold ticked here would mean the reverse and read as a
-        // contradiction.
-        const ladder = (items[g.ticker] || [])
-          .filter(a => a && a.condition === g.condition)
-          .sort((x, y) => x.value - y.value)
-          .map(a => {
-            const holds = g.condition === '>' ? g.price > a.value : g.price < a.value;
-            return `${a.value} ${holds ? '\u2713' : '\u2717'}`;
-          })
-          .join('  ');
-
-        const message = {
-          title: `${g.ticker} ${arrow} ${crossed} ${mark}${g.price}${delta}`,
-          body: ladder + '\n' + marketStateLabel(q),
-          tag: 'pt-alert-' + g.ticker + g.condition,
-          ticker: g.ticker
-        };
+      for (const message of messages) {
         for (const sub of subs) {
           try {
             const res = await sendPush(env, sub, message);
@@ -627,6 +621,7 @@ async function checkOneUser(env, userKey, now) {
     subs: Array.isArray(payload.subscriptions) ? payload.subscriptions.length : 0,
     holding: nowHolding,
     newlyFired,
+    released,
     lastResult: holding
   }));
 }
@@ -996,6 +991,44 @@ async function encryptPayload(subscription, plaintext) {
   const rs = new Uint8Array(4);
   new DataView(rs.buffer).setUint32(0, 4096);
   return concatBytes(salt, rs, new Uint8Array([localPubRaw.length]), localPubRaw, ciphertext);
+}
+
+// Builds both kinds of alert notification. A crossing reads "above 200", a
+// release "back below 200" — the arrow follows the price so a release can't be
+// mistaken for a fresh crossing the other way.
+function buildAlertMessage(g, items, quotes, isRelease) {
+  const q = quotes[g.ticker] || {};
+  const up = g.condition === '>';
+  const word = isRelease ? (up ? 'back below' : 'back above') : (up ? 'above' : 'below');
+  const mark = (isRelease ? !up : up) ? '\u25B2' : '\u25BC';
+  const values = g.values.slice().sort((x, y) => x - y).join(', ');
+
+  // Change since the previous close, when there is one to compare with.
+  let delta = '';
+  if (typeof q.previousClose === 'number' && q.previousClose !== 0) {
+    const diff = g.price - q.previousClose;
+    const pct = (diff / q.previousClose) * 100;
+    const sign = diff >= 0 ? '+' : '\u2212';
+    delta = ` ${sign}${Math.abs(diff).toFixed(2)} (${sign}${Math.abs(pct).toFixed(2)}%)`;
+  }
+
+  // The full ladder for this direction only: an opposite-direction threshold
+  // ticked here would mean the reverse and read as a contradiction.
+  const ladder = (items[g.ticker] || [])
+    .filter(a => a && a.condition === g.condition)
+    .sort((x, y) => x.value - y.value)
+    .map(a => {
+      const holds = up ? g.price > a.value : g.price < a.value;
+      return `${a.value} ${holds ? '\u2713' : '\u2717'}`;
+    })
+    .join('  ');
+
+  return {
+    title: `${g.ticker} ${word} ${values} ${mark}${g.price}${delta}`,
+    body: ladder + '\n' + marketStateLabel(q),
+    tag: 'pt-alert-' + g.ticker + g.condition,
+    ticker: g.ticker
+  };
 }
 
 // Yahoo's marketState in words. Worth showing, since a price that crossed a
