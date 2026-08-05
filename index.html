@@ -383,7 +383,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.24';
+var APP_VERSION = 'v1.5.25';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -2435,8 +2435,9 @@ function renderSwitcher() {
   // work on positions independent of which portfolio they belong to. The
   // position counter (was on Σ Summary) lives here now since these views
   // operate on the count of positions, not portfolios.
-  html += '<div class="portfolio-item portfolio-item-meta' + (isAllPositions() && !currentSetId ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:8px 14px" onclick="switchToAllPositions()">'
-    + '<div style="flex:1"><span class="portfolio-item-name">ALL POSITIONS</span> <span class="portfolio-item-count">' + totalActive + ' pos</span></div>'
+  html += '<div class="portfolio-item portfolio-item-meta' + (isAllPositions() && !currentSetId ? ' active' : '') + '" style="display:flex;align-items:center;border-top:1px solid var(--border);padding:8px 14px">'
+    + '<div style="flex:1;cursor:pointer;min-width:0" onclick="switchToAllPositions()"><span class="portfolio-item-name">ALL POSITIONS</span> <span class="portfolio-item-count">' + totalActive + ' pos</span></div>'
+    + '<button class="btn-icon" onclick="event.stopPropagation();openPositionSetsModalGlobal()" title="Manage sets" style="font-size:15px;padding:4px 7px">+</button>'
     + '</div>';
   // Pinned sets sit right below, each a view over the same union narrowed to
   // its tickers. Same controls as in manage sets, so a set can be unpinned,
@@ -2461,8 +2462,8 @@ function renderSwitcher() {
       + '<span class="portfolio-item-name">' + s.name + '</span> <span class="portfolio-item-count">' + held + ' pos</span>'
       + '</div>'
       + setPinButtonHtml(s)
-      + '<button class="btn-icon" onclick="event.stopPropagation();openPositionSetsModalGlobal()" style="font-size:13px;padding:4px 7px">&#9998;</button>'
-      + '<button class="btn-icon" onclick="event.stopPropagation();confirmDeletePositionSet(&apos;' + s.id + '&apos;)" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
+      + '<button class="btn-icon" onclick="event.stopPropagation();editSetFromSwitcher(&apos;' + s.id + '&apos;)" style="font-size:13px;padding:4px 7px">&#9998;</button>'
+      + '<button class="btn-icon" onclick="event.stopPropagation();deleteSetFromSwitcher(&apos;' + s.id + '&apos;)" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
       + '</div>';
   });
   // Σ SUMMARY BY PORTFOLIO — per-portfolio aggregate views (P&L, market, chart)
@@ -5756,8 +5757,10 @@ function confirmAggSell() {
   render();
 }
 
-function openPositionSetsModal() {
-  window._editingSetId = null;
+function openPositionSetsModal(editSetId) {
+  // Opens on the list by default; a caller can name a set to open its form
+  // directly, which is what the switcher's pencil does.
+  window._editingSetId = editSetId || null;
   var existing = document.getElementById('positionSetsModal');
   if (existing) existing.remove();
   var modal = document.createElement('div');
@@ -5914,12 +5917,40 @@ function setPinButtonHtml(s) {
   return '<button class="btn-icon" onclick="toggleSetPinned(&apos;' + s.id + '&apos;)" title="' + title + '" style="' + style + '">&#128204;</button>';
 }
 
+// The switcher deals in global sets, so both handlers force that context —
+// otherwise the lookups would resolve against the last-opened portfolio's sets.
+function editSetFromSwitcher(setId) {
+  window._setsForceGlobal = true;
+  closeSwitcher();
+  openPositionSetsModal(setId);
+}
+
+function deleteSetFromSwitcher(setId) {
+  window._setsForceGlobal = true;
+  var set = getPositionSets(ALL_POSITIONS_CTX).find(function(s) { return s.id === setId; });
+  if (!set) { window._setsForceGlobal = false; return; }
+  if (!confirm('Delete set "' + set.name + '"?')) { window._setsForceGlobal = false; return; }
+  deletePositionSet(setId);
+  window._setsForceGlobal = false;
+  // Viewing the set that just went away — step back to what it was built on.
+  if (currentSetId === setId) { currentSetId = null; switchToAllPositions(); }
+  renderSwitcher();
+  save();
+}
+
 function toggleSetPinned(setId) {
   var sets = getPositionSets(getSetsCtx());
   var target = null;
   for (var i = 0; i < sets.length; i++) if (sets[i].id === setId) target = sets[i];
   if (!target) return;
-  updatePositionSet(setId, { pinned: !target.pinned });
+  var nowPinned = !target.pinned;
+  updatePositionSet(setId, { pinned: nowPinned });
+  // Unpinning removes it from the switcher, so viewing it would strand you in
+  // a place you can no longer navigate back to.
+  if (!nowPinned && currentSetId === setId) {
+    currentSetId = null;
+    switchToAllPositions();
+  }
   renderPositionSetsModal();
   renderSwitcher();
   save();
@@ -5995,7 +6026,7 @@ function savePositionSetFromModal() {
 }
 
 function confirmDeletePositionSet(setId) {
-  var set = getPositionSets().find(function(s) { return s.id === setId; });
+  var set = getPositionSets(getSetsCtx()).find(function(s) { return s.id === setId; });
   if (!set) return;
   if (!confirm('Delete set "' + set.name + '"?')) return;
   deletePositionSet(setId);
