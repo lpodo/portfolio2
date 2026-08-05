@@ -383,7 +383,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.25';
+var APP_VERSION = 'v1.5.26';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -2437,7 +2437,7 @@ function renderSwitcher() {
   // operate on the count of positions, not portfolios.
   html += '<div class="portfolio-item portfolio-item-meta' + (isAllPositions() && !currentSetId ? ' active' : '') + '" style="display:flex;align-items:center;border-top:1px solid var(--border);padding:8px 14px">'
     + '<div style="flex:1;cursor:pointer;min-width:0" onclick="switchToAllPositions()"><span class="portfolio-item-name">ALL POSITIONS</span> <span class="portfolio-item-count">' + totalActive + ' pos</span></div>'
-    + '<button class="btn-icon" onclick="event.stopPropagation();openPositionSetsModalGlobal()" title="Manage sets" style="font-size:15px;padding:4px 7px">+</button>'
+    + '<button class="btn-icon" onclick="event.stopPropagation();openPositionSetsModalGlobal()" title="Manage sets" style="font-size:13px;padding:4px 7px">＋</button>'
     + '</div>';
   // Pinned sets sit right below, each a view over the same union narrowed to
   // its tickers. Same controls as in manage sets, so a set can be unpinned,
@@ -5289,12 +5289,19 @@ window.chartSelectionOpen = false;
 // Ticker universe offered in the sets modal. Honors the forced-global flag: the
 // filter's MANAGE SETS must offer the full all-portfolios union even when a
 // single portfolio is open. Temporarily borrows All Positions context.
+// The universe the sets modal offers. Sets are global, so this must be the
+// full union regardless of where the modal was opened from — including from
+// inside a set's own view, where the context would otherwise narrow the union
+// down to that very set and leave nothing to add.
 function getChartContextTickersForSets() {
   if (!window._setsForceGlobal) return getChartUniqueTickers();
   var savedView = viewMode;
+  var savedSet = currentSetId;
   viewMode = 'global-chart';           // makes isAllPositions() true → union
+  currentSetId = null;                 // ...and not narrowed to the open set
   var t = getChartUniqueTickers();
   viewMode = savedView;
+  currentSetId = savedSet;
   return t;
 }
 
@@ -6002,7 +6009,9 @@ function savePositionSetFromModal() {
   // that are no longer held (they get checkboxes in the NOT-CURRENTLY-HELD
   // group). Collect whatever is checked across both, so missing tickers left
   // checked survive and unchecked ones are removed.
-  var universe = getChartUniqueTickers();
+  // The same universe the form listed — not the raw context one, which narrows
+  // to the open set and would silently drop every addition.
+  var universe = getChartContextTickersForSets();
   var editingSet = window._editingSetId && window._editingSetId !== '_new'
     ? getPositionSets(getSetsCtx()).find(function(s) { return s.id === window._editingSetId; })
     : null;
