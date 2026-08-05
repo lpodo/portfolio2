@@ -468,6 +468,7 @@ async function checkOneUser(env, userKey, now) {
 
   let cursor = numOr(state.cursor, 0) % (total || 1);
   const prices = {};
+  const quotes = {};
   const visited = [];
   let spent = 0;
   let attempted = 0;
@@ -484,7 +485,7 @@ async function checkOneUser(env, userKey, now) {
       // A quote that didn't arrive counts as not visited: leaving it out of
       // `visited` keeps its alerts on their previous state instead of reading
       // as "stopped holding", which would fire again once the price returns.
-      if (q && !q.error && typeof q.price === 'number') { prices[t] = q.price; visited.push(t); }
+      if (q && !q.error && typeof q.price === 'number') { prices[t] = q.price; quotes[t] = q; visited.push(t); }
     } catch {
       spent += 2;
     }
@@ -548,6 +549,16 @@ async function checkOneUser(env, userKey, now) {
         const arrow = g.condition === '>' ? 'above' : 'below';
         const mark = g.condition === '>' ? '\u25B2' : '\u25BC';
         const crossed = g.values.slice().sort((x, y) => x - y).join(', ');
+        const q = quotes[g.ticker] || {};
+
+        // Change since the previous close, when there is one to compare with.
+        let delta = '';
+        if (typeof q.previousClose === 'number' && q.previousClose !== 0) {
+          const diff = g.price - q.previousClose;
+          const pct = (diff / q.previousClose) * 100;
+          const sign = diff >= 0 ? '+' : '\u2212';
+          delta = ` ${sign}${Math.abs(diff).toFixed(2)} (${sign}${Math.abs(pct).toFixed(2)}%)`;
+        }
 
         // The full ladder for this direction only: an opposite-direction
         // threshold ticked here would mean the reverse and read as a
@@ -562,8 +573,8 @@ async function checkOneUser(env, userKey, now) {
           .join('  ');
 
         const message = {
-          title: `${g.ticker} ${arrow} ${crossed} ${mark}${g.price}`,
-          body: ladder,
+          title: `${g.ticker} ${arrow} ${crossed} ${mark}${g.price}${delta}`,
+          body: ladder + '\n' + marketStateLabel(q),
           tag: 'pt-alert-' + g.ticker + g.condition,
           ticker: g.ticker
         };
@@ -985,6 +996,17 @@ async function encryptPayload(subscription, plaintext) {
   const rs = new Uint8Array(4);
   new DataView(rs.buffer).setUint32(0, 4096);
   return concatBytes(salt, rs, new Uint8Array([localPubRaw.length]), localPubRaw, ciphertext);
+}
+
+// Yahoo's marketState in words. Worth showing, since a price that crossed a
+// threshold outside the regular session carries a different weight.
+function marketStateLabel(quote) {
+  const s = String((quote && quote.marketState) || '').toUpperCase();
+  if (s === 'REGULAR') return 'market open';
+  if (s === 'PRE') return 'pre-market';
+  if (s === 'POST' || s === 'POSTPOST') return 'post-market';
+  if (s === 'CLOSED') return 'market closed';
+  return s ? s.toLowerCase() : 'market state unknown';
 }
 
 async function sendPush(env, subscription, message) {
