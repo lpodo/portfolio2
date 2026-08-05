@@ -1115,6 +1115,21 @@ function isSetContext() {
   return !!currentSetId && isAllPositions();
 }
 
+// Positions of one portfolio as the current context sees them. The
+// cross-portfolio views walk portfolios directly instead of using the context
+// helpers, so a pinned set has to narrow them here or it would have no effect.
+function ctxPortfolioPositions(pid) {
+  var list = (portfolios[pid] && portfolios[pid].positions) || [];
+  if (!isSetContext()) return list;
+  var sets = getPositionSets(ALL_POSITIONS_CTX);
+  var set = null;
+  for (var i = 0; i < sets.length; i++) if (sets[i].id === currentSetId) set = sets[i];
+  if (!set) return list;
+  var wanted = {};
+  (set.tickers || []).forEach(function(t) { wanted[t] = true; });
+  return list.filter(function(pos) { return wanted[pos.ticker]; });
+}
+
 function getSelCtx() {
   return isAllPositions() ? ALL_POSITIONS_CTX : currentPortfolioId;
 }

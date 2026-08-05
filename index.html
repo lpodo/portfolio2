@@ -383,7 +383,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.22';
+var APP_VERSION = 'v1.5.24';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -2442,7 +2442,19 @@ function renderSwitcher() {
   // its tickers. Same controls as in manage sets, so a set can be unpinned,
   // edited or removed without going through the settings.
   getPinnedSets().forEach(function(s) {
-    var held = getSetContextPositions(s.id).length;
+    // Counted like ALL POSITIONS above: unique tickers actually held, so the
+    // two numbers mean the same thing. getSetContextPositions returns lots and
+    // includes watchlist entries, which would read as a larger, different count.
+    var heldSeen = {};
+    Object.keys(portfolios).forEach(function(pid) {
+      if (portfolios[pid].watchlist || portfolios[pid].archive) return;
+      (portfolios[pid].positions || []).forEach(function(pos) {
+        if (!pos.sold && pos.qty > 0 && (s.tickers || []).indexOf(pos.ticker) !== -1) {
+          heldSeen[pos.ticker] = true;
+        }
+      });
+    });
+    var held = Object.keys(heldSeen).length;
     var isOpen = currentSetId === s.id;
     html += '<div class="portfolio-item portfolio-item-meta' + (isOpen ? ' active' : '') + '" style="display:flex;align-items:center;padding:8px 14px">'
       + '<div style="flex:1;cursor:pointer;min-width:0" onclick="switchToSet(&apos;' + s.id + '&apos;)">'
@@ -5897,7 +5909,7 @@ function startEditPositionSet(setId) {
 function setPinButtonHtml(s) {
   var on = !!s.pinned;
   var style = 'font-size:13px;padding:4px 7px;'
-    + (on ? 'opacity:1' : 'opacity:0.35;filter:grayscale(1)');
+    + (on ? '' : 'filter:grayscale(1)');
   var title = on ? 'Shown in switcher' : 'Show in switcher';
   return '<button class="btn-icon" onclick="toggleSetPinned(&apos;' + s.id + '&apos;)" title="' + title + '" style="' + style + '">&#128204;</button>';
 }
@@ -6250,7 +6262,7 @@ function buildMoversView(area, opts) {
     // entry=0, so the date guard (!entry) and broker guard (qty===0) drop them
     // from date/broker filters unchanged — but a SET filter matches by ticker,
     // which is exactly how a watchlist ticker added to a set becomes visible.
-    var bmvPosns = bmvDoFilter ? filterPositions(p.positions || []) : (p.positions || []);
+    var bmvPosns = bmvDoFilter ? filterPositions(ctxPortfolioPositions(pid)) : ctxPortfolioPositions(pid);
     bmvPosns.forEach(function(pos) {
       if (pos.sold) return;
       if (bmvAlertsOnly && !getTickerAlerts(pos.ticker).length) return;
@@ -8108,7 +8120,7 @@ function render() {
     var allSaPos = [];
     var saDoFilter = filterActiveForSummary(saIsRealized);
     saPids.forEach(function(pid) {
-      var saPosns = saDoFilter ? filterPositions(portfolios[pid].positions || []) : (portfolios[pid].positions || []);
+      var saPosns = saDoFilter ? filterPositions(ctxPortfolioPositions(pid)) : ctxPortfolioPositions(pid);
       saPosns.forEach(function(pos) {
         allSaPos.push(pos);
         var pc = getPositionCurrencyCode(pos);
@@ -10018,7 +10030,7 @@ function render() {
     });
     var gwDoFilter = filterActiveForSummary(gwIsRealized);
     gwPids.forEach(function(pid) {
-      var gwScanPosns = gwDoFilter ? filterPositions(portfolios[pid].positions || []) : (portfolios[pid].positions || []);
+      var gwScanPosns = gwDoFilter ? filterPositions(ctxPortfolioPositions(pid)) : ctxPortfolioPositions(pid);
       gwScanPosns.forEach(function(pos) {
         var c = getPositionCurrencyCode(pos, portfolios[pid].currencyCode);
         if (c !== 'USD' && gwNonUSD.indexOf(c) === -1) gwNonUSD.push(c);
@@ -10028,7 +10040,7 @@ function render() {
     function buildGlobalWeightRows(fxRates) {
       var tickerMap = {};
       gwPids.forEach(function(pid) {
-        var gwRowPosns = gwDoFilter ? filterPositions(portfolios[pid].positions || []) : (portfolios[pid].positions || []);
+        var gwRowPosns = gwDoFilter ? filterPositions(ctxPortfolioPositions(pid)) : ctxPortfolioPositions(pid);
         gwRowPosns.forEach(function(pos) {
           var pcur = getPositionCurrent(pos);
           if (!pos.qty || pos.qty <= 0 || pcur == null) return;
