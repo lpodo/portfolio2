@@ -383,7 +383,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.21';
+var APP_VERSION = 'v1.5.22';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -475,6 +475,7 @@ function saveLastView() {
     var data = {
       viewMode: viewMode,
       portfolioId: currentPortfolioId,
+      setId: currentSetId,
       bondPortfolioId: currentBondPortfolioId,
       cashPortfolioId: currentCashPortfolioId,
       switcherTab: switcherTab,
@@ -510,6 +511,15 @@ function restoreLastView() {
   }
   if (data.cashPortfolioId && cashPortfolios[data.cashPortfolioId]) {
     currentCashPortfolioId = data.cashPortfolioId;
+  }
+  // A pinned set is validated like a portfolio: it may have been deleted or
+  // unpinned on another device, in which case the view falls back to the plain
+  // All Positions it was built on.
+  if (data.setId) {
+    var stillPinned = getPositionSets(ALL_POSITIONS_CTX).some(function(x) {
+      return x.id === data.setId && x.pinned;
+    });
+    currentSetId = stillPinned ? data.setId : null;
   }
 
   // Validate viewMode has the required context; fall back to switcher if missing.
@@ -564,6 +574,11 @@ function setTitleForCurrentView() {
     t.textContent = 'BOND SUMMARY';
   } else if (viewMode === 'archive-summary') {
     t.textContent = 'REALIZED SUMMARY';
+  } else if (isSetContext()) {
+    // A set reuses the All Positions views, so without this it would announce
+    // itself as ALL POSITIONS.
+    var openSet = getPositionSets(ALL_POSITIONS_CTX).find(function(x) { return x.id === currentSetId; });
+    t.textContent = openSet ? openSet.name : 'ALL POSITIONS';
   } else if (isAllPositions() || isRealizedAllPositions()) {
     t.textContent = 'ALL POSITIONS';
   } else if (isSummaryByPortfolio()) {
@@ -2420,9 +2435,24 @@ function renderSwitcher() {
   // work on positions independent of which portfolio they belong to. The
   // position counter (was on Σ Summary) lives here now since these views
   // operate on the count of positions, not portfolios.
-  html += '<div class="portfolio-item portfolio-item-meta' + (isAllPositions() ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:8px 14px" onclick="switchToAllPositions()">'
+  html += '<div class="portfolio-item portfolio-item-meta' + (isAllPositions() && !currentSetId ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:8px 14px" onclick="switchToAllPositions()">'
     + '<div style="flex:1"><span class="portfolio-item-name">ALL POSITIONS</span> <span class="portfolio-item-count">' + totalActive + ' pos</span></div>'
     + '</div>';
+  // Pinned sets sit right below, each a view over the same union narrowed to
+  // its tickers. Same controls as in manage sets, so a set can be unpinned,
+  // edited or removed without going through the settings.
+  getPinnedSets().forEach(function(s) {
+    var held = getSetContextPositions(s.id).length;
+    var isOpen = currentSetId === s.id;
+    html += '<div class="portfolio-item portfolio-item-meta' + (isOpen ? ' active' : '') + '" style="display:flex;align-items:center;padding:8px 14px">'
+      + '<div style="flex:1;cursor:pointer;min-width:0" onclick="switchToSet(&apos;' + s.id + '&apos;)">'
+      + '<span class="portfolio-item-name">' + s.name + '</span> <span class="portfolio-item-count">' + held + ' pos</span>'
+      + '</div>'
+      + setPinButtonHtml(s)
+      + '<button class="btn-icon" onclick="event.stopPropagation();openPositionSetsModalGlobal()" style="font-size:13px;padding:4px 7px">&#9998;</button>'
+      + '<button class="btn-icon" onclick="event.stopPropagation();confirmDeletePositionSet(&apos;' + s.id + '&apos;)" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
+      + '</div>';
+  });
   // Σ SUMMARY BY PORTFOLIO — per-portfolio aggregate views (P&L, market, chart)
   // work with portfolios as units, not individual positions, hence no counter.
   html += '<div class="portfolio-item portfolio-item-meta' + (isSummaryByPortfolio() ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:8px 14px" onclick="switchToSummary()">'
@@ -2431,6 +2461,7 @@ function renderSwitcher() {
   list.innerHTML = html;
 }
 function switchToArchiveSummary() {
+  currentSetId = null;  // leaving the set context
   viewMode = 'archive-summary';
   setTitleForCurrentView();
   document.getElementById('viewMenuBtn').disabled = true;
@@ -2442,6 +2473,7 @@ function switchToArchiveSummary() {
 }
 
 function switchToSummary() {
+  currentSetId = null;  // leaving the set context
   // Σ Summary by portfolio = per-portfolio aggregate views only (summary/
   // summary-market/summary-chart). The summary-movers/summary-alerts
   // remappings that lived here moved to switchToAllPositions; from any
@@ -2458,7 +2490,27 @@ function switchToSummary() {
   updateViewMenuActive();
 }
 
+function switchToSet(setId) {
+  var sets = getPositionSets(ALL_POSITIONS_CTX);
+  var exists = sets.some(function(s) { return s.id === setId; });
+  // Deleted elsewhere: fall back rather than opening an empty view.
+  if (!exists) { currentSetId = null; switchToAllPositions(); return; }
+
+  currentSetId = setId;
+  if (!isAllPositions()) viewMode = 'global-main';
+  setTitleForCurrentView();
+  document.getElementById('viewMenuBtn').style.display = '';
+  document.getElementById('viewMenuBtn').disabled = false;
+  document.getElementById('viewMenuBtn').style.opacity = '';
+  document.getElementById('refreshAllBtn').style.display = '';
+  closeSwitcher();
+  if (getApiKey()) refreshAllPortfolios();
+  render();
+  updateViewMenuActive();
+}
+
 function switchToAllPositions() {
+  currentSetId = null;  // leaving the set context
   // ALL POSITIONS = cross-portfolio position-level views (movers, alerts,
   // weights, analytics). Default view is MARKET (= summary-movers). If
   // already in an All Positions view, preserve it; otherwise reset to default.
@@ -2475,6 +2527,7 @@ function switchToAllPositions() {
 }
 
 function switchToRealizedAllPositions() {
+  currentSetId = null;  // leaving the set context
   // ALL POSITIONS for realized portfolios — same concept as switchToAllPositions
   // but scoped to archive portfolios; only WEIGHTS and ANALYTICS are available
   // (no market/alerts for closed positions). Default view is WEIGHTS.
@@ -2490,6 +2543,7 @@ function switchToRealizedAllPositions() {
 }
 
 function switchToBondSummary() {
+  currentSetId = null;  // leaving the set context
   viewMode = 'bond-summary';
   document.getElementById('portfolioTitle').textContent = 'SUMMARY';
   document.getElementById('viewMenuBtn').style.display = 'none';
@@ -2499,6 +2553,7 @@ function switchToBondSummary() {
 }
 
 function switchPortfolio(id) {
+  currentSetId = null;  // leaving the set context
   if (!portfolios[id]) return;
   currentPortfolioId = id;
   localStorage.setItem('pt_current', id);
@@ -5797,6 +5852,7 @@ function renderPositionSetsModal() {
         var isExpanded = window._expandedSetId === s.id;
         var row = '<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid ' + (isExpanded ? 'transparent' : 'var(--border)') + '">'
           + '<div style="flex:1;font-size:12px;cursor:pointer" onclick="toggleSetPreview(&apos;' + s.id + '&apos;)"><span style="color:var(--bright);letter-spacing:1px">' + s.name + '</span> <span style="color:var(--dim);font-size:10px">' + count + (count === 1 ? ' ticker' : ' tickers') + '</span></div>'
+          + setPinButtonHtml(s)
           + '<button class="btn-icon" onclick="startEditPositionSet(&apos;' + s.id + '&apos;)" style="font-size:13px;padding:4px 7px">&#9998;</button>'
           + '<button class="btn-icon" onclick="confirmDeletePositionSet(&apos;' + s.id + '&apos;)" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
           + '</div>';
@@ -5836,6 +5892,27 @@ function startEditPositionSet(setId) {
 
 // Tap a set name to preview its tickers read-only (helps spot the few checked
 // tickers in a long list without entering edit mode).
+// The pin is an emoji, so it doesn't take a colour — the off state is conveyed
+// by fading and desaturating it instead.
+function setPinButtonHtml(s) {
+  var on = !!s.pinned;
+  var style = 'font-size:13px;padding:4px 7px;'
+    + (on ? 'opacity:1' : 'opacity:0.35;filter:grayscale(1)');
+  var title = on ? 'Shown in switcher' : 'Show in switcher';
+  return '<button class="btn-icon" onclick="toggleSetPinned(&apos;' + s.id + '&apos;)" title="' + title + '" style="' + style + '">&#128204;</button>';
+}
+
+function toggleSetPinned(setId) {
+  var sets = getPositionSets(getSetsCtx());
+  var target = null;
+  for (var i = 0; i < sets.length; i++) if (sets[i].id === setId) target = sets[i];
+  if (!target) return;
+  updatePositionSet(setId, { pinned: !target.pinned });
+  renderPositionSetsModal();
+  renderSwitcher();
+  save();
+}
+
 function toggleSetPreview(setId) {
   window._expandedSetId = (window._expandedSetId === setId) ? null : setId;
   renderPositionSetsModal();
@@ -5910,7 +5987,11 @@ function confirmDeletePositionSet(setId) {
   if (!set) return;
   if (!confirm('Delete set "' + set.name + '"?')) return;
   deletePositionSet(setId);
+  // Deleting the set we're currently viewing leaves nowhere to be — fall back.
+  if (currentSetId === setId) { currentSetId = null; switchToAllPositions(); }
   renderPositionSetsModal();
+  renderSwitcher();
+  save();
 }
 
 

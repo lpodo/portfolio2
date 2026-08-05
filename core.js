@@ -1076,6 +1076,45 @@ function _dictRef(field) {
 // Without this, All Positions would silently reuse — and overwrite — the keys of
 // whatever portfolio happened to be open last.
 var ALL_POSITIONS_CTX = '__all__';
+// A pinned set appears in the portfolio switcher as a view of its own. The flag
+// lives on the set, so it travels to the other devices with everything else.
+function isSetPinned(setId) {
+  var sets = getPositionSets(ALL_POSITIONS_CTX);
+  for (var i = 0; i < sets.length; i++) if (sets[i].id === setId) return !!sets[i].pinned;
+  return false;
+}
+function getPinnedSets() {
+  return getPositionSets(ALL_POSITIONS_CTX).filter(function(s) { return s.pinned; });
+}
+// Positions a pinned set shows: the All Positions union, kept to the set's
+// tickers. Sold lots and archives are excluded there already.
+function getSetContextPositions(setId) {
+  var sets = getPositionSets(ALL_POSITIONS_CTX);
+  var set = null;
+  for (var i = 0; i < sets.length; i++) if (sets[i].id === setId) set = sets[i];
+  if (!set) return [];
+  var wanted = {};
+  (set.tickers || []).forEach(function(t) { wanted[t] = true; });
+  var out = [];
+  Object.keys(portfolios).forEach(function(pid) {
+    var p = portfolios[pid];
+    if (!p || p.archive) return;
+    (p.positions || []).forEach(function(pos) {
+      if (pos.sold || !wanted[pos.ticker]) return;
+      out.push(pos);
+    });
+  });
+  return out;
+}
+
+// Which pinned set is currently open, if any. A set reuses the All Positions
+// views as-is; only the source of positions differs, so there's no parallel
+// family of view modes to maintain.
+var currentSetId = null;
+function isSetContext() {
+  return !!currentSetId && isAllPositions();
+}
+
 function getSelCtx() {
   return isAllPositions() ? ALL_POSITIONS_CTX : currentPortfolioId;
 }
@@ -1162,6 +1201,11 @@ function getChartSelection() {
 // a portfolio would; their move/sell/archive actions are hidden in this view).
 // Distinct from getChartContextPositions, which spans watchlist and all types.
 function getMainContextPositions() {
+  if (isSetContext()) {
+    return getSetContextPositions(currentSetId).filter(function(pos) {
+      return isRealSecurity(pos) && pos.qty !== 0;
+    });
+  }
   if (!isAllPositions()) return positions || [];
   var out = [];
   Object.keys(portfolios).forEach(function(pid) {
@@ -1177,6 +1221,8 @@ function getMainContextPositions() {
 }
 
 function getChartContextPositions() {
+  // A pinned set narrows the same union to its own tickers.
+  if (isSetContext()) return getSetContextPositions(currentSetId);
   if (!isAllPositions()) return positions || [];
   var out = [];
   Object.keys(portfolios).forEach(function(pid) {
