@@ -495,6 +495,18 @@ async function checkOneUser(env, userKey, now) {
 
   const leftover = remaining - attempted;
 
+  // Movers rank the whole watched list, but the walk covers it a slice at a
+  // time — so quotes accumulate across the slot's ticks and are only ranked
+  // once nothing is left. Earlier quotes are a few minutes older by then,
+  // which doesn't matter for a move measured against yesterday's close.
+  const gathered = (freshSlot ? {} : (state.gathered || {}));
+  for (const t of visited) {
+    const q = quotes[t];
+    if (q && typeof q.price === 'number' && typeof q.previousClose === 'number' && q.previousClose !== 0) {
+      gathered[t] = { price: q.price, prev: q.previousClose, state: q.marketState || null };
+    }
+  }
+
   const holding = [];
   for (const t of visited) {
     const price = prices[t];
@@ -590,8 +602,7 @@ async function checkOneUser(env, userKey, now) {
           }
         }
       }
-      if (errors.length) sendNote = errors.slice(0, 3).join(' | ');
-      if (dead.length) {
+      if (errors.length) sendNote = errors.slice(0, 3).join(' | ');      if (dead.length) {
         // Re-read: this payload was loaded before the fetches and sends, so
         // writing it back wholesale could clobber an alert the app saved in
         // the meantime. Only the subscription list is ours to change here.
@@ -604,8 +615,48 @@ async function checkOneUser(env, userKey, now) {
     }
   }
 
+  // Top movers: sent once the slot's walk is complete, after the alerts, on the
+  // same grid but at its own coarser step. Ranked by the size of the move
+  // regardless of direction — a sharp fall matters as much as a sharp rise.
+  let moversSent = 0;
+  const moversEvery = numOr(settings.moversMinutes, 0);
+  if (moversEvery > 0 && leftover === 0) {
+    const moversSlot = currentSlot(local, fromHour, moversEvery);
+    if (state.lastMoversSlot !== moversSlot) {
+      const ranked = Object.keys(gathered).map(t => {
+        const g = gathered[t];
+        return { ticker: t, price: g.price, diff: g.price - g.prev, pct: ((g.price - g.prev) / g.prev) * 100 };
+      }).sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct)).slice(0, 10);
+
+      const subs2 = Array.isArray(payload.subscriptions) ? payload.subscriptions : [];
+      if (ranked.length && subs2.length && env.VAPID_PRIVATE_KEY) {
+        // Same shape as an alert line, so both kinds read alike.
+        const lines = ranked.map(r => {
+          const sign = r.diff >= 0 ? '+' : '\u2212';
+          return `${r.ticker} ${r.price} ${sign}${Math.abs(r.diff).toFixed(2)} (${sign}${Math.abs(r.pct).toFixed(2)}%)`;
+        }).join('\n');
+        const message = {
+          title: `Top movers \u00B7 ${ranked.length}`,
+          body: lines,
+          tag: 'pt-movers',
+          ticker: null
+        };
+        for (const sub of subs2) {
+          try {
+            const res = await sendPush(env, sub, message);
+            if (res.ok) moversSent++;
+          } catch {}
+        }
+      }
+      state.lastMoversSlot = moversSlot;
+    }
+  }
+
   await env.PORTFOLIO_KV.put(stateKey, JSON.stringify({
     lastSlot: slot,
+    lastMoversSlot: state.lastMoversSlot,
+    moversSent,
+    gathered: leftover === 0 ? {} : gathered,
     lastRun: now.toISOString(),
     localTime: `${pad2(local.hour)}:${pad2(local.minute)} ${tz}`,
     checked: total,
