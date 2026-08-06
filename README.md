@@ -863,9 +863,9 @@ Notification state is diffed against the previous run: only alerts that newly st
 
 ### Authentication & security
 
-The worker is protected by a secret token passed in the `X-API-Token` request header. The token is stored as a Cloudflare Secret (not Variable) under `API_TOKEN` — secrets persist across deployments. To rotate: update `API_TOKEN` in Cloudflare → Settings → Variables and Secrets → Secret, then update it in the app settings.
+The worker is protected by a secret token passed in the `X-API-Token` request header. The token is stored as a Cloudflare Secret under `API_TOKEN`, so it can't be read back from the dashboard. To rotate: update `API_TOKEN` in Cloudflare → Settings → Variables and Secrets → Secret, then update it in the app settings.
 
-Web Push requires a VAPID key pair, also stored as Cloudflare Secrets: `VAPID_PUBLIC_KEY` (served to clients via `/api/push/key`) and `VAPID_PRIVATE_KEY` (used to sign pushes; if unset, checks still run but nothing is sent).
+Web Push requires a VAPID key pair: `VAPID_PUBLIC_KEY` as a plaintext Variable (it's served to clients via `/api/push/key` anyway) and `VAPID_PRIVATE_KEY` as a Secret (used to sign pushes; if unset, checks still run but nothing is sent). An optional `VAPID_SUBJECT` supplies the contact address push services expect.
 
 ## Data Model
 
