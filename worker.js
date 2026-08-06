@@ -633,7 +633,7 @@ async function checkOneUser(env, userKey, now) {
         // Same shape as an alert line, so both kinds read alike.
         const lines = ranked.map(r => {
           const sign = r.diff >= 0 ? '+' : '\u2212';
-          return `${r.ticker} ${r.price} ${sign}${Math.abs(r.diff).toFixed(2)} (${sign}${Math.abs(r.pct).toFixed(2)}%)`;
+          return `${r.ticker} ${r.price.toFixed(2)} ${sign}${Math.abs(r.diff).toFixed(2)} (${sign}${Math.abs(r.pct).toFixed(2)}%)`;
         }).join('\n');
         const message = {
           title: `Top movers \u00B7 ${ranked.length}`,
@@ -1052,7 +1052,7 @@ function buildAlertMessage(g, items, quotes, isRelease) {
   const up = g.condition === '>';
   const word = isRelease ? (up ? 'back below' : 'back above') : (up ? 'above' : 'below');
   const mark = (isRelease ? !up : up) ? '\u25B2' : '\u25BC';
-  const values = g.values.slice().sort((x, y) => x - y).join(', ');
+  const values = g.values.slice().sort((x, y) => x - y).map(v => v.toFixed(2)).join(', ');
 
   // Change since the previous close, when there is one to compare with.
   let delta = '';
@@ -1070,12 +1070,12 @@ function buildAlertMessage(g, items, quotes, isRelease) {
     .sort((x, y) => x.value - y.value)
     .map(a => {
       const holds = up ? g.price > a.value : g.price < a.value;
-      return `${a.value} ${holds ? '\u2713' : '\u2717'}`;
+      return `${a.value.toFixed(2)} ${holds ? '\u2713' : '\u2717'}`;
     })
     .join('  ');
 
   return {
-    title: `${g.ticker} ${word} ${values} ${mark}${g.price}${delta}`,
+    title: `${g.ticker} ${word} ${values} ${mark}${g.price.toFixed(2)}${delta}`,
     body: ladder + '\n' + marketStateLabel(q),
     tag: 'pt-alert-' + g.ticker + g.condition,
     ticker: g.ticker

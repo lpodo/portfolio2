@@ -270,15 +270,19 @@
     </button>
   </div>
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">SERVER-SIDE ALERT CHECKS</div>
-  <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;margin-bottom:8px">
+  <div style="display:flex;align-items:center;margin-bottom:8px">
     <label style="display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;font-size:9px;color:var(--dim);letter-spacing:2px;margin:0;min-width:0">
       <input type="checkbox" id="alertChkEnable" onchange="setAlertChecksEnabled(this.checked)" style="cursor:pointer;margin:0">
       <span>ENABLE</span>
     </label>
-    <div style="display:flex;align-items:center;gap:6px">
-      <label style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:0;min-width:0">EVERY</label>
-      <div id="alertChkEveryWrap" style="position:relative;width:92px"></div>
-    </div>
+  </div>
+  <div id="alertChkEveryRow" style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+    <label style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:0;min-width:0">ALERTS CHECK EVERY</label>
+    <div id="alertChkEveryWrap" style="position:relative;width:92px"></div>
+  </div>
+  <div id="alertChkMoversRow" style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+    <label style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:0;min-width:0">TOP MOVERS CHECK EVERY</label>
+    <div id="alertChkMoversWrap" style="position:relative;width:92px"></div>
   </div>
   <div id="alertChkWindowRow" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px">
     <div style="display:flex;align-items:center;gap:6px">
@@ -290,12 +294,6 @@
       <div id="alertChkToWrap" style="position:relative;width:82px"></div>
     </div>
     <span id="alertChkTz" style="font-size:10px;color:var(--dim)"></span>
-  </div>
-  <div id="alertChkMoversRow" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;margin-top:8px">
-    <div style="display:flex;align-items:center;gap:6px">
-      <label style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:0;min-width:0">TOP MOVERS</label>
-      <div id="alertChkMoversWrap" style="position:relative;width:92px"></div>
-    </div>
   </div>
 
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">PUSH NOTIFICATIONS</div>
@@ -389,7 +387,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.31';
+var APP_VERSION = 'v1.5.32';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4272,7 +4270,6 @@ function urlBase64ToUint8Array(base64String) {
 var ALERT_CHECK_PERIODS = [
   { v: 5,   label: '5 min' },
   { v: 10,  label: '10 min' },
-  { v: 15,  label: '15 min' },
   { v: 30,  label: '30 min' },
   { v: 60,  label: '1 h' },
   { v: 180, label: '3 h' },
@@ -4333,12 +4330,12 @@ function renderAlertCheckSettings() {
   var cb = document.getElementById('alertChkEnable');
   if (cb) cb.checked = on;
 
-  // EVERY stays usable whether or not checks are on, so the period can be set
-  // before enabling; the window pickers follow the checkbox.
+  // Every picker follows the checkbox: a dimmed row with a live control in it
+  // reads as a contradiction.
   everyWrap.innerHTML = alertChkPicker('Every', periodLabel(alertCheckSettings.everyMinutes),
     ALERT_CHECK_PERIODS.map(function(p) {
       return { label: p.label, action: 'pickAlertChkEvery(' + p.v + ')', selected: p.v === alertCheckSettings.everyMinutes };
-    }), false);
+    }), !on);
 
   function hourOptions(kind, maxHour, cur) {
     var opts = [];
@@ -4363,6 +4360,8 @@ function renderAlertCheckSettings() {
 
   var row = document.getElementById('alertChkWindowRow');
   if (row) row.style.opacity = on ? '1' : '0.5';
+  var erow = document.getElementById('alertChkEveryRow');
+  if (erow) erow.style.opacity = on ? '1' : '0.5';
   var mrow = document.getElementById('alertChkMoversRow');
   if (mrow) mrow.style.opacity = on ? '1' : '0.5';
 
