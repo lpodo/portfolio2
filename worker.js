@@ -1052,7 +1052,7 @@ function buildAlertMessage(g, items, quotes, isRelease) {
   const up = g.condition === '>';
   const word = isRelease ? (up ? 'back below' : 'back above') : (up ? 'above' : 'below');
   const mark = (isRelease ? !up : up) ? '\u25B2' : '\u25BC';
-  const values = g.values.slice().sort((x, y) => x - y).map(v => v.toFixed(2)).join(', ');
+  const values = g.values.slice().sort((x, y) => x - y).join(', ');
 
   // Change since the previous close, when there is one to compare with.
   let delta = '';
@@ -1070,7 +1070,7 @@ function buildAlertMessage(g, items, quotes, isRelease) {
     .sort((x, y) => x.value - y.value)
     .map(a => {
       const holds = up ? g.price > a.value : g.price < a.value;
-      return `${a.value.toFixed(2)} ${holds ? '\u2713' : '\u2717'}`;
+      return `${a.value} ${holds ? '\u2713' : '\u2717'}`;
     })
     .join('  ');
 
