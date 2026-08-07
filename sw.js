@@ -4,7 +4,7 @@
 // picks them up on the next load without a bump. Independent of APP_VERSION
 // in index.html (that one is the user-facing version stamp; this one controls
 // cache invalidation).
-var CACHE = 'portfolio-2026-07-12-v403';
+var CACHE = 'portfolio-2026-08-03-v408';
 
 self.addEventListener('install', function(e) {
   // Pre-cache with cache:'reload' on each Request — forces network bypass of
@@ -20,6 +20,7 @@ self.addEventListener('install', function(e) {
         new Request('./core.js',        { cache: 'reload' }),
         new Request('./manifest.json',  { cache: 'reload' }),
         new Request('./icon-192.png',   { cache: 'reload' }),
+        new Request('./badge-96.png',   { cache: 'reload' }),
         new Request('./fundamentals.js',{ cache: 'reload' })
       ]);
     })
@@ -85,6 +86,45 @@ self.addEventListener('fetch', function(e) {
           return resp || caches.match('./index.html');
         });
       });
+    })
+  );
+});
+
+// ── Web Push ────────────────────────────────────────────────────────────────
+// A push wakes this worker even when the app is closed. The payload is the
+// JSON the worker sent; if it's missing or unreadable we still show something,
+// because a push that displays nothing is treated as abuse by some browsers.
+self.addEventListener('push', function(e) {
+  var data = {};
+  try { if (e.data) data = e.data.json(); } catch (err) {}
+
+  var title = data.title || 'Alert';
+  var options = {
+    body: data.body || '',
+    icon: './icon-192.png',
+    // Android tints the badge by its alpha channel — an opaque square would
+    // come out as a solid white block, so this one is a transparent silhouette.
+    badge: './badge-96.png',
+    tag: data.tag || 'pt-alert',
+    // A repeat notification for the same ticker should announce itself rather
+    // than silently replacing the previous one.
+    renotify: !!data.tag,
+    data: { ticker: data.ticker || null, url: data.url || './index.html' }
+  };
+  e.waitUntil(self.registration.showNotification(title, options));
+});
+
+// Tapping a notification focuses an open window if there is one, rather than
+// opening a second copy of the app.
+self.addEventListener('notificationclick', function(e) {
+  e.notification.close();
+  var target = (e.notification.data && e.notification.data.url) || './index.html';
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(list) {
+      for (var i = 0; i < list.length; i++) {
+        if ('focus' in list[i]) return list[i].focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(target);
     })
   );
 });

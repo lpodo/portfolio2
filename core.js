@@ -54,8 +54,11 @@ function initPortfolios() {
     portfolios[id] = { name: 'MY PORTFOLIO', positions: legacy };
     savePortfolios();
   }
-  // Load ticker-level alerts from localStorage
+  // Load ticker-level data and the alerts store from localStorage. Both must be
+  // in place before the migrations below, which move data between them.
   loadTickerDataLS();
+  loadAlertsLS();
+  loadAlertCheckSettingsLS();
   // Lift any position-level category/region/sector into tickerData and strip
   // them from positions. Idempotent and cheap — safe to run every startup;
   // this also cleans up stray null attribute keys left by older versions.
@@ -66,6 +69,7 @@ function initPortfolios() {
   stripMigratedFieldsFromPositions();
   stripNullPositionFields();
   stripTradeFieldsFromZeroQty();
+  migrateAlertsToOwnStore();
   // Restore last active portfolio
   currentPortfolioId = localStorage.getItem('pt_current');
   if (!currentPortfolioId || !portfolios[currentPortfolioId]) {
@@ -251,35 +255,108 @@ function migrateNotesToTicker() {
   if (changed) { saveTickerDataLS(); savePortfolios(); }
 }
 
-// ── Alerts (thin wrappers over tickerData[ticker].alerts) ───────────────────
+// ── Alerts ──────────────────────────────────────────────────────────────────
+// Alerts live in their own top-level store rather than inside tickerData: the
+// cloud record carries them as a plaintext sibling of the encrypted blob, so a
+// scheduled worker can evaluate them while the app is closed.
+// Shape: { ticker: [ { id, condition, value }, ... ] }.
+// There is no stored `triggered` flag — it is derived from the current price
+// when rendering, which keeps the dot consistent with the price on screen and
+// means a price refresh never has to rewrite the alert list.
+// Settings for the scheduled server-side alert check. They live with the
+// alerts because the worker reads both from the same place, and they're shared
+// across devices — there is one server-side check, so one set of settings.
+//   enabled       off means the worker skips this key entirely
+//   fromHour/toHour   daily window; toHour < fromHour crosses midnight
+//                     (7 → 1), equal hours mean around the clock
+//   everyMinutes  how often to check within the window
+//   tz            IANA zone name, not an offset, so the window survives DST
+var ALERT_CHECK_DEFAULTS = { enabled: false, fromHour: 7, toHour: 24, everyMinutes: 10, moversMinutes: 0, tz: '' };
+var alertCheckSettings = {};
+
+function loadAlertCheckSettingsLS() {
+  var v = null;
+  try { v = JSON.parse(localStorage.getItem('pt_alert_checks')); } catch(e) {}
+  alertCheckSettings = Object.assign({}, ALERT_CHECK_DEFAULTS, (v && typeof v === 'object') ? v : {});
+  if (!alertCheckSettings.tz) alertCheckSettings.tz = localTimeZoneName();
+}
+function saveAlertCheckSettingsLS() {
+  try { localStorage.setItem('pt_alert_checks', JSON.stringify(alertCheckSettings)); } catch(e) {}
+}
+function localTimeZoneName() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; }
+  catch(e) { return 'UTC'; }
+}
+// Whether a moment falls inside the configured window. Bounds are compared in
+// minutes with the upper end inclusive, matching the worker: a window ending at
+// 01:00 covers 01:00 exactly rather than stretching to 01:59. Equal bounds mean
+// around the clock; a to-hour below the from-hour crosses midnight.
+function isInCheckWindow(minuteOfDay, fromHour, toHour) {
+  if (fromHour === toHour) return true;
+  var from = fromHour * 60, to = toHour * 60;
+  // Midnight carries minuteOfDay 0, so a window ending at 24:00 would miss the
+  // very moment it names — read that 0 as the end of the day instead.
+  var m = (toHour === 24 && minuteOfDay === 0) ? 1440 : minuteOfDay;
+  return from < to
+    ? (m >= from && m <= to)
+    : (m >= from || m <= to);
+}
+
+var alertStore = {};
+
+function loadAlertsLS() {
+  try {
+    var v = JSON.parse(localStorage.getItem('pt_alerts'));
+    if (v && typeof v === 'object') alertStore = v;
+  } catch(e) {}
+}
+function saveAlertsLS() {
+  try { localStorage.setItem('pt_alerts', JSON.stringify(alertStore)); } catch(e) {}
+}
+
 function getTickerAlerts(ticker) {
   if (!ticker) return [];
-  var d = tickerData[ticker];
-  return (d && d.alerts && d.alerts.length) ? d.alerts : [];
+  var arr = alertStore[ticker];
+  return (arr && arr.length) ? arr : [];
 }
 function setTickerAlerts(ticker, arr) {
   if (!ticker) return;
-  if (arr && arr.length) {
-    if (!tickerData[ticker]) tickerData[ticker] = {};
-    tickerData[ticker].alerts = arr;
-  } else if (tickerData[ticker]) {
-    delete tickerData[ticker].alerts;
-    if (!Object.keys(tickerData[ticker]).length) delete tickerData[ticker];
-  }
+  if (arr && arr.length) alertStore[ticker] = arr;
+  else delete alertStore[ticker];
 }
 function addTickerAlert(ticker, alertObj) {
   if (!ticker || !alertObj) return;
-  if (!tickerData[ticker]) tickerData[ticker] = {};
-  if (!tickerData[ticker].alerts) tickerData[ticker].alerts = [];
-  tickerData[ticker].alerts.push(alertObj);
+  if (!alertStore[ticker]) alertStore[ticker] = [];
+  alertStore[ticker].push(alertObj);
 }
 function removeTickerAlert(ticker, id) {
-  if (!ticker || !tickerData[ticker] || !tickerData[ticker].alerts) return;
-  tickerData[ticker].alerts = tickerData[ticker].alerts.filter(function(a) { return a.id !== id; });
-  if (!tickerData[ticker].alerts.length) {
-    delete tickerData[ticker].alerts;
-    if (!Object.keys(tickerData[ticker]).length) delete tickerData[ticker];
-  }
+  if (!ticker || !alertStore[ticker]) return;
+  alertStore[ticker] = alertStore[ticker].filter(function(a) { return a.id !== id; });
+  if (!alertStore[ticker].length) delete alertStore[ticker];
+}
+
+// Migration: alerts used to live in tickerData[ticker].alerts. Move them into
+// the top-level store, dropping the stored `triggered` flag (now derived).
+// Self-healing — runs at startup and after every cloud load, so data written by
+// an older build, restored from an old backup, or synced from another device
+// converges on the new shape.
+function migrateAlertsToOwnStore() {
+  var changed = false;
+  Object.keys(tickerData).forEach(function(t) {
+    var arr = tickerData[t] && tickerData[t].alerts;
+    if (!arr || !arr.length) return;
+    if (!alertStore[t]) alertStore[t] = [];
+    arr.forEach(function(a) {
+      if (!a || !a.id) return;
+      var exists = alertStore[t].some(function(x) { return x.id === a.id; });
+      if (exists) return;
+      alertStore[t].push({ id: a.id, condition: a.condition, value: a.value });
+    });
+    delete tickerData[t].alerts;
+    if (!Object.keys(tickerData[t]).length) delete tickerData[t];
+    changed = true;
+  });
+  if (changed) { saveAlertsLS(); saveTickerDataLS(); }
 }
 // ── Ticker-level attributes: category / region / sector ────────────────────
 // These describe the security, not the trade, so they live on the ticker
@@ -999,6 +1076,63 @@ function _dictRef(field) {
 // Without this, All Positions would silently reuse — and overwrite — the keys of
 // whatever portfolio happened to be open last.
 var ALL_POSITIONS_CTX = '__all__';
+// A pinned set appears in the portfolio switcher as a view of its own. The flag
+// lives on the set, so it travels to the other devices with everything else.
+function isSetPinned(setId) {
+  var sets = getPositionSets(ALL_POSITIONS_CTX);
+  for (var i = 0; i < sets.length; i++) if (sets[i].id === setId) return !!sets[i].pinned;
+  return false;
+}
+function getPinnedSets() {
+  return getPositionSets(ALL_POSITIONS_CTX).filter(function(s) { return s.pinned; });
+}
+// Positions a pinned set shows: the All Positions union, kept to the set's
+// tickers. Sold lots and archives are excluded there already.
+function getSetContextPositions(setId) {
+  var sets = getPositionSets(ALL_POSITIONS_CTX);
+  var set = null;
+  for (var i = 0; i < sets.length; i++) if (sets[i].id === setId) set = sets[i];
+  if (!set) return [];
+  var wanted = {};
+  (set.tickers || []).forEach(function(t) { wanted[t] = true; });
+  var out = [];
+  Object.keys(portfolios).forEach(function(pid) {
+    var p = portfolios[pid];
+    if (!p || p.archive) return;
+    (p.positions || []).forEach(function(pos) {
+      if (pos.sold || !wanted[pos.ticker]) return;
+      out.push(pos);
+    });
+  });
+  return out;
+}
+
+// Which pinned set is currently open, if any. A set reuses the All Positions
+// views as-is; only the source of positions differs, so there's no parallel
+// family of view modes to maintain.
+var currentSetId = null;
+function isSetContext() {
+  return !!currentSetId && isAllPositions();
+}
+
+// Positions of one portfolio as the current context sees them. The
+// cross-portfolio views walk portfolios directly instead of using the context
+// helpers, so a pinned set has to narrow them here or it would have no effect.
+function ctxPortfolioPositions(pid) {
+  var list = (portfolios[pid] && portfolios[pid].positions) || [];
+  if (!isSetContext()) return list;
+  var sets = getPositionSets(ALL_POSITIONS_CTX);
+  var set = null;
+  for (var i = 0; i < sets.length; i++) if (sets[i].id === currentSetId) set = sets[i];
+  if (!set) return list;
+  var wanted = {};
+  (set.tickers || []).forEach(function(t) { wanted[t] = true; });
+  return list.filter(function(pos) { return wanted[pos.ticker]; });
+}
+
+// Context key for per-view selections (chart set, fundamentals set, sets list).
+// An open pinned set shares the ALL POSITIONS key: it's a subset of it and
+// reuses its views, so their chart/fundamentals selections are the same one.
 function getSelCtx() {
   return isAllPositions() ? ALL_POSITIONS_CTX : currentPortfolioId;
 }
@@ -1069,7 +1203,9 @@ function getChartSelection() {
   // selected. 'portfolio' is handled separately (returns all unique tickers).
   var sel = getChartSelectedSet();
   if (sel === 'portfolio') return getChartUniqueTickers();
-  var set = getPositionSets().find(function(s) { return s.id === sel; });
+  // The id came from the selection key, which is scoped by getSelCtx() — look
+  // it up in that same context rather than relying on the default matching.
+  var set = getPositionSets(getSelCtx()).find(function(s) { return s.id === sel; });
   if (!set) return [];
   // Filter to tickers actually present in current portfolio
   var allTickers = getChartUniqueTickers();
@@ -1085,6 +1221,11 @@ function getChartSelection() {
 // a portfolio would; their move/sell/archive actions are hidden in this view).
 // Distinct from getChartContextPositions, which spans watchlist and all types.
 function getMainContextPositions() {
+  if (isSetContext()) {
+    return getSetContextPositions(currentSetId).filter(function(pos) {
+      return isRealSecurity(pos) && pos.qty !== 0;
+    });
+  }
   if (!isAllPositions()) return positions || [];
   var out = [];
   Object.keys(portfolios).forEach(function(pid) {
@@ -1100,6 +1241,8 @@ function getMainContextPositions() {
 }
 
 function getChartContextPositions() {
+  // A pinned set narrows the same union to its own tickers.
+  if (isSetContext()) return getSetContextPositions(currentSetId);
   if (!isAllPositions()) return positions || [];
   var out = [];
   Object.keys(portfolios).forEach(function(pid) {

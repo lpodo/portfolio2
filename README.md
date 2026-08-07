@@ -20,6 +20,7 @@ A PWA stock portfolio tracker with a Cloudflare Worker backend. Supports all maj
   - [View Modes](#view-modes)
   - [Summary](#summary)
   - [All Positions](#all-positions)
+  - [Global sets](#global-sets)
   - [Price Alerts](#price-alerts)
   - [Charts](#charts)
   - [Position sets](#position-sets)
@@ -59,7 +60,7 @@ A PWA stock portfolio tracker with a Cloudflare Worker backend. Supports all maj
 
 The portfolio switcher has three tabs:
 
-- **STOCKS** — regular equity portfolios, watchlists, plus two cross-portfolio meta-items at the bottom: [ALL POSITIONS](#all-positions) (position-level union across all stock portfolios) and Σ SUMMARY (portfolio-level totals).
+- **STOCKS** — regular equity portfolios, watchlists, then a cross-portfolio block: [ALL POSITIONS](#all-positions) with any pinned [global sets](#global-sets) listed under it, and finally Σ SUMMARY (portfolio-level totals).
 - **BONDS** — bond and deposit portfolios, plus their Σ SUMMARY (see [Bonds & Deposits](#bonds--deposits)).
 - **REALIZED** — realized portfolios for both stocks and bonds, listed together and separated by a divider. Cash portfolios appear next, then two cross-portfolio meta-items: ALL POSITIONS (realized) and Σ SUMMARY.
 
@@ -272,14 +273,23 @@ The ⋮ dropdown offers, in the STOCKS context: **P&L**, **MARKET** (default), *
 - **MARKET** — same columns and CLOSE/CURRENT menus as the regular [MARKET](#market) view. Default sort: Δ% absolute descending (biggest movers first).
 - **ALERTS** — MARKET filtered to positions whose ticker has at least one alert. See [ALERTS view](#alerts-view).
 - **WEIGHTS** (realized default) — TICKER / VALUE (native, dimmed) / VALUE (\$) / WEIGHT % / NAME, sortable.
-- **CHART / FUNDAMENTALS** — same as the per-portfolio [Chart](#charts) and [Fundamentals](#fundamentals) views, but the ticker set is chosen from **global sets** (see below).
+- **CHART / FUNDAMENTALS** — same as the per-portfolio [Chart](#charts) and [Fundamentals](#fundamentals) views, over the union's tickers.
 - **ANALYTICS** — same two-dropdown layout as the per-portfolio [Analytics](#analytics), aggregated across the union.
 
-### Global sets
+## Global sets
 
-Just as each portfolio has its own [position sets](#position-sets) for Chart and Fundamentals, ALL POSITIONS has its own **global sets** — named ticker subsets that span every portfolio. They're managed the same way (**MANAGE SETS…** in the set picker) but stored separately in localStorage (`pt_all_sets`) and cloud-synced as a top-level field. The ALL POSITIONS Chart and Fundamentals views pick their tickers from these sets.
+A **global set** is a named group of tickers spanning every portfolio — "the AI basket", "things I'm watching this quarter" — independent of how those holdings are split across accounts.
 
-Global sets also drive a third [filter](#filters) condition: **SET** — restrict any filtered view to the tickers of a chosen global set.
+**A set is a subset of [ALL POSITIONS](#all-positions) and behaves exactly like it.** It takes the same union of positions and narrows it to the set's tickers; everything else is identical — the same views (P&L, MARKET, ALERTS, WEIGHTS, CHART, FUNDAMENTALS, CALENDAR, ANALYTICS), the same totals in USD, the same position count of unique held tickers. Nothing about a set is portfolio-like: it doesn't hold anything, it selects.
+
+**In the switcher.** The **＋** button on the ALL POSITIONS row opens set management (create, rename, edit membership, delete, pin). A **pinned** set is listed directly beneath ALL POSITIONS in the same block, with its own count and its own pin / ✎ / ✕ controls — so the block reads as "the whole union, then the slices of it you use often". Both live in the STOCKS tab; the realized ALL POSITIONS has no sets.
+
+Sets are also used in two other places:
+
+- The [Chart](#charts) and [Fundamentals](#fundamentals) set pickers, both per-portfolio and in ALL POSITIONS.
+- The [filter](#filters)'s **SET** condition, which narrows any filtered view to a set's tickers.
+
+Stored in localStorage (`pt_all_sets`) and cloud-synced, so pinned sets and their membership follow you across devices. Deleting or unpinning a set that's currently open falls back to plain ALL POSITIONS.
 
 ## Price Alerts
 
@@ -334,6 +344,21 @@ Source of rows:
 
 Empty state: `NO ALERTS SET`.
 
+### Server-side checks & push notifications
+
+Alerts are also evaluated on the server, so a crossing is caught while the app is closed. The worker runs on a cron schedule, reads each user's alerts from KV, fetches quotes, and sends a Web Push notification when something crosses. Configured in Settings → **PUSH NOTIFICATIONS**:
+
+- **Enable** — asks for browser notification permission and registers this device's push subscription with the worker. Several devices can be subscribed at once; each gets every notification.
+- **Every** — how often the watched tickers are checked.
+- **From / To** — the daily window checks run in, in your timezone (so overnight windows work).
+- **Movers** — optional periodic digest of the biggest moves among the watched tickers, ranked by absolute change regardless of direction. Its interval can't be shorter than the check interval.
+
+Notifications fire on **transitions**, not on state: you're told when an alert starts holding and again when it stops, and an alert that keeps holding stays quiet in between. Multiple thresholds crossing on the same ticker in the same direction are grouped into a single notification. Tapping a notification opens the app on that ticker.
+
+Because the number of quotes a single worker invocation can fetch is capped, a large watchlist is covered a slice at a time, walking a rotating cursor across ticks until the whole list is done for that interval — so alerts stay accurate but a given ticker may be checked a little later within its window. Dead subscriptions (uninstalled apps, reset browsers) are pruned automatically when a send comes back gone.
+
+Alerts are stored on the server in plaintext under a separate KV key, so the scheduled job can read them — unlike the main portfolio blob, which stays [encrypted](#encryption) if you've set an ENC KEY. Only alert thresholds and push subscriptions live there; positions, quantities and prices don't.
+
 ## Charts
 
 Available via dropdown menu → CHART for individual portfolios and Summary.
@@ -361,7 +386,7 @@ In Summary, the dropdown menu → CHART shows two modes selectable via a green d
 
 ## Position sets
 
-A portfolio can have any number of **position sets** — named subsets of its tickers, reusable across Chart and Fundamentals views. Each set has a name (uppercase, free text) and a list of tickers picked from the portfolio. Sets are stored as part of the portfolio JSON (`positionSets`) and synced to the cloud alongside everything else; tickers are tracked by symbol, so re-adding a deleted position keeps it in any set it belonged to.
+A portfolio can have any number of **position sets** — named subsets of its own tickers, used by that portfolio's Chart and Fundamentals views. (Sets that span portfolios and can be pinned to the switcher are [global sets](#global-sets); these are the portfolio-local counterpart.) Each set has a name (uppercase, free text) and a list of tickers picked from the portfolio. Sets are stored as part of the portfolio JSON (`positionSets`) and synced to the cloud alongside everything else; tickers are tracked by symbol, so re-adding a deleted position keeps it in any set it belonged to.
 
 The picker dropdown in Chart and Fundamentals views lists all sets defined for the current portfolio. The currently shown set is remembered per portfolio in localStorage (`pt_chart_set_{portfolioId}` for Chart, `pt_fund_set_{portfolioId}` for Fundamentals) and persists across reloads. If a previously-selected set is deleted, the next render falls back to the default (PORTFOLIO for Chart, none for Fundamentals).
 
@@ -814,6 +839,10 @@ Market state (`REGULAR` / `PRE` / `POST` / `CLOSED`) is determined from `current
 - `/api/quotesummary?ticker=AAPL&modules=financialData,defaultKeyStatistics,recommendationTrend,upgradeDowngradeHistory` — Yahoo Finance fundamentals via the `quoteSummary` API. Returns raw module data under `quoteSummary.result[0]`. Requires a Yahoo crumb token for auth; the worker fetches and caches the crumb in-memory automatically. If Yahoo returns 404 for a multi-module request (some ETFs lack certain modules), the worker falls back to per-module fetches and merges what succeeds. Used by the **Expanded Row** fundamentals lines and the **More** overlay.
 - `/api/isin?ticker=AAPL` — ISIN lookup. Currently a **stub**: always returns `{ isin: null }`. No free provider supplies ISIN data reliably (Yahoo doesn't return it, Business Insider scrapes are noisy, Twelve Data gates the field behind a paid add-on). The endpoint stays so the frontend contract is unchanged — users enter ISINs manually via the ✎ Edit form, and a real provider can be wired in later by editing only this handler. The frontend caches a negative result with the `UNRESOLVED` marker so it won't re-query (see [Ticker data registry](#ticker-data-registry)).
 - `/api/hours?ticker=AAPL` — trading periods for the ticker's exchange (pre / regular / post start & end as Unix timestamps, plus `timezone` and `exchangeName`). Powers the trading-hours popover on the market-state icon. Fetched fresh per click, not cached.
+- `/api/alerts` — GET/PUT the user's server-side alert record: thresholds, check settings, and the last run's diagnostics. Stored in KV under `alerts:<key>` in plaintext (the scheduled job has to read it), separately from the main portfolio blob.
+- `/api/push/key` — returns the worker's VAPID public key, so it isn't embedded in the client.
+- `/api/push/subscribe` — stores (or clears) this device's push subscription in the same `alerts:<key>` record.
+- `/api/push/test` — sends a test notification to every stored subscription.
 - `/api/debug?ticker=AAPL` — processed result (same logic as `/api/quote`).
 - `/api/debug1?ticker=AAPL` — raw meta from the Yahoo 1d request.
 - `/api/debug2?ticker=AAPL` — last candles + pre/post windows from the 5d request.
@@ -824,9 +853,19 @@ All endpoints require the `X-API-Token: TOKEN` header. To call from curl:
 curl -H "X-API-Token: YOUR_TOKEN" https://portfolio2.lpodolskiy.workers.dev/api/quote?ticker=AAPL
 ```
 
+### Scheduled alert checks
+
+Besides the `fetch` handler, the worker has a `scheduled` handler driven by a Cloudflare cron trigger. On each tick it lists the `alerts:` keys in KV and processes each user independently (one user's failure doesn't stop the rest). Per-user settings decide whether that tick does anything: checks run only inside the configured local-time window, and on a fixed slot grid counted from the window's start, so a late tick can't shift the schedule.
+
+Quote fetching is bounded by Cloudflare's per-invocation subrequest limit, so the ticker list is walked with a rotating cursor and a spend budget, carrying leftovers into the next tick until the slot is fully covered. Alerts outside a given run's slice keep their previous state, so partial coverage never reads as "stopped holding" and never causes a re-notification.
+
+Notification state is diffed against the previous run: only alerts that newly started (or newly stopped) holding produce a push. Top-movers digests are computed from quotes accumulated across the slot and sent once the walk is complete, on their own coarser interval.
+
 ### Authentication & security
 
-The worker is protected by a secret token passed in the `X-API-Token` request header. The token is stored as a Cloudflare Secret (not Variable) under `API_TOKEN` — secrets persist across deployments. To rotate: update `API_TOKEN` in Cloudflare → Settings → Variables and Secrets → Secret, then update it in the app settings.
+The worker is protected by a secret token passed in the `X-API-Token` request header. The token is stored as a Cloudflare Secret under `API_TOKEN`, so it can't be read back from the dashboard. To rotate: update `API_TOKEN` in Cloudflare → Settings → Variables and Secrets → Secret, then update it in the app settings.
+
+Web Push requires a VAPID key pair: `VAPID_PUBLIC_KEY` as a plaintext Variable (it's served to clients via `/api/push/key` anyway) and `VAPID_PRIVATE_KEY` as a Secret (used to sign pushes; if unset, checks still run but nothing is sent). An optional `VAPID_SUBJECT` supplies the contact address push services expect.
 
 ## Data Model
 
@@ -977,7 +1016,7 @@ Primary on-device storage:
 - `pt_current_mode` — current column mode: `cur` (Current) or `reg` (Reg.Price); default `cur`
 - `pt_analytics_subview` — Analytics subview: `pnl` / `market` / `chart` / `weights`; default `weights`
 - `pt_filter` — global position filter: `{ purchaseDateFrom?, broker?, setId? }`; absent when no filter is set (see [Filters](#filters))
-- `pt_all_sets` — global sets for the ALL POSITIONS Chart/Fundamentals views (see [Global sets](#global-sets)); also cloud-synced
+- `pt_all_sets` — [global sets](#global-sets), including their pinned flag; also cloud-synced
 - `pt_chart_set_{portfolioId}` — currently selected set in the Chart view (a set ID or the string `portfolio` for PORTFOLIO mode)
 - `pt_fund_set_{portfolioId}` — currently selected set in the Fundamentals view (a set ID, or absent for "no selection")
 - `chart_hist_{ticker}_{range}` — historical price cache (daily TTL)
@@ -1025,6 +1064,8 @@ Caches the app shell for offline use. API requests are **never cached**:
 - `finnhub.io` — legacy
 
 **IMPORTANT: increment the cache version string in `sw.js` on every deploy** (e.g. `portfolio-v35` → `portfolio-v36`).
+
+The service worker also handles Web Push: it receives `push` events from the worker and displays the notification, and on `notificationclick` focuses an existing app window (or opens one), navigating to the ticker the notification was about.
 
 ## Chart Data Pipeline
 

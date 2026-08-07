@@ -210,7 +210,10 @@
 
 <!-- Settings panel -->
 <div class="settings-panel" id="settingsPanel">
-  <div class="settings-title">&#9881; Settings</div>
+  <div class="settings-title" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+    <span>&#9881; Settings</span>
+    <button class="btn-icon" onclick="closeSettings()" title="Close" style="font-size:16px;padding:0 4px">&#10005;</button>
+  </div>
 
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">PRICE SOURCE — BACKEND URL</div>
   <div class="key-row">
@@ -266,6 +269,43 @@
       &#8593; OVERWRITE CLOUD
     </button>
   </div>
+  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">SERVER-SIDE ALERT CHECKS</div>
+  <div style="display:flex;align-items:center;margin-bottom:8px">
+    <label style="display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;font-size:9px;color:var(--dim);letter-spacing:2px;margin:0;min-width:0">
+      <input type="checkbox" id="alertChkEnable" onchange="setAlertChecksEnabled(this.checked)" style="cursor:pointer;margin:0">
+      <span>ENABLE</span>
+    </label>
+  </div>
+  <div id="alertChkEveryRow" style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+    <label style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:0;min-width:0">ALERTS CHECK EVERY</label>
+    <div id="alertChkEveryWrap" style="position:relative;width:92px"></div>
+  </div>
+  <div id="alertChkMoversRow" style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+    <label style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:0;min-width:0">TOP MOVERS CHECK EVERY</label>
+    <div id="alertChkMoversWrap" style="position:relative;width:92px"></div>
+  </div>
+  <div id="alertChkWindowRow" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px">
+    <div style="display:flex;align-items:center;gap:6px">
+      <label style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:0;min-width:0">FROM</label>
+      <div id="alertChkFromWrap" style="position:relative;width:82px"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <label style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:0;min-width:0">TO</label>
+      <div id="alertChkToWrap" style="position:relative;width:82px"></div>
+    </div>
+    <span id="alertChkTz" style="font-size:10px;color:var(--dim)"></span>
+  </div>
+
+  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">PUSH NOTIFICATIONS</div>
+  <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px">
+    <label style="display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;font-size:9px;color:var(--dim);letter-spacing:2px;margin:0;min-width:0">
+      <input type="checkbox" id="pushEnable" onchange="togglePushSubscription()" style="cursor:pointer;margin:0">
+      <span>SUBSCRIBE</span>
+    </label>
+    <button class="btn" id="pushTestBtn" onclick="sendTestPush()" style="padding:4px 12px;font-size:9px;letter-spacing:2px;color:var(--dim)">TEST</button>
+    <span id="pushStatus" style="font-size:10px;color:var(--dim)"></span>
+  </div>
+
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">BACKUP / RESTORE</div>
   <div style="display:flex;gap:8px">
     <button class="btn btn-green" onclick="backupData()" style="flex:1;padding:9px;font-size:11px;letter-spacing:1px">
@@ -347,7 +387,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.4.20';
+var APP_VERSION = 'v1.5.33';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -401,7 +441,10 @@ var tickerData = {};
 // If all fields end up empty, the whole ticker entry is removed.
 // Idempotent — safely callable for any ticker.
 function pruneTickerData(ticker) {
-  if (!ticker || !tickerData[ticker]) return;
+  // Runs when the ticker has EITHER a tickerData entry or alerts: alerts now
+  // live in their own store, so a ticker can have alerts with no tickerData
+  // left, and those still need pruning.
+  if (!ticker || (!tickerData[ticker] && !alertStore[ticker])) return;
   var hasLiveOrWL = false;
   var hasAnywhere = false;
   Object.keys(portfolios).forEach(function(pid) {
@@ -414,7 +457,8 @@ function pruneTickerData(ticker) {
       if (!pos.sold) hasLiveOrWL = true;
     });
   });
-  if (!hasLiveOrWL && tickerData[ticker].alerts) delete tickerData[ticker].alerts;
+  if (!hasLiveOrWL && alertStore[ticker]) { delete alertStore[ticker]; saveAlertsLS(); }
+  if (!tickerData[ticker]) return;
   if (!hasAnywhere) {
     delete tickerData[ticker].isin;
     delete tickerData[ticker].category;
@@ -435,6 +479,7 @@ function saveLastView() {
     var data = {
       viewMode: viewMode,
       portfolioId: currentPortfolioId,
+      setId: currentSetId,
       bondPortfolioId: currentBondPortfolioId,
       cashPortfolioId: currentCashPortfolioId,
       switcherTab: switcherTab,
@@ -470,6 +515,15 @@ function restoreLastView() {
   }
   if (data.cashPortfolioId && cashPortfolios[data.cashPortfolioId]) {
     currentCashPortfolioId = data.cashPortfolioId;
+  }
+  // A pinned set is validated like a portfolio: it may have been deleted or
+  // unpinned on another device, in which case the view falls back to the plain
+  // All Positions it was built on.
+  if (data.setId) {
+    var stillPinned = getPositionSets(ALL_POSITIONS_CTX).some(function(x) {
+      return x.id === data.setId && x.pinned;
+    });
+    currentSetId = stillPinned ? data.setId : null;
   }
 
   // Validate viewMode has the required context; fall back to switcher if missing.
@@ -524,6 +578,11 @@ function setTitleForCurrentView() {
     t.textContent = 'BOND SUMMARY';
   } else if (viewMode === 'archive-summary') {
     t.textContent = 'REALIZED SUMMARY';
+  } else if (isSetContext()) {
+    // A set reuses the All Positions views, so without this it would announce
+    // itself as ALL POSITIONS.
+    var openSet = getPositionSets(ALL_POSITIONS_CTX).find(function(x) { return x.id === currentSetId; });
+    t.textContent = openSet ? openSet.name : 'ALL POSITIONS';
   } else if (isAllPositions() || isRealizedAllPositions()) {
     t.textContent = 'ALL POSITIONS';
   } else if (isSummaryByPortfolio()) {
@@ -2380,9 +2439,37 @@ function renderSwitcher() {
   // work on positions independent of which portfolio they belong to. The
   // position counter (was on Σ Summary) lives here now since these views
   // operate on the count of positions, not portfolios.
-  html += '<div class="portfolio-item portfolio-item-meta' + (isAllPositions() ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:8px 14px" onclick="switchToAllPositions()">'
-    + '<div style="flex:1"><span class="portfolio-item-name">ALL POSITIONS</span> <span class="portfolio-item-count">' + totalActive + ' pos</span></div>'
+  html += '<div class="portfolio-item portfolio-item-meta' + (isAllPositions() && !currentSetId ? ' active' : '') + '" style="display:flex;align-items:center;border-top:1px solid var(--border);padding:8px 14px">'
+    + '<div style="flex:1;cursor:pointer;min-width:0" onclick="switchToAllPositions()"><span class="portfolio-item-name">ALL POSITIONS</span> <span class="portfolio-item-count">' + totalActive + ' pos</span></div>'
+    + '<button class="btn-icon" onclick="event.stopPropagation();openPositionSetsModalGlobal()" title="Manage sets" style="font-size:13px;padding:4px 7px">＋</button>'
     + '</div>';
+  // Pinned sets sit right below, each a view over the same union narrowed to
+  // its tickers. Same controls as in manage sets, so a set can be unpinned,
+  // edited or removed without going through the settings.
+  getPinnedSets().forEach(function(s) {
+    // Counted like ALL POSITIONS above: unique tickers actually held, so the
+    // two numbers mean the same thing. getSetContextPositions returns lots and
+    // includes watchlist entries, which would read as a larger, different count.
+    var heldSeen = {};
+    Object.keys(portfolios).forEach(function(pid) {
+      if (portfolios[pid].watchlist || portfolios[pid].archive) return;
+      (portfolios[pid].positions || []).forEach(function(pos) {
+        if (!pos.sold && pos.qty > 0 && (s.tickers || []).indexOf(pos.ticker) !== -1) {
+          heldSeen[pos.ticker] = true;
+        }
+      });
+    });
+    var held = Object.keys(heldSeen).length;
+    var isOpen = currentSetId === s.id;
+    html += '<div class="portfolio-item portfolio-item-meta' + (isOpen ? ' active' : '') + '" style="display:flex;align-items:center;padding:8px 14px">'
+      + '<div style="flex:1;cursor:pointer;min-width:0" onclick="switchToSet(&apos;' + s.id + '&apos;)">'
+      + '<span class="portfolio-item-name">' + s.name + '</span> <span class="portfolio-item-count">' + held + ' pos</span>'
+      + '</div>'
+      + setPinButtonHtml(s)
+      + '<button class="btn-icon" onclick="event.stopPropagation();editSetFromSwitcher(&apos;' + s.id + '&apos;)" style="font-size:13px;padding:4px 7px">&#9998;</button>'
+      + '<button class="btn-icon" onclick="event.stopPropagation();deleteSetFromSwitcher(&apos;' + s.id + '&apos;)" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
+      + '</div>';
+  });
   // Σ SUMMARY BY PORTFOLIO — per-portfolio aggregate views (P&L, market, chart)
   // work with portfolios as units, not individual positions, hence no counter.
   html += '<div class="portfolio-item portfolio-item-meta' + (isSummaryByPortfolio() ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:8px 14px" onclick="switchToSummary()">'
@@ -2391,6 +2478,7 @@ function renderSwitcher() {
   list.innerHTML = html;
 }
 function switchToArchiveSummary() {
+  currentSetId = null;  // leaving the set context
   viewMode = 'archive-summary';
   setTitleForCurrentView();
   document.getElementById('viewMenuBtn').disabled = true;
@@ -2402,6 +2490,7 @@ function switchToArchiveSummary() {
 }
 
 function switchToSummary() {
+  currentSetId = null;  // leaving the set context
   // Σ Summary by portfolio = per-portfolio aggregate views only (summary/
   // summary-market/summary-chart). The summary-movers/summary-alerts
   // remappings that lived here moved to switchToAllPositions; from any
@@ -2418,7 +2507,27 @@ function switchToSummary() {
   updateViewMenuActive();
 }
 
+function switchToSet(setId) {
+  var sets = getPositionSets(ALL_POSITIONS_CTX);
+  var exists = sets.some(function(s) { return s.id === setId; });
+  // Deleted elsewhere: fall back rather than opening an empty view.
+  if (!exists) { currentSetId = null; switchToAllPositions(); return; }
+
+  currentSetId = setId;
+  if (!isAllPositions()) viewMode = 'global-main';
+  setTitleForCurrentView();
+  document.getElementById('viewMenuBtn').style.display = '';
+  document.getElementById('viewMenuBtn').disabled = false;
+  document.getElementById('viewMenuBtn').style.opacity = '';
+  document.getElementById('refreshAllBtn').style.display = '';
+  closeSwitcher();
+  if (getApiKey()) refreshAllPortfolios();
+  render();
+  updateViewMenuActive();
+}
+
 function switchToAllPositions() {
+  currentSetId = null;  // leaving the set context
   // ALL POSITIONS = cross-portfolio position-level views (movers, alerts,
   // weights, analytics). Default view is MARKET (= summary-movers). If
   // already in an All Positions view, preserve it; otherwise reset to default.
@@ -2435,6 +2544,7 @@ function switchToAllPositions() {
 }
 
 function switchToRealizedAllPositions() {
+  currentSetId = null;  // leaving the set context
   // ALL POSITIONS for realized portfolios — same concept as switchToAllPositions
   // but scoped to archive portfolios; only WEIGHTS and ANALYTICS are available
   // (no market/alerts for closed positions). Default view is WEIGHTS.
@@ -2450,6 +2560,7 @@ function switchToRealizedAllPositions() {
 }
 
 function switchToBondSummary() {
+  currentSetId = null;  // leaving the set context
   viewMode = 'bond-summary';
   document.getElementById('portfolioTitle').textContent = 'SUMMARY';
   document.getElementById('viewMenuBtn').style.display = 'none';
@@ -2459,6 +2570,7 @@ function switchToBondSummary() {
 }
 
 function switchPortfolio(id) {
+  currentSetId = null;  // leaving the set context
   if (!portfolios[id]) return;
   currentPortfolioId = id;
   localStorage.setItem('pt_current', id);
@@ -2780,7 +2892,8 @@ function backupData() {
     allPositionSets: allPositionSets,
     brokerDict: brokerDict,
     defaultBroker: _defaultBroker || null,
-    tickerData: tickerData
+    tickerData: tickerData,
+    alerts: alertsCloudPayload()
   };
   var json = JSON.stringify(data, null, 2);
   var blob = new Blob([json], { type: 'application/json' });
@@ -2822,6 +2935,10 @@ function restoreData(event) {
       if (data.secDict && Array.isArray(data.secDict)) { secDict = data.secDict; }
       if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
       if (data.allPositionSets && Array.isArray(data.allPositionSets)) { allPositionSets = data.allPositionSets; saveAllPositionSetsLS(); }
+      // Same shape as the cloud record, so the same reader applies. Backups
+      // written before alerts moved out carry them inside tickerData instead —
+      // migrateAlertsToOwnStore picks those up on the next init.
+      applyCloudAlerts(data);
       if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
       if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
       migrateLegacyTickerAlertsFromCloud(data);
@@ -2832,6 +2949,7 @@ function restoreData(event) {
       stripMigratedFieldsFromPositions();
       stripNullPositionFields();
       stripTradeFieldsFromZeroQty();
+      migrateAlertsToOwnStore();
       saveTickerDataLS();
       saveDicts();
       currentPortfolioId = Object.keys(portfolios)[0];
@@ -2971,7 +3089,8 @@ function cloudSave() {
 }
 
 function _doCloudSave(key, binId) {
-  var plaintext = JSON.stringify({ portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, allPositionSets: allPositionSets, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerData: tickerData });
+  var plainObj = { portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, allPositionSets: allPositionSets, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerData: tickerData };
+  var plaintext = JSON.stringify(plainObj);
   var encKey = getEncKey();
 
   function doSend(body) {
@@ -3019,10 +3138,10 @@ function _doCloudSave(key, binId) {
 
   if (encKey) {
     encryptData(plaintext, encKey).then(function(encrypted) {
-      doSend(JSON.stringify({ encrypted: encrypted }));
+      doSend(JSON.stringify({ encrypted: encrypted, alerts: alertsCloudPayload() }));
     }).catch(function() { updateJbStatus('✗ Encryption error', 'var(--red)'); });
   } else {
-    doSend(plaintext);
+    doSend(JSON.stringify(Object.assign({}, plainObj, { alerts: alertsCloudPayload() })));
   }
 }
 
@@ -3077,6 +3196,7 @@ function cloudLoadKV(callback) {
           stripMigratedFieldsFromPositions();
           stripNullPositionFields();
           stripTradeFieldsFromZeroQty();
+          migrateAlertsToOwnStore();
           saveTickerDataLS();
           saveDicts();
           savePortfolios();
@@ -3090,6 +3210,7 @@ function cloudLoadKV(callback) {
           callback(true);
         } else { callback(false); }
       }
+      applyCloudAlerts(data);
       if (data && data.encrypted) {
         var encKey = getEncKey();
         if (!encKey) { updateJbStatus('✗ Encrypted — enter ENC KEY', 'var(--red)'); callback(false); return; }
@@ -3138,9 +3259,13 @@ function cloudSaveKV() {
       updateJbStatus(msg, 'var(--red)');
     });
   }
+  // Alerts ride alongside the blob in plaintext (see alertsCloudPayload) so the
+  // scheduled worker can evaluate them without the encryption key.
   if (encKey) {
-    encryptData(JSON.stringify(payload), encKey).then(function(enc) { doSave({ encrypted: enc }); });
-  } else { doSave(payload); }
+    encryptData(JSON.stringify(payload), encKey).then(function(enc) {
+      doSave({ encrypted: enc, alerts: alertsCloudPayload() });
+    });
+  } else { doSave(Object.assign({}, payload, { alerts: alertsCloudPayload() })); }
 }
 
 function autoCloudLoad(callback) {
@@ -3319,6 +3444,7 @@ function cloudLoad(callback) {
         stripMigratedFieldsFromPositions();
         stripNullPositionFields();
         stripTradeFieldsFromZeroQty();
+        migrateAlertsToOwnStore();
         saveTickerDataLS();
         saveDicts();
         savePortfolios();
@@ -3343,6 +3469,7 @@ function cloudLoad(callback) {
       } else { callback(false); }
     }
 
+    applyCloudAlerts(data);
     if (data && data.encrypted) {
       var encKey = getEncKey();
       if (!encKey) {
@@ -3398,12 +3525,30 @@ function saveApiKey() {
   localStorage.setItem('pt_finnhub', k);
   updateSettingsUI();
 }
+// The check settings are shared — another device may have changed them since
+// this one last loaded. Refresh on open so the panel doesn't show a stale copy.
+// Deliberately not gated on the local enabled flag: that flag is part of what
+// might be stale, so trusting it could keep a device from ever catching up.
+function refreshAlertSettingsFromCloud() {
+  if (!getApiKey() || !getKvKey()) return;
+  pushServerCall('/api/alerts', null, 'GET').then(function(res) {
+    if (!res || !res.alerts) return;
+    var st = res.alerts.settings;
+    if (st && typeof st === 'object') {
+      alertCheckSettings = Object.assign({}, ALERT_CHECK_DEFAULTS, st);
+      if (!alertCheckSettings.tz) alertCheckSettings.tz = localTimeZoneName();
+      saveAlertCheckSettingsLS();
+      renderAlertCheckSettings();
+    }
+  }).catch(function() { /* offline: the local copy is the best we have */ });
+}
+
 function toggleSettings() {
   var p = document.getElementById('settingsPanel');
   var o = document.getElementById('overlay');
   p.classList.toggle('open');
   o.classList.toggle('open');
-  if (p.classList.contains('open')) renderDictsPanel();
+  if (p.classList.contains('open')) { renderDictsPanel(); renderAlertCheckSettings(); renderPushStatus(); refreshAlertSettingsFromCloud(); }
 }
 function closeSettings() {
   document.getElementById('settingsPanel').classList.remove('open');
@@ -3819,7 +3964,7 @@ function removeAggPositions(ticker, soldFlag) {
 function deleteAlert(ticker, alertId) {
   if (!ticker) return;
   removeTickerAlert(ticker, alertId);
-  saveTickerDataLS();
+  saveAlertsLS();
   save();
   render();
 }
@@ -3830,12 +3975,20 @@ function deleteAlert(ticker, alertId) {
 // Solid for 1 alert; blinks for 2+ with progressive speed (starts at user's
 // BASE BLINK PERIOD setting, steps faster per extra alert, clamps at 'fast').
 // Sky-blue dot (down trigger) is rendered first if present.
-function getAlertDotsHtml(alerts) {
+// Whether an alert's condition holds at the current price. Derived rather than
+// stored, so it always matches the price on screen.
+function isAlertTriggered(ticker, alert) {
+  if (!ticker || !alert) return false;
+  var price = getTickerCurrentPrice(ticker);
+  if (price === null || price === undefined) return false;
+  return alert.condition === '>' ? price > alert.value : price < alert.value;
+}
+function getAlertDotsHtml(ticker, alerts) {
   if (!alerts || !alerts.length) return '';
   var downCount = 0, upCount = 0;
   for (var i = 0; i < alerts.length; i++) {
     var a = alerts[i];
-    if (!a || !a.triggered) continue;
+    if (!a || !isAlertTriggered(ticker, a)) continue;
     if      (a.condition === '<') downCount++;
     else if (a.condition === '>') upCount++;
   }
@@ -3855,7 +4008,7 @@ function getAlertDotsHtml(alerts) {
 // and apply to any active sibling, but the sold row itself shouldn't show them).
 function getAlertDotsHtmlForPosition(p) {
   if (!p || p.sold) return '';
-  return getAlertDotsHtml(getTickerAlerts(p.ticker));
+  return getAlertDotsHtml(p.ticker, getTickerAlerts(p.ticker));
 }
 
 function buildExpandedInner(p) {
@@ -3902,7 +4055,7 @@ function buildExpandedInner(p) {
       + (function() {
           var alerts = getTickerAlerts(p.ticker);
           return alerts.length ? alerts.map(function(a) {
-            var color = a.triggered ? alertColorForCond(a.condition) : 'var(--bright)';
+            var color = isAlertTriggered(p.ticker, a) ? alertColorForCond(a.condition) : 'var(--bright)';
             return '<span style="font-size:10px;color:' + color + '">' + a.condition + ' ' + a.value + '</span>'
               + '<span onclick="deleteAlert(\'' + p.ticker + '\',\'' + a.id + '\')" style="cursor:pointer;font-size:11px;color:var(--dim);margin-left:-6px">&#10005;</span>';
           }).join('') : '';
@@ -3972,7 +4125,7 @@ function buildExpandedInnerAgg(p, group) {
     html += '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
       + '<span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
       + allAlerts.map(function(a) {
-          var color = a.triggered ? alertColorForCond(a.condition) : 'var(--bright)';
+          var color = isAlertTriggered(p.ticker, a) ? alertColorForCond(a.condition) : 'var(--bright)';
           return '<span style="font-size:10px;color:' + color + '">' + a.condition + ' ' + a.value + '</span>'
             + '<span onclick="deleteAlert(\'' + p.ticker + '\',\'' + a.id + '\')" style="cursor:pointer;font-size:11px;color:var(--dim);margin-left:-6px">&#10005;</span>';
         }).join('')
@@ -3996,15 +4149,289 @@ function buildExpandedInnerLite(p, group) {
     + '</div>';
 }
 
+// Alerts travel OUTSIDE the encrypted blob, as a plaintext sibling in the cloud
+// record, so a scheduled worker can evaluate them while the app is closed.
+// That means they're read from the outer record, not the decrypted payload.
+// ── Push notifications ──────────────────────────────────────────────────────
+// Subscription state is read from the browser each time rather than cached, so
+// it stays truthful when permission is revoked outside the app.
+function pushSupported() {
+  return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+}
+
+function renderPushStatus() {
+  var cb = document.getElementById('pushEnable');
+  if (!cb) return;
+  var statusEl = document.getElementById('pushStatus');
+  var testBtn = document.getElementById('pushTestBtn');
+
+  function set(checked, disabled, note) {
+    cb.checked = checked;
+    cb.disabled = disabled;
+    if (statusEl) statusEl.textContent = note || '';
+    if (testBtn) testBtn.style.display = checked ? '' : 'none';
+  }
+
+  if (!pushSupported()) { set(false, true, 'not supported'); return; }
+  if (Notification.permission === 'denied') { set(false, true, 'blocked in browser settings'); return; }
+
+  navigator.serviceWorker.ready.then(function(reg) {
+    return reg.pushManager.getSubscription();
+  }).then(function(sub) {
+    set(!!sub, false, '');
+  }).catch(function() {});
+}
+
+function togglePushSubscription() {
+  if (!pushSupported()) { alert('This browser does not support notifications'); return; }
+  var statusEl = document.getElementById('pushStatus');
+  function say(msg, color) {
+    if (statusEl) { statusEl.textContent = msg; statusEl.style.color = color || 'var(--dim)'; }
+  }
+
+  navigator.serviceWorker.ready.then(function(reg) {
+    return reg.pushManager.getSubscription().then(function(existing) {
+      if (existing) {
+        // Unsubscribe: drop it here and on the server.
+        var endpoint = existing.endpoint;
+        return existing.unsubscribe().then(function() {
+          return pushServerCall('/api/push/subscribe', { endpoint: endpoint, subscription: null });
+        }).then(function() { say('off'); renderPushStatus(); });
+      }
+      return Notification.requestPermission().then(function(perm) {
+        if (perm !== 'granted') { say('permission denied', 'var(--red)'); renderPushStatus(); return; }
+        say('subscribing…');
+        return pushServerCall('/api/push/key', null, 'GET').then(function(res) {
+          if (!res || !res.key) throw new Error('server has no VAPID key');
+          return reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(res.key)
+          });
+        }).then(function(sub) {
+          var json = sub.toJSON();
+          return pushServerCall('/api/push/subscribe', {
+            endpoint: sub.endpoint,
+            subscription: { endpoint: sub.endpoint, keys: json.keys }
+          });
+        }).then(function() { say(''); renderPushStatus(); });
+      });
+    });
+  }).catch(function(e) {
+    // The checkbox flips before this runs, so a failed subscribe must put it
+    // back — otherwise it would claim a subscription that doesn't exist.
+    say(String(e.message || e), 'var(--red)');
+    renderPushStatus();
+  });
+}
+
+function sendTestPush() {
+  var statusEl = document.getElementById('pushStatus');
+  if (statusEl) { statusEl.textContent = 'sending…'; statusEl.style.color = 'var(--dim)'; }
+  pushServerCall('/api/push/test', null, 'POST').then(function(res) {
+    if (statusEl) {
+      var ok = res && res.results && res.results.some(function(r) { return r.ok; });
+      statusEl.textContent = ok ? 'sent' : (res && res.error) || 'failed';
+      statusEl.style.color = ok ? 'var(--green)' : 'var(--red)';
+    }
+  }).catch(function(e) {
+    if (statusEl) { statusEl.textContent = String(e.message || e); statusEl.style.color = 'var(--red)'; }
+  });
+}
+
+// Worker endpoints that take the same auth as the rest of the cloud calls
+// (push subscription, test send, and the alerts record).
+function pushServerCall(path, body, method) {
+  var base = getApiKey();
+  if (!base) return Promise.reject(new Error('API not configured'));
+  base = base.replace(/\/+$/, '');
+  var opts = { method: method || 'POST', headers: {} };
+  var token = getToken();
+  if (token) opts.headers['X-API-Token'] = token;
+  var kvKey = getKvKey();
+  if (kvKey) opts.headers['X-KV-Key'] = kvKey;
+  if (body) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+  return fetch(base + path, opts).then(function(r) { return r.json(); });
+}
+
+// applicationServerKey wants raw bytes, not the base64url string.
+function urlBase64ToUint8Array(base64String) {
+  var padding = '='.repeat((4 - base64String.length % 4) % 4);
+  var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  var raw = atob(base64);
+  var out = new Uint8Array(raw.length);
+  for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+// ── Alert check settings UI ─────────────────────────────────────────────────
+var ALERT_CHECK_PERIODS = [
+  { v: 5,   label: '5 min' },
+  { v: 10,  label: '10 min' },
+  { v: 30,  label: '30 min' },
+  { v: 60,  label: '1 h' },
+  { v: 180, label: '3 h' },
+  { v: 360, label: '6 h' }
+];
+var _alertChkMenuStyle = 'display:none;position:absolute;left:0;right:0;top:100%;background:var(--bg2);border:1px solid var(--border);z-index:100;max-height:220px;overflow-y:auto';
+
+function hourLabel(h) { return (h < 10 ? '0' : '') + h + ':00'; }
+function periodLabel(v) {
+  for (var i = 0; i < ALERT_CHECK_PERIODS.length; i++) {
+    if (ALERT_CHECK_PERIODS[i].v === v) return ALERT_CHECK_PERIODS[i].label;
+  }
+  return v + ' min';
+}
+
+// One picker: a trigger showing the current value plus a dark menu below it.
+// `disabled` renders it dim and drops the click handler entirely.
+function alertChkPicker(name, currentLabel, options, disabled) {
+  var trigStyle = 'background:var(--bg);border:1px solid var(--border);color:'
+    + (disabled ? 'var(--dim)' : 'var(--bright)')
+    + ';font-family:var(--font);font-size:12px;padding:6px 8px;box-sizing:border-box;'
+    + 'display:flex;justify-content:space-between;align-items:center;user-select:none;'
+    + (disabled ? 'cursor:default;opacity:0.5' : 'cursor:pointer');
+  var onclick = disabled ? '' : ' onclick="toggleAlertChkDrop(\'' + name + '\')"';
+  var html = '<div id="alertChkTrig' + name + '"' + onclick + ' style="' + trigStyle + '">'
+    + '<span>' + currentLabel + '</span>'
+    + '<span style="font-size:9px;color:var(--dim);margin-left:6px">&#9660;</span>'
+    + '</div>';
+  if (disabled) return html;
+  html += '<div id="alertChkMenu' + name + '" style="' + _alertChkMenuStyle + '">';
+  html += options.map(function(o) {
+    var sel = o.selected ? 'var(--green)' : 'var(--bright)';
+    return '<div onclick="' + o.action + '" style="padding:9px 12px;cursor:pointer;font-size:11px;letter-spacing:1px;color:' + sel + '">' + o.label + '</div>';
+  }).join('');
+  html += '</div>';
+  return html;
+}
+
+// Movers can't be sent more often than prices are gathered, so the list starts
+// at the alert period. 'none' switches them off.
+function moversOptionsFor(everyMinutes) {
+  var opts = [{ v: 0, label: 'none' }];
+  ALERT_CHECK_PERIODS.forEach(function(p) {
+    if (p.v >= everyMinutes) opts.push(p);
+  });
+  return opts;
+}
+function moversLabel(v) {
+  if (!v) return 'none';
+  return periodLabel(v);
+}
+
+function renderAlertCheckSettings() {
+  var everyWrap = document.getElementById('alertChkEveryWrap');
+  if (!everyWrap) return;
+  var on = !!alertCheckSettings.enabled;
+
+  var cb = document.getElementById('alertChkEnable');
+  if (cb) cb.checked = on;
+
+  // Every picker follows the checkbox: a dimmed row with a live control in it
+  // reads as a contradiction.
+  everyWrap.innerHTML = alertChkPicker('Every', periodLabel(alertCheckSettings.everyMinutes),
+    ALERT_CHECK_PERIODS.map(function(p) {
+      return { label: p.label, action: 'pickAlertChkEvery(' + p.v + ')', selected: p.v === alertCheckSettings.everyMinutes };
+    }), !on);
+
+  function hourOptions(kind, maxHour, cur) {
+    var opts = [];
+    for (var i = 0; i <= maxHour; i++) {
+      opts.push({ label: hourLabel(i), action: 'pickAlertChkHour(\'' + kind + '\',' + i + ')', selected: i === cur });
+    }
+    return opts;
+  }
+  // TO offers 24:00 to mean end of day; FROM stops at 23:00.
+  document.getElementById('alertChkFromWrap').innerHTML =
+    alertChkPicker('From', hourLabel(alertCheckSettings.fromHour), hourOptions('from', 23, alertCheckSettings.fromHour), !on);
+  document.getElementById('alertChkToWrap').innerHTML =
+    alertChkPicker('To', hourLabel(alertCheckSettings.toHour), hourOptions('to', 24, alertCheckSettings.toHour), !on);
+
+  // The window row dims as a whole: the zone labels those hours, so it belongs
+  // with them rather than staying bright on its own.
+  document.getElementById('alertChkMoversWrap').innerHTML =
+    alertChkPicker('Movers', moversLabel(alertCheckSettings.moversMinutes),
+      moversOptionsFor(alertCheckSettings.everyMinutes).map(function(o) {
+        return { label: o.label, action: 'pickAlertChkMovers(' + o.v + ')', selected: o.v === alertCheckSettings.moversMinutes };
+      }), !on);
+
+  var row = document.getElementById('alertChkWindowRow');
+  if (row) row.style.opacity = on ? '1' : '0.5';
+  var erow = document.getElementById('alertChkEveryRow');
+  if (erow) erow.style.opacity = on ? '1' : '0.5';
+  var mrow = document.getElementById('alertChkMoversRow');
+  if (mrow) mrow.style.opacity = on ? '1' : '0.5';
+
+  // Always populated — the zone describes the hours in the pickers, so it's
+  // there before any choice is made.
+  var tzEl = document.getElementById('alertChkTz');
+  if (tzEl) tzEl.textContent = alertCheckSettings.tz || localTimeZoneName();
+}
+
+function toggleAlertChkDrop(name) {
+  ['Every', 'From', 'To', 'Movers'].forEach(function(n) {
+    var m = document.getElementById('alertChkMenu' + n);
+    if (!m) return;
+    if (n === name) m.style.display = (m.style.display === 'none' ? 'block' : 'none');
+    else m.style.display = 'none';
+  });
+}
+function pickAlertChkEvery(v) {
+  alertCheckSettings.everyMinutes = v;
+  // Movers can't outpace the gathering they depend on — lift the choice if the
+  // new period overtakes it.
+  var m = alertCheckSettings.moversMinutes;
+  if (m && m < v) alertCheckSettings.moversMinutes = v;
+  commitAlertCheckSettings();
+}
+function pickAlertChkMovers(v) {
+  alertCheckSettings.moversMinutes = v;
+  commitAlertCheckSettings();
+}
+function pickAlertChkHour(kind, v) {
+  if (kind === 'from') alertCheckSettings.fromHour = v;
+  else alertCheckSettings.toHour = v;
+  commitAlertCheckSettings();
+}
+function setAlertChecksEnabled(on) {
+  alertCheckSettings.enabled = !!on;
+  commitAlertCheckSettings();
+}
+function commitAlertCheckSettings() {
+  // Refresh the zone from the device — travelling shouldn't leave a stale one.
+  alertCheckSettings.tz = localTimeZoneName();
+  saveAlertCheckSettingsLS();
+  renderAlertCheckSettings();
+  save();
+}
+
+function applyCloudAlerts(data) {
+  if (!data || !data.alerts || typeof data.alerts !== 'object') return;
+  var items = data.alerts.items;
+  if (items && typeof items === 'object') { alertStore = items; saveAlertsLS(); }
+  var st = data.alerts.settings;
+  if (st && typeof st === 'object') {
+    alertCheckSettings = Object.assign({}, ALERT_CHECK_DEFAULTS, st);
+    if (!alertCheckSettings.tz) alertCheckSettings.tz = localTimeZoneName();
+    saveAlertCheckSettingsLS();
+    renderAlertCheckSettings();
+  }
+}
+// What gets written as that sibling field.
+function alertsCloudPayload() {
+  return { items: alertStore, settings: alertCheckSettings };
+}
+
 function quickAddAlert(ticker) {
   if (!ticker) return;
   var cond = _alertCondQuick;
   var val = parseFloat(document.getElementById('quickAlertVal').value);
   if (isNaN(val) || val <= 0) return;
-  var curPrice = getTickerCurrentPrice(ticker);
-  var triggered = curPrice != null ? (cond === '>' ? curPrice > val : curPrice < val) : false;
-  addTickerAlert(ticker, { id: newAlertId(), condition: cond, value: val, triggered: triggered });
-  saveTickerDataLS();
+  addTickerAlert(ticker, { id: newAlertId(), condition: cond, value: val });
+  saveAlertsLS();
   save();
   render();
 }
@@ -4176,13 +4603,6 @@ function refreshTicker(ticker, silent) {
       });
     }
     positions = (portfolios[currentPortfolioId] && portfolios[currentPortfolioId].positions) || positions;
-    var tAlerts = getTickerAlerts(ticker);
-    if (tAlerts.length) {
-      setTickerAlerts(ticker, tAlerts.map(function(a) {
-        return Object.assign({}, a, { triggered: a.condition === '>' ? price > a.value : price < a.value });
-      }));
-      if (!silent) saveTickerDataLS();
-    }
     // ISIN — fire-and-forget lookup via the worker's /api/isin endpoint.
     // Only performed for real securities (EQUITY/ETF); other instrument
     // types (indices, futures, crypto, currencies) have no meaningful ISIN
@@ -4269,13 +4689,6 @@ function refreshAllPortfolios() {
       setTickerMeta(ticker, 'previousClose', q.previousClose);
       if (q.instrumentType) setTickerMeta(ticker, 'instrumentType', q.instrumentType);
       if (q.exchangeName) setTickerMeta(ticker, 'exchangeName', q.exchangeName);
-      // Update triggered state for this ticker's alerts.
-      var tAlerts = getTickerAlerts(ticker);
-      if (tAlerts.length) {
-        setTickerAlerts(ticker, tAlerts.map(function(a) {
-          return Object.assign({}, a, { triggered: a.condition === '>' ? price > a.value : price < a.value });
-        }));
-      }
     }).catch(function() {
       markPriceStale(ticker);
     });
@@ -4902,30 +5315,36 @@ window.chartViewType = 'portfolio'; // 'portfolio' or 'positions'
 window.chartSelectionOpen = false;
 
 // ── Position sets (per-portfolio named subsets of tickers) ──────────────────
-// Stored in portfolio JSON as positionSets: [{id, name, tickers: [...]}].
+// Stored in portfolio JSON as positionSets: [{id, name, tickers: [...], pinned}].
 // Each set identifies positions by ticker (not id) — durable across re-adds.
-// Used in chart and fundamentals views; menu shows sets in place of the
-// old "positions" item, with a MANAGE SETS button at the bottom.
+//
+// Global sets are subsets of ALL POSITIONS and belong to the portfolio switcher:
+// pinning one makes it a view of its own there, with the same modes a portfolio
+// has. Chart, fundamentals and the filter are consumers of the same sets.
+// Per-portfolio sets still exist and are scoped to their portfolio.
 
 
-// Ticker universe offered in the sets modal. Honors the forced-global flag: the
-// filter's MANAGE SETS must offer the full all-portfolios union even when a
-// single portfolio is open. Temporarily borrows All Positions context.
-function getChartContextTickersForSets() {
-  if (!window._setsForceGlobal) return getChartUniqueTickers();
+// Ticker universe the sets modal offers. Global sets span every portfolio, so
+// this is the full union whenever the modal manages them — including when it's
+// opened from inside a set's own view, where the live context would narrow the
+// union down to that very set and leave nothing to add.
+function getSetsUniverseTickers() {
+  if (!window._managingGlobalSets) return getChartUniqueTickers();
   var savedView = viewMode;
+  var savedSet = currentSetId;
   viewMode = 'global-chart';           // makes isAllPositions() true → union
+  currentSetId = null;                 // ...and not narrowed to the open set
   var t = getChartUniqueTickers();
   viewMode = savedView;
+  currentSetId = savedSet;
   return t;
 }
 
-// Context for SET operations (create/update/delete/list/ticker-source).
-// Normally the current view context, but when the sets modal is opened from the
-// filter we force the global store: the filter's sets are the All Positions
-// sets, no matter which portfolio is open.
+// Context for set operations (create/update/delete/list/ticker-source).
+// The switcher and the filter both manage the global store regardless of which
+// portfolio happens to be open; elsewhere sets belong to the current view.
 function getSetsCtx() {
-  return window._setsForceGlobal ? ALL_POSITIONS_CTX : getSelCtx();
+  return window._managingGlobalSets ? ALL_POSITIONS_CTX : getSelCtx();
 }
 
 function savePositionSets(ctx, sets) {
@@ -5379,22 +5798,27 @@ function confirmAggSell() {
   render();
 }
 
-function openPositionSetsModal() {
-  window._editingSetId = null;
+function openPositionSetsModal(editSetId) {
+  // Opens on the list by default; a caller can name a set to open its form
+  // directly, which is what the switcher's pencil does.
+  window._editingSetId = editSetId || null;
   var existing = document.getElementById('positionSetsModal');
   if (existing) existing.remove();
   var modal = document.createElement('div');
   modal.id = 'positionSetsModal';
   // Above the filter overlay (z 600) when opened from it; normal 400 otherwise.
-  var zed = window._setsForceGlobal ? 700 : 400;
+  var zed = window._managingGlobalSets ? 700 : 400;
   modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:' + zed + ';display:flex;align-items:flex-start;justify-content:center;padding:40px 12px;overflow-y:auto';
   modal.onclick = function(e) { if (e.target === modal) closePositionSetsModal(); };
   document.body.appendChild(modal);
   renderPositionSetsModal();
 }
 
+// Opens the modal on the global sets — used by the switcher's ＋ and by the
+// filter's MANAGE SETS, both of which deal with ALL POSITIONS subsets rather
+// than the open portfolio's own sets.
 function openPositionSetsModalGlobal() {
-  window._setsForceGlobal = true;
+  window._managingGlobalSets = true;
   openPositionSetsModal();
 }
 
@@ -5403,8 +5827,8 @@ function closePositionSetsModal() {
   if (m) m.remove();
   window._editingSetId = null;
   window._expandedSetId = null;
-  var wasGlobal = window._setsForceGlobal;
-  window._setsForceGlobal = false;
+  var wasGlobal = window._managingGlobalSets;
+  window._managingGlobalSets = false;
   render();
   // If this was opened from the filter, refresh the filter's custom SET
   // dropdown in place so a just-created set shows up, keeping other choices.
@@ -5427,7 +5851,7 @@ function renderPositionSetsModal() {
   if (!modal) return;
   var sets = getPositionSets(getSetsCtx());
   var editing = window._editingSetId;
-  var allTickers = getChartContextTickersForSets().slice().sort(function(a, b) {
+  var allTickers = getSetsUniverseTickers().slice().sort(function(a, b) {
     return a.localeCompare(b);
   });
 
@@ -5487,6 +5911,7 @@ function renderPositionSetsModal() {
         var isExpanded = window._expandedSetId === s.id;
         var row = '<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid ' + (isExpanded ? 'transparent' : 'var(--border)') + '">'
           + '<div style="flex:1;font-size:12px;cursor:pointer" onclick="toggleSetPreview(&apos;' + s.id + '&apos;)"><span style="color:var(--bright);letter-spacing:1px">' + s.name + '</span> <span style="color:var(--dim);font-size:10px">' + count + (count === 1 ? ' ticker' : ' tickers') + '</span></div>'
+          + (getSetsCtx() === ALL_POSITIONS_CTX ? setPinButtonHtml(s) : '')
           + '<button class="btn-icon" onclick="startEditPositionSet(&apos;' + s.id + '&apos;)" style="font-size:13px;padding:4px 7px">&#9998;</button>'
           + '<button class="btn-icon" onclick="confirmDeletePositionSet(&apos;' + s.id + '&apos;)" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
           + '</div>';
@@ -5526,6 +5951,55 @@ function startEditPositionSet(setId) {
 
 // Tap a set name to preview its tickers read-only (helps spot the few checked
 // tickers in a long list without entering edit mode).
+// The pin is an emoji, so it doesn't take a colour — the off state is conveyed
+// by fading and desaturating it instead.
+function setPinButtonHtml(s) {
+  var on = !!s.pinned;
+  var style = 'font-size:13px;padding:4px 7px;'
+    + (on ? '' : 'filter:grayscale(1)');
+  var title = on ? 'Shown in switcher' : 'Show in switcher';
+  return '<button class="btn-icon" onclick="toggleSetPinned(&apos;' + s.id + '&apos;)" title="' + title + '" style="' + style + '">&#128204;</button>';
+}
+
+// The switcher deals in global sets, so both handlers force that context —
+// otherwise the lookups would resolve against the last-opened portfolio's sets.
+function editSetFromSwitcher(setId) {
+  window._managingGlobalSets = true;
+  closeSwitcher();
+  openPositionSetsModal(setId);
+}
+
+function deleteSetFromSwitcher(setId) {
+  window._managingGlobalSets = true;
+  var set = getPositionSets(ALL_POSITIONS_CTX).find(function(s) { return s.id === setId; });
+  if (!set) { window._managingGlobalSets = false; return; }
+  if (!confirm('Delete set "' + set.name + '"?')) { window._managingGlobalSets = false; return; }
+  deletePositionSet(setId);
+  window._managingGlobalSets = false;
+  // Viewing the set that just went away — step back to what it was built on.
+  if (currentSetId === setId) { currentSetId = null; switchToAllPositions(); }
+  renderSwitcher();
+  save();
+}
+
+function toggleSetPinned(setId) {
+  var sets = getPositionSets(getSetsCtx());
+  var target = null;
+  for (var i = 0; i < sets.length; i++) if (sets[i].id === setId) target = sets[i];
+  if (!target) return;
+  var nowPinned = !target.pinned;
+  updatePositionSet(setId, { pinned: nowPinned });
+  // Unpinning removes it from the switcher, so viewing it would strand you in
+  // a place you can no longer navigate back to.
+  if (!nowPinned && currentSetId === setId) {
+    currentSetId = null;
+    switchToAllPositions();
+  }
+  renderPositionSetsModal();
+  renderSwitcher();
+  save();
+}
+
 function toggleSetPreview(setId) {
   window._expandedSetId = (window._expandedSetId === setId) ? null : setId;
   renderPositionSetsModal();
@@ -5545,7 +6019,7 @@ function clearMissingFromSet(setId) {
   // Preview: remove tickers no longer held, straight away (no SAVE here).
   var set = getPositionSets(getSetsCtx()).find(function(s) { return s.id === setId; });
   if (!set) return;
-  var universe = getChartContextTickersForSets();
+  var universe = getSetsUniverseTickers();
   var kept = (set.tickers || []).filter(function(t) { return universe.indexOf(t) !== -1; });
   updatePositionSet(setId, { tickers: kept });
   renderPositionSetsModal();
@@ -5572,7 +6046,9 @@ function savePositionSetFromModal() {
   // that are no longer held (they get checkboxes in the NOT-CURRENTLY-HELD
   // group). Collect whatever is checked across both, so missing tickers left
   // checked survive and unchecked ones are removed.
-  var universe = getChartUniqueTickers();
+  // The same universe the form listed — not the raw context one, which narrows
+  // to the open set and would silently drop every addition.
+  var universe = getSetsUniverseTickers();
   var editingSet = window._editingSetId && window._editingSetId !== '_new'
     ? getPositionSets(getSetsCtx()).find(function(s) { return s.id === window._editingSetId; })
     : null;
@@ -5596,11 +6072,15 @@ function savePositionSetFromModal() {
 }
 
 function confirmDeletePositionSet(setId) {
-  var set = getPositionSets().find(function(s) { return s.id === setId; });
+  var set = getPositionSets(getSetsCtx()).find(function(s) { return s.id === setId; });
   if (!set) return;
   if (!confirm('Delete set "' + set.name + '"?')) return;
   deletePositionSet(setId);
+  // Deleting the set we're currently viewing leaves nowhere to be — fall back.
+  if (currentSetId === setId) { currentSetId = null; switchToAllPositions(); }
   renderPositionSetsModal();
+  renderSwitcher();
+  save();
 }
 
 
@@ -5612,7 +6092,8 @@ function getFundamentalsSelKey() {
 function getFundamentalsSelection() {
   var sel = getFundamentalsSelectedSet();
   if (!sel) return [];
-  var set = getPositionSets().find(function(s) { return s.id === sel; });
+  // Same context the selection key used — see getChartSelection.
+  var set = getPositionSets(getSelCtx()).find(function(s) { return s.id === sel; });
   if (!set) return [];
   var allTickers = getFundamentalsUniqueTickers();
   return set.tickers.filter(function(t) { return allTickers.indexOf(t) !== -1; });
@@ -5859,7 +6340,7 @@ function buildMoversView(area, opts) {
     // entry=0, so the date guard (!entry) and broker guard (qty===0) drop them
     // from date/broker filters unchanged — but a SET filter matches by ticker,
     // which is exactly how a watchlist ticker added to a set becomes visible.
-    var bmvPosns = bmvDoFilter ? filterPositions(p.positions || []) : (p.positions || []);
+    var bmvPosns = bmvDoFilter ? filterPositions(ctxPortfolioPositions(pid)) : ctxPortfolioPositions(pid);
     bmvPosns.forEach(function(pos) {
       if (pos.sold) return;
       if (bmvAlertsOnly && !getTickerAlerts(pos.ticker).length) return;
@@ -7717,7 +8198,7 @@ function render() {
     var allSaPos = [];
     var saDoFilter = filterActiveForSummary(saIsRealized);
     saPids.forEach(function(pid) {
-      var saPosns = saDoFilter ? filterPositions(portfolios[pid].positions || []) : (portfolios[pid].positions || []);
+      var saPosns = saDoFilter ? filterPositions(ctxPortfolioPositions(pid)) : ctxPortfolioPositions(pid);
       saPosns.forEach(function(pos) {
         allSaPos.push(pos);
         var pc = getPositionCurrencyCode(pos);
@@ -9627,7 +10108,7 @@ function render() {
     });
     var gwDoFilter = filterActiveForSummary(gwIsRealized);
     gwPids.forEach(function(pid) {
-      var gwScanPosns = gwDoFilter ? filterPositions(portfolios[pid].positions || []) : (portfolios[pid].positions || []);
+      var gwScanPosns = gwDoFilter ? filterPositions(ctxPortfolioPositions(pid)) : ctxPortfolioPositions(pid);
       gwScanPosns.forEach(function(pos) {
         var c = getPositionCurrencyCode(pos, portfolios[pid].currencyCode);
         if (c !== 'USD' && gwNonUSD.indexOf(c) === -1) gwNonUSD.push(c);
@@ -9637,7 +10118,7 @@ function render() {
     function buildGlobalWeightRows(fxRates) {
       var tickerMap = {};
       gwPids.forEach(function(pid) {
-        var gwRowPosns = gwDoFilter ? filterPositions(portfolios[pid].positions || []) : (portfolios[pid].positions || []);
+        var gwRowPosns = gwDoFilter ? filterPositions(ctxPortfolioPositions(pid)) : ctxPortfolioPositions(pid);
         gwRowPosns.forEach(function(pos) {
           var pcur = getPositionCurrent(pos);
           if (!pos.qty || pos.qty <= 0 || pcur == null) return;
