@@ -1,15 +1,31 @@
 # Portfolio Terminal 2
 
-A PWA stock portfolio tracker with a Cloudflare Worker backend. Supports all major exchanges, extended hours (pre/post market), and cross-device sync via cloud storage.
+A portfolio tracker for holdings spread across brokers, currencies and asset classes: equities, bonds, deposits and cash in one app, with live prices from exchanges worldwide and cross-device sync. Installs as a PWA on Android and iOS.
+
+## Highlights
+
+- **Four asset classes.** Equity portfolios and watchlists; bonds with a shared bond database, coupon maths and maturities; deposits in three payout modes; cash ledgers for everything else. Each with its own totals and cross-portfolio summary.
+- **Realized results, not just projections.** The STOCKS and BONDS tabs show what a holding might return. The REALIZED tab reports what it actually did — closed positions frozen at their sale figures, with real profit rather than expected.
+- **Multi-currency throughout.** Every position keeps its native currency; totals, weights and analytics convert through live FX rates into the portfolio's base currency.
+- **Exchanges worldwide.** Quotes come from Yahoo Finance, so whatever it lists works — US, London, Xetra, Euronext, Hong Kong and beyond — and each instrument carries whatever currency it's quoted in. Pre- and post-market prices, a market-state icon on every row, and a trading-hours popover showing the exchange's sessions in both its timezone and yours.
+- **Metadata on the ticker.** Classification, ISIN, notes and alerts belong to the security, so they're set once and apply everywhere it's held, across every portfolio and broker.
+- **Cross-portfolio by design.** ALL POSITIONS unions every holding into a single table; global sets carve that union into named groups you can pin to the switcher and use like portfolios.
+- **An analytics matrix.** Group by any of eight rubrics — category, region, sector, currency, instrument type, exchange, ISIN country, broker — and read each grouping as P&L, market, chart or weights.
+- **Fundamentals side by side.** Compare analyst targets, ratings, quarterly growth and EPS across a set of tickers, with a six-tab overlay per ticker and an earnings calendar for the whole portfolio.
+- **Alerts that arrive on their own.** Price thresholds are checked on a schedule by the server and delivered as push notifications while the app is closed.
+- **Lot-level control.** Collapse duplicate tickers into one row, drill into per-broker subgroups, sell FIFO within a broker, or move and delete whole aggregations at once.
+- **Yours end to end.** The backend is a worker you deploy yourself; cloud sync is optional, and with an encryption key set the stored data is an opaque blob.
 
 ## Overview
 
 | | |
 |---|---|
 | **Frontend** | Static HTML/JS SPA (`index.html` + `core.js` + `fundamentals.js`), hostable on any static host that serves over HTTPS (GitHub Pages, Vercel, Cloudflare Pages, Netlify, etc.). Reference deployment: `lpodo.github.io/portfolio2` |
-| **Price backend** | Cloudflare Workers — `portfolio2.lpodolskiy.workers.dev` |
+| **Backend** | A Cloudflare Worker, deployed per user — see [HOW-TO-DEPLOY-YOUR-OWN-WORKER.md](HOW-TO-DEPLOY-YOUR-OWN-WORKER.md) |
 | **Repository** | `lpodo/portfolio2` |
 | **App** | PWA — installable on Android/iOS as a home screen app |
+
+The app is only the client half. It stores your portfolios and draws the interface, but every price, chart and lookup comes from a server — browsers can't reach Yahoo Finance directly, so a worker proxies those requests, and optionally holds your synced data and runs the scheduled alert checks. There is no shared instance to sign up for: each user deploys their own copy from the `worker.js` file in this repository, which takes a few minutes.
 
 ## Table of Contents
 
@@ -795,6 +811,7 @@ Optional AES-GCM 256-bit client-side encryption via the **ENC KEY** field in Set
 | Euronext Paris | `.PA` | `AIR.PA` |
 | Euronext Amsterdam | `.AS` | `ASML.AS` |
 | Tokyo | `.T` | `7203.T` |
+| Hong Kong | `.HK` | `0700.HK` |
 | Milan | `.MI` | `ENI.MI` |
 | Oslo | `.OL` | `EQNR.OL` |
 
@@ -850,7 +867,7 @@ Market state (`REGULAR` / `PRE` / `POST` / `CLOSED`) is determined from `current
 All endpoints require the `X-API-Token: TOKEN` header. To call from curl:
 
 ```
-curl -H "X-API-Token: YOUR_TOKEN" https://portfolio2.lpodolskiy.workers.dev/api/quote?ticker=AAPL
+curl -H "X-API-Token: YOUR_TOKEN" https://YOUR-WORKER.workers.dev/api/quote?ticker=AAPL
 ```
 
 ### Scheduled alert checks
