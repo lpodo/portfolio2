@@ -619,6 +619,7 @@ async function checkOneUser(env, userKey, now) {
   // same grid but at its own coarser step. Ranked by the size of the move
   // regardless of direction — a sharp fall matters as much as a sharp rise.
   let moversSent = 0;
+  let moversNote = '';
   const moversEvery = numOr(settings.moversMinutes, 0);
   if (moversEvery > 0 && leftover === 0) {
     const moversSlot = currentSlot(local, fromHour, moversEvery);
@@ -635,17 +636,27 @@ async function checkOneUser(env, userKey, now) {
           const sign = r.diff >= 0 ? '+' : '\u2212';
           return `${r.ticker} ${r.price.toFixed(2)} ${sign}${Math.abs(r.diff).toFixed(2)} (${sign}${Math.abs(r.pct).toFixed(2)}%)`;
         }).join('\n');
-        const message = {
-          title: `Top movers \u00B7 ${ranked.length}`,
-          body: lines,
-          tag: 'pt-movers',
-          ticker: null
-        };
-        for (const sub of subs2) {
-          try {
-            const res = await sendPush(env, sub, message);
-            if (res.ok) moversSent++;
-          } catch {}
+
+        // Nothing new to say: a digest identical to the last one sent means the
+        // prices haven't moved — a weekend, a holiday, or simply overnight.
+        // Comparing the text covers all of those without consulting a calendar,
+        // and costs nothing: it's the same string the notification carries.
+        if (lines === state.lastMoversBody) {
+          moversNote = 'unchanged since last digest';
+        } else {
+          const message = {
+            title: `Top movers \u00B7 ${ranked.length}`,
+            body: lines,
+            tag: 'pt-movers',
+            ticker: null
+          };
+          for (const sub of subs2) {
+            try {
+              const res = await sendPush(env, sub, message);
+              if (res.ok) moversSent++;
+            } catch {}
+          }
+          if (moversSent) state.lastMoversBody = lines;
         }
       }
       state.lastMoversSlot = moversSlot;
@@ -655,7 +666,9 @@ async function checkOneUser(env, userKey, now) {
   await env.PORTFOLIO_KV.put(stateKey, JSON.stringify({
     lastSlot: slot,
     lastMoversSlot: state.lastMoversSlot,
+    lastMoversBody: state.lastMoversBody,
     moversSent,
+    moversNote,
     gathered: leftover === 0 ? {} : gathered,
     lastRun: now.toISOString(),
     localTime: `${pad2(local.hour)}:${pad2(local.minute)} ${tz}`,
