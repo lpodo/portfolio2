@@ -394,7 +394,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.36';
+var APP_VERSION = 'v1.5.38';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -486,6 +486,8 @@ function saveLastView() {
     var data = {
       viewMode: viewMode,
       portfolioId: currentPortfolioId,
+      // focusTicker is deliberately absent: a transient view shouldn't be
+      // what the app reopens on.
       setId: currentSetId,
       bondPortfolioId: currentBondPortfolioId,
       cashPortfolioId: currentCashPortfolioId,
@@ -585,6 +587,8 @@ function setTitleForCurrentView() {
     t.textContent = 'BOND SUMMARY';
   } else if (viewMode === 'archive-summary') {
     t.textContent = 'REALIZED SUMMARY';
+  } else if (isFocusContext()) {
+    t.textContent = focusTicker;
   } else if (isSetContext()) {
     // A set reuses the All Positions views, so without this it would announce
     // itself as ALL POSITIONS.
@@ -898,7 +902,18 @@ function renderDictsPanel() {
 function toggleSwitcher() {
   var el = document.getElementById('portfolioSwitcher');
   el.classList.toggle('open');
-  if (el.classList.contains('open')) renderSwitcher();
+  if (el.classList.contains('open')) {
+    // Reaching for the switcher means leaving the notification's single-ticker
+    // view: it isn't listed there, so there'd be no way back to it anyway.
+    if (focusTicker) {
+      focusTicker = null;
+      viewMode = 'summary-alerts';
+      setTitleForCurrentView();
+      render();
+      updateViewMenuActive();
+    }
+    renderSwitcher();
+  }
   saveLastView();
 }
 function closeSwitcher() {
@@ -2485,7 +2500,7 @@ function renderSwitcher() {
   list.innerHTML = html;
 }
 function switchToArchiveSummary() {
-  currentSetId = null;  // leaving the set context
+  currentSetId = null; focusTicker = null;  // leaving the set context
   viewMode = 'archive-summary';
   setTitleForCurrentView();
   document.getElementById('viewMenuBtn').disabled = true;
@@ -2497,7 +2512,7 @@ function switchToArchiveSummary() {
 }
 
 function switchToSummary() {
-  currentSetId = null;  // leaving the set context
+  currentSetId = null; focusTicker = null;  // leaving the set context
   // Σ Summary by portfolio = per-portfolio aggregate views only (summary/
   // summary-market/summary-chart). The summary-movers/summary-alerts
   // remappings that lived here moved to switchToAllPositions; from any
@@ -2534,7 +2549,7 @@ function switchToSet(setId) {
 }
 
 function switchToAllPositions() {
-  currentSetId = null;  // leaving the set context
+  currentSetId = null; focusTicker = null;  // leaving the set context
   // ALL POSITIONS = cross-portfolio position-level views (movers, alerts,
   // weights, analytics). Default view is MARKET (= summary-movers). If
   // already in an All Positions view, preserve it; otherwise reset to default.
@@ -2551,7 +2566,7 @@ function switchToAllPositions() {
 }
 
 function switchToRealizedAllPositions() {
-  currentSetId = null;  // leaving the set context
+  currentSetId = null; focusTicker = null;  // leaving the set context
   // ALL POSITIONS for realized portfolios — same concept as switchToAllPositions
   // but scoped to archive portfolios; only WEIGHTS and ANALYTICS are available
   // (no market/alerts for closed positions). Default view is WEIGHTS.
@@ -2567,7 +2582,7 @@ function switchToRealizedAllPositions() {
 }
 
 function switchToBondSummary() {
-  currentSetId = null;  // leaving the set context
+  currentSetId = null; focusTicker = null;  // leaving the set context
   viewMode = 'bond-summary';
   document.getElementById('portfolioTitle').textContent = 'SUMMARY';
   document.getElementById('viewMenuBtn').style.display = 'none';
@@ -2577,7 +2592,7 @@ function switchToBondSummary() {
 }
 
 function switchPortfolio(id) {
-  currentSetId = null;  // leaving the set context
+  currentSetId = null; focusTicker = null;  // leaving the set context
   if (!portfolios[id]) return;
   currentPortfolioId = id;
   localStorage.setItem('pt_current', id);
@@ -5339,11 +5354,14 @@ function getSetsUniverseTickers() {
   if (!window._managingGlobalSets) return getChartUniqueTickers();
   var savedView = viewMode;
   var savedSet = currentSetId;
+  var savedFocus = focusTicker;
   viewMode = 'global-chart';           // makes isAllPositions() true → union
   currentSetId = null;                 // ...and not narrowed to the open set
+  focusTicker = null;                  // ...nor to a notification's ticker
   var t = getChartUniqueTickers();
   viewMode = savedView;
   currentSetId = savedSet;
+  focusTicker = savedFocus;
   return t;
 }
 
@@ -8144,7 +8162,7 @@ function render() {
   // in the same modes the add form would have appeared in.
   var setBar = document.getElementById('setEditBar');
   if (setBar) {
-    var showBar = isSetContext() && !formHiddenHere;
+    var showBar = isSetContext() && !isFocusContext() && !formHiddenHere;
     setBar.style.display = showBar ? '' : 'none';
     if (showBar) {
       var openSet = getPositionSets(ALL_POSITIONS_CTX).find(function(s) { return s.id === currentSetId; });
@@ -8358,7 +8376,7 @@ function render() {
       // Inside a set, the last column removes the ticker from the selection.
       // It sits where a portfolio's delete would, but nothing is deleted here —
       // the position stays in its portfolio — hence grey and no confirmation.
-      deleteBtn = isSetContext()
+      deleteBtn = (isSetContext() && !isFocusContext())
         ? '<button class="btn-icon" onclick="removeTickerFromOpenSet(\'' + p.ticker + '\')" title="Remove from set" style="color:var(--dim)">&#10005;</button>'
         : '';
     } else if (isEdit) {
@@ -10326,6 +10344,44 @@ loadDicts();
 migrateDicts();
 loadAllPositionSetsLS();
 cashPortfolios = getCashPortfolios();
+// Opening from a notification: land on the view it names instead of wherever
+// the app was last left. Cold start reads it from the URL; an already-running
+// window gets a message from the service worker, since focusing alone can't
+// change what's on screen.
+function openViewFromNotification(view, ticker) {
+  if (!view) return;
+  if (ALL_POSITIONS_VIEWS.indexOf(view) !== -1) {
+    currentSetId = null;
+    // A ticker named by the notification is shown on its own, the way a pinned
+    // set is — but transiently: nothing is stored, and opening the switcher
+    // clears it.
+    focusTicker = ticker || null;
+    viewMode = view;
+    setTitleForCurrentView();
+    render();
+    updateViewMenuActive();
+    if (getApiKey()) refreshAllPortfolios();
+  }
+}
+function consumeNotificationHash() {
+  var h = location.hash || '';
+  if (h.indexOf('view=') === -1) return null;
+  var params = {};
+  h.replace(/^#/, '').split('&').forEach(function(pair) {
+    var kv = pair.split('=');
+    if (kv.length === 2) params[kv[0]] = decodeURIComponent(kv[1]);
+  });
+  // Clear it so a reload doesn't jump back to the notification's view.
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+  return params.view ? params : null;
+}
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', function(e) {
+    var d = e.data || {};
+    if (d.type === 'pt-open-view') openViewFromNotification(d.view, d.ticker);
+  });
+}
+
 var _restoredView = restoreLastView();
 setTitleForCurrentView();
 showKeyStatus();
@@ -10334,7 +10390,9 @@ if (_fDateEl) _fDateEl.value = todayLocalISO();
 renderAddBrokerSlot();
 render();
 updateViewMenuActive();
-if (_restoredView && _restoredView.switcherOpen) {
+var _notifView = consumeNotificationHash();
+if (_notifView) openViewFromNotification(_notifView.view, _notifView.ticker);
+if (_restoredView && _restoredView.switcherOpen && !_notifView) {
   setTimeout(function() {
     var sw = document.getElementById('portfolioSwitcher');
     if (sw) {

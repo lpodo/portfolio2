@@ -1089,12 +1089,17 @@ function getPinnedSets() {
 // Positions a pinned set shows: the All Positions union, kept to the set's
 // tickers. Sold lots and archives are excluded there already.
 function getSetContextPositions(setId) {
-  var sets = getPositionSets(ALL_POSITIONS_CTX);
-  var set = null;
-  for (var i = 0; i < sets.length; i++) if (sets[i].id === setId) set = sets[i];
-  if (!set) return [];
   var wanted = {};
-  (set.tickers || []).forEach(function(t) { wanted[t] = true; });
+  if (focusTicker) {
+    // Transient single-ticker view — no stored set behind it.
+    wanted[focusTicker] = true;
+  } else {
+    var sets = getPositionSets(ALL_POSITIONS_CTX);
+    var set = null;
+    for (var i = 0; i < sets.length; i++) if (sets[i].id === setId) set = sets[i];
+    if (!set) return [];
+    (set.tickers || []).forEach(function(t) { wanted[t] = true; });
+  }
   var out = [];
   Object.keys(portfolios).forEach(function(pid) {
     var p = portfolios[pid];
@@ -1107,12 +1112,18 @@ function getSetContextPositions(setId) {
   return out;
 }
 
-// Which pinned set is currently open, if any. A set reuses the All Positions
-// views as-is; only the source of positions differs, so there's no parallel
-// family of view modes to maintain.
+// A pinned set opened from the switcher, or — arriving from a notification — a
+// single ticker shown the same way. The transient one is deliberately not a
+// stored set: it would otherwise appear in manage sets, ride along on the next
+// save into the cloud, and need cleaning up if the app closed before the user
+// dismissed it.
 var currentSetId = null;
+var focusTicker = null;
 function isSetContext() {
-  return !!currentSetId && isAllPositions();
+  return (!!currentSetId || !!focusTicker) && isAllPositions();
+}
+function isFocusContext() {
+  return !!focusTicker && isAllPositions();
 }
 
 // Positions of one portfolio as the current context sees them. The
@@ -1121,12 +1132,16 @@ function isSetContext() {
 function ctxPortfolioPositions(pid) {
   var list = (portfolios[pid] && portfolios[pid].positions) || [];
   if (!isSetContext()) return list;
-  var sets = getPositionSets(ALL_POSITIONS_CTX);
-  var set = null;
-  for (var i = 0; i < sets.length; i++) if (sets[i].id === currentSetId) set = sets[i];
-  if (!set) return list;
   var wanted = {};
-  (set.tickers || []).forEach(function(t) { wanted[t] = true; });
+  if (focusTicker) {
+    wanted[focusTicker] = true;
+  } else {
+    var sets = getPositionSets(ALL_POSITIONS_CTX);
+    var set = null;
+    for (var i = 0; i < sets.length; i++) if (sets[i].id === currentSetId) set = sets[i];
+    if (!set) return list;
+    (set.tickers || []).forEach(function(t) { wanted[t] = true; });
+  }
   return list.filter(function(pos) { return wanted[pos.ticker]; });
 }
 

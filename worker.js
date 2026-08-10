@@ -648,7 +648,8 @@ async function checkOneUser(env, userKey, now) {
             title: `Top movers \u00B7 ${ranked.length}`,
             body: lines,
             tag: 'pt-movers',
-            ticker: null
+            ticker: null,
+            view: 'summary-alerts'
           };
           for (const sub of subs2) {
             try {
@@ -1091,7 +1092,10 @@ function buildAlertMessage(g, items, quotes, isRelease) {
     title: `${g.ticker} ${word} ${values} ${mark}${g.price.toFixed(2)}${delta}`,
     body: ladder + '\n' + marketStateLabel(q),
     tag: 'pt-alert-' + g.ticker + g.condition,
-    ticker: g.ticker
+    ticker: g.ticker,
+    // Where a tap should land: alerts and movers are both about prices across
+    // portfolios, so the cross-portfolio ALERTS view is the useful place.
+    view: 'summary-alerts'
   };
 }
 
