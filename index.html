@@ -397,7 +397,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.42';
+var APP_VERSION = 'v1.5.43';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -2516,7 +2516,7 @@ function renderSwitcher() {
         + '<div onclick="switchPortfolio(\'' + id + '\')" style="flex:1;cursor:pointer;min-width:0">'
         + '<span class="portfolio-item-name">' + fp.name + '</span> <span class="portfolio-item-count">' + fCount + ' pos</span>'
         + '</div>'
-        + '<button class="btn-icon" onclick="archivePortfolio(\'' + id + '\')" title="Move to Realized" style="font-size:13px;padding:4px 7px">&#128230;</button>'
+        + '<button class="btn-icon" onclick="archivePortfolio(\'' + id + '\')" title="Move to Realized" style="font-size:14px;padding:4px 6px;color:var(--dim)">&#8863;</button>'
         + '<button class="btn-icon" onclick="renamePortfolio(\'' + id + '\')" title="Rename" style="font-size:13px;padding:4px 7px">&#9998;</button>'
         + '<button class="btn-icon" onclick="deletePortfolio(\'' + id + '\')" title="Delete" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
         + '</div>';
