@@ -1103,7 +1103,7 @@ function getSetContextPositions(setId) {
   var out = [];
   Object.keys(portfolios).forEach(function(pid) {
     var p = portfolios[pid];
-    if (!p || p.archive) return;
+    if (!p || p.archive || p.foreign) return;
     (p.positions || []).forEach(function(pos) {
       if (pos.sold || !wanted[pos.ticker]) return;
       out.push(pos);
@@ -1130,6 +1130,8 @@ function isFocusContext() {
 // cross-portfolio views walk portfolios directly instead of using the context
 // helpers, so a pinned set has to narrow them here or it would have no effect.
 function ctxPortfolioPositions(pid) {
+  // Foreign portfolios never feed a cross-portfolio view.
+  if (isForeignPortfolio(portfolios[pid])) return [];
   var list = (portfolios[pid] && portfolios[pid].positions) || [];
   if (!isSetContext()) return list;
   var wanted = {};
@@ -1148,6 +1150,18 @@ function ctxPortfolioPositions(pid) {
 // Context key for per-view selections (chart set, fundamentals set, sets list).
 // An open pinned set shares the ALL POSITIONS key: it's a subset of it and
 // reuses its views, so their chart/fundamentals selections are the same one.
+// A portfolio someone else owns: tracked here, but never part of my totals.
+// Archives can be foreign too — the flag is independent of the others.
+function isForeignPortfolio(p) {
+  return !!(p && p.foreign);
+}
+// Whether a portfolio feeds the cross-portfolio aggregates (summary, All
+// Positions, global sets). Archives and watchlists are excluded where each
+// caller already decides; foreign ones are excluded everywhere.
+function countsTowardTotals(p) {
+  return !!p && !p.archive && !p.foreign;
+}
+
 function getSelCtx() {
   return isAllPositions() ? ALL_POSITIONS_CTX : currentPortfolioId;
 }
@@ -1245,7 +1259,7 @@ function getMainContextPositions() {
   var out = [];
   Object.keys(portfolios).forEach(function(pid) {
     var p = portfolios[pid];
-    if (!p || p.archive || p.watchlist) return;
+    if (!p || p.archive || p.watchlist || p.foreign) return;
     (p.positions || []).forEach(function(pos) {
       if (!isRealSecurity(pos)) return;
       if (pos.qty === 0) return; // observe-only lots (not bought) — no P&L
@@ -1262,7 +1276,7 @@ function getChartContextPositions() {
   var out = [];
   Object.keys(portfolios).forEach(function(pid) {
     var p = portfolios[pid];
-    if (!p || p.archive) return;
+    if (!p || p.archive || p.foreign) return;
     (p.positions || []).forEach(function(pos) {
       if (pos.sold) return;
       out.push(pos);

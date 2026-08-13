@@ -197,6 +197,9 @@
       <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
         <input type="radio" name="portfolioType" value="index" class="radio-styled"> WATCHLIST
       </label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
+        <input type="radio" name="portfolioType" value="foreign" class="radio-styled"> FOREIGN
+      </label>
     </div>
     <div id="archivePortfolioTypeRow" style="padding:4px 0 6px;display:none;gap:16px;flex-wrap:wrap">
       <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
@@ -394,7 +397,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.40';
+var APP_VERSION = 'v1.5.41';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -2426,7 +2429,10 @@ function renderSwitcher() {
 
   // Active tab
   var indexIds = ids.filter(function(id) { return portfolios[id].watchlist && !portfolios[id].archive; }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
-  var regularIds = ids.filter(function(id) { return !portfolios[id].watchlist && !portfolios[id].archive; }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+  // Foreign portfolios list separately, below the totals — they're tracked
+  // here but none of their numbers roll up into mine.
+  var regularIds = ids.filter(function(id) { return !portfolios[id].watchlist && !portfolios[id].archive && !portfolios[id].foreign; }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+  var foreignIds = ids.filter(function(id) { return portfolios[id].foreign && !portfolios[id].archive; }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
   var sortedIds = indexIds.concat(regularIds);
   var hasIndex = indexIds.length > 0;
   var hasRegular = regularIds.length > 0;
@@ -2450,7 +2456,7 @@ function renderSwitcher() {
   });
   var totalSeen = {};
   Object.keys(portfolios).forEach(function(pid) {
-    if (!portfolios[pid].watchlist && !portfolios[pid].archive) {
+    if (!portfolios[pid].watchlist && !portfolios[pid].archive && !portfolios[pid].foreign) {
       (portfolios[pid].positions || []).forEach(function(pos) {
         if (!pos.sold && pos.qty > 0) totalSeen[pos.ticker] = true;
       });
@@ -2474,7 +2480,7 @@ function renderSwitcher() {
     // includes watchlist entries, which would read as a larger, different count.
     var heldSeen = {};
     Object.keys(portfolios).forEach(function(pid) {
-      if (portfolios[pid].watchlist || portfolios[pid].archive) return;
+      if (portfolios[pid].watchlist || portfolios[pid].archive || portfolios[pid].foreign) return;
       (portfolios[pid].positions || []).forEach(function(pos) {
         if (!pos.sold && pos.qty > 0 && (s.tickers || []).indexOf(pos.ticker) !== -1) {
           heldSeen[pos.ticker] = true;
@@ -2497,6 +2503,26 @@ function renderSwitcher() {
   html += '<div class="portfolio-item portfolio-item-meta' + (isSummaryByPortfolio() ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:8px 14px" onclick="switchToSummary()">'
     + '<div style="flex:1"><span class="portfolio-item-name">&#931; SUMMARY</span></div>'
     + '</div>';
+
+  // Foreign portfolios: managed here, counted nowhere. Kept below the totals so
+  // it's plain that nothing above includes them.
+  if (foreignIds.length) {
+    html += '<div style="border-top:1px solid var(--border);padding:8px 14px 4px;font-size:9px;color:var(--dim);letter-spacing:2px">FOREIGN</div>';
+    foreignIds.forEach(function(id) {
+      var fp = portfolios[id];
+      var fActive = id === currentPortfolioId;
+      var fCount = (fp.positions || []).filter(function(x) { return !x.sold && x.qty > 0; }).length;
+      html += '<div class="portfolio-item' + (fActive ? ' active' : '') + '" style="display:flex;align-items:center">'
+        + '<div onclick="switchPortfolio(\'' + id + '\')" style="flex:1;cursor:pointer;min-width:0">'
+        + '<span class="portfolio-item-name">' + fp.name + '</span> <span class="portfolio-item-count">' + fCount + ' pos</span>'
+        + '</div>'
+        + '<button class="btn-icon" onclick="archivePortfolio(\'' + id + '\')" title="Move to Realized" style="font-size:13px;padding:4px 7px">&#128230;</button>'
+        + '<button class="btn-icon" onclick="renamePortfolio(\'' + id + '\')" title="Rename" style="font-size:13px;padding:4px 7px">&#9998;</button>'
+        + '<button class="btn-icon" onclick="deletePortfolio(\'' + id + '\')" title="Delete" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
+        + '</div>';
+    });
+  }
+
   list.innerHTML = html;
 }
 function switchToArchiveSummary() {
@@ -2646,10 +2672,13 @@ function addPortfolio() {
     if (archSel && archSel.value === 'cash') { addCashPortfolio(); return; }
     if (archSel && archSel.value === 'bond-archive') { addBondArchivePortfolio(); return; }
   }
-  var isWatchlist = !isArchiveTab && document.querySelector('input[name="portfolioType"]:checked').value === 'index';
+  var typeSel = document.querySelector('input[name="portfolioType"]:checked');
+  var isWatchlist = !isArchiveTab && typeSel.value === 'index';
+  // Someone else's portfolio: tracked here, but kept out of every total.
+  var isForeign = !isArchiveTab && typeSel.value === 'foreign';
   function doCreate() {
     var id = 'p_' + Date.now();
-    portfolios[id] = { name: name, positions: [], currencyCode: curCode, watchlist: isWatchlist, archive: isArchiveTab || undefined };
+    portfolios[id] = { name: name, positions: [], currencyCode: curCode, watchlist: isWatchlist, foreign: isForeign || undefined, archive: isArchiveTab || undefined };
     savePortfolios();
     save();
     document.getElementById('newPortfolioName').value = '';
@@ -4707,7 +4736,7 @@ function refreshAllPortfolios() {
   Object.keys(portfolios).forEach(function(pid) {
     var portfolio = portfolios[pid];
     if (!portfolio.positions) return;
-    if (portfolio.archive) return;
+    if (portfolio.archive || portfolio.foreign) return;
     applyFilter(portfolio.positions).forEach(function(p) {
       if (p.sold || seen[p.ticker]) return;
       seen[p.ticker] = true;
@@ -6418,7 +6447,7 @@ function buildMoversView(area, opts) {
   var bmvDoFilter = filterActiveForSummary(false); // movers/alerts are active-only
   Object.keys(portfolios).forEach(function(pid) {
     var p = portfolios[pid];
-    if (p.archive) return;
+    if (p.archive || p.foreign) return;
     // Watchlist is scanned under a filter too. Its positions are all qty=0 /
     // entry=0, so the date guard (!entry) and broker guard (qty===0) drop them
     // from date/broker filters unchanged — but a SET filter matches by ticker,
@@ -7717,7 +7746,7 @@ function loadSummaryChartData(range, mode) {
   if (!baseUrl) { document.getElementById('chartArea').innerHTML = '<span style="color:var(--red)">API URL not set</span>'; return; }
   var opts = token ? { headers: { 'X-API-Token': token } } : {};
   var activePids = Object.keys(portfolios).filter(function(pid) {
-    return !portfolios[pid].watchlist && !portfolios[pid].archive;
+    return !portfolios[pid].watchlist && !portfolios[pid].archive && !portfolios[pid].foreign;
   }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
   var allTickers = {};
   var allFxNeeded = {};
@@ -8288,8 +8317,10 @@ function render() {
     var saNonUSD = [];
     var saPids = Object.keys(portfolios).filter(function(pid) {
       return saIsRealized
-        ? portfolios[pid].archive
-        : (!portfolios[pid].watchlist && !portfolios[pid].archive);
+        // Foreign is independent of archive: someone else's realized portfolio
+        // is still someone else's, so it stays out of the realized totals too.
+        ? (portfolios[pid].archive && !portfolios[pid].foreign)
+        : (!portfolios[pid].watchlist && !portfolios[pid].archive && !portfolios[pid].foreign);
     });
     var allSaPos = [];
     var saDoFilter = filterActiveForSummary(saIsRealized);
@@ -8504,7 +8535,7 @@ function render() {
   if (viewMode === 'archive-summary') {
     var archFxRates = {};
     var archNonUSD = [];
-    var archPids = Object.keys(portfolios).filter(function(pid) { return portfolios[pid].archive; }).sort(function(a, b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+    var archPids = Object.keys(portfolios).filter(function(pid) { return portfolios[pid].archive && !portfolios[pid].foreign; }).sort(function(a, b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
     archPids.forEach(function(pid) {
       (portfolios[pid].positions || []).forEach(function(pos) {
         var c = getPositionCurrencyCode(pos, portfolios[pid].currencyCode);
@@ -9536,7 +9567,7 @@ function render() {
     // Collect all unique position currencies for FX
     var smFxRates = {};
     var smNonUSD = [];
-    var smPids = Object.keys(portfolios).filter(function(pid) { return !portfolios[pid].watchlist && !portfolios[pid].archive; }).sort(function(a, b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+    var smPids = Object.keys(portfolios).filter(function(pid) { return !portfolios[pid].watchlist && !portfolios[pid].archive && !portfolios[pid].foreign; }).sort(function(a, b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
     var smScanDoFilter = filterActiveForSummary(false);
     smPids.forEach(function(pid) {
       var p = portfolios[pid];
@@ -9603,7 +9634,7 @@ function render() {
     // Collect all unique position currencies across all portfolios
     var summaryFxRates = {}; // currency → USD rate
     var summaryNonUSD = [];
-    var summaryPids = Object.keys(portfolios).filter(function(pid) { return !portfolios[pid].watchlist && !portfolios[pid].archive; }).sort(function(a, b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+    var summaryPids = Object.keys(portfolios).filter(function(pid) { return !portfolios[pid].watchlist && !portfolios[pid].archive && !portfolios[pid].foreign; }).sort(function(a, b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
     var summaryDoFilter = filterActiveForSummary(false);
     summaryPids.forEach(function(pid) {
       var sumScanPosns = summaryDoFilter ? filterPositions(portfolios[pid].positions || []) : (portfolios[pid].positions || []);
@@ -10205,8 +10236,10 @@ function render() {
     var gwNonUSD = [];
     var gwPids = Object.keys(portfolios).filter(function(pid) {
       return gwIsRealized
-        ? portfolios[pid].archive
-        : (!portfolios[pid].watchlist && !portfolios[pid].archive);
+        // Foreign is independent of archive: someone else's realized portfolio
+        // is still someone else's, so it stays out of the realized totals too.
+        ? (portfolios[pid].archive && !portfolios[pid].foreign)
+        : (!portfolios[pid].watchlist && !portfolios[pid].archive && !portfolios[pid].foreign);
     });
     var gwDoFilter = filterActiveForSummary(gwIsRealized);
     gwPids.forEach(function(pid) {
