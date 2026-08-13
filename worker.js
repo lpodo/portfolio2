@@ -778,7 +778,7 @@ async function getQuote(ticker) {
       previousClose: meta.chartPreviousClose || null,
       currency: meta.currency || null,
       exchangeName: meta.fullExchangeName || meta.exchangeName || null,
-      shortName: meta.shortName || null,
+      shortName: meta.longName || meta.shortName || null,
       instrumentType: meta.instrumentType || null,
     };
   }
@@ -830,7 +830,7 @@ async function getQuote(ticker) {
         previousClose: meta.chartPreviousClose || null,
         currency: meta.currency || null,
         exchangeName: meta.fullExchangeName || meta.exchangeName || null,
-        shortName: meta.shortName || null,
+        shortName: meta.longName || meta.shortName || null,
         instrumentType: meta.instrumentType || null,
       };
     }
@@ -848,7 +848,7 @@ async function getQuote(ticker) {
     previousClose: meta.chartPreviousClose || null,
     currency: meta.currency || null,
     exchangeName: meta.fullExchangeName || meta.exchangeName || null,
-    shortName: meta.shortName || null,
+    shortName: meta.longName || meta.shortName || null,
     instrumentType: meta.instrumentType || null,
   };
 }
