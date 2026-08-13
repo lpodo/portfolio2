@@ -397,7 +397,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.41';
+var APP_VERSION = 'v1.5.42';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -8374,9 +8374,21 @@ function render() {
     return;
   }
 
+  // "Add one below" is advice about the open portfolio, so it only applies to
+  // single-portfolio views. Cross-portfolio views draw from other portfolios
+  // and have their own empty states — running this first would have them
+  // report emptiness whenever the last-opened portfolio happened to be empty.
   var mainEmptyCheck = (viewMode === 'global-main') ? getMainContextPositions() : positions;
-  if (mainEmptyCheck.length === 0 && ['cash','bonds','bond-summary','archive-summary'].indexOf(viewMode) === -1) {
+  if (!isCrossPortfolioContext()
+      && mainEmptyCheck.length === 0
+      && ['cash','bonds','bond-summary','archive-summary'].indexOf(viewMode) === -1) {
     area.innerHTML = '<div class="empty">NO POSITIONS &mdash; ADD ONE BELOW</div>';
+    return;
+  }
+  // The cross-portfolio P&L has its own wording: nothing to add here, and the
+  // emptiness is about every portfolio at once.
+  if (viewMode === 'global-main' && mainEmptyCheck.length === 0) {
+    area.innerHTML = '<div class="empty">NO POSITIONS</div>';
     return;
   }
 
