@@ -394,7 +394,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.38';
+var APP_VERSION = 'v1.5.39';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4064,7 +4064,16 @@ function buildExpandedInner(p) {
       + '<span style="white-space:nowrap"><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'sector') || '—') + '</span></span>'
       + '</div>'
     : '';
-  return row1Html
+  // The company name is only a column in MARKET and WEIGHTS, so P&L gave no way
+  // to see it without switching views. Showing it first in every expanded row
+  // makes that unnecessary.
+  var nameHtml = '';
+  var shortName = getPositionShortName(p);
+  if (shortName) {
+    nameHtml = '<div style="font-size:11px;color:var(--bright);letter-spacing:1px;margin-bottom:6px">' + shortName + '</div>';
+  }
+  return nameHtml
+    + row1Html
     + row2Html
     + '<div style="margin-top:6px;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
     + '<span style="opacity:0.6">NOTE</span>'
@@ -4129,6 +4138,11 @@ function buildExpandedInnerAgg(p, group) {
   }
   aggRow1Parts += exTypeHtml;
   var html = '';
+  // Same as a single position: name first, so it's available in every view.
+  var aggName = getPositionShortName(p);
+  if (aggName) {
+    html += '<div style="font-size:11px;color:var(--bright);letter-spacing:1px;margin-bottom:6px">' + aggName + '</div>';
+  }
   html += '<div style="display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;font-size:10px;color:var(--dim);letter-spacing:1px">' + aggRow1Parts + '</div>';
   if (isSecurity) {
     html += '<div style="display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;font-size:10px;color:var(--dim);letter-spacing:1px;margin-top:6px">'
@@ -9736,7 +9750,7 @@ function render() {
         + (isExpanded ? '<tr><td colspan="8" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>' : '');
     });
     area.innerHTML = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
-      + '<table style="border-collapse:collapse;font-size:13px">'
+      + '<table style="width:auto;min-width:100%;border-collapse:collapse;font-size:13px">'
       + '<thead><tr>'
       + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortWatchlist(&apos;ticker&apos;)">TICKER' + wlTickerArrow + '</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
@@ -9835,7 +9849,7 @@ function render() {
     var mkTickerArrow = marketSort.key === 'ticker' ? (marketSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
     var mkDeltaArrow = marketSort.key === 'absdelta' ? ' &#177;&#9660;' : marketSort.key === 'delta' ? (marketSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
     area.innerHTML = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
-      + '<table style="border-collapse:collapse;font-size:13px">'
+      + '<table style="width:auto;min-width:100%;border-collapse:collapse;font-size:13px">'
       + '<thead><tr>'
       + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortMarket(&apos;ticker&apos;)">TICKER' + mkTickerArrow + '</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
@@ -10144,7 +10158,7 @@ function render() {
       return { rows: weightRows, foot: foot };
     }
     var weightTableHtml = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
-      + '<table style="border-collapse:collapse;font-size:13px">'
+      + '<table style="width:auto;min-width:100%;border-collapse:collapse;font-size:13px">'
       + '<thead><tr>'
       + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortWeight(&apos;ticker&apos;)">' + (weightSort.key==='ticker' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'TICKER</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortWeight(&apos;value&apos;)">' + (weightSort.key==='value' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'VALUE</th>'
@@ -10253,7 +10267,7 @@ function render() {
     }
 
     var gwTableHtml = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
-      + '<table style="border-collapse:collapse;font-size:13px">'
+      + '<table style="width:auto;min-width:100%;border-collapse:collapse;font-size:13px">'
       + '<thead><tr>'
       + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortWeight(&apos;ticker&apos;)">' + (weightSort.key==='ticker' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'TICKER</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortWeight(&apos;value&apos;)">' + (weightSort.key==='value' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'VALUE</th>'
