@@ -397,7 +397,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.43';
+var APP_VERSION = 'v1.5.44';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4057,6 +4057,31 @@ function getAlertDotsHtml(ticker, alerts) {
 // Dots for a specific position — wrapped in a sold check so closed positions
 // don't display alert indicators (the alerts still live at the ticker level
 // and apply to any active sibling, but the sold row itself shouldn't show them).
+// Attention flag shown before the ticker, in every view it appears in.
+// Mirrors getAlertDotsHtmlForPosition, which decorates the other side.
+// Flag control in the expanded row, above the note — both are ticker-level
+// annotations, so they sit together. Toggling is one tap: with a single band
+// there's nothing to choose between.
+function tickerFlagRowHtml(ticker) {
+  var on = !!getTickerFlag(ticker);
+  return '<div style="margin-top:6px;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
+    + '<span style="opacity:0.6">FLAG</span>'
+    + '<button class="btn-icon" onclick="toggleTickerFlag(&apos;' + ticker + '&apos;)" title="' + (on ? 'Clear flag' : 'Flag for attention') + '" style="font-size:13px;padding:0 3px;color:' + (on ? 'var(--red)' : 'var(--dim)') + '">&#9873;</button>'
+    + '</div>';
+}
+function toggleTickerFlag(ticker) {
+  setTickerFlag(ticker, getTickerFlag(ticker) ? '' : 'priority');
+  saveTickerDataLS();
+  save();
+  render();
+}
+
+function getTickerFlagHtml(ticker) {
+  var band = getTickerFlag(ticker);
+  if (!band) return '';
+  return '<span style="color:var(--red);font-size:11px;margin-right:3px">&#9873;</span>';
+}
+
 function getAlertDotsHtmlForPosition(p) {
   if (!p || p.sold) return '';
   return getAlertDotsHtml(p.ticker, getTickerAlerts(p.ticker));
@@ -4104,6 +4129,7 @@ function buildExpandedInner(p) {
   return nameHtml
     + row1Html
     + row2Html
+    + tickerFlagRowHtml(p.ticker)
     + '<div style="margin-top:6px;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
     + '<span style="opacity:0.6">NOTE</span>'
     + '<span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'note') || '—') + '</span>'
@@ -4180,6 +4206,7 @@ function buildExpandedInnerAgg(p, group) {
       + '<span style="white-space:nowrap"><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'sector') || '—') + '</span></span>'
       + '</div>';
   }
+  html += tickerFlagRowHtml(p.ticker);
   html += '<div style="margin-top:6px;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
     + '<span style="opacity:0.6">NOTE</span>'
     + '<span style="color:var(--bright);white-space:pre-line">' + (getTickerAttr(p.ticker, 'note') || '—') + '</span>'
@@ -6494,7 +6521,7 @@ function buildMoversView(area, opts) {
     var cls = x.delta >= 0 ? 'pos' : 'neg';
     var dimStyle = p.qty === 0 ? 'font-style:italic;opacity:0.5' : '';
     var isExpanded = expandedId === p.id;
-    var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtmlForPosition(p) + '</span>';
+    var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + getTickerFlagHtml(p.ticker) + p.ticker + getAlertDotsHtmlForPosition(p) + '</span>';
     return '<tr style="' + dimStyle + '">'
       + '<td style="text-align:left;white-space:nowrap">' + tickerCell + '</td>'
       + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.close ? ('' + x.close.toFixed(2)) : '—') + '</td>'
@@ -6627,7 +6654,7 @@ function showAnalyticsDetail(rubric, value) {
     var pnlAbs = (current - entry) * qty;
     var pnlPct = entry > 0 ? ((current / entry) - 1) * 100 : null;
     return '<tr>'
-      + '<td style="' + tdStyleL + ';color:var(--bright);font-weight:bold">' + p.ticker + '</td>'
+      + '<td style="' + tdStyleL + ';color:var(--bright);font-weight:bold">' + getTickerFlagHtml(p.ticker) + p.ticker + '</td>'
       + '<td style="' + tdStyle + '">' + qty + '</td>'
       + '<td style="' + tdStyle + '">' + sym + f2(entry) + '</td>'
       + '<td style="' + tdStyle + '">' + sym + f2(current) + '</td>'
@@ -8268,7 +8295,7 @@ function render() {
       var cls = x.delta >= 0 ? 'pos' : 'neg';
       var dimStyle = p.qty === 0 ? 'font-style:italic;opacity:0.5' : '';
       var isExpanded = expandedId === p.id;
-      var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtmlForPosition(p) + '</span>';
+      var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + getTickerFlagHtml(p.ticker) + p.ticker + getAlertDotsHtmlForPosition(p) + '</span>';
       return '<tr style="' + dimStyle + '">'
         + '<td style="text-align:left;white-space:nowrap">' + tickerCell + '</td>'
         + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.close ? x.close.toFixed(2) : '—') + '</td>'
@@ -8457,7 +8484,7 @@ function render() {
     var isExpanded = expandedId === p.id;
     var tickerCell = isEdit
       ? '<input class="edit-input" id="editTicker" type="text" value="' + p.ticker + '" readonly title="Ticker can\'t be changed — delete and re-add to use a different ticker" style="width:60px;text-transform:uppercase;opacity:0.6;cursor:not-allowed">'
-      : '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + (isEdit ? '' : getAlertDotsHtmlForPosition(p)) + '</span>';
+      : '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + getTickerFlagHtml(p.ticker) + p.ticker + (isEdit ? '' : getAlertDotsHtmlForPosition(p)) + '</span>';
     var soldStyle = (p.sold || p.qty === 0) ? 'font-style:italic;opacity:0.5' : '';
     rows += '<tr style="' + soldStyle + '">'
       + '<td style="white-space:nowrap">' + tickerCell + '</td>'
@@ -9778,7 +9805,7 @@ function render() {
       var delta = (close && price) ? (price - close) / close * 100 : null;
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
       var isExpanded = expandedId === p.id;
-      var wlTickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtmlForPosition(p) + '</span>';
+      var wlTickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + getTickerFlagHtml(p.ticker) + p.ticker + getAlertDotsHtmlForPosition(p) + '</span>';
       wlRows += '<tr>'
         + '<td style="text-align:left;white-space:nowrap">' + wlTickerCell + '</td>'
         + '<td style="white-space:nowrap">' + (close ? getPositionCurrencySymbol(p) + f2(close) : '&mdash;') + '</td>'
@@ -9841,7 +9868,7 @@ function render() {
       var p = entry.pos;
       var allWatchlist = !entry.hasActive;
       var isExpanded = expandedId === p.id;
-      var mktTickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtmlForPosition(p) + '</span>';
+      var mktTickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + getTickerFlagHtml(p.ticker) + p.ticker + getAlertDotsHtmlForPosition(p) + '</span>';
       var mktExpandedRow = isExpanded
         ? '<tr><td colspan="7" style="padding:4px 8px 8px;background:var(--bg2)">' + (entry.group.length > 1 ? buildExpandedInnerAgg(p, entry.group) : buildExpandedInner(p)) + '</td></tr>'
         : '';
@@ -10185,7 +10212,7 @@ function render() {
         var posValBase = p.qty * pcur * rate;
         var weight = wTotVal > 0 ? (posValBase / wTotVal) * 100 : null;
         weightRows += '<tr style="' + wSoldStyle + '">'
-          + '<td style="text-align:left;white-space:nowrap">' + p.ticker + '</td>'
+          + '<td style="text-align:left;white-space:nowrap">' + getTickerFlagHtml(p.ticker) + p.ticker + '</td>'
           + '<td style="padding:5px 4px;white-space:nowrap">' + getPositionCurrencySymbol(p) + f2(p.qty * pcur) + '</td>'
           + '<td style="padding:5px 4px;white-space:nowrap">' + fPctNoSign(weight) + '</td>'
           + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (getPositionShortName(p) || '') + '</td>'

@@ -362,6 +362,18 @@ function migrateAlertsToOwnStore() {
 // These describe the security, not the trade, so they live on the ticker
 // (like isin/alerts) rather than being copied across every position. One
 // ticker → one value, shared by all its positions in every portfolio.
+// Attention flag on a ticker. The stored value names the band ('priority'),
+// not the glyph — the symbol belongs to the UI, and further bands (later,
+// watch, buy, sell) can join without migrating what's already marked.
+// Ticker-level like notes and alerts, so a flag set in one portfolio shows
+// wherever that ticker appears.
+function getTickerFlag(ticker) {
+  return getTickerAttr(ticker, 'flag');
+}
+function setTickerFlag(ticker, band) {
+  setTickerAttr(ticker, 'flag', band || '');
+}
+
 function getTickerAttr(ticker, field) {
   if (!ticker) return null;
   var d = tickerData[ticker];
