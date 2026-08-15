@@ -397,7 +397,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.44';
+var APP_VERSION = 'v1.5.45';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4066,7 +4066,7 @@ function tickerFlagRowHtml(ticker) {
   var on = !!getTickerFlag(ticker);
   return '<div style="margin-top:6px;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
     + '<span style="opacity:0.6">FLAG</span>'
-    + '<button class="btn-icon" onclick="toggleTickerFlag(&apos;' + ticker + '&apos;)" title="' + (on ? 'Clear flag' : 'Flag for attention') + '" style="font-size:13px;padding:0 3px;color:' + (on ? 'var(--red)' : 'var(--dim)') + '">&#9873;</button>'
+    + '<button class="btn-icon" onclick="toggleTickerFlag(&apos;' + ticker + '&apos;)" title="' + (on ? 'Clear flag' : 'Flag for attention') + '" style="font-size:13px;padding:0 3px' + (on ? '' : ';filter:grayscale(1)') + '">&#128681;</button>'
     + '</div>';
 }
 function toggleTickerFlag(ticker) {
@@ -4079,7 +4079,7 @@ function toggleTickerFlag(ticker) {
 function getTickerFlagHtml(ticker) {
   var band = getTickerFlag(ticker);
   if (!band) return '';
-  return '<span style="color:var(--red);font-size:11px;margin-right:3px">&#9873;</span>';
+  return '<span style="font-size:11px;margin-right:3px">&#128681;</span>';
 }
 
 function getAlertDotsHtmlForPosition(p) {
