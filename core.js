@@ -59,6 +59,7 @@ function initPortfolios() {
   loadTickerDataLS();
   loadAlertsLS();
   loadAlertCheckSettingsLS();
+  loadFlagDefsLS();
   // Lift any position-level category/region/sector into tickerData and strip
   // them from positions. Idempotent and cheap — safe to run every startup;
   // this also cleans up stray null attribute keys left by older versions.
@@ -362,26 +363,55 @@ function migrateAlertsToOwnStore() {
 // These describe the security, not the trade, so they live on the ticker
 // (like isin/alerts) rather than being copied across every position. One
 // ticker → one value, shared by all its positions in every portfolio.
-// Attention bands on a ticker. The stored value names the band; its glyph is
-// presentation and can be changed in appearance settings, so re-flagging is
-// never needed to change how a mark looks.
-var FLAG_BANDS = ['priority', 'watch', 'later'];
-var FLAG_LABELS = { priority: 'priority', watch: 'watch', later: 'later' };
-var FLAG_ICONS_DEFAULTS = { priority: '\uD83D\uDEA9', watch: '\uD83D\uDC40', later: '\uD83D\uDD53' };
-var FLAG_ICONS_STORAGE_KEY = 'pt_flag_icons';
+// User-defined attention flags: { id, name, icon }. Tickers store the id, so a
+// rename leaves every marked ticker untouched — only deletion has to reach into
+// them, since the reference would otherwise dangle. Kept top-level like sets,
+// which carries them to the cloud and into backups by the same path.
+var flagDefs = [];
 
-function getFlagIcons() {
+function loadFlagDefsLS() {
   try {
-    var raw = localStorage.getItem(FLAG_ICONS_STORAGE_KEY);
-    if (!raw) return Object.assign({}, FLAG_ICONS_DEFAULTS);
-    return Object.assign({}, FLAG_ICONS_DEFAULTS, JSON.parse(raw));
-  } catch (e) { return Object.assign({}, FLAG_ICONS_DEFAULTS); }
+    var v = JSON.parse(localStorage.getItem('pt_flags'));
+    if (Array.isArray(v)) flagDefs = v;
+  } catch (e) {}
 }
-function setFlagIcons(icons) {
-  try { localStorage.setItem(FLAG_ICONS_STORAGE_KEY, JSON.stringify(icons || {})); } catch (e) {}
+function saveFlagDefsLS() {
+  try { localStorage.setItem('pt_flags', JSON.stringify(flagDefs)); } catch (e) {}
 }
-function getFlagIcon(band) {
-  return band ? (getFlagIcons()[band] || '') : '';
+function getFlagDefs() {
+  return flagDefs.slice().sort(function(a, b) {
+    return (a.name || '').localeCompare(b.name || '');
+  });
+}
+function getFlagDef(id) {
+  for (var i = 0; i < flagDefs.length; i++) if (flagDefs[i].id === id) return flagDefs[i];
+  return null;
+}
+function createFlagDef(name, icon) {
+  var id = 'flag_' + Date.now();
+  flagDefs.push({ id: id, name: (name || '').trim() || 'FLAG', icon: (icon || '').trim() });
+  saveFlagDefsLS();
+  return id;
+}
+function updateFlagDef(id, updates) {
+  flagDefs = flagDefs.map(function(f) {
+    return f.id === id ? Object.assign({}, f, updates) : f;
+  });
+  saveFlagDefsLS();
+}
+function deleteFlagDef(id) {
+  flagDefs = flagDefs.filter(function(f) { return f.id !== id; });
+  saveFlagDefsLS();
+  // Clear the flag from every ticker carrying it — a reference to a flag that
+  // no longer exists would show as nothing and be impossible to clear.
+  Object.keys(tickerData).forEach(function(t) {
+    if (tickerData[t] && tickerData[t].flag === id) setTickerAttr(t, 'flag', '');
+  });
+  saveTickerDataLS();
+}
+function getFlagIcon(id) {
+  var f = getFlagDef(id);
+  return f ? (f.icon || '') : '';
 }
 
 // Attention flag on a ticker. The stored value names the band ('priority'),

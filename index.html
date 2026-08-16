@@ -387,8 +387,6 @@
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">MARKET STATE ICONS</div>
   <div id="customizeIconsRows"></div>
 
-  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">FLAG ICONS</div>
-  <div id="customizeFlagIconsRows"></div>
   <div style="margin-top:14px;text-align:right">
     <a href="#" onclick="resetAppearance(); return false" style="font-size:9px;color:var(--dim);letter-spacing:1px;text-decoration:underline;cursor:pointer">reset all</a>
   </div>
@@ -400,7 +398,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.47';
+var APP_VERSION = 'v1.5.48';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -2943,7 +2941,7 @@ function backupData() {
     regDict: regDict,
     secDict: secDict,
     cashCatDict: cashCatDict,
-    allPositionSets: allPositionSets,
+    allPositionSets: allPositionSets, flagDefs: flagDefs,
     brokerDict: brokerDict,
     defaultBroker: _defaultBroker || null,
     tickerData: tickerData,
@@ -2989,6 +2987,7 @@ function restoreData(event) {
       if (data.secDict && Array.isArray(data.secDict)) { secDict = data.secDict; }
       if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
       if (data.allPositionSets && Array.isArray(data.allPositionSets)) { allPositionSets = data.allPositionSets; saveAllPositionSetsLS(); }
+      if (data.flagDefs && Array.isArray(data.flagDefs)) { flagDefs = data.flagDefs; saveFlagDefsLS(); }
       // Same shape as the cloud record, so the same reader applies. Backups
       // written before alerts moved out carry them inside tickerData instead —
       // migrateAlertsToOwnStore picks those up on the next init.
@@ -3143,7 +3142,7 @@ function cloudSave() {
 }
 
 function _doCloudSave(key, binId) {
-  var plainObj = { portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, allPositionSets: allPositionSets, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerData: tickerData };
+  var plainObj = { portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, allPositionSets: allPositionSets, flagDefs: flagDefs, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerData: tickerData };
   var plaintext = JSON.stringify(plainObj);
   var encKey = getEncKey();
 
@@ -3240,6 +3239,7 @@ function cloudLoadKV(callback) {
           if (data.secDict && Array.isArray(data.secDict)) { secDict = data.secDict; }
           if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
           if (data.allPositionSets && Array.isArray(data.allPositionSets)) { allPositionSets = data.allPositionSets; saveAllPositionSetsLS(); }
+      if (data.flagDefs && Array.isArray(data.flagDefs)) { flagDefs = data.flagDefs; saveFlagDefsLS(); }
           if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
           if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
           migrateLegacyTickerAlertsFromCloud(data);
@@ -3291,7 +3291,7 @@ function cloudSaveKV() {
   var token = getToken();
   var kvKey = getKvKey();
   if (!baseUrl || !kvKey) return;
-  var payload = { portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, allPositionSets: allPositionSets, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerData: tickerData };
+  var payload = { portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, allPositionSets: allPositionSets, flagDefs: flagDefs, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerData: tickerData };
   var encKey = getEncKey();
   function doSave(body) {
     fetch(baseUrl + '/api/kv', {
@@ -3488,6 +3488,7 @@ function cloudLoad(callback) {
         if (data.secDict && Array.isArray(data.secDict)) { secDict = data.secDict; }
         if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
         if (data.allPositionSets && Array.isArray(data.allPositionSets)) { allPositionSets = data.allPositionSets; saveAllPositionSetsLS(); }
+      if (data.flagDefs && Array.isArray(data.flagDefs)) { flagDefs = data.flagDefs; saveFlagDefsLS(); }
         if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
         if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
         migrateLegacyTickerAlertsFromCloud(data);
@@ -4065,17 +4066,115 @@ function getAlertDotsHtml(ticker, alerts) {
 // Flag control in the expanded row, above the note — both are ticker-level
 // annotations, so they sit together. Toggling is one tap: with a single band
 // there's nothing to choose between.
+// ── Flag management ─────────────────────────────────────────────────────────
+// Mirrors the sets modal: a list, an inline form, edit and delete per row.
+window._editingFlagId = null;
+
+function openFlagsModal(editId) {
+  window._editingFlagId = editId || null;
+  var existing = document.getElementById('flagsModal');
+  if (existing) existing.remove();
+  var overlay = document.createElement('div');
+  overlay.id = 'flagsModal';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:700;display:flex;align-items:flex-start;justify-content:center;padding-top:60px';
+  overlay.onclick = function(e) { if (e.target === overlay) closeFlagsModal(); };
+  overlay.innerHTML = '<div onclick="event.stopPropagation()" style="background:var(--bg2);border:1px solid var(--border);padding:18px 20px;min-width:280px;max-width:90vw;max-height:80vh;overflow-y:auto">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'
+    + '<span style="font-size:11px;letter-spacing:2px;color:var(--dim)">FLAGS</span>'
+    + '<button class="btn-icon" onclick="closeFlagsModal()" style="font-size:15px;padding:0 4px">&#10005;</button>'
+    + '</div>'
+    + '<div id="flagsModalBody"></div>'
+    + '</div>';
+  document.body.appendChild(overlay);
+  renderFlagsModal();
+}
+function closeFlagsModal() {
+  var m = document.getElementById('flagsModal');
+  if (m) m.remove();
+  window._editingFlagId = null;
+  render();
+}
+function renderFlagsModal() {
+  var body = document.getElementById('flagsModalBody');
+  if (!body) return;
+  var editing = window._editingFlagId;
+  var defs = getFlagDefs();
+
+  var html = '';
+  if (editing) {
+    var f = editing === '_new' ? { name: '', icon: '' } : (getFlagDef(editing) || { name: '', icon: '' });
+    html += '<div style="padding:10px 12px;background:var(--bg);border:1px solid var(--border)">'
+      + '<div class="field"><label>NAME</label><input type="text" id="flagNameInput" value="' + (f.name || '').replace(/"/g, '&quot;') + '" style="width:100%;box-sizing:border-box" autocomplete="off"></div>'
+      + '<div class="field" style="margin-top:8px"><label>ICON</label><input type="text" id="flagIconInput" maxlength="6" value="' + (f.icon || '').replace(/"/g, '&quot;') + '" placeholder="paste an emoji" style="width:100%;box-sizing:border-box" autocomplete="off"></div>'
+      + '<div style="display:flex;gap:8px;margin-top:12px">'
+      + '<button onclick="saveFlagFromModal()" class="btn btn-green" style="padding:5px 14px">SAVE</button>'
+      + '<button onclick="cancelEditFlag()" class="btn" style="padding:5px 14px;color:var(--dim)">CANCEL</button>'
+      + '</div></div>';
+  } else {
+    html += defs.length
+      ? defs.map(function(f) {
+          var used = flagUsageCount(f.id);
+          return '<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--border)">'
+            + '<span style="font-size:14px;width:20px">' + (f.icon || '') + '</span>'
+            + '<div style="flex:1;font-size:12px;color:var(--bright);letter-spacing:1px">' + f.name
+            + ' <span style="color:var(--dim);font-size:10px">' + used + (used === 1 ? ' ticker' : ' tickers') + '</span></div>'
+            + '<button class="btn-icon" onclick="openFlagsModal(&apos;' + f.id + '&apos;)" style="font-size:13px;padding:4px 7px">&#9998;</button>'
+            + '<button class="btn-icon" onclick="confirmDeleteFlag(&apos;' + f.id + '&apos;)" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
+            + '</div>';
+        }).join('')
+      : '<div style="font-size:11px;color:var(--dim);padding:10px 0">No flags yet</div>';
+    html += '<div style="margin-top:12px"><button onclick="openFlagsModal(&apos;_new&apos;)" class="btn" style="padding:5px 14px;font-size:10px;letter-spacing:2px">+ NEW FLAG</button></div>';
+  }
+  body.innerHTML = html;
+}
+function flagUsageCount(id) {
+  var n = 0;
+  Object.keys(tickerData).forEach(function(t) {
+    if (tickerData[t] && tickerData[t].flag === id) n++;
+  });
+  return n;
+}
+function saveFlagFromModal() {
+  var name = (document.getElementById('flagNameInput').value || '').trim();
+  var icon = (document.getElementById('flagIconInput').value || '').trim();
+  if (!name) { alert('Flag name is required'); return; }
+  if (window._editingFlagId === '_new') createFlagDef(name, icon);
+  else updateFlagDef(window._editingFlagId, { name: name, icon: icon });
+  window._editingFlagId = null;
+  renderFlagsModal();
+  save();
+}
+function cancelEditFlag() {
+  window._editingFlagId = null;
+  renderFlagsModal();
+}
+function confirmDeleteFlag(id) {
+  var f = getFlagDef(id);
+  if (!f) return;
+  var used = flagUsageCount(id);
+  // Deleting reaches past the flag itself, so say so.
+  var msg = 'Delete flag "' + f.name + '"?';
+  if (used) msg += '\n\nIt will be cleared from ' + used + (used === 1 ? ' ticker.' : ' tickers.');
+  if (!confirm(msg)) return;
+  deleteFlagDef(id);
+  renderFlagsModal();
+  save();
+}
+
 function tickerFlagRowHtml(ticker) {
-  var band = getTickerFlag(ticker);
-  var label = band ? (FLAG_LABELS[band] || band) : 'none';
-  var opts = [{ v: '', label: 'none' }].concat(FLAG_BANDS.map(function(b) {
-    return { v: b, label: FLAG_LABELS[b] };
+  var cur = getTickerFlag(ticker);
+  var curDef = cur ? getFlagDef(cur) : null;
+  var label = curDef ? curDef.name : 'none';
+  var opts = [{ v: '', label: 'none', icon: '' }].concat(getFlagDefs().map(function(f) {
+    return { v: f.id, label: f.name, icon: f.icon };
   }));
-  var menu = '<div id="flagMenu_' + ticker + '" style="display:none;position:absolute;left:0;top:100%;min-width:110px;background:var(--bg2);border:1px solid var(--border);z-index:100">'
+  var menu = '<div id="flagMenu_' + ticker + '" style="display:none;position:absolute;left:0;top:100%;min-width:130px;background:var(--bg2);border:1px solid var(--border);z-index:100">'
     + opts.map(function(o) {
-        var sel = o.v === (band || '');
-        return '<div onclick="pickTickerFlag(&apos;' + ticker + '&apos;,&apos;' + o.v + '&apos;)" style="padding:8px 12px;cursor:pointer;font-size:10px;letter-spacing:2px;color:' + (sel ? 'var(--green)' : 'var(--bright)') + '">' + o.label + '</div>';
+        var sel = o.v === (cur || '');
+        return '<div onclick="pickTickerFlag(&apos;' + ticker + '&apos;,&apos;' + o.v + '&apos;)" style="padding:8px 12px;cursor:pointer;font-size:10px;letter-spacing:2px;color:' + (sel ? 'var(--green)' : 'var(--bright)') + '">' + (o.icon ? o.icon + ' ' : '') + o.label + '</div>';
       }).join('')
+    + '<div style="border-top:1px solid var(--border)"></div>'
+    + '<div onclick="openFlagsModal()" style="padding:8px 12px;cursor:pointer;font-size:10px;letter-spacing:2px;color:var(--dim)">manage flags&hellip;</div>'
     + '</div>';
   return '<div style="margin-top:6px;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
     + '<span style="opacity:0.6">FLAG</span>'
@@ -5234,7 +5333,6 @@ function openAppearance() {
   renderBlinkButtons();
   updateBlinkPreview();
   renderCustomizeIconsRows();
-  renderCustomizeFlagIconsRows();
 }
 
 function closeAppearance() {
@@ -5246,9 +5344,6 @@ function resetAppearance() {
   setContrastPref('med');
   setBlinkPref('slow');
   resetCustomizeIcons();
-  setFlagIcons(FLAG_ICONS_DEFAULTS);
-  renderCustomizeFlagIconsRows();
-  render();
 }
 
 // Apply on page load (idempotent — safe to call multiple times)
@@ -5264,46 +5359,6 @@ function applyAppearancePrefs() {
 
 
 // Flag icons reuse the market-icon row markup, so both blocks behave the same.
-function renderCustomizeFlagIconsRows() {
-  var el = document.getElementById('customizeFlagIconsRows');
-  if (!el) return;
-  var icons = getFlagIcons();
-  var html = '';
-  FLAG_BANDS.forEach(function(band) {
-    var sym = icons[band] || '';
-    html += '<div class="ci-row" data-flag="' + band + '">'
-      + '<label>' + FLAG_LABELS[band] + '</label>'
-      + '<input class="ci-sym" type="text" maxlength="6" value="' + escapeCustomizeIconsAttr(sym) + '" oninput="onFlagIconSymInput(this)" autocomplete="off" spellcheck="false">'
-      + '<input class="ci-code" type="text" maxlength="20" value="' + escapeCustomizeIconsAttr(iconsSymbolToCode(sym)) + '" oninput="onFlagIconCodeInput(this)" placeholder="hex" autocomplete="off" spellcheck="false">'
-      + '<span class="ci-arrow">\u2192</span>'
-      + '<span class="ci-preview">' + escapeCustomizeIconsAttr(sym) + '</span>'
-      + '</div>';
-  });
-  el.innerHTML = html;
-}
-function onFlagIconSymInput(input) {
-  var row = input.closest('.ci-row');
-  var sym = input.value;
-  row.querySelector('.ci-code').value = iconsSymbolToCode(sym);
-  row.querySelector('.ci-preview').textContent = sym;
-  saveFlagIconsFromRows();
-}
-function onFlagIconCodeInput(input) {
-  var row = input.closest('.ci-row');
-  var sym = iconsCodeToSymbol(input.value);
-  row.querySelector('.ci-sym').value = sym;
-  row.querySelector('.ci-preview').textContent = sym;
-  saveFlagIconsFromRows();
-}
-function saveFlagIconsFromRows() {
-  var out = {};
-  var rows = document.querySelectorAll('#customizeFlagIconsRows .ci-row');
-  for (var i = 0; i < rows.length; i++) {
-    out[rows[i].getAttribute('data-flag')] = rows[i].querySelector('.ci-sym').value;
-  }
-  setFlagIcons(out);
-  render();
-}
 
 function renderCustomizeIconsRows() {
   var icons = getMarketIcons();
@@ -5364,7 +5419,6 @@ function saveOneMarketIcon(stateKey, symbol) {
 function resetCustomizeIcons() {
   setMarketIcons(MARKET_ICONS_DEFAULTS);
   renderCustomizeIconsRows();
-  renderCustomizeFlagIconsRows();
   if (typeof render === 'function') render();
 }
 // Renders a USD totals-bar (AT CLOSE / CURRENT / Δ / Δ%) from a USD total.
