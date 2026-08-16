@@ -366,7 +366,7 @@ function migrateAlertsToOwnStore() {
 // presentation and can be changed in appearance settings, so re-flagging is
 // never needed to change how a mark looks.
 var FLAG_BANDS = ['priority', 'watch', 'later'];
-var FLAG_LABELS = { priority: 'PRIORITY', watch: 'WATCH', later: 'LATER' };
+var FLAG_LABELS = { priority: 'priority', watch: 'watch', later: 'later' };
 var FLAG_ICONS_DEFAULTS = { priority: '\uD83D\uDEA9', watch: '\uD83D\uDC40', later: '\uD83D\uDD53' };
 var FLAG_ICONS_STORAGE_KEY = 'pt_flag_icons';
 
