@@ -386,6 +386,9 @@
 
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">MARKET STATE ICONS</div>
   <div id="customizeIconsRows"></div>
+
+  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">FLAG ICONS</div>
+  <div id="customizeFlagIconsRows"></div>
   <div style="margin-top:14px;text-align:right">
     <a href="#" onclick="resetAppearance(); return false" style="font-size:9px;color:var(--dim);letter-spacing:1px;text-decoration:underline;cursor:pointer">reset all</a>
   </div>
@@ -397,7 +400,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.45';
+var APP_VERSION = 'v1.5.46';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4063,23 +4066,41 @@ function getAlertDotsHtml(ticker, alerts) {
 // annotations, so they sit together. Toggling is one tap: with a single band
 // there's nothing to choose between.
 function tickerFlagRowHtml(ticker) {
-  var on = !!getTickerFlag(ticker);
+  var band = getTickerFlag(ticker);
+  var label = band ? (FLAG_LABELS[band] || band.toUpperCase()) : 'NONE';
+  var opts = [{ v: '', label: 'NONE' }].concat(FLAG_BANDS.map(function(b) {
+    return { v: b, label: FLAG_LABELS[b] };
+  }));
+  var menu = '<div id="flagMenu_' + ticker + '" style="display:none;position:absolute;left:0;top:100%;min-width:110px;background:var(--bg2);border:1px solid var(--border);z-index:100">'
+    + opts.map(function(o) {
+        var sel = o.v === (band || '');
+        return '<div onclick="pickTickerFlag(&apos;' + ticker + '&apos;,&apos;' + o.v + '&apos;)" style="padding:8px 12px;cursor:pointer;font-size:10px;letter-spacing:2px;color:' + (sel ? 'var(--green)' : 'var(--bright)') + '">' + o.label + '</div>';
+      }).join('')
+    + '</div>';
   return '<div style="margin-top:6px;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
     + '<span style="opacity:0.6">FLAG</span>'
-    + '<button class="btn-icon" onclick="toggleTickerFlag(&apos;' + ticker + '&apos;)" title="' + (on ? 'Clear flag' : 'Flag for attention') + '" style="font-size:13px;padding:0 3px' + (on ? '' : ';filter:grayscale(1)') + '">&#128681;</button>'
+    + '<div style="position:relative">'
+    + '<div onclick="toggleFlagMenu(&apos;' + ticker + '&apos;)" style="cursor:pointer;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-size:10px;letter-spacing:2px;padding:4px 8px;display:flex;align-items:center;gap:6px;user-select:none">'
+    + '<span>' + label + '</span><span style="font-size:8px;color:var(--dim)">&#9660;</span>'
+    + '</div>' + menu
+    + '</div>'
     + '</div>';
 }
-function toggleTickerFlag(ticker) {
-  setTickerFlag(ticker, getTickerFlag(ticker) ? '' : 'priority');
+function toggleFlagMenu(ticker) {
+  var m = document.getElementById('flagMenu_' + ticker);
+  if (m) m.style.display = m.style.display === 'none' ? 'block' : 'none';
+}
+function pickTickerFlag(ticker, band) {
+  setTickerFlag(ticker, band);
   saveTickerDataLS();
   save();
   render();
 }
 
 function getTickerFlagHtml(ticker) {
-  var band = getTickerFlag(ticker);
-  if (!band) return '';
-  return '<span style="font-size:11px;margin-right:3px">&#128681;</span>';
+  var icon = getFlagIcon(getTickerFlag(ticker));
+  if (!icon) return '';
+  return '<span style="font-size:11px;margin-right:3px">' + icon + '</span>';
 }
 
 function getAlertDotsHtmlForPosition(p) {
@@ -5213,6 +5234,7 @@ function openAppearance() {
   renderBlinkButtons();
   updateBlinkPreview();
   renderCustomizeIconsRows();
+  renderCustomizeFlagIconsRows();
 }
 
 function closeAppearance() {
@@ -5224,6 +5246,9 @@ function resetAppearance() {
   setContrastPref('med');
   setBlinkPref('slow');
   resetCustomizeIcons();
+  setFlagIcons(FLAG_ICONS_DEFAULTS);
+  renderCustomizeFlagIconsRows();
+  render();
 }
 
 // Apply on page load (idempotent — safe to call multiple times)
@@ -5237,6 +5262,48 @@ function applyAppearancePrefs() {
   // via blinkClassForCount(n) in getAlertDotsHtml.
 }
 
+
+// Flag icons reuse the market-icon row markup, so both blocks behave the same.
+function renderCustomizeFlagIconsRows() {
+  var el = document.getElementById('customizeFlagIconsRows');
+  if (!el) return;
+  var icons = getFlagIcons();
+  var html = '';
+  FLAG_BANDS.forEach(function(band) {
+    var sym = icons[band] || '';
+    html += '<div class="ci-row" data-flag="' + band + '">'
+      + '<label>' + FLAG_LABELS[band] + '</label>'
+      + '<input class="ci-sym" type="text" maxlength="6" value="' + escapeCustomizeIconsAttr(sym) + '" oninput="onFlagIconSymInput(this)" autocomplete="off" spellcheck="false">'
+      + '<input class="ci-code" type="text" maxlength="20" value="' + escapeCustomizeIconsAttr(iconsSymbolToCode(sym)) + '" oninput="onFlagIconCodeInput(this)" placeholder="hex" autocomplete="off" spellcheck="false">'
+      + '<span class="ci-arrow">\u2192</span>'
+      + '<span class="ci-preview">' + escapeCustomizeIconsAttr(sym) + '</span>'
+      + '</div>';
+  });
+  el.innerHTML = html;
+}
+function onFlagIconSymInput(input) {
+  var row = input.closest('.ci-row');
+  var sym = input.value;
+  row.querySelector('.ci-code').value = iconsSymbolToCode(sym);
+  row.querySelector('.ci-preview').textContent = sym;
+  saveFlagIconsFromRows();
+}
+function onFlagIconCodeInput(input) {
+  var row = input.closest('.ci-row');
+  var sym = iconsCodeToSymbol(input.value);
+  row.querySelector('.ci-sym').value = sym;
+  row.querySelector('.ci-preview').textContent = sym;
+  saveFlagIconsFromRows();
+}
+function saveFlagIconsFromRows() {
+  var out = {};
+  var rows = document.querySelectorAll('#customizeFlagIconsRows .ci-row');
+  for (var i = 0; i < rows.length; i++) {
+    out[rows[i].getAttribute('data-flag')] = rows[i].querySelector('.ci-sym').value;
+  }
+  setFlagIcons(out);
+  render();
+}
 
 function renderCustomizeIconsRows() {
   var icons = getMarketIcons();
@@ -5297,6 +5364,7 @@ function saveOneMarketIcon(stateKey, symbol) {
 function resetCustomizeIcons() {
   setMarketIcons(MARKET_ICONS_DEFAULTS);
   renderCustomizeIconsRows();
+  renderCustomizeFlagIconsRows();
   if (typeof render === 'function') render();
 }
 // Renders a USD totals-bar (AT CLOSE / CURRENT / Δ / Δ%) from a USD total.

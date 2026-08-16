@@ -362,6 +362,28 @@ function migrateAlertsToOwnStore() {
 // These describe the security, not the trade, so they live on the ticker
 // (like isin/alerts) rather than being copied across every position. One
 // ticker → one value, shared by all its positions in every portfolio.
+// Attention bands on a ticker. The stored value names the band; its glyph is
+// presentation and can be changed in appearance settings, so re-flagging is
+// never needed to change how a mark looks.
+var FLAG_BANDS = ['priority', 'watch', 'later'];
+var FLAG_LABELS = { priority: 'PRIORITY', watch: 'WATCH', later: 'LATER' };
+var FLAG_ICONS_DEFAULTS = { priority: '\uD83D\uDEA9', watch: '\uD83D\uDC40', later: '\uD83D\uDD53' };
+var FLAG_ICONS_STORAGE_KEY = 'pt_flag_icons';
+
+function getFlagIcons() {
+  try {
+    var raw = localStorage.getItem(FLAG_ICONS_STORAGE_KEY);
+    if (!raw) return Object.assign({}, FLAG_ICONS_DEFAULTS);
+    return Object.assign({}, FLAG_ICONS_DEFAULTS, JSON.parse(raw));
+  } catch (e) { return Object.assign({}, FLAG_ICONS_DEFAULTS); }
+}
+function setFlagIcons(icons) {
+  try { localStorage.setItem(FLAG_ICONS_STORAGE_KEY, JSON.stringify(icons || {})); } catch (e) {}
+}
+function getFlagIcon(band) {
+  return band ? (getFlagIcons()[band] || '') : '';
+}
+
 // Attention flag on a ticker. The stored value names the band ('priority'),
 // not the glyph — the symbol belongs to the UI, and further bands (later,
 // watch, buy, sell) can join without migrating what's already marked.
