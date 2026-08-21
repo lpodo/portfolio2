@@ -48,6 +48,13 @@
 
   <div id="tableArea"></div>
 
+  <div class="add-form" id="setEditBar" style="display:none">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span class="form-label" id="setEditBarName" style="flex:1;min-width:0"></span>
+      <button class="btn-icon" onclick="editOpenSet()" title="Edit set" style="font-size:15px;padding:4px 8px">&#9998;</button>
+    </div>
+  </div>
+
   <div class="add-form" id="stockAddForm">
     <div class="form-label">+ Add position</div>
     <div class="form-row" style="margin-bottom:8px">
@@ -189,6 +196,9 @@
       </label>
       <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
         <input type="radio" name="portfolioType" value="index" class="radio-styled"> WATCHLIST
+      </label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
+        <input type="radio" name="portfolioType" value="foreign" class="radio-styled"> FOREIGN
       </label>
     </div>
     <div id="archivePortfolioTypeRow" style="padding:4px 0 6px;display:none;gap:16px;flex-wrap:wrap">
@@ -376,6 +386,7 @@
 
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:8px">MARKET STATE ICONS</div>
   <div id="customizeIconsRows"></div>
+
   <div style="margin-top:14px;text-align:right">
     <a href="#" onclick="resetAppearance(); return false" style="font-size:9px;color:var(--dim);letter-spacing:1px;text-decoration:underline;cursor:pointer">reset all</a>
   </div>
@@ -387,7 +398,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.34';
+var APP_VERSION = 'v1.5.49';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -479,6 +490,8 @@ function saveLastView() {
     var data = {
       viewMode: viewMode,
       portfolioId: currentPortfolioId,
+      // focusTicker is deliberately absent: a transient view shouldn't be
+      // what the app reopens on.
       setId: currentSetId,
       bondPortfolioId: currentBondPortfolioId,
       cashPortfolioId: currentCashPortfolioId,
@@ -578,6 +591,8 @@ function setTitleForCurrentView() {
     t.textContent = 'BOND SUMMARY';
   } else if (viewMode === 'archive-summary') {
     t.textContent = 'REALIZED SUMMARY';
+  } else if (isFocusContext()) {
+    t.textContent = focusTicker;
   } else if (isSetContext()) {
     // A set reuses the All Positions views, so without this it would announce
     // itself as ALL POSITIONS.
@@ -891,7 +906,18 @@ function renderDictsPanel() {
 function toggleSwitcher() {
   var el = document.getElementById('portfolioSwitcher');
   el.classList.toggle('open');
-  if (el.classList.contains('open')) renderSwitcher();
+  if (el.classList.contains('open')) {
+    // Reaching for the switcher means leaving the notification's single-ticker
+    // view: it isn't listed there, so there'd be no way back to it anyway.
+    if (focusTicker) {
+      focusTicker = null;
+      viewMode = 'summary-alerts';
+      setTitleForCurrentView();
+      render();
+      updateViewMenuActive();
+    }
+    renderSwitcher();
+  }
   saveLastView();
 }
 function closeSwitcher() {
@@ -2404,7 +2430,10 @@ function renderSwitcher() {
 
   // Active tab
   var indexIds = ids.filter(function(id) { return portfolios[id].watchlist && !portfolios[id].archive; }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
-  var regularIds = ids.filter(function(id) { return !portfolios[id].watchlist && !portfolios[id].archive; }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+  // Foreign portfolios list separately, below the totals — they're tracked
+  // here but none of their numbers roll up into mine.
+  var regularIds = ids.filter(function(id) { return !portfolios[id].watchlist && !portfolios[id].archive && !portfolios[id].foreign; }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+  var foreignIds = ids.filter(function(id) { return portfolios[id].foreign && !portfolios[id].archive; }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
   var sortedIds = indexIds.concat(regularIds);
   var hasIndex = indexIds.length > 0;
   var hasRegular = regularIds.length > 0;
@@ -2428,7 +2457,7 @@ function renderSwitcher() {
   });
   var totalSeen = {};
   Object.keys(portfolios).forEach(function(pid) {
-    if (!portfolios[pid].watchlist && !portfolios[pid].archive) {
+    if (!portfolios[pid].watchlist && !portfolios[pid].archive && !portfolios[pid].foreign) {
       (portfolios[pid].positions || []).forEach(function(pos) {
         if (!pos.sold && pos.qty > 0) totalSeen[pos.ticker] = true;
       });
@@ -2452,7 +2481,7 @@ function renderSwitcher() {
     // includes watchlist entries, which would read as a larger, different count.
     var heldSeen = {};
     Object.keys(portfolios).forEach(function(pid) {
-      if (portfolios[pid].watchlist || portfolios[pid].archive) return;
+      if (portfolios[pid].watchlist || portfolios[pid].archive || portfolios[pid].foreign) return;
       (portfolios[pid].positions || []).forEach(function(pos) {
         if (!pos.sold && pos.qty > 0 && (s.tickers || []).indexOf(pos.ticker) !== -1) {
           heldSeen[pos.ticker] = true;
@@ -2475,10 +2504,30 @@ function renderSwitcher() {
   html += '<div class="portfolio-item portfolio-item-meta' + (isSummaryByPortfolio() ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:8px 14px" onclick="switchToSummary()">'
     + '<div style="flex:1"><span class="portfolio-item-name">&#931; SUMMARY</span></div>'
     + '</div>';
+
+  // Foreign portfolios: managed here, counted nowhere. Kept below the totals so
+  // it's plain that nothing above includes them.
+  if (foreignIds.length) {
+    html += '<div style="border-top:1px solid var(--border);padding:8px 14px 4px;font-size:9px;color:var(--dim);letter-spacing:2px">FOREIGN</div>';
+    foreignIds.forEach(function(id) {
+      var fp = portfolios[id];
+      var fActive = id === currentPortfolioId;
+      var fCount = (fp.positions || []).filter(function(x) { return !x.sold && x.qty > 0; }).length;
+      html += '<div class="portfolio-item' + (fActive ? ' active' : '') + '" style="display:flex;align-items:center">'
+        + '<div onclick="switchPortfolio(\'' + id + '\')" style="flex:1;cursor:pointer;min-width:0">'
+        + '<span class="portfolio-item-name">' + fp.name + '</span> <span class="portfolio-item-count">' + fCount + ' pos</span>'
+        + '</div>'
+        + '<button class="btn-icon" onclick="archivePortfolio(\'' + id + '\')" title="Move to Realized" style="font-size:14px;padding:4px 6px;color:var(--dim)">&#8863;</button>'
+        + '<button class="btn-icon" onclick="renamePortfolio(\'' + id + '\')" title="Rename" style="font-size:13px;padding:4px 7px">&#9998;</button>'
+        + '<button class="btn-icon" onclick="deletePortfolio(\'' + id + '\')" title="Delete" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
+        + '</div>';
+    });
+  }
+
   list.innerHTML = html;
 }
 function switchToArchiveSummary() {
-  currentSetId = null;  // leaving the set context
+  currentSetId = null; focusTicker = null;  // leaving the set context
   viewMode = 'archive-summary';
   setTitleForCurrentView();
   document.getElementById('viewMenuBtn').disabled = true;
@@ -2490,7 +2539,7 @@ function switchToArchiveSummary() {
 }
 
 function switchToSummary() {
-  currentSetId = null;  // leaving the set context
+  currentSetId = null; focusTicker = null;  // leaving the set context
   // Σ Summary by portfolio = per-portfolio aggregate views only (summary/
   // summary-market/summary-chart). The summary-movers/summary-alerts
   // remappings that lived here moved to switchToAllPositions; from any
@@ -2527,7 +2576,7 @@ function switchToSet(setId) {
 }
 
 function switchToAllPositions() {
-  currentSetId = null;  // leaving the set context
+  currentSetId = null; focusTicker = null;  // leaving the set context
   // ALL POSITIONS = cross-portfolio position-level views (movers, alerts,
   // weights, analytics). Default view is MARKET (= summary-movers). If
   // already in an All Positions view, preserve it; otherwise reset to default.
@@ -2544,7 +2593,7 @@ function switchToAllPositions() {
 }
 
 function switchToRealizedAllPositions() {
-  currentSetId = null;  // leaving the set context
+  currentSetId = null; focusTicker = null;  // leaving the set context
   // ALL POSITIONS for realized portfolios — same concept as switchToAllPositions
   // but scoped to archive portfolios; only WEIGHTS and ANALYTICS are available
   // (no market/alerts for closed positions). Default view is WEIGHTS.
@@ -2560,7 +2609,7 @@ function switchToRealizedAllPositions() {
 }
 
 function switchToBondSummary() {
-  currentSetId = null;  // leaving the set context
+  currentSetId = null; focusTicker = null;  // leaving the set context
   viewMode = 'bond-summary';
   document.getElementById('portfolioTitle').textContent = 'SUMMARY';
   document.getElementById('viewMenuBtn').style.display = 'none';
@@ -2570,7 +2619,7 @@ function switchToBondSummary() {
 }
 
 function switchPortfolio(id) {
-  currentSetId = null;  // leaving the set context
+  currentSetId = null; focusTicker = null;  // leaving the set context
   if (!portfolios[id]) return;
   currentPortfolioId = id;
   localStorage.setItem('pt_current', id);
@@ -2624,10 +2673,13 @@ function addPortfolio() {
     if (archSel && archSel.value === 'cash') { addCashPortfolio(); return; }
     if (archSel && archSel.value === 'bond-archive') { addBondArchivePortfolio(); return; }
   }
-  var isWatchlist = !isArchiveTab && document.querySelector('input[name="portfolioType"]:checked').value === 'index';
+  var typeSel = document.querySelector('input[name="portfolioType"]:checked');
+  var isWatchlist = !isArchiveTab && typeSel.value === 'index';
+  // Someone else's portfolio: tracked here, but kept out of every total.
+  var isForeign = !isArchiveTab && typeSel.value === 'foreign';
   function doCreate() {
     var id = 'p_' + Date.now();
-    portfolios[id] = { name: name, positions: [], currencyCode: curCode, watchlist: isWatchlist, archive: isArchiveTab || undefined };
+    portfolios[id] = { name: name, positions: [], currencyCode: curCode, watchlist: isWatchlist, foreign: isForeign || undefined, archive: isArchiveTab || undefined };
     savePortfolios();
     save();
     document.getElementById('newPortfolioName').value = '';
@@ -2889,7 +2941,7 @@ function backupData() {
     regDict: regDict,
     secDict: secDict,
     cashCatDict: cashCatDict,
-    allPositionSets: allPositionSets,
+    allPositionSets: allPositionSets, flagDefs: flagDefs,
     brokerDict: brokerDict,
     defaultBroker: _defaultBroker || null,
     tickerData: tickerData,
@@ -2935,6 +2987,7 @@ function restoreData(event) {
       if (data.secDict && Array.isArray(data.secDict)) { secDict = data.secDict; }
       if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
       if (data.allPositionSets && Array.isArray(data.allPositionSets)) { allPositionSets = data.allPositionSets; saveAllPositionSetsLS(); }
+      if (data.flagDefs && Array.isArray(data.flagDefs)) { flagDefs = data.flagDefs; saveFlagDefsLS(); }
       // Same shape as the cloud record, so the same reader applies. Backups
       // written before alerts moved out carry them inside tickerData instead —
       // migrateAlertsToOwnStore picks those up on the next init.
@@ -3089,7 +3142,7 @@ function cloudSave() {
 }
 
 function _doCloudSave(key, binId) {
-  var plainObj = { portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, allPositionSets: allPositionSets, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerData: tickerData };
+  var plainObj = { portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, allPositionSets: allPositionSets, flagDefs: flagDefs, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerData: tickerData };
   var plaintext = JSON.stringify(plainObj);
   var encKey = getEncKey();
 
@@ -3186,6 +3239,7 @@ function cloudLoadKV(callback) {
           if (data.secDict && Array.isArray(data.secDict)) { secDict = data.secDict; }
           if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
           if (data.allPositionSets && Array.isArray(data.allPositionSets)) { allPositionSets = data.allPositionSets; saveAllPositionSetsLS(); }
+      if (data.flagDefs && Array.isArray(data.flagDefs)) { flagDefs = data.flagDefs; saveFlagDefsLS(); }
           if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
           if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
           migrateLegacyTickerAlertsFromCloud(data);
@@ -3237,7 +3291,7 @@ function cloudSaveKV() {
   var token = getToken();
   var kvKey = getKvKey();
   if (!baseUrl || !kvKey) return;
-  var payload = { portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, allPositionSets: allPositionSets, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerData: tickerData };
+  var payload = { portfolios: portfolios, bondsDb: getBondsDb(), bondPortfolios: getBondPortfolios(), cashPortfolios: getCashPortfolios(), catDict: catDict, regDict: regDict, secDict: secDict, cashCatDict: cashCatDict, allPositionSets: allPositionSets, flagDefs: flagDefs, brokerDict: brokerDict, defaultBroker: _defaultBroker || null, tickerData: tickerData };
   var encKey = getEncKey();
   function doSave(body) {
     fetch(baseUrl + '/api/kv', {
@@ -3434,6 +3488,7 @@ function cloudLoad(callback) {
         if (data.secDict && Array.isArray(data.secDict)) { secDict = data.secDict; }
         if (data.cashCatDict && Array.isArray(data.cashCatDict)) { cashCatDict = data.cashCatDict; }
         if (data.allPositionSets && Array.isArray(data.allPositionSets)) { allPositionSets = data.allPositionSets; saveAllPositionSetsLS(); }
+      if (data.flagDefs && Array.isArray(data.flagDefs)) { flagDefs = data.flagDefs; saveFlagDefsLS(); }
         if (data.brokerDict && Array.isArray(data.brokerDict)) { brokerDict = data.brokerDict; }
         if (typeof data.defaultBroker !== 'undefined') { _defaultBroker = data.defaultBroker || null; }
         migrateLegacyTickerAlertsFromCloud(data);
@@ -4006,6 +4061,148 @@ function getAlertDotsHtml(ticker, alerts) {
 // Dots for a specific position — wrapped in a sold check so closed positions
 // don't display alert indicators (the alerts still live at the ticker level
 // and apply to any active sibling, but the sold row itself shouldn't show them).
+// ── Flag management ─────────────────────────────────────────────────────────
+// Mirrors the sets modal: a list, an inline form, edit and delete per row.
+window._editingFlagId = null;
+
+function openFlagsModal(editId) {
+  window._editingFlagId = editId || null;
+  var existing = document.getElementById('flagsModal');
+  if (existing) existing.remove();
+  var overlay = document.createElement('div');
+  overlay.id = 'flagsModal';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:700;display:flex;align-items:flex-start;justify-content:center;padding-top:60px';
+  overlay.onclick = function(e) { if (e.target === overlay) closeFlagsModal(); };
+  overlay.innerHTML = '<div onclick="event.stopPropagation()" style="background:var(--bg2);border:1px solid var(--border);padding:18px 20px;min-width:280px;max-width:90vw;max-height:80vh;overflow-y:auto">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'
+    + '<span style="font-size:11px;letter-spacing:2px;color:var(--dim)">FLAGS</span>'
+    + '<button class="btn-icon" onclick="closeFlagsModal()" style="font-size:15px;padding:0 4px">&#10005;</button>'
+    + '</div>'
+    + '<div id="flagsModalBody"></div>'
+    + '</div>';
+  document.body.appendChild(overlay);
+  renderFlagsModal();
+}
+function closeFlagsModal() {
+  var m = document.getElementById('flagsModal');
+  if (m) m.remove();
+  window._editingFlagId = null;
+  render();
+}
+function renderFlagsModal() {
+  var body = document.getElementById('flagsModalBody');
+  if (!body) return;
+  var editing = window._editingFlagId;
+  var defs = getFlagDefs();
+
+  var html = '';
+  if (editing) {
+    var f = editing === '_new' ? { name: '', icon: '' } : (getFlagDef(editing) || { name: '', icon: '' });
+    html += '<div style="padding:10px 12px;background:var(--bg);border:1px solid var(--border)">'
+      + '<div class="field"><label>NAME</label><input type="text" id="flagNameInput" value="' + (f.name || '').replace(/"/g, '&quot;') + '" style="width:100%;box-sizing:border-box" autocomplete="off"></div>'
+      + '<div class="field" style="margin-top:8px"><label>ICON</label><input type="text" id="flagIconInput" maxlength="6" value="' + (f.icon || '').replace(/"/g, '&quot;') + '" placeholder="paste an emoji" style="width:100%;box-sizing:border-box" autocomplete="off"></div>'
+      + '<div style="display:flex;gap:8px;margin-top:12px">'
+      + '<button onclick="saveFlagFromModal()" class="btn btn-green" style="padding:5px 14px">SAVE</button>'
+      + '<button onclick="cancelEditFlag()" class="btn" style="padding:5px 14px;color:var(--dim)">CANCEL</button>'
+      + '</div></div>';
+  } else {
+    html += defs.length
+      ? defs.map(function(f) {
+          var used = flagUsageCount(f.id);
+          return '<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--border)">'
+            + '<span style="font-size:14px;width:20px">' + (f.icon || '') + '</span>'
+            + '<div style="flex:1;font-size:12px;color:var(--bright);letter-spacing:1px">' + f.name
+            + ' <span style="color:var(--dim);font-size:10px">' + used + (used === 1 ? ' ticker' : ' tickers') + '</span></div>'
+            + '<button class="btn-icon" onclick="openFlagsModal(&apos;' + f.id + '&apos;)" style="font-size:13px;padding:4px 7px">&#9998;</button>'
+            + '<button class="btn-icon" onclick="confirmDeleteFlag(&apos;' + f.id + '&apos;)" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
+            + '</div>';
+        }).join('')
+      : '<div style="font-size:11px;color:var(--dim);padding:10px 0">No flags yet</div>';
+    html += '<div style="margin-top:12px"><button onclick="openFlagsModal(&apos;_new&apos;)" class="btn" style="padding:5px 14px;font-size:10px;letter-spacing:2px">+ NEW FLAG</button></div>';
+  }
+  body.innerHTML = html;
+}
+function flagUsageCount(id) {
+  var n = 0;
+  Object.keys(tickerData).forEach(function(t) {
+    if (tickerData[t] && tickerData[t].flag === id) n++;
+  });
+  return n;
+}
+function saveFlagFromModal() {
+  var name = (document.getElementById('flagNameInput').value || '').trim();
+  var icon = (document.getElementById('flagIconInput').value || '').trim();
+  if (!name) { alert('Flag name is required'); return; }
+  if (window._editingFlagId === '_new') createFlagDef(name, icon);
+  else updateFlagDef(window._editingFlagId, { name: name, icon: icon });
+  window._editingFlagId = null;
+  renderFlagsModal();
+  save();
+}
+function cancelEditFlag() {
+  window._editingFlagId = null;
+  renderFlagsModal();
+}
+function confirmDeleteFlag(id) {
+  var f = getFlagDef(id);
+  if (!f) return;
+  var used = flagUsageCount(id);
+  // Deleting reaches past the flag itself, so say so.
+  var msg = 'Delete flag "' + f.name + '"?';
+  if (used) msg += '\n\nIt will be cleared from ' + used + (used === 1 ? ' ticker.' : ' tickers.');
+  if (!confirm(msg)) return;
+  deleteFlagDef(id);
+  renderFlagsModal();
+  save();
+}
+
+// Flag control in the expanded row, above the note — both are ticker-level
+// annotations, so they sit together. The menu lists the user's own flags and
+// ends with a way to manage them, the same shape the sets picker uses.
+function tickerFlagRowHtml(ticker) {
+  var cur = getTickerFlag(ticker);
+  var curDef = cur ? getFlagDef(cur) : null;
+  var label = curDef ? curDef.name : 'none';
+  var opts = [{ v: '', label: 'none', icon: '' }].concat(getFlagDefs().map(function(f) {
+    return { v: f.id, label: f.name, icon: f.icon };
+  }));
+  var menu = '<div id="flagMenu_' + ticker + '" style="display:none;position:absolute;left:0;top:100%;min-width:130px;background:var(--bg2);border:1px solid var(--border);z-index:100">'
+    + opts.map(function(o) {
+        var sel = o.v === (cur || '');
+        return '<div onclick="pickTickerFlag(&apos;' + ticker + '&apos;,&apos;' + o.v + '&apos;)" style="padding:8px 12px;cursor:pointer;font-size:10px;letter-spacing:2px;color:' + (sel ? 'var(--green)' : 'var(--bright)') + '">' + (o.icon ? o.icon + ' ' : '') + o.label + '</div>';
+      }).join('')
+    + '<div style="border-top:1px solid var(--border)"></div>'
+    + '<div onclick="openFlagsModal()" style="padding:8px 12px;cursor:pointer;font-size:10px;letter-spacing:2px;color:var(--dim)">manage flags&hellip;</div>'
+    + '</div>';
+  return '<div style="margin-top:6px;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
+    + '<span style="opacity:0.6">FLAG</span>'
+    + '<div style="position:relative">'
+    + '<div onclick="toggleFlagMenu(&apos;' + ticker + '&apos;)" style="cursor:pointer;color:var(--bright);font-size:10px;letter-spacing:2px;padding:2px 0;display:flex;align-items:center;gap:6px;user-select:none">'
+    + '<span>' + label + '</span><span style="font-size:8px;color:var(--dim)">&#9660;</span>'
+    + '</div>' + menu
+    + '</div>'
+    + '</div>';
+}
+function toggleFlagMenu(ticker) {
+  var m = document.getElementById('flagMenu_' + ticker);
+  if (m) m.style.display = m.style.display === 'none' ? 'block' : 'none';
+}
+function pickTickerFlag(ticker, flagId) {
+  setTickerFlag(ticker, flagId);
+  saveTickerDataLS();
+  save();
+  render();
+}
+
+// The flag's icon, shown before the ticker in every view. Mirrors
+// getAlertDotsHtmlForPosition, which decorates the other side of the name.
+// A ticker carrying a flag that has since been deleted renders nothing.
+function getTickerFlagHtml(ticker) {
+  var icon = getFlagIcon(getTickerFlag(ticker));
+  if (!icon) return '';
+  return '<span style="font-size:11px;margin-right:3px">' + icon + '</span>';
+}
+
 function getAlertDotsHtmlForPosition(p) {
   if (!p || p.sold) return '';
   return getAlertDotsHtml(p.ticker, getTickerAlerts(p.ticker));
@@ -4042,8 +4239,18 @@ function buildExpandedInner(p) {
       + '<span style="white-space:nowrap"><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'sector') || '—') + '</span></span>'
       + '</div>'
     : '';
-  return row1Html
+  // The company name is only a column in MARKET and WEIGHTS, so P&L gave no way
+  // to see it without switching views. Showing it first in every expanded row
+  // makes that unnecessary.
+  var nameHtml = '';
+  var shortName = getPositionShortName(p);
+  if (shortName) {
+    nameHtml = '<div style="font-size:11px;color:var(--bright);letter-spacing:1px;margin-bottom:6px">' + shortName + '</div>';
+  }
+  return nameHtml
+    + row1Html
     + row2Html
+    + tickerFlagRowHtml(p.ticker)
     + '<div style="margin-top:6px;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
     + '<span style="opacity:0.6">NOTE</span>'
     + '<span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'note') || '—') + '</span>'
@@ -4107,6 +4314,11 @@ function buildExpandedInnerAgg(p, group) {
   }
   aggRow1Parts += exTypeHtml;
   var html = '';
+  // Same as a single position: name first, so it's available in every view.
+  var aggName = getPositionShortName(p);
+  if (aggName) {
+    html += '<div style="font-size:11px;color:var(--bright);letter-spacing:1px;margin-bottom:6px">' + aggName + '</div>';
+  }
   html += '<div style="display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;font-size:10px;color:var(--dim);letter-spacing:1px">' + aggRow1Parts + '</div>';
   if (isSecurity) {
     html += '<div style="display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;font-size:10px;color:var(--dim);letter-spacing:1px;margin-top:6px">'
@@ -4115,6 +4327,7 @@ function buildExpandedInnerAgg(p, group) {
       + '<span style="white-space:nowrap"><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'sector') || '—') + '</span></span>'
       + '</div>';
   }
+  html += tickerFlagRowHtml(p.ticker);
   html += '<div style="margin-top:6px;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
     + '<span style="opacity:0.6">NOTE</span>'
     + '<span style="color:var(--bright);white-space:pre-line">' + (getTickerAttr(p.ticker, 'note') || '—') + '</span>'
@@ -4671,7 +4884,7 @@ function refreshAllPortfolios() {
   Object.keys(portfolios).forEach(function(pid) {
     var portfolio = portfolios[pid];
     if (!portfolio.positions) return;
-    if (portfolio.archive) return;
+    if (portfolio.archive || portfolio.foreign) return;
     applyFilter(portfolio.positions).forEach(function(p) {
       if (p.sold || seen[p.ticker]) return;
       seen[p.ticker] = true;
@@ -5146,6 +5359,8 @@ function applyAppearancePrefs() {
 }
 
 
+// Flag icons reuse the market-icon row markup, so both blocks behave the same.
+
 function renderCustomizeIconsRows() {
   var icons = getMarketIcons();
   var states = [
@@ -5332,11 +5547,14 @@ function getSetsUniverseTickers() {
   if (!window._managingGlobalSets) return getChartUniqueTickers();
   var savedView = viewMode;
   var savedSet = currentSetId;
+  var savedFocus = focusTicker;
   viewMode = 'global-chart';           // makes isAllPositions() true → union
   currentSetId = null;                 // ...and not narrowed to the open set
+  focusTicker = null;                  // ...nor to a notification's ticker
   var t = getChartUniqueTickers();
   viewMode = savedView;
   currentSetId = savedSet;
+  focusTicker = savedFocus;
   return t;
 }
 
@@ -5799,6 +6017,7 @@ function confirmAggSell() {
 }
 
 function openPositionSetsModal(editSetId) {
+  window._setsTickerFilter = '';  // a filter shouldn't outlive its form
   // Opens on the list by default; a caller can name a set to open its form
   // directly, which is what the switcher's pencil does.
   window._editingSetId = editSetId || null;
@@ -5879,16 +6098,20 @@ function renderPositionSetsModal() {
       + (allTickers.length === 0
           ? '<div style="font-size:11px;color:var(--dim);padding:10px 0">No tickers in this portfolio</div>'
           : '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:10px 0 6px">TICKERS</div>'
-            + '<div style="display:flex;gap:8px;margin-bottom:8px">'
+            + '<div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">'
             + '<button onclick="setsModalSelectAll()" class="btn" style="font-size:9px;padding:3px 8px">ALL</button>'
             + '<button onclick="setsModalSelectNone()" class="btn" style="font-size:9px;padding:3px 8px">NONE</button>'
+            + '<input type="text" id="setsTickerFilter" value="' + (window._setsTickerFilter || '') + '" oninput="onSetsTickerFilter(this.value)" placeholder="filter" autocomplete="off" autocapitalize="characters" style="flex:1;min-width:0;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:11px;padding:3px 6px;outline:none">'
             + '</div>'
             + '<div style="display:flex;flex-direction:column;gap:5px;max-height:280px;overflow-y:auto;border:1px solid var(--border);padding:8px;background:var(--bg2)">'
             + allTickers.map(function(t) {
                 var pos = positions.find(function(p) { return p.ticker === t; });
                 var name = pos && getPositionShortName(pos) ? getPositionShortName(pos) : '';
                 var isChecked = checked.indexOf(t) !== -1 ? 'checked' : '';
-                return '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">'
+                // Hidden, not removed: the checkbox stays in the DOM so saving
+                // still sees ticks made before the filter was typed.
+                var hidden = setsTickerHidden(t) ? ';display:none' : '';
+                return '<label data-tickrow="' + t + '" style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer' + hidden + '">'
                   + '<input type="checkbox" id="setcb_' + t + '" ' + isChecked + ' style="cursor:pointer">'
                   + '<span>' + t + '</span>'
                   + (name ? '<span style="color:var(--dim);font-size:10px">' + name + '</span>' : '')
@@ -5944,6 +6167,7 @@ function renderPositionSetsModal() {
 }
 
 function startEditPositionSet(setId) {
+  window._setsTickerFilter = '';  // a filter shouldn't outlive its form
   window._editingSetId = setId;
   window._expandedSetId = null; // editing supersedes preview
   renderPositionSetsModal();
@@ -5982,6 +6206,28 @@ function deleteSetFromSwitcher(setId) {
   save();
 }
 
+// Edits the set currently on screen, straight from its own view.
+function editOpenSet() {
+  if (!currentSetId) return;
+  window._managingGlobalSets = true;
+  openPositionSetsModal(currentSetId);
+}
+
+// Drops a ticker from the set currently being viewed. Cheap and reversible, so
+// no confirmation. An emptied set stays — it's still something the user made.
+function removeTickerFromOpenSet(ticker) {
+  if (!currentSetId) return;
+  var set = getPositionSets(ALL_POSITIONS_CTX).find(function(s) { return s.id === currentSetId; });
+  if (!set) return;
+  var kept = (set.tickers || []).filter(function(t) { return t !== ticker; });
+  window._managingGlobalSets = true;
+  updatePositionSet(currentSetId, { tickers: kept });
+  window._managingGlobalSets = false;
+  render();
+  renderSwitcher();
+  save();
+}
+
 function toggleSetPinned(setId) {
   var sets = getPositionSets(getSetsCtx());
   var target = null;
@@ -6006,6 +6252,7 @@ function toggleSetPreview(setId) {
 }
 
 function cancelEditPositionSet() {
+  window._setsTickerFilter = '';  // a filter shouldn't outlive its form
   window._editingSetId = null;
   renderPositionSetsModal();
 }
@@ -6025,18 +6272,33 @@ function clearMissingFromSet(setId) {
   renderPositionSetsModal();
 }
 
-function setsModalSelectAll() {
-  getChartUniqueTickers().forEach(function(t) {
+// Ticker rows are filtered in place: re-rendering the modal on every keystroke
+// would take focus away from the input.
+function setsTickerHidden(t) {
+  var q = (window._setsTickerFilter || '').trim().toUpperCase();
+  if (!q) return false;
+  return t.toUpperCase().indexOf(q) === -1;
+}
+function onSetsTickerFilter(v) {
+  window._setsTickerFilter = v;
+  var rows = document.querySelectorAll('[data-tickrow]');
+  for (var i = 0; i < rows.length; i++) {
+    rows[i].style.display = setsTickerHidden(rows[i].getAttribute('data-tickrow')) ? 'none' : 'flex';
+  }
+}
+
+// Both act on the rows currently visible: with a filter typed, that's the point
+// of them. The universe is the modal's own, not the context-narrowed one.
+function setsModalSelectAll()  { setsModalSetVisible(true); }
+function setsModalSelectNone() { setsModalSetVisible(false); }
+function setsModalSetVisible(value) {
+  getSetsUniverseTickers().forEach(function(t) {
+    if (setsTickerHidden(t)) return;
     var cb = document.getElementById('setcb_' + t);
-    if (cb) cb.checked = true;
+    if (cb) cb.checked = value;
   });
 }
-function setsModalSelectNone() {
-  getChartUniqueTickers().forEach(function(t) {
-    var cb = document.getElementById('setcb_' + t);
-    if (cb) cb.checked = false;
-  });
-}
+
 
 function savePositionSetFromModal() {
   var nameInput = document.getElementById('setNameInput');
@@ -6335,7 +6597,7 @@ function buildMoversView(area, opts) {
   var bmvDoFilter = filterActiveForSummary(false); // movers/alerts are active-only
   Object.keys(portfolios).forEach(function(pid) {
     var p = portfolios[pid];
-    if (p.archive) return;
+    if (p.archive || p.foreign) return;
     // Watchlist is scanned under a filter too. Its positions are all qty=0 /
     // entry=0, so the date guard (!entry) and broker guard (qty===0) drop them
     // from date/broker filters unchanged — but a SET filter matches by ticker,
@@ -6382,7 +6644,7 @@ function buildMoversView(area, opts) {
     var cls = x.delta >= 0 ? 'pos' : 'neg';
     var dimStyle = p.qty === 0 ? 'font-style:italic;opacity:0.5' : '';
     var isExpanded = expandedId === p.id;
-    var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtmlForPosition(p) + '</span>';
+    var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + getTickerFlagHtml(p.ticker) + p.ticker + getAlertDotsHtmlForPosition(p) + '</span>';
     return '<tr style="' + dimStyle + '">'
       + '<td style="text-align:left;white-space:nowrap">' + tickerCell + '</td>'
       + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.close ? ('' + x.close.toFixed(2)) : '—') + '</td>'
@@ -6515,7 +6777,7 @@ function showAnalyticsDetail(rubric, value) {
     var pnlAbs = (current - entry) * qty;
     var pnlPct = entry > 0 ? ((current / entry) - 1) * 100 : null;
     return '<tr>'
-      + '<td style="' + tdStyleL + ';color:var(--bright);font-weight:bold">' + p.ticker + '</td>'
+      + '<td style="' + tdStyleL + ';color:var(--bright);font-weight:bold">' + getTickerFlagHtml(p.ticker) + p.ticker + '</td>'
       + '<td style="' + tdStyle + '">' + qty + '</td>'
       + '<td style="' + tdStyle + '">' + sym + f2(entry) + '</td>'
       + '<td style="' + tdStyle + '">' + sym + f2(current) + '</td>'
@@ -7634,7 +7896,7 @@ function loadSummaryChartData(range, mode) {
   if (!baseUrl) { document.getElementById('chartArea').innerHTML = '<span style="color:var(--red)">API URL not set</span>'; return; }
   var opts = token ? { headers: { 'X-API-Token': token } } : {};
   var activePids = Object.keys(portfolios).filter(function(pid) {
-    return !portfolios[pid].watchlist && !portfolios[pid].archive;
+    return !portfolios[pid].watchlist && !portfolios[pid].archive && !portfolios[pid].foreign;
   }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
   var allTickers = {};
   var allFxNeeded = {};
@@ -8087,7 +8349,20 @@ function render() {
   updateViewMenuBtn();
   updateFilterBtn();
   var stockForm = document.getElementById('stockAddForm');
-  if (stockForm) stockForm.style.display = (isCrossPortfolioContext() || ['bonds','bond-summary','cash','archive-summary'].indexOf(viewMode) !== -1) ? 'none' : '';
+  var formHiddenHere = ['bonds','bond-summary','cash','archive-summary'].indexOf(viewMode) !== -1;
+  if (stockForm) stockForm.style.display = (isCrossPortfolioContext() || formHiddenHere) ? 'none' : '';
+  // A set has nothing to add a position to, so its edit bar takes the same slot
+  // in the same modes the add form would have appeared in.
+  var setBar = document.getElementById('setEditBar');
+  if (setBar) {
+    var showBar = isSetContext() && !isFocusContext() && !formHiddenHere;
+    setBar.style.display = showBar ? '' : 'none';
+    if (showBar) {
+      var openSet = getPositionSets(ALL_POSITIONS_CTX).find(function(s) { return s.id === currentSetId; });
+      var nameEl = document.getElementById('setEditBarName');
+      if (nameEl) nameEl.textContent = openSet ? openSet.name + ' \u2014 ' + (openSet.tickers || []).length + ' tickers' : '';
+    }
+  }
   var area = document.getElementById('tableArea');
 
   // Analytics view (single portfolio)
@@ -8143,7 +8418,7 @@ function render() {
       var cls = x.delta >= 0 ? 'pos' : 'neg';
       var dimStyle = p.qty === 0 ? 'font-style:italic;opacity:0.5' : '';
       var isExpanded = expandedId === p.id;
-      var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtmlForPosition(p) + '</span>';
+      var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + getTickerFlagHtml(p.ticker) + p.ticker + getAlertDotsHtmlForPosition(p) + '</span>';
       return '<tr style="' + dimStyle + '">'
         + '<td style="text-align:left;white-space:nowrap">' + tickerCell + '</td>'
         + '<td style="text-align:right;padding:5px 4px;white-space:nowrap">' + sym + (x.close ? x.close.toFixed(2) : '—') + '</td>'
@@ -8192,8 +8467,10 @@ function render() {
     var saNonUSD = [];
     var saPids = Object.keys(portfolios).filter(function(pid) {
       return saIsRealized
-        ? portfolios[pid].archive
-        : (!portfolios[pid].watchlist && !portfolios[pid].archive);
+        // Foreign is independent of archive: someone else's realized portfolio
+        // is still someone else's, so it stays out of the realized totals too.
+        ? (portfolios[pid].archive && !portfolios[pid].foreign)
+        : (!portfolios[pid].watchlist && !portfolios[pid].archive && !portfolios[pid].foreign);
     });
     var allSaPos = [];
     var saDoFilter = filterActiveForSummary(saIsRealized);
@@ -8247,9 +8524,21 @@ function render() {
     return;
   }
 
+  // "Add one below" is advice about the open portfolio, so it only applies to
+  // single-portfolio views. Cross-portfolio views draw from other portfolios
+  // and have their own empty states — running this first would have them
+  // report emptiness whenever the last-opened portfolio happened to be empty.
   var mainEmptyCheck = (viewMode === 'global-main') ? getMainContextPositions() : positions;
-  if (mainEmptyCheck.length === 0 && ['cash','bonds','bond-summary','archive-summary'].indexOf(viewMode) === -1) {
+  if (!isCrossPortfolioContext()
+      && mainEmptyCheck.length === 0
+      && ['cash','bonds','bond-summary','archive-summary'].indexOf(viewMode) === -1) {
     area.innerHTML = '<div class="empty">NO POSITIONS &mdash; ADD ONE BELOW</div>';
+    return;
+  }
+  // The cross-portfolio P&L has its own wording: nothing to add here, and the
+  // emptiness is about every portfolio at once.
+  if (viewMode === 'global-main' && mainEmptyCheck.length === 0) {
+    area.innerHTML = '<div class="empty">NO POSITIONS</div>';
     return;
   }
 
@@ -8290,7 +8579,13 @@ function render() {
       sellAction = isAgg
         ? '<button class="btn-icon" onclick="showAggDetail(\'' + p.ticker + '\',' + (p.sold ? '1' : '0') + ',\'' + getPositionCurrencyCode(p) + '\')" style="font-size:12px;letter-spacing:1px;color:var(--bright);padding:0 4px;cursor:pointer;background:none;border:none;font-family:var(--font)">&times;' + aggCount + '</button>'
         : '';
-      moveBtn = ''; editBtn = ''; deleteBtn = '';
+      moveBtn = ''; editBtn = '';
+      // Inside a set, the last column removes the ticker from the selection.
+      // It sits where a portfolio's delete would, but nothing is deleted here —
+      // the position stays in its portfolio — hence grey and no confirmation.
+      deleteBtn = (isSetContext() && !isFocusContext())
+        ? '<button class="btn-icon" onclick="removeTickerFromOpenSet(\'' + p.ticker + '\')" title="Remove from set" style="color:var(--dim)">&#10005;</button>'
+        : '';
     } else if (isEdit) {
       sellAction = '<button class="btn-icon" style="color:var(--green)" onclick="saveEdit(' + p.id + ')">&#10003;</button>'
         + '<button class="btn-icon" onclick="cancelEdit()">&#10005;</button>';
@@ -8312,7 +8607,7 @@ function render() {
     var isExpanded = expandedId === p.id;
     var tickerCell = isEdit
       ? '<input class="edit-input" id="editTicker" type="text" value="' + p.ticker + '" readonly title="Ticker can\'t be changed — delete and re-add to use a different ticker" style="width:60px;text-transform:uppercase;opacity:0.6;cursor:not-allowed">'
-      : '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + (isEdit ? '' : getAlertDotsHtmlForPosition(p)) + '</span>';
+      : '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + getTickerFlagHtml(p.ticker) + p.ticker + (isEdit ? '' : getAlertDotsHtmlForPosition(p)) + '</span>';
     var soldStyle = (p.sold || p.qty === 0) ? 'font-style:italic;opacity:0.5' : '';
     rows += '<tr style="' + soldStyle + '">'
       + '<td style="white-space:nowrap">' + tickerCell + '</td>'
@@ -8402,7 +8697,7 @@ function render() {
   if (viewMode === 'archive-summary') {
     var archFxRates = {};
     var archNonUSD = [];
-    var archPids = Object.keys(portfolios).filter(function(pid) { return portfolios[pid].archive; }).sort(function(a, b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+    var archPids = Object.keys(portfolios).filter(function(pid) { return portfolios[pid].archive && !portfolios[pid].foreign; }).sort(function(a, b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
     archPids.forEach(function(pid) {
       (portfolios[pid].positions || []).forEach(function(pos) {
         var c = getPositionCurrencyCode(pos, portfolios[pid].currencyCode);
@@ -9434,7 +9729,7 @@ function render() {
     // Collect all unique position currencies for FX
     var smFxRates = {};
     var smNonUSD = [];
-    var smPids = Object.keys(portfolios).filter(function(pid) { return !portfolios[pid].watchlist && !portfolios[pid].archive; }).sort(function(a, b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+    var smPids = Object.keys(portfolios).filter(function(pid) { return !portfolios[pid].watchlist && !portfolios[pid].archive && !portfolios[pid].foreign; }).sort(function(a, b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
     var smScanDoFilter = filterActiveForSummary(false);
     smPids.forEach(function(pid) {
       var p = portfolios[pid];
@@ -9501,7 +9796,7 @@ function render() {
     // Collect all unique position currencies across all portfolios
     var summaryFxRates = {}; // currency → USD rate
     var summaryNonUSD = [];
-    var summaryPids = Object.keys(portfolios).filter(function(pid) { return !portfolios[pid].watchlist && !portfolios[pid].archive; }).sort(function(a, b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
+    var summaryPids = Object.keys(portfolios).filter(function(pid) { return !portfolios[pid].watchlist && !portfolios[pid].archive && !portfolios[pid].foreign; }).sort(function(a, b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
     var summaryDoFilter = filterActiveForSummary(false);
     summaryPids.forEach(function(pid) {
       var sumScanPosns = summaryDoFilter ? filterPositions(portfolios[pid].positions || []) : (portfolios[pid].positions || []);
@@ -9633,7 +9928,7 @@ function render() {
       var delta = (close && price) ? (price - close) / close * 100 : null;
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
       var isExpanded = expandedId === p.id;
-      var wlTickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtmlForPosition(p) + '</span>';
+      var wlTickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + getTickerFlagHtml(p.ticker) + p.ticker + getAlertDotsHtmlForPosition(p) + '</span>';
       wlRows += '<tr>'
         + '<td style="text-align:left;white-space:nowrap">' + wlTickerCell + '</td>'
         + '<td style="white-space:nowrap">' + (close ? getPositionCurrencySymbol(p) + f2(close) : '&mdash;') + '</td>'
@@ -9648,7 +9943,7 @@ function render() {
         + (isExpanded ? '<tr><td colspan="8" style="padding:4px 8px 8px;background:var(--bg2)">' + buildExpandedInner(p) + '</td></tr>' : '');
     });
     area.innerHTML = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
-      + '<table style="border-collapse:collapse;font-size:13px">'
+      + '<table style="width:auto;border-collapse:collapse;font-size:13px">'
       + '<thead><tr>'
       + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer" onclick="sortWatchlist(&apos;ticker&apos;)">TICKER' + wlTickerArrow + '</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
@@ -9696,7 +9991,7 @@ function render() {
       var p = entry.pos;
       var allWatchlist = !entry.hasActive;
       var isExpanded = expandedId === p.id;
-      var mktTickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + p.ticker + getAlertDotsHtmlForPosition(p) + '</span>';
+      var mktTickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + getTickerFlagHtml(p.ticker) + p.ticker + getAlertDotsHtmlForPosition(p) + '</span>';
       var mktExpandedRow = isExpanded
         ? '<tr><td colspan="7" style="padding:4px 8px 8px;background:var(--bg2)">' + (entry.group.length > 1 ? buildExpandedInnerAgg(p, entry.group) : buildExpandedInner(p)) + '</td></tr>'
         : '';
@@ -9747,7 +10042,7 @@ function render() {
     var mkTickerArrow = marketSort.key === 'ticker' ? (marketSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
     var mkDeltaArrow = marketSort.key === 'absdelta' ? ' &#177;&#9660;' : marketSort.key === 'delta' ? (marketSort.dir > 0 ? ' &#9650;' : ' &#9660;') : '';
     area.innerHTML = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
-      + '<table style="border-collapse:collapse;font-size:13px">'
+      + '<table style="width:auto;border-collapse:collapse;font-size:13px">'
       + '<thead><tr>'
       + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortMarket(&apos;ticker&apos;)">TICKER' + mkTickerArrow + '</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;white-space:nowrap;color:var(--green)" onclick="toggleCloseModeMenu(this)">' + closeModeLabel(closeMode) + '</th>'
@@ -10040,7 +10335,7 @@ function render() {
         var posValBase = p.qty * pcur * rate;
         var weight = wTotVal > 0 ? (posValBase / wTotVal) * 100 : null;
         weightRows += '<tr style="' + wSoldStyle + '">'
-          + '<td style="text-align:left;white-space:nowrap">' + p.ticker + '</td>'
+          + '<td style="text-align:left;white-space:nowrap">' + getTickerFlagHtml(p.ticker) + p.ticker + '</td>'
           + '<td style="padding:5px 4px;white-space:nowrap">' + getPositionCurrencySymbol(p) + f2(p.qty * pcur) + '</td>'
           + '<td style="padding:5px 4px;white-space:nowrap">' + fPctNoSign(weight) + '</td>'
           + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (getPositionShortName(p) || '') + '</td>'
@@ -10056,7 +10351,7 @@ function render() {
       return { rows: weightRows, foot: foot };
     }
     var weightTableHtml = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
-      + '<table style="border-collapse:collapse;font-size:13px">'
+      + '<table style="width:auto;border-collapse:collapse;font-size:13px">'
       + '<thead><tr>'
       + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortWeight(&apos;ticker&apos;)">' + (weightSort.key==='ticker' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'TICKER</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortWeight(&apos;value&apos;)">' + (weightSort.key==='value' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'VALUE</th>'
@@ -10103,8 +10398,10 @@ function render() {
     var gwNonUSD = [];
     var gwPids = Object.keys(portfolios).filter(function(pid) {
       return gwIsRealized
-        ? portfolios[pid].archive
-        : (!portfolios[pid].watchlist && !portfolios[pid].archive);
+        // Foreign is independent of archive: someone else's realized portfolio
+        // is still someone else's, so it stays out of the realized totals too.
+        ? (portfolios[pid].archive && !portfolios[pid].foreign)
+        : (!portfolios[pid].watchlist && !portfolios[pid].archive && !portfolios[pid].foreign);
     });
     var gwDoFilter = filterActiveForSummary(gwIsRealized);
     gwPids.forEach(function(pid) {
@@ -10165,7 +10462,7 @@ function render() {
     }
 
     var gwTableHtml = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
-      + '<table style="border-collapse:collapse;font-size:13px">'
+      + '<table style="width:auto;border-collapse:collapse;font-size:13px">'
       + '<thead><tr>'
       + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortWeight(&apos;ticker&apos;)">' + (weightSort.key==='ticker' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'TICKER</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortWeight(&apos;value&apos;)">' + (weightSort.key==='value' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'VALUE</th>'
@@ -10256,6 +10553,44 @@ loadDicts();
 migrateDicts();
 loadAllPositionSetsLS();
 cashPortfolios = getCashPortfolios();
+// Opening from a notification: land on the view it names instead of wherever
+// the app was last left. Cold start reads it from the URL; an already-running
+// window gets a message from the service worker, since focusing alone can't
+// change what's on screen.
+function openViewFromNotification(view, ticker) {
+  if (!view) return;
+  if (ALL_POSITIONS_VIEWS.indexOf(view) !== -1) {
+    currentSetId = null;
+    // A ticker named by the notification is shown on its own, the way a pinned
+    // set is — but transiently: nothing is stored, and opening the switcher
+    // clears it.
+    focusTicker = ticker || null;
+    viewMode = view;
+    setTitleForCurrentView();
+    render();
+    updateViewMenuActive();
+    if (getApiKey()) refreshAllPortfolios();
+  }
+}
+function consumeNotificationHash() {
+  var h = location.hash || '';
+  if (h.indexOf('view=') === -1) return null;
+  var params = {};
+  h.replace(/^#/, '').split('&').forEach(function(pair) {
+    var kv = pair.split('=');
+    if (kv.length === 2) params[kv[0]] = decodeURIComponent(kv[1]);
+  });
+  // Clear it so a reload doesn't jump back to the notification's view.
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+  return params.view ? params : null;
+}
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', function(e) {
+    var d = e.data || {};
+    if (d.type === 'pt-open-view') openViewFromNotification(d.view, d.ticker);
+  });
+}
+
 var _restoredView = restoreLastView();
 setTitleForCurrentView();
 showKeyStatus();
@@ -10264,7 +10599,9 @@ if (_fDateEl) _fDateEl.value = todayLocalISO();
 renderAddBrokerSlot();
 render();
 updateViewMenuActive();
-if (_restoredView && _restoredView.switcherOpen) {
+var _notifView = consumeNotificationHash();
+if (_notifView) openViewFromNotification(_notifView.view, _notifView.ticker);
+if (_restoredView && _restoredView.switcherOpen && !_notifView) {
   setTimeout(function() {
     var sw = document.getElementById('portfolioSwitcher');
     if (sw) {

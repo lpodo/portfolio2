@@ -59,6 +59,7 @@ function initPortfolios() {
   loadTickerDataLS();
   loadAlertsLS();
   loadAlertCheckSettingsLS();
+  loadFlagDefsLS();
   // Lift any position-level category/region/sector into tickerData and strip
   // them from positions. Idempotent and cheap — safe to run every startup;
   // this also cleans up stray null attribute keys left by older versions.
@@ -362,6 +363,69 @@ function migrateAlertsToOwnStore() {
 // These describe the security, not the trade, so they live on the ticker
 // (like isin/alerts) rather than being copied across every position. One
 // ticker → one value, shared by all its positions in every portfolio.
+// User-defined attention flags: { id, name, icon }. Tickers store the id, so a
+// rename leaves every marked ticker untouched — only deletion has to reach into
+// them, since the reference would otherwise dangle. Kept top-level like sets,
+// which carries them to the cloud and into backups by the same path.
+var flagDefs = [];
+
+function loadFlagDefsLS() {
+  try {
+    var v = JSON.parse(localStorage.getItem('pt_flags'));
+    if (Array.isArray(v)) flagDefs = v;
+  } catch (e) {}
+}
+function saveFlagDefsLS() {
+  try { localStorage.setItem('pt_flags', JSON.stringify(flagDefs)); } catch (e) {}
+}
+function getFlagDefs() {
+  return flagDefs.slice().sort(function(a, b) {
+    return (a.name || '').localeCompare(b.name || '');
+  });
+}
+function getFlagDef(id) {
+  for (var i = 0; i < flagDefs.length; i++) if (flagDefs[i].id === id) return flagDefs[i];
+  return null;
+}
+function createFlagDef(name, icon) {
+  var id = 'flag_' + Date.now();
+  flagDefs.push({ id: id, name: (name || '').trim() || 'FLAG', icon: (icon || '').trim() });
+  saveFlagDefsLS();
+  return id;
+}
+function updateFlagDef(id, updates) {
+  flagDefs = flagDefs.map(function(f) {
+    return f.id === id ? Object.assign({}, f, updates) : f;
+  });
+  saveFlagDefsLS();
+}
+function deleteFlagDef(id) {
+  flagDefs = flagDefs.filter(function(f) { return f.id !== id; });
+  saveFlagDefsLS();
+  // Clear the flag from every ticker carrying it — a reference to a flag that
+  // no longer exists would show as nothing and be impossible to clear.
+  Object.keys(tickerData).forEach(function(t) {
+    if (tickerData[t] && tickerData[t].flag === id) setTickerAttr(t, 'flag', '');
+  });
+  saveTickerDataLS();
+}
+function getFlagIcon(id) {
+  var f = getFlagDef(id);
+  return f ? (f.icon || '') : '';
+}
+
+// Which flag a ticker carries: the id of a flagDefs entry, or nothing. Storing
+// the id rather than the name is what lets a flag be renamed or re-iconed
+// without touching a single marked ticker.
+// Ticker-level like notes and alerts, so a flag set in one portfolio shows
+// wherever that ticker appears.
+function getTickerFlag(ticker) {
+  return getTickerAttr(ticker, 'flag');
+}
+function setTickerFlag(ticker, flagId) {
+  setTickerAttr(ticker, 'flag', flagId || '');
+}
+
 function getTickerAttr(ticker, field) {
   if (!ticker) return null;
   var d = tickerData[ticker];
@@ -1089,16 +1153,21 @@ function getPinnedSets() {
 // Positions a pinned set shows: the All Positions union, kept to the set's
 // tickers. Sold lots and archives are excluded there already.
 function getSetContextPositions(setId) {
-  var sets = getPositionSets(ALL_POSITIONS_CTX);
-  var set = null;
-  for (var i = 0; i < sets.length; i++) if (sets[i].id === setId) set = sets[i];
-  if (!set) return [];
   var wanted = {};
-  (set.tickers || []).forEach(function(t) { wanted[t] = true; });
+  if (focusTicker) {
+    // Transient single-ticker view — no stored set behind it.
+    wanted[focusTicker] = true;
+  } else {
+    var sets = getPositionSets(ALL_POSITIONS_CTX);
+    var set = null;
+    for (var i = 0; i < sets.length; i++) if (sets[i].id === setId) set = sets[i];
+    if (!set) return [];
+    (set.tickers || []).forEach(function(t) { wanted[t] = true; });
+  }
   var out = [];
   Object.keys(portfolios).forEach(function(pid) {
     var p = portfolios[pid];
-    if (!p || p.archive) return;
+    if (!p || p.archive || p.foreign) return;
     (p.positions || []).forEach(function(pos) {
       if (pos.sold || !wanted[pos.ticker]) return;
       out.push(pos);
@@ -1107,32 +1176,56 @@ function getSetContextPositions(setId) {
   return out;
 }
 
-// Which pinned set is currently open, if any. A set reuses the All Positions
-// views as-is; only the source of positions differs, so there's no parallel
-// family of view modes to maintain.
+// A pinned set opened from the switcher, or — arriving from a notification — a
+// single ticker shown the same way. The transient one is deliberately not a
+// stored set: it would otherwise appear in manage sets, ride along on the next
+// save into the cloud, and need cleaning up if the app closed before the user
+// dismissed it.
 var currentSetId = null;
+var focusTicker = null;
 function isSetContext() {
-  return !!currentSetId && isAllPositions();
+  return (!!currentSetId || !!focusTicker) && isAllPositions();
+}
+function isFocusContext() {
+  return !!focusTicker && isAllPositions();
 }
 
 // Positions of one portfolio as the current context sees them. The
 // cross-portfolio views walk portfolios directly instead of using the context
 // helpers, so a pinned set has to narrow them here or it would have no effect.
 function ctxPortfolioPositions(pid) {
+  // Foreign portfolios never feed a cross-portfolio view.
+  if (isForeignPortfolio(portfolios[pid])) return [];
   var list = (portfolios[pid] && portfolios[pid].positions) || [];
   if (!isSetContext()) return list;
-  var sets = getPositionSets(ALL_POSITIONS_CTX);
-  var set = null;
-  for (var i = 0; i < sets.length; i++) if (sets[i].id === currentSetId) set = sets[i];
-  if (!set) return list;
   var wanted = {};
-  (set.tickers || []).forEach(function(t) { wanted[t] = true; });
+  if (focusTicker) {
+    wanted[focusTicker] = true;
+  } else {
+    var sets = getPositionSets(ALL_POSITIONS_CTX);
+    var set = null;
+    for (var i = 0; i < sets.length; i++) if (sets[i].id === currentSetId) set = sets[i];
+    if (!set) return list;
+    (set.tickers || []).forEach(function(t) { wanted[t] = true; });
+  }
   return list.filter(function(pos) { return wanted[pos.ticker]; });
 }
 
 // Context key for per-view selections (chart set, fundamentals set, sets list).
 // An open pinned set shares the ALL POSITIONS key: it's a subset of it and
 // reuses its views, so their chart/fundamentals selections are the same one.
+// A portfolio someone else owns: tracked here, but never part of my totals.
+// Archives can be foreign too — the flag is independent of the others.
+function isForeignPortfolio(p) {
+  return !!(p && p.foreign);
+}
+// Whether a portfolio feeds the cross-portfolio aggregates (summary, All
+// Positions, global sets). Archives and watchlists are excluded where each
+// caller already decides; foreign ones are excluded everywhere.
+function countsTowardTotals(p) {
+  return !!p && !p.archive && !p.foreign;
+}
+
 function getSelCtx() {
   return isAllPositions() ? ALL_POSITIONS_CTX : currentPortfolioId;
 }
@@ -1230,7 +1323,7 @@ function getMainContextPositions() {
   var out = [];
   Object.keys(portfolios).forEach(function(pid) {
     var p = portfolios[pid];
-    if (!p || p.archive || p.watchlist) return;
+    if (!p || p.archive || p.watchlist || p.foreign) return;
     (p.positions || []).forEach(function(pos) {
       if (!isRealSecurity(pos)) return;
       if (pos.qty === 0) return; // observe-only lots (not bought) — no P&L
@@ -1247,7 +1340,7 @@ function getChartContextPositions() {
   var out = [];
   Object.keys(portfolios).forEach(function(pid) {
     var p = portfolios[pid];
-    if (!p || p.archive) return;
+    if (!p || p.archive || p.foreign) return;
     (p.positions || []).forEach(function(pos) {
       if (pos.sold) return;
       out.push(pos);

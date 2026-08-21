@@ -95,6 +95,10 @@ Selected via the **WATCHLIST** radio button at creation. Designed for tracking i
 - Appears at the top of the active portfolio list, separated by a divider.
 - Excluded from Summary, Summary Market, Summary Chart, and Analytics.
 
+### Foreign portfolios
+
+Selected via the **FOREIGN** radio button at creation. An ordinary portfolio in every respect except one: it never counts toward your own totals. Excluded from Σ SUMMARY, ALL POSITIONS, global sets and Refresh All, it's listed under its own divider in the switcher. Meant for holdings that aren't yours to report — someone else's account you follow, or a portfolio you're only modelling. The flag is independent of the others, so a foreign portfolio can also be realized.
+
 ### Realized portfolios
 
 Portfolios in the **REALIZED** tab hold closed positions and show their actual realized totals — by contrast with the STOCKS and BONDS tabs, which show projected/unrealized values. Two kinds — **stock** and **bond** — appear in the tab, listed separately, then cash portfolios at the bottom.
@@ -298,7 +302,9 @@ A **global set** is a named group of tickers spanning every portfolio — "the A
 
 **A set is a subset of [ALL POSITIONS](#all-positions) and behaves exactly like it.** It takes the same union of positions and narrows it to the set's tickers; everything else is identical — the same views (P&L, MARKET, ALERTS, WEIGHTS, CHART, FUNDAMENTALS, CALENDAR, ANALYTICS), the same totals in USD, the same position count of unique held tickers. Nothing about a set is portfolio-like: it doesn't hold anything, it selects.
 
-**In the switcher.** The **＋** button on the ALL POSITIONS row opens set management (create, rename, edit membership, delete, pin). A **pinned** set is listed directly beneath ALL POSITIONS in the same block, with its own count and its own pin / ✎ / ✕ controls — so the block reads as "the whole union, then the slices of it you use often". Both live in the STOCKS tab; the realized ALL POSITIONS has no sets.
+**In the switcher.** The **＋** button on the ALL POSITIONS row opens set management (create, rename, edit membership, delete, pin); the ticker list there has a filter box, and anything already ticked stays ticked while hidden, so a long set can be assembled in several passes. A **pinned** set is listed directly beneath ALL POSITIONS in the same block, with its own count and its own pin / ✎ / ✕ controls — so the block reads as "the whole union, then the slices of it you use often". Both live in the STOCKS tab; the realized ALL POSITIONS has no sets.
+
+An open set is editable in place: each row's last column carries a grey ✕ that drops that ticker from the set (the position itself is untouched, so no confirmation), and a bar under the table shows the set's name with a ✎ opening its edit form directly.
 
 Sets are also used in two other places:
 
@@ -369,7 +375,7 @@ Alerts are also evaluated on the server, so a crossing is caught while the app i
 - **From / To** — the daily window checks run in, in your timezone (so overnight windows work).
 - **Movers** — optional periodic digest of the biggest moves among the watched tickers, ranked by absolute change regardless of direction. Its interval can't be shorter than the check interval.
 
-Notifications fire on **transitions**, not on state: you're told when an alert starts holding and again when it stops, and an alert that keeps holding stays quiet in between. Multiple thresholds crossing on the same ticker in the same direction are grouped into a single notification. Tapping a notification opens the app on that ticker.
+Notifications fire on **transitions**, not on state: you're told when an alert starts holding and again when it stops, and an alert that keeps holding stays quiet in between. Multiple thresholds crossing on the same ticker in the same direction are grouped into a single notification. Tapping one opens the cross-portfolio ALERTS view — narrowed to the ticker it was about, transiently, the way a pinned set is — rather than wherever the app was last left.
 
 Because the number of quotes a single worker invocation can fetch is capped, a large watchlist is covered a slice at a time, walking a rotating cursor across ticks until the whole list is done for that interval — so alerts stay accurate but a given ticker may be checked a little later within its window. Dead subscriptions (uninstalled apps, reset browsers) are pruned automatically when a send comes back gone.
 
@@ -485,6 +491,10 @@ For ISIN, overwriting or clearing an existing value triggers a confirmation dial
 **Dictionaries** (Settings → DICTIONARIES): five buttons — CATEGORIES, REGIONS, SECTORS, BROKERS, CASH CAT. Tap a button to expand the list of values for that dictionary. Each value has a ✕ button to delete it from the dictionary. Deleting a value from the dictionary does not remove it from existing tickers — except for BROKERS, where deletion is rejected while any position still references the broker (see [Brokers](#brokers)).
 
 Dictionaries are included in cloud sync and backup/restore. Grouping in Analytics normalizes whitespace (trims and collapses multiple spaces) but preserves original casing.
+
+### Flags
+
+A ticker can carry one **attention flag** — a small icon shown before its symbol in every view it appears in. Set it from the FLAG dropdown in the expanded row, which lists `none` plus every flag you've defined, and ends with **manage flags…** for creating, renaming and deleting them. Flags are user-defined (name plus icon), so what they mean is up to you: something to review, a candidate to buy, a position to trim. Like notes and alerts the flag belongs to the ticker, so it shows wherever that ticker is held. Deleting a flag definition clears it from every ticker carrying it.
 
 ### Note field
 
@@ -761,7 +771,8 @@ Backup format:
   "cashCatDict": ["Salary", "Dividend", ...],
   "brokerDict": ["ETrade", "IB", ...],
   "defaultBroker": "ETrade",
-  "allPositionSets": [ ... ]
+  "allPositionSets": [ ... ],
+  "flagDefs": [ ... ]
 }
 ```
 
@@ -805,14 +816,14 @@ Optional AES-GCM 256-bit client-side encryption via the **ENC KEY** field in Set
 
 | Exchange | Ticker format | Example |
 |---|---|---|
-| NYSE / NASDAQ | no suffix | `EOG`, `AAPL` |
+| NYSE / NASDAQ | no suffix | `NVDA` |
 | LSE (London) | `.L` | `CJPU.L` |
 | Xetra (Germany) | `.DE` | `CEBZ.DE` |
 | Euronext Paris | `.PA` | `AIR.PA` |
 | Euronext Amsterdam | `.AS` | `ASML.AS` |
 | Tokyo | `.T` | `7203.T` |
 | Hong Kong | `.HK` | `0700.HK` |
-| Milan | `.MI` | `ENI.MI` |
+| Toronto | `.TO` | `PHYS-U.TO` |
 | Oslo | `.OL` | `EQNR.OL` |
 
 ---
@@ -932,6 +943,7 @@ Everything else a position used to carry — `current`, `currency`, `shortName`,
   "currencyCode": "USD",
   "watchlist": false,
   "archive": false,
+  "foreign": false,
   "positions": [],
   "positionSets": []
 }
@@ -940,6 +952,7 @@ Everything else a position used to carry — `current`, `currency`, `shortName`,
 - `currencyCode` — ISO 4217 base currency. All position values are converted to this currency for VALUE and WEIGHTS. Validated against Yahoo Finance on creation/rename.
 - `watchlist: true` — watchlist portfolio (no qty/entry fields, simple price display, excluded from Summary).
 - `archive: true` — realized portfolio (all positions sold, no Refresh, excluded from the main Summary).
+- `foreign: true` — [foreign portfolio](#foreign-portfolios); excluded from every cross-portfolio aggregate. Independent of the other two.
 - `positionSets` — array of named ticker subsets for use by Chart and Fundamentals views: `[{ id: "set_<timestamp>", name: "AI BASKET", tickers: ["NVDA", "ASML.AS"] }]`. Tickers are stored as symbols, not IDs, so re-adding a removed position keeps it in any set it belonged to. See [Position sets](#position-sets).
 
 ### Ticker data registry
@@ -968,6 +981,7 @@ It stores three groups of fields:
     "region": "US",
     "sector": "Technology",
     "isin": "US0378331005",
+    "flag": "flag_1735420800000",
     "note": "trim above 300",
     "alerts": [
       { "id": "1735420800123_a7k9x2", "condition": ">", "value": 250.00, "triggered": false }
@@ -987,6 +1001,7 @@ Field semantics:
 - Market metadata is stored verbatim from Yahoo (numeric fields stay numeric). A `null`/`undefined` clears the field. Read via `getTickerMeta(ticker, field)` and the per-field wrappers (`getPositionCurrent`, `getPositionCurrencyCode`, `getPositionShortName`, etc.).
 - `category` / `region` / `sector` — free-string values chosen from dictionaries (see [Ticker classification fields](#ticker-classification-fields)); hand-typed values are trimmed. Absent means unclassified.
 - `isin` — one of three states: a real ISIN string; the marker `UNRESOLVED` (a provider was asked and returned nothing — don't re-ask); or absent (never looked up). A lookup fires only when the field is falsy, so both a known ISIN and the `UNRESOLVED` marker suppress re-querying. The helper `isKnownIsin(v)` treats any value starting with `UNRESOLVED` as a marker — so a future provider can use a suffixed variant (e.g. `UNRESOLVED_V2`) to auto-requery tickers still carrying the bare marker, without changing the check.
+- `flag` — id of the [attention flag](#flags) set on this ticker, referencing an entry in `flagDefs`. Storing the id rather than the icon means renaming a flag leaves marked tickers untouched; deleting one clears the field everywhere it's referenced.
 - `note` — free-text annotation for the ticker (see [Note field](#note-field)). Absent when empty; saving an empty value removes the key.
 - `alerts` — array of alert objects `{ id, condition: ">" | "<", value, triggered }`. Absent means no alerts. `triggered` is recomputed on every price refresh and saved (the dot stays lit between sessions until the next refresh re-evaluates). Alert IDs are `Date.now() + '_' + shortRandom`.
 
@@ -1034,6 +1049,7 @@ Primary on-device storage:
 - `pt_analytics_subview` — Analytics subview: `pnl` / `market` / `chart` / `weights`; default `weights`
 - `pt_filter` — global position filter: `{ purchaseDateFrom?, broker?, setId? }`; absent when no filter is set (see [Filters](#filters))
 - `pt_all_sets` — [global sets](#global-sets), including their pinned flag; also cloud-synced
+- `pt_flags` — [attention flag](#flags) definitions (`{ id, name, icon }`); also cloud-synced
 - `pt_chart_set_{portfolioId}` — currently selected set in the Chart view (a set ID or the string `portfolio` for PORTFOLIO mode)
 - `pt_fund_set_{portfolioId}` — currently selected set in the Fundamentals view (a set ID, or absent for "no selection")
 - `chart_hist_{ticker}_{range}` — historical price cache (daily TTL)
@@ -1082,7 +1098,7 @@ Caches the app shell for offline use. API requests are **never cached**:
 
 **IMPORTANT: increment the cache version string in `sw.js` on every deploy** (e.g. `portfolio-v35` → `portfolio-v36`).
 
-The service worker also handles Web Push: it receives `push` events from the worker and displays the notification, and on `notificationclick` focuses an existing app window (or opens one), navigating to the ticker the notification was about.
+The service worker also handles Web Push: it receives `push` events from the worker and displays the notification. On `notificationclick` it carries a target view (and optionally a ticker) into the app — messaging an already-open window to switch to it, or opening a new one at `#view=…&ticker=…` when none is running.
 
 ## Chart Data Pipeline
 

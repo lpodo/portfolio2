@@ -4,7 +4,7 @@
 // picks them up on the next load without a bump. Independent of APP_VERSION
 // in index.html (that one is the user-facing version stamp; this one controls
 // cache invalidation).
-var CACHE = 'portfolio-2026-08-03-v408';
+var CACHE = 'portfolio-2026-08-03-v409';
 
 self.addEventListener('install', function(e) {
   // Pre-cache with cache:'reload' on each Request — forces network bypass of
@@ -109,7 +109,7 @@ self.addEventListener('push', function(e) {
     // A repeat notification for the same ticker should announce itself rather
     // than silently replacing the previous one.
     renotify: !!data.tag,
-    data: { ticker: data.ticker || null, url: data.url || './index.html' }
+    data: { ticker: data.ticker || null, view: data.view || null, url: data.url || './index.html' }
   };
   e.waitUntil(self.registration.showNotification(title, options));
 });
@@ -118,11 +118,23 @@ self.addEventListener('push', function(e) {
 // opening a second copy of the app.
 self.addEventListener('notificationclick', function(e) {
   e.notification.close();
-  var target = (e.notification.data && e.notification.data.url) || './index.html';
+  var data = e.notification.data || {};
+  // An alert or a movers digest is about prices across portfolios, so land on
+  // the cross-portfolio ALERTS view rather than wherever the app was left.
+  var view = data.view || 'summary-alerts';
+  var target = './index.html#view=' + encodeURIComponent(view)
+    + (data.ticker ? '&ticker=' + encodeURIComponent(data.ticker) : '');
+
   e.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(list) {
       for (var i = 0; i < list.length; i++) {
-        if ('focus' in list[i]) return list[i].focus();
+        var c = list[i];
+        if ('focus' in c) {
+          // Already open: focusing alone would leave it on whatever screen the
+          // user was last on, so ask the page to switch.
+          if (c.postMessage) c.postMessage({ type: 'pt-open-view', view: view, ticker: data.ticker || null });
+          return c.focus();
+        }
       }
       if (self.clients.openWindow) return self.clients.openWindow(target);
     })
