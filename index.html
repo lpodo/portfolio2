@@ -398,7 +398,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.48';
+var APP_VERSION = 'v1.5.49';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4061,11 +4061,6 @@ function getAlertDotsHtml(ticker, alerts) {
 // Dots for a specific position — wrapped in a sold check so closed positions
 // don't display alert indicators (the alerts still live at the ticker level
 // and apply to any active sibling, but the sold row itself shouldn't show them).
-// Attention flag shown before the ticker, in every view it appears in.
-// Mirrors getAlertDotsHtmlForPosition, which decorates the other side.
-// Flag control in the expanded row, above the note — both are ticker-level
-// annotations, so they sit together. Toggling is one tap: with a single band
-// there's nothing to choose between.
 // ── Flag management ─────────────────────────────────────────────────────────
 // Mirrors the sets modal: a list, an inline form, edit and delete per row.
 window._editingFlagId = null;
@@ -4161,6 +4156,9 @@ function confirmDeleteFlag(id) {
   save();
 }
 
+// Flag control in the expanded row, above the note — both are ticker-level
+// annotations, so they sit together. The menu lists the user's own flags and
+// ends with a way to manage them, the same shape the sets picker uses.
 function tickerFlagRowHtml(ticker) {
   var cur = getTickerFlag(ticker);
   var curDef = cur ? getFlagDef(cur) : null;
@@ -4189,13 +4187,16 @@ function toggleFlagMenu(ticker) {
   var m = document.getElementById('flagMenu_' + ticker);
   if (m) m.style.display = m.style.display === 'none' ? 'block' : 'none';
 }
-function pickTickerFlag(ticker, band) {
-  setTickerFlag(ticker, band);
+function pickTickerFlag(ticker, flagId) {
+  setTickerFlag(ticker, flagId);
   saveTickerDataLS();
   save();
   render();
 }
 
+// The flag's icon, shown before the ticker in every view. Mirrors
+// getAlertDotsHtmlForPosition, which decorates the other side of the name.
+// A ticker carrying a flag that has since been deleted renders nothing.
 function getTickerFlagHtml(ticker) {
   var icon = getFlagIcon(getTickerFlag(ticker));
   if (!icon) return '';

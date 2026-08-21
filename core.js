@@ -414,16 +414,16 @@ function getFlagIcon(id) {
   return f ? (f.icon || '') : '';
 }
 
-// Attention flag on a ticker. The stored value names the band ('priority'),
-// not the glyph — the symbol belongs to the UI, and further bands (later,
-// watch, buy, sell) can join without migrating what's already marked.
+// Which flag a ticker carries: the id of a flagDefs entry, or nothing. Storing
+// the id rather than the name is what lets a flag be renamed or re-iconed
+// without touching a single marked ticker.
 // Ticker-level like notes and alerts, so a flag set in one portfolio shows
 // wherever that ticker appears.
 function getTickerFlag(ticker) {
   return getTickerAttr(ticker, 'flag');
 }
-function setTickerFlag(ticker, band) {
-  setTickerAttr(ticker, 'flag', band || '');
+function setTickerFlag(ticker, flagId) {
+  setTickerAttr(ticker, 'flag', flagId || '');
 }
 
 function getTickerAttr(ticker, field) {
