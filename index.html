@@ -398,7 +398,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.49';
+var APP_VERSION = 'v1.5.51';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -786,7 +786,9 @@ function toggleDictDropdown(field) {
   }
   var drop = document.getElementById('dictDrop_' + field);
   if (!drop) return;
-  var open = drop.style.display !== 'none';
+  // The class hides it, so on the first click the inline style is empty —
+  // reading that alone would say "open" and swallow the click.
+  var open = getComputedStyle(drop).display !== 'none';
   drop.style.display = open ? 'none' : 'block';
   _openDictDrop = open ? null : field;
 }
@@ -10336,7 +10338,8 @@ function render() {
         var weight = wTotVal > 0 ? (posValBase / wTotVal) * 100 : null;
         weightRows += '<tr style="' + wSoldStyle + '">'
           + '<td style="text-align:left;white-space:nowrap">' + getTickerFlagHtml(p.ticker) + p.ticker + '</td>'
-          + '<td style="padding:5px 4px;white-space:nowrap">' + getPositionCurrencySymbol(p) + f2(p.qty * pcur) + '</td>'
+          + '<td style="padding:5px 4px;white-space:nowrap;color:var(--dim)">' + getPositionCurrencySymbol(p) + f2(p.qty * pcur) + '</td>'
+          + '<td style="padding:5px 4px;white-space:nowrap">' + baseSym + f2(posValBase) + '</td>'
           + '<td style="padding:5px 4px;white-space:nowrap">' + fPctNoSign(weight) + '</td>'
           + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + (getPositionShortName(p) || '') + '</td>'
           + '</tr>';
@@ -10344,6 +10347,7 @@ function render() {
       // TOTAL foot built from the same wTotVal; weight is 100% by definition.
       var foot = '<tr style="border-top:2px solid var(--border);font-weight:bold;color:var(--bright)">'
         + '<td style="text-align:left;white-space:nowrap;padding:6px 4px">TOTAL</td>'
+        + '<td></td>'
         + '<td style="padding:6px 4px;white-space:nowrap">' + baseSym + f2(wTotVal) + '</td>'
         + '<td style="padding:6px 4px;white-space:nowrap">' + fPctNoSign(wTotVal > 0 ? 100 : null) + '</td>'
         + '<td></td>'
@@ -10355,6 +10359,7 @@ function render() {
       + '<thead><tr>'
       + '<th style="text-align:left;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortWeight(&apos;ticker&apos;)">' + (weightSort.key==='ticker' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'TICKER</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortWeight(&apos;value&apos;)">' + (weightSort.key==='value' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'VALUE</th>'
+      + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortWeight(&apos;value&apos;)">' + (weightSort.key==='value' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'VALUE (' + baseSym + ')</th>'
       + '<th style="text-align:right;padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap" onclick="sortWeight(&apos;weight&apos;)">' + (weightSort.key==='weight' ? (weightSort.dir>0?'&#9650;':'&#9660;')+' ' : '') + 'WEIGHT</th>'
       + '<th style="text-align:left;padding:5px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">NAME</th>'
       + '</tr></thead>'
@@ -10427,7 +10432,7 @@ function render() {
           if (!tickerMap[t]) tickerMap[t] = { valUSD: 0, valNative: 0, currency: posCur, shortName: '' };
           tickerMap[t].valUSD += valUSD;
           tickerMap[t].valNative += pos.qty * pcur;
-          if (pos.shortName && !tickerMap[t].shortName) tickerMap[t].shortName = getPositionShortName(pos);
+          if (!tickerMap[t].shortName) tickerMap[t].shortName = getPositionShortName(pos) || '';
         });
       });
       var totalValUSD = 0;
