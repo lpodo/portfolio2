@@ -949,19 +949,26 @@ function getSortedForRender(srcPositions) {
     return sortDir * (va > vb ? 1 : va < vb ? -1 : 0);
   });
 }
-function getWeightSorted(items, totVal) {
+// Sorted by value in the base currency, which is what the weight column is
+// computed from. Comparing native-currency figures would order the table by
+// numbers that match no column: ₪4800 would outrank $2085 despite being the
+// smaller holding. fxMap/baseCode are optional — without them this falls back
+// to native values, which is correct for a single-currency portfolio.
+function getWeightSorted(items, totVal, fxMap, baseCode) {
+  function baseValue(p) {
+    var cur = getPositionCurrent(p);
+    if (cur === null || !(p.qty > 0)) return -Infinity;
+    var native = p.qty * cur;
+    if (!fxMap || !baseCode) return native;
+    var pc = getPositionCurrencyCode(p);
+    return pc !== baseCode ? native * (fxMap[pc + baseCode] || 1) : native;
+  }
   return items.slice().sort(function(a, b) {
-    var va, vb;
-    if (weightSort.key === 'ticker') { va = a.ticker; vb = b.ticker; return weightSort.dir * va.localeCompare(vb); }
-    if (weightSort.key === 'value') {
-      var wac0 = getPositionCurrent(a), wbc0 = getPositionCurrent(b);
-      va = (wac0 !== null && a.qty > 0) ? a.qty * wac0 : -Infinity;
-      vb = (wbc0 !== null && b.qty > 0) ? b.qty * wbc0 : -Infinity;
-    } else { // weight same as value
-      var wac1 = getPositionCurrent(a), wbc1 = getPositionCurrent(b);
-      va = (wac1 !== null && a.qty > 0) ? a.qty * wac1 : -Infinity;
-      vb = (wbc1 !== null && b.qty > 0) ? b.qty * wbc1 : -Infinity;
+    if (weightSort.key === 'ticker') {
+      return weightSort.dir * a.ticker.localeCompare(b.ticker);
     }
+    // 'weight' and 'value' rank identically: weight is value over a shared total.
+    var va = baseValue(a), vb = baseValue(b);
     return weightSort.dir * (va > vb ? 1 : va < vb ? -1 : 0);
   });
 }

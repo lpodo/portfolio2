@@ -398,7 +398,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.51';
+var APP_VERSION = 'v1.5.52';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -10326,7 +10326,7 @@ function render() {
           wTotVal += p.qty * pcur * rate2;
         }
       });
-      getWeightSorted(weightSource.map(function(e) { return e.pos; }), wTotVal).forEach(function(p) {
+      getWeightSorted(weightSource.map(function(e) { return e.pos; }), wTotVal, wFxMap, baseCode).forEach(function(p) {
         var wSoldStyle = p.sold ? 'font-style:italic;opacity:0.5' : '';
         var pcur = getPositionCurrent(p);
         if (pcur === null || pcur === undefined || p.qty === 0) {
