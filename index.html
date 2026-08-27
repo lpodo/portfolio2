@@ -364,10 +364,10 @@
   <div style="display:flex;justify-content:flex-end;margin:-6px -6px 0 0"><button class="btn-icon" onclick="closeCloudDirtyModal()" title="Close" style="font-size:16px;color:var(--dim)">&#10005;</button></div>
   <div style="font-size:12px;color:var(--bright);line-height:1.5;margin-bottom:10px" id="cloudDirtyText"></div>
   <div id="cloudDirtyList" style="font-size:11px;color:var(--dim);line-height:1.5;max-height:220px;overflow-y:auto;margin-bottom:12px;font-family:var(--font)"></div>
-  <div style="font-size:12px;color:var(--bright);margin-bottom:14px">Overwrite cloud with local data?</div>
+  <div style="font-size:12px;color:var(--bright);margin-bottom:14px">Sync changes to cloud?</div>
   <div style="display:flex;gap:8px">
     <button class="btn" onclick="cloudDirtyIgnore()" style="flex:1;padding:9px;font-size:11px;letter-spacing:1px">IGNORE</button>
-    <button class="btn btn-green" onclick="cloudDirtyOverwrite()" style="flex:1;padding:9px;font-size:11px;letter-spacing:1px">&#8593; OVERWRITE</button>
+    <button class="btn btn-green" onclick="cloudDirtyOverwrite()" style="flex:1;padding:9px;font-size:11px;letter-spacing:1px">&#8593; SYNC TO CLOUD</button>
   </div>
 </div>
 
@@ -398,7 +398,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.52';
+var APP_VERSION = 'v1.5.53';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -3342,7 +3342,9 @@ function autoCloudLoad(callback) {
 // alerts[].triggered is deliberately NOT tracked — it's derived from price and
 // would light the flag almost every refresh.
 var cloudDirty = false;
-// Per-ticker, per-field record of what changed since the last cloud sync:
+// Per-ticker, per-field record of local metadata changes awaiting a decision.
+// The baseline is the last sync OR the last IGNORE, whichever came later —
+// ignoring clears the log without touching either side.
 //   { AAPL: { exchange: {from:'NasdaqGS', to:'NASDAQ'}, isin: {from:null, to:'UNRESOLVED'} } }
 // 'from' is captured once (the value at the first change since last sync);
 // 'to' is refreshed on every subsequent change, so the modal always shows the
@@ -3372,7 +3374,7 @@ function recordCloudDirty(ticker, field, from, to) {
   if (!ticker || !field) return;
   if (!cloudDirtyChanges[ticker]) cloudDirtyChanges[ticker] = {};
   var existing = cloudDirtyChanges[ticker][field];
-  var origin = existing ? existing.from : from; // the value at the last cloud sync
+  var origin = existing ? existing.from : from; // value when tracking last began
   if (to === origin) {
     // Net zero — remove this field, and cascade-clean empty containers.
     if (existing) {
@@ -3416,7 +3418,7 @@ function updateCloudDirtyIcon() {
 function openCloudDirtyModal() {
   var n = cloudDirtyCount();
   var head = document.getElementById('cloudDirtyText');
-  if (head) head.textContent = 'Local metadata changed since last cloud sync (' + n + ' ticker' + (n === 1 ? '' : 's') + '):';
+  if (head) head.textContent = 'Local metadata changed (' + n + ' ticker' + (n === 1 ? '' : 's') + '):';
   var listEl = document.getElementById('cloudDirtyList');
   if (listEl) {
     var fmt = function(v) { return (v === null || v === undefined || v === '') ? '(none)' : String(v); };
@@ -3452,7 +3454,6 @@ function cloudDirtyOverwrite() {
 // be re-recorded on the next price refresh, so this can't permanently mask a
 // real, reproducible divergence.
 function cloudDirtyIgnore() {
-  if (!confirm('Clear the change log without syncing? Local and cloud data stay as they are.')) return;
   clearCloudDirty();
   closeCloudDirtyModal();
 }
