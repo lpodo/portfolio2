@@ -48,6 +48,13 @@
 
   <div id="tableArea"></div>
 
+  <div class="add-form" id="allPosExportBar" style="display:none">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span class="form-label" id="allPosExportLabel" style="flex:1;min-width:0"></span>
+      <button class="btn" onclick="exportAllPositionsCsv(isRealizedAllPositions())" title="Export positions to CSV" style="padding:6px 12px;color:var(--dim);font-size:10px;letter-spacing:1px">&#8681; Export CSV</button>
+    </div>
+  </div>
+
   <div class="add-form" id="setEditBar" style="display:none">
     <div style="display:flex;align-items:center;gap:8px">
       <span class="form-label" id="setEditBarName" style="flex:1;min-width:0"></span>
@@ -398,7 +405,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.55';
+var APP_VERSION = 'v1.5.56';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -7384,14 +7391,113 @@ function exportIncompletePositionsCsv() {
   a.click();
 }
 
+// Sold positions across every portfolio. Realized All Positions has only
+// weights and analytics, so there's no existing P&L source to borrow. Archives
+// are included: that's where closed positions usually live.
+function getRealizedAllPositions() {
+  var out = [];
+  Object.keys(portfolios).forEach(function(pid) {
+    var p = portfolios[pid];
+    if (!p || p.foreign) return;
+    (p.positions || []).forEach(function(pos) {
+      if (pos.sold) out.push(pos);
+    });
+  });
+  return out;
+}
+
+// Export across all portfolios. Weight is each ticker's share of the whole,
+// so it needs the total — and, outside USD, exchange rates, which arrive
+// asynchronously. The file is written once those have landed.
+function exportAllPositionsCsv(realized) {
+  var src = realized ? getRealizedAllPositions() : getMainContextPositions();
+  if (!src.length) { alert('Nothing to export'); return; }
+
+  var needed = {};
+  src.forEach(function(pos) {
+    var c = getPositionCurrencyCode(pos);
+    if (c && c !== 'USD') needed[c] = true;
+  });
+  var codes = Object.keys(needed);
+
+  function write(rates) {
+    // Totals first: weight is a share, so every row needs the whole.
+    var totalUSD = 0;
+    src.forEach(function(pos) {
+      var cur = realized ? pos.sellPrice : getPositionCurrent(pos);
+      if (cur === null || cur === undefined) return;
+      var c = getPositionCurrencyCode(pos);
+      totalUSD += pos.qty * cur * (c === 'USD' ? 1 : (rates[c] || 1));
+    });
+
+    var rows = [['ticker','qty','entry','current','pnl','pnl_pct','weight','category','region','sector','currency','portfolio']];
+    src.forEach(function(pos) {
+      var cur = realized ? pos.sellPrice : getPositionCurrent(pos);
+      var c = getPositionCurrencyCode(pos);
+      var rate = c === 'USD' ? 1 : (rates[c] || 1);
+      var pnl = (cur !== null && cur !== undefined && pos.qty > 0) ? ((cur - pos.entry) * pos.qty).toFixed(2) : '';
+      var pnlPct = (cur !== null && cur !== undefined && pos.entry) ? (((cur - pos.entry) / pos.entry) * 100).toFixed(2) + '%' : '';
+      var wt = (cur !== null && cur !== undefined && totalUSD > 0)
+        ? ((pos.qty * cur * rate) / totalUSD * 100).toFixed(2) + '%' : '';
+      rows.push([
+        pos.ticker,
+        pos.qty,
+        pos.entry,
+        (cur !== null && cur !== undefined) ? cur : '',
+        pnl,
+        pnlPct,
+        wt,
+        getTickerAttr(pos.ticker, 'category') || '',
+        getTickerAttr(pos.ticker, 'region') || '',
+        getTickerAttr(pos.ticker, 'sector') || '',
+        c,
+        portfolioNameForPosition(pos)
+      ]);
+    });
+
+    var csv = rows.map(function(r) { return r.join(','); }).join('\n');
+    var blob = new Blob([csv], { type: 'text/csv' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = realized ? 'all_positions_realized.csv' : 'all_positions_pl.csv';
+    a.click();
+  }
+
+  if (!codes.length || !getApiKey()) { write({}); return; }
+  var rates = {};
+  var base = getApiKey(), tok = getToken();
+  Promise.all(codes.map(function(code) {
+    return fetchFxRate(base, tok, code + 'USD=X').then(function(r) { if (r) rates[code] = r; });
+  })).then(function() { write(rates); }).catch(function() { write(rates); });
+}
+
+// Which portfolio a position came from — worth having in a cross-portfolio
+// export, where the same ticker can appear from several.
+function portfolioNameForPosition(pos) {
+  var found = '';
+  Object.keys(portfolios).some(function(pid) {
+    if ((portfolios[pid].positions || []).indexOf(pos) !== -1) { found = portfolios[pid].name; return true; }
+    return false;
+  });
+  return found;
+}
+
 function exportPositionsCsv() {
   var p = currentPortfolio();
-  var rows = [['ticker','qty','entry','current','pnl','pnl_pct','category','region','sector','currency']];
-  (p.positions || []).forEach(function(pos) {
-    if (pos.sold) return;
+  var live = (p.positions || []).filter(function(pos) { return !pos.sold; });
+  // Weight is a share of the portfolio, so the total comes first. Within one
+  // portfolio the currency is usually uniform, so no rates are needed here.
+  var totalVal = 0;
+  live.forEach(function(pos) {
+    var c = getPositionCurrent(pos);
+    if (c !== null && pos.qty > 0) totalVal += pos.qty * c;
+  });
+  var rows = [['ticker','qty','entry','current','pnl','pnl_pct','weight','category','region','sector','currency']];
+  live.forEach(function(pos) {
     var pcur = getPositionCurrent(pos);
     var pnl = (pcur !== null && pos.qty > 0) ? ((pcur - pos.entry) * pos.qty).toFixed(2) : '';
     var pnlPct = (pcur !== null && pos.entry) ? (((pcur - pos.entry) / pos.entry) * 100).toFixed(2) + '%' : '';
+    var wt = (pcur !== null && totalVal > 0) ? ((pos.qty * pcur) / totalVal * 100).toFixed(2) + '%' : '';
     rows.push([
       pos.ticker,
       pos.qty,
@@ -7399,6 +7505,7 @@ function exportPositionsCsv() {
       pcur !== null ? pcur : '',
       pnl,
       pnlPct,
+      wt,
       getTickerAttr(pos.ticker, 'category') || '',
       getTickerAttr(pos.ticker, 'region') || '',
       getTickerAttr(pos.ticker, 'sector') || '',
@@ -8376,6 +8483,22 @@ function render() {
   if (stockForm) stockForm.style.display = (isCrossPortfolioContext() || formHiddenHere) ? 'none' : '';
   // A set has nothing to add a position to, so its edit bar takes the same slot
   // in the same modes the add form would have appeared in.
+  // Cross-portfolio P&L and realized have no add form, so their export lives
+  // in a bar of its own. Not shown alongside a set's edit bar.
+  var expBar = document.getElementById('allPosExportBar');
+  if (expBar) {
+    var showExp = (viewMode === 'global-main' && !isSetContext())
+      || viewMode === 'realized-weight';
+    expBar.style.display = showExp ? '' : 'none';
+    if (showExp) {
+      var lbl = document.getElementById('allPosExportLabel');
+      var cnt = viewMode === 'realized-weight'
+        ? getRealizedAllPositions().length
+        : getMainContextPositions().length;
+      if (lbl) lbl.textContent = cnt + (cnt === 1 ? ' position' : ' positions');
+    }
+  }
+
   var setBar = document.getElementById('setEditBar');
   if (setBar) {
     var showBar = isSetContext() && !isFocusContext() && !formHiddenHere;
