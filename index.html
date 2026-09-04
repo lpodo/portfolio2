@@ -400,7 +400,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.59';
+var APP_VERSION = 'v1.5.60';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -5082,7 +5082,9 @@ function toggleViewMenu() {
     var isCrossPortfolio = inAllPositions || inSummaryByPortfolio || inRealizedAllPositions;
     var isWL = !isCrossPortfolio && currentPortfolio() && currentPortfolio().watchlist;
     var isArchive = !isCrossPortfolio && !isWL && currentPortfolio() && currentPortfolio().archive;
-    document.getElementById('vmMain').style.display = (inRealizedAllPositions || isWL) ? 'none' : '';
+    // Realized now has a P&L of its own (realized-main); it was hidden here
+    // back when the view didn't exist. A watchlist still has no P&L to show.
+    document.getElementById('vmMain').style.display = isWL ? 'none' : '';
     document.getElementById('vmMarket').style.display = (inAllPositions || inRealizedAllPositions || isArchive) ? 'none' : '';
     document.getElementById('vmChart').style.display = (inRealizedAllPositions || isArchive) ? 'none' : '';
     document.getElementById('vmFundamentals').style.display = ((inSummaryByPortfolio || inRealizedAllPositions) || isArchive) ? 'none' : '';
@@ -5137,8 +5139,9 @@ function setView(mode) {
     if (mode === 'market-total' || mode === 'alerts')  marketSort = { key: 'absdelta', dir: -1 };
     if (mode === 'global-weight') weightSort = { key: 'weight',   dir: -1 };
   } else if (isRealizedAllPositions()) {
-    // ALL POSITIONS (realized): WEIGHTS / ANALYTICS only — no movers/alerts
-    // since these are closed positions. WEIGHTS is the default.
+    // ALL POSITIONS (realized): P&L / WEIGHTS / ANALYTICS — no movers, alerts,
+    // chart or fundamentals, which all speak to positions still open.
+    // WEIGHTS remains the default.
     viewMode = mode === 'analytics' ? 'realized-analytics'
       : (mode === 'main' || mode === 'summary' || mode === 'global-main') ? 'realized-main'
       : 'realized-weight';
