@@ -48,17 +48,11 @@
 
   <div id="tableArea"></div>
 
-  <div class="add-form" id="allPosExportBar" style="display:none">
+  <div class="add-form" id="ctxBar" style="display:none">
     <div style="display:flex;align-items:center;gap:8px">
-      <span class="form-label" id="allPosExportLabel" style="flex:1;min-width:0"></span>
-      <button class="btn" onclick="exportAllPositionsCsv(isRealizedAllPositions())" title="Export positions to CSV" style="padding:6px 12px;color:var(--dim);font-size:10px;letter-spacing:1px">&#8681; Export CSV</button>
-    </div>
-  </div>
-
-  <div class="add-form" id="setEditBar" style="display:none">
-    <div style="display:flex;align-items:center;gap:8px">
-      <span class="form-label" id="setEditBarName" style="flex:1;min-width:0"></span>
-      <button class="btn-icon" onclick="editOpenSet()" title="Edit set" style="font-size:15px;padding:4px 8px">&#9998;</button>
+      <span class="form-label" id="ctxBarLabel" style="flex:1;min-width:0"></span>
+      <button class="btn-icon" id="ctxBarEdit" onclick="editOpenSet()" title="Edit set" style="display:none;font-size:15px;padding:4px 8px">&#9998;</button>
+      <button class="btn" id="ctxBarExport" onclick="ctxBarExportClick()" title="Export positions to CSV" style="padding:6px 12px;color:var(--dim);font-size:10px;letter-spacing:1px">&#8681; Export CSV</button>
     </div>
   </div>
 
@@ -405,7 +399,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.56';
+var APP_VERSION = 'v1.5.58';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -682,7 +676,7 @@ function stalePortfolioColHtml(pid) {
 // not part of either group.
 var SUMMARY_BY_PORTFOLIO_VIEWS = ['summary', 'summary-market', 'summary-chart'];
 var ALL_POSITIONS_VIEWS = ['summary-movers', 'summary-alerts', 'global-weight', 'summary-analytics', 'global-chart', 'global-fundamentals', 'global-main', 'global-calendar'];
-var REALIZED_ALL_POSITIONS_VIEWS = ['realized-weight', 'realized-analytics'];
+var REALIZED_ALL_POSITIONS_VIEWS = ['realized-main', 'realized-weight', 'realized-analytics'];
 
 
 var positions = [];
@@ -5110,7 +5104,7 @@ function updateViewMenuActive() {
     var el = document.getElementById(id);
     if (el) el.style.color = '';
   });
-  var activeId = viewMode === 'global-calendar' ? 'vmCalendar' : viewMode === 'calendar' ? 'vmCalendar' : viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMarketTotal' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'realized-analytics' ? 'vmAnalytics' : viewMode === 'summary-alerts' ? 'vmAlerts' : viewMode === 'summary' ? 'vmMain' : viewMode === 'global-main' ? 'vmMain' : viewMode === 'global-fundamentals' ? 'vmFundamentals' : viewMode === 'global-chart' ? 'vmChart' : viewMode === 'global-weight' ? 'vmGlobalWeight' : viewMode === 'realized-weight' ? 'vmGlobalWeight' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'fundamentals' ? 'vmFundamentals' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMarket' : viewMode === 'alerts' ? 'vmAlerts' : 'vmMarket';
+  var activeId = viewMode === 'global-calendar' ? 'vmCalendar' : viewMode === 'calendar' ? 'vmCalendar' : viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMarketTotal' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'realized-analytics' ? 'vmAnalytics' : viewMode === 'realized-main' ? 'vmMain' : viewMode === 'summary-alerts' ? 'vmAlerts' : viewMode === 'summary' ? 'vmMain' : viewMode === 'global-main' ? 'vmMain' : viewMode === 'global-fundamentals' ? 'vmFundamentals' : viewMode === 'global-chart' ? 'vmChart' : viewMode === 'global-weight' ? 'vmGlobalWeight' : viewMode === 'realized-weight' ? 'vmGlobalWeight' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'fundamentals' ? 'vmFundamentals' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMarket' : viewMode === 'alerts' ? 'vmAlerts' : 'vmMarket';
   var activeEl = document.getElementById(activeId);
   if (activeEl) activeEl.style.color = 'var(--green)';
 }
@@ -5144,7 +5138,9 @@ function setView(mode) {
   } else if (isRealizedAllPositions()) {
     // ALL POSITIONS (realized): WEIGHTS / ANALYTICS only — no movers/alerts
     // since these are closed positions. WEIGHTS is the default.
-    viewMode = mode === 'analytics' ? 'realized-analytics' : 'realized-weight';
+    viewMode = mode === 'analytics' ? 'realized-analytics'
+      : (mode === 'main' || mode === 'summary' || mode === 'global-main') ? 'realized-main'
+      : 'realized-weight';
     if (mode === 'global-weight') weightSort = { key: 'weight', dir: -1 };
   } else {
     // Individual portfolio (regular/WL/archive)
@@ -7409,13 +7405,24 @@ function getRealizedAllPositions() {
 // Export across all portfolios. Weight is each ticker's share of the whole,
 // so it needs the total — and, outside USD, exchange rates, which arrive
 // asynchronously. The file is written once those have landed.
+// The bar's export. A pinned set narrows the same union the cross-portfolio
+// views draw from, so it goes through the same path — getMainContextPositions
+// already returns only the set's positions when one is open.
+function ctxBarExportClick() {
+  exportAllPositionsCsv(viewMode === 'realized-main');
+}
+
 function exportAllPositionsCsv(realized) {
-  var src = realized ? getRealizedAllPositions() : getMainContextPositions();
-  if (!src.length) { alert('Nothing to export'); return; }
+  var raw = realized ? getRealizedAllPositions() : getMainContextPositions();
+  if (!raw.length) { alert('Nothing to export'); return; }
+  // Aggregated the same way the views are: a ticker held in several portfolios
+  // is one line, not one per lot. The `portfolio` column then names all the
+  // portfolios that lot came from.
+  var entries = aggregatePositions(raw);
 
   var needed = {};
-  src.forEach(function(pos) {
-    var c = getPositionCurrencyCode(pos);
+  entries.forEach(function(e) {
+    var c = getPositionCurrencyCode(e.pos);
     if (c && c !== 'USD') needed[c] = true;
   });
   var codes = Object.keys(needed);
@@ -7423,7 +7430,8 @@ function exportAllPositionsCsv(realized) {
   function write(rates) {
     // Totals first: weight is a share, so every row needs the whole.
     var totalUSD = 0;
-    src.forEach(function(pos) {
+    entries.forEach(function(e) {
+      var pos = e.pos;
       var cur = realized ? pos.sellPrice : getPositionCurrent(pos);
       if (cur === null || cur === undefined) return;
       var c = getPositionCurrencyCode(pos);
@@ -7431,7 +7439,8 @@ function exportAllPositionsCsv(realized) {
     });
 
     var rows = [['ticker','qty','entry','current','pnl','pnl_pct','weight','category','region','sector','currency','portfolio']];
-    src.forEach(function(pos) {
+    entries.forEach(function(e) {
+      var pos = e.pos;
       var cur = realized ? pos.sellPrice : getPositionCurrent(pos);
       var c = getPositionCurrencyCode(pos);
       var rate = c === 'USD' ? 1 : (rates[c] || 1);
@@ -7451,15 +7460,20 @@ function exportAllPositionsCsv(realized) {
         getTickerAttr(pos.ticker, 'region') || '',
         getTickerAttr(pos.ticker, 'sector') || '',
         c,
-        portfolioNameForPosition(pos)
+        portfolioNamesFor(e)
       ]);
     });
 
-    var csv = rows.map(function(r) { return r.join(','); }).join('\n');
+    var csv = rows.map(function(r) { return r.map(csvCell).join(','); }).join('\n');
     var blob = new Blob([csv], { type: 'text/csv' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = realized ? 'all_positions_realized.csv' : 'all_positions_pl.csv';
+    // Name after the set when one is open, so exports don't all land as the
+    // same filename.
+    var openSet = currentSetId ? getPositionSets(ALL_POSITIONS_CTX).find(function(x) { return x.id === currentSetId; }) : null;
+    a.download = openSet
+      ? openSet.name.toLowerCase().replace(/\s+/g, '_') + '_pl.csv'
+      : (realized ? 'all_positions_realized.csv' : 'all_positions_pl.csv');
     a.click();
   }
 
@@ -7471,15 +7485,29 @@ function exportAllPositionsCsv(realized) {
   })).then(function() { write(rates); }).catch(function() { write(rates); });
 }
 
-// Which portfolio a position came from — worth having in a cross-portfolio
-// export, where the same ticker can appear from several.
-function portfolioNameForPosition(pos) {
-  var found = '';
-  Object.keys(portfolios).some(function(pid) {
-    if ((portfolios[pid].positions || []).indexOf(pos) !== -1) { found = portfolios[pid].name; return true; }
-    return false;
+// Quotes a cell when it contains a comma, a quote or a newline, doubling any
+// inner quotes — the standard CSV escaping. Portfolio names are free text, so
+// a comma in one would otherwise shift every column after it.
+function csvCell(v) {
+  var sv = (v === null || v === undefined) ? '' : String(v);
+  if (sv.indexOf(',') === -1 && sv.indexOf('"') === -1 && sv.indexOf('\n') === -1) return sv;
+  return '"' + sv.replace(/"/g, '""') + '"';
+}
+
+// Which portfolios an aggregated line draws from. A ticker held in three
+// portfolios collapses to one row, so the names are joined rather than lost.
+function portfolioNamesFor(entry) {
+  var lots = entry.group || [entry.pos];
+  var names = [];
+  lots.forEach(function(lot) {
+    Object.keys(portfolios).some(function(pid) {
+      if ((portfolios[pid].positions || []).indexOf(lot) === -1) return false;
+      var nm = portfolios[pid].name;
+      if (names.indexOf(nm) === -1) names.push(nm);
+      return true;
+    });
   });
-  return found;
+  return names.join(', ');
 }
 
 function exportPositionsCsv() {
@@ -7488,12 +7516,13 @@ function exportPositionsCsv() {
   // Weight is a share of the portfolio, so the total comes first. Within one
   // portfolio the currency is usually uniform, so no rates are needed here.
   var totalVal = 0;
-  live.forEach(function(pos) {
-    var c = getPositionCurrent(pos);
-    if (c !== null && pos.qty > 0) totalVal += pos.qty * c;
+  aggregatePositions(live).forEach(function(e) {
+    var c = getPositionCurrent(e.pos);
+    if (c !== null && e.pos.qty > 0) totalVal += e.pos.qty * c;
   });
   var rows = [['ticker','qty','entry','current','pnl','pnl_pct','weight','category','region','sector','currency']];
-  live.forEach(function(pos) {
+  aggregatePositions(live).forEach(function(e) {
+    var pos = e.pos;
     var pcur = getPositionCurrent(pos);
     var pnl = (pcur !== null && pos.qty > 0) ? ((pcur - pos.entry) * pos.qty).toFixed(2) : '';
     var pnlPct = (pcur !== null && pos.entry) ? (((pcur - pos.entry) / pos.entry) * 100).toFixed(2) + '%' : '';
@@ -7512,7 +7541,7 @@ function exportPositionsCsv() {
       getPositionCurrencyCode(pos)
     ]);
   });
-  var csv = rows.map(function(r) { return r.join(','); }).join('\n');
+  var csv = rows.map(function(r) { return r.map(csvCell).join(','); }).join('\n');
   var blob = new Blob([csv], { type: 'text/csv' });
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -8483,32 +8512,34 @@ function render() {
   if (stockForm) stockForm.style.display = (isCrossPortfolioContext() || formHiddenHere) ? 'none' : '';
   // A set has nothing to add a position to, so its edit bar takes the same slot
   // in the same modes the add form would have appeared in.
-  // Cross-portfolio P&L and realized have no add form, so their export lives
-  // in a bar of its own. Not shown alongside a set's edit bar.
-  var expBar = document.getElementById('allPosExportBar');
-  if (expBar) {
-    var showExp = (viewMode === 'global-main' && !isSetContext())
-      || viewMode === 'realized-weight';
-    expBar.style.display = showExp ? '' : 'none';
-    if (showExp) {
-      var lbl = document.getElementById('allPosExportLabel');
-      var cnt = viewMode === 'realized-weight'
-        ? getRealizedAllPositions().length
-        : getMainContextPositions().length;
-      if (lbl) lbl.textContent = cnt + (cnt === 1 ? ' position' : ' positions');
+  // One bar serves the cross-portfolio views and pinned sets: they share a
+  // label and an export, and only a set adds the edit button. Sits in the slot
+  // a portfolio uses for its add form, so it never appears alongside one.
+  var ctxBar = document.getElementById('ctxBar');
+  if (ctxBar) {
+    var inSet = isSetContext() && !isFocusContext();
+    var showBar = !formHiddenHere && (inSet
+      || viewMode === 'global-main'
+      || viewMode === 'realized-main');
+    ctxBar.style.display = showBar ? '' : 'none';
+    if (showBar) {
+      var lbl = document.getElementById('ctxBarLabel');
+      var editBtn = document.getElementById('ctxBarEdit');
+      if (inSet) {
+        var openSet = getPositionSets(ALL_POSITIONS_CTX).find(function(x) { return x.id === currentSetId; });
+        var tn = openSet ? (openSet.tickers || []).length : 0;
+        if (lbl) lbl.textContent = (openSet ? openSet.name : '') + ' \u2014 ' + tn + (tn === 1 ? ' ticker' : ' tickers');
+        if (editBtn) editBtn.style.display = '';
+      } else {
+        var cnt = viewMode === 'realized-main'
+          ? getRealizedAllPositions().length
+          : getMainContextPositions().length;
+        if (lbl) lbl.textContent = cnt + (cnt === 1 ? ' position' : ' positions');
+        if (editBtn) editBtn.style.display = 'none';
+      }
     }
   }
 
-  var setBar = document.getElementById('setEditBar');
-  if (setBar) {
-    var showBar = isSetContext() && !isFocusContext() && !formHiddenHere;
-    setBar.style.display = showBar ? '' : 'none';
-    if (showBar) {
-      var openSet = getPositionSets(ALL_POSITIONS_CTX).find(function(s) { return s.id === currentSetId; });
-      var nameEl = document.getElementById('setEditBarName');
-      if (nameEl) nameEl.textContent = openSet ? openSet.name + ' \u2014 ' + (openSet.tickers || []).length + ' tickers' : '';
-    }
-  }
   var area = document.getElementById('tableArea');
 
   // Analytics view (single portfolio)
@@ -8688,8 +8719,11 @@ function render() {
     return;
   }
 
-  var mainIsAll = isAllPositions();
-  var mainSource = mainIsAll ? getMainContextPositions() : positions;
+  // realized-main reuses this renderer: same table, sold positions as the source.
+  var mainIsRealizedAll = viewMode === 'realized-main';
+  var mainIsAll = isAllPositions() || mainIsRealizedAll;
+  var mainSource = mainIsRealizedAll ? getRealizedAllPositions()
+    : (isAllPositions() ? getMainContextPositions() : positions);
   var rowsSource = getSortedForRender(mainSource);
   var rows = '';
   rowsSource.forEach(function(entry) {
