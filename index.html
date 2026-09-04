@@ -398,7 +398,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.53';
+var APP_VERSION = 'v1.5.55';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4201,6 +4201,11 @@ function pickTickerFlag(ticker, flagId) {
 // getAlertDotsHtmlForPosition, which decorates the other side of the name.
 // A ticker carrying a flag that has since been deleted renders nothing.
 function getTickerFlagHtml(ticker) {
+  // Flags mark what to watch next, so an archive — where every row is closed —
+  // has no use for them. The flag lives on the ticker, so without this it would
+  // still appear here whenever the same ticker is flagged in a live portfolio.
+  if (currentPortfolio() && currentPortfolio().archive) return '';
+  if (isRealizedAllPositions()) return '';
   var icon = getFlagIcon(getTickerFlag(ticker));
   if (!icon) return '';
   return '<span style="font-size:11px;margin-right:3px">' + icon + '</span>';
@@ -4217,7 +4222,10 @@ function buildExpandedInner(p) {
   // fields are semantically meaningless — see isRealSecurity() docs.
   // Sold positions in active portfolios are still securities: they keep
   // their instrumentType from purchase-time refresh.
-  var isSecurity = isRealSecurity(p);
+  // A closed position keeps its broker, date, ISIN and attributes whether or
+  // not the instrument type is still known, so treat it as a security here —
+  // otherwise its expanded row would lose those lines at random.
+  var isSecurity = isRealSecurity(p) || p.sold;
   var isinRaw = getTickerIsin(p.ticker);
   var isinDisplay = isKnownIsin(isinRaw) ? isinRaw : '—';
   // Meta row: BROKER · BUY DATE · ISIN appear for real securities regardless of
@@ -4250,6 +4258,15 @@ function buildExpandedInner(p) {
   if (shortName) {
     nameHtml = '<div style="font-size:11px;color:var(--bright);letter-spacing:1px;margin-bottom:6px">' + shortName + '</div>';
   }
+  // Realized rows have a fixed shape. Elsewhere the layout keys off the
+  // instrument type, but a sold position often has none — quotes stop being
+  // fetched for it — which is why these rows used to come out arbitrarily
+  // truncated. Note, alerts and flag are omitted: they're about deciding what
+  // to do next, and this position is closed.
+  if (p.sold) {
+    return nameHtml + row1Html + row2Html;
+  }
+
   return nameHtml
     + row1Html
     + row2Html
@@ -4288,7 +4305,7 @@ function buildExpandedInnerAgg(p, group) {
   // First two rows (BROKER+DATE+ISIN + CAT/REG/SEC) only for real securities —
   // same rule as buildExpandedInner. All positions in the agg share the
   // same ticker so any one of them determines the security kind.
-  var isSecurity = isRealSecurity(p);
+  var isSecurity = isRealSecurity(p) || p.sold;
   var brokerSet = {};
   group.forEach(function(g) {
     brokerSet[getPositionBroker(g) || 'default'] = true;
@@ -4330,6 +4347,9 @@ function buildExpandedInnerAgg(p, group) {
       + '<span style="white-space:nowrap"><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'sector') || '—') + '</span></span>'
       + '</div>';
   }
+  // Realized aggregates stop here, matching a single realized row: flag, note,
+  // alerts and fundamentals all speak to a position still being decided about.
+  if (p.sold) return html;
   html += tickerFlagRowHtml(p.ticker);
   html += '<div style="margin-top:6px;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
     + '<span style="opacity:0.6">NOTE</span>'
@@ -8611,7 +8631,10 @@ function render() {
     var tickerCell = isEdit
       ? '<input class="edit-input" id="editTicker" type="text" value="' + p.ticker + '" readonly title="Ticker can\'t be changed — delete and re-add to use a different ticker" style="width:60px;text-transform:uppercase;opacity:0.6;cursor:not-allowed">'
       : '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + getTickerFlagHtml(p.ticker) + p.ticker + (isEdit ? '' : getAlertDotsHtmlForPosition(p)) + '</span>';
-    var soldStyle = (p.sold || p.qty === 0) ? 'font-style:italic;opacity:0.5' : '';
+    // In an archive every row is closed, so dimming them distinguishes nothing —
+    // All Positions realized already shows them plainly.
+    var inArchive = !!(currentPortfolio() && currentPortfolio().archive);
+    var soldStyle = (!inArchive && (p.sold || p.qty === 0)) ? 'font-style:italic;opacity:0.5' : '';
     rows += '<tr style="' + soldStyle + '">'
       + '<td style="white-space:nowrap">' + tickerCell + '</td>'
       + '<td>' + qtyCell + '</td>'
