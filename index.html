@@ -50,8 +50,9 @@
 
   <div class="add-form" id="ctxBar" style="display:none">
     <div style="display:flex;align-items:center;gap:8px">
-      <span class="form-label" id="ctxBarLabel" style="flex:1;min-width:0"></span>
-      <button class="btn-icon" id="ctxBarEdit" onclick="editOpenSet()" title="Edit set" style="display:none;font-size:15px;padding:4px 8px">&#9998;</button>
+      <span class="form-label" id="ctxBarLabel" style="min-width:0"></span>
+      <button class="btn-icon" id="ctxBarEdit" onclick="editOpenSet()" title="Edit set" style="display:none;font-size:15px;padding:4px 6px">&#9998;</button>
+      <div style="flex:1"></div>
       <button class="btn" id="ctxBarExport" onclick="ctxBarExportClick()" title="Export positions to CSV" style="padding:6px 12px;color:var(--dim);font-size:10px;letter-spacing:1px">&#8681; Export CSV</button>
     </div>
   </div>
@@ -399,7 +400,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.58';
+var APP_VERSION = 'v1.5.59';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -8531,10 +8532,13 @@ function render() {
         if (lbl) lbl.textContent = (openSet ? openSet.name : '') + ' \u2014 ' + tn + (tn === 1 ? ' ticker' : ' tickers');
         if (editBtn) editBtn.style.display = '';
       } else {
-        var cnt = viewMode === 'realized-main'
-          ? getRealizedAllPositions().length
-          : getMainContextPositions().length;
-        if (lbl) lbl.textContent = cnt + (cnt === 1 ? ' position' : ' positions');
+        // Aggregated, matching both the table and the export — counting raw
+        // lots would report a bigger number than either shows.
+        var srcPos = viewMode === 'realized-main'
+          ? getRealizedAllPositions()
+          : getMainContextPositions();
+        var cnt = aggregatePositions(srcPos).length;
+        if (lbl) lbl.textContent = cnt + (cnt === 1 ? ' ticker' : ' tickers');
         if (editBtn) editBtn.style.display = 'none';
       }
     }
