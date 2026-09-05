@@ -400,7 +400,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.60';
+var APP_VERSION = 'v1.5.61';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -7442,7 +7442,7 @@ function exportAllPositionsCsv(realized) {
       totalUSD += pos.qty * cur * (c === 'USD' ? 1 : (rates[c] || 1));
     });
 
-    var rows = [['ticker','qty','entry','current','pnl','pnl_pct','weight','category','region','sector','currency','portfolio']];
+    var rows = [['ticker','qty','entry','current','pnl','pnl_pct','weight','category','region','sector','currency']];
     entries.forEach(function(e) {
       var pos = e.pos;
       var cur = realized ? pos.sellPrice : getPositionCurrent(pos);
@@ -7463,8 +7463,7 @@ function exportAllPositionsCsv(realized) {
         getTickerAttr(pos.ticker, 'category') || '',
         getTickerAttr(pos.ticker, 'region') || '',
         getTickerAttr(pos.ticker, 'sector') || '',
-        c,
-        portfolioNamesFor(e)
+        c
       ]);
     });
 
@@ -7496,22 +7495,6 @@ function csvCell(v) {
   var sv = (v === null || v === undefined) ? '' : String(v);
   if (sv.indexOf(',') === -1 && sv.indexOf('"') === -1 && sv.indexOf('\n') === -1) return sv;
   return '"' + sv.replace(/"/g, '""') + '"';
-}
-
-// Which portfolios an aggregated line draws from. A ticker held in three
-// portfolios collapses to one row, so the names are joined rather than lost.
-function portfolioNamesFor(entry) {
-  var lots = entry.group || [entry.pos];
-  var names = [];
-  lots.forEach(function(lot) {
-    Object.keys(portfolios).some(function(pid) {
-      if ((portfolios[pid].positions || []).indexOf(lot) === -1) return false;
-      var nm = portfolios[pid].name;
-      if (names.indexOf(nm) === -1) names.push(nm);
-      return true;
-    });
-  });
-  return names.join(', ');
 }
 
 function exportPositionsCsv() {
