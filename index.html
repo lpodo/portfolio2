@@ -400,7 +400,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.61';
+var APP_VERSION = 'v1.5.64';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4218,6 +4218,148 @@ function getAlertDotsHtmlForPosition(p) {
   return getAlertDotsHtml(p.ticker, getTickerAlerts(p.ticker));
 }
 
+// ── Dictionary management ───────────────────────────────────────────────────
+// Same shape as the flags modal. Add and delete only: renaming would mean
+// tickers referencing an id rather than the text itself, which is a migration
+// for later.
+var DICT_META = {
+  category: { label: 'CATEGORIES', dict: function() { return catDict; } },
+  region:   { label: 'REGIONS',    dict: function() { return regDict; } },
+  sector:   { label: 'SECTORS',    dict: function() { return secDict; } }
+};
+
+function openDictManageModal(field) {
+  var meta = DICT_META[field];
+  if (!meta) return;
+  window._dictManageField = field;
+  var existing = document.getElementById('dictManageModal');
+  if (existing) existing.remove();
+  var overlay = document.createElement('div');
+  overlay.id = 'dictManageModal';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:700;display:flex;align-items:flex-start;justify-content:center;padding-top:60px';
+  overlay.onclick = function(e) { if (e.target === overlay) closeDictManageModal(); };
+  overlay.innerHTML = '<div onclick="event.stopPropagation()" style="background:var(--bg2);border:1px solid var(--border);padding:18px 20px;min-width:260px;max-width:90vw;max-height:80vh;overflow-y:auto">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'
+    + '<span style="font-size:11px;letter-spacing:2px;color:var(--dim)">' + meta.label + '</span>'
+    + '<button class="btn-icon" onclick="closeDictManageModal()" style="font-size:15px;padding:0 4px">&#10005;</button>'
+    + '</div><div id="dictManageBody"></div></div>';
+  document.body.appendChild(overlay);
+  renderDictManageModal();
+}
+function closeDictManageModal() {
+  var m = document.getElementById('dictManageModal');
+  if (m) m.remove();
+  window._dictManageField = null;
+  render();
+}
+function dictUsageCount(field, value) {
+  var n = 0;
+  Object.keys(tickerData).forEach(function(t) {
+    if (tickerData[t] && tickerData[t][field] === value) n++;
+  });
+  return n;
+}
+function renderDictManageModal() {
+  var body = document.getElementById('dictManageBody');
+  if (!body) return;
+  var field = window._dictManageField;
+  var dict = DICT_META[field].dict();
+  var html = dict.length
+    ? dict.map(function(v) {
+        var used = dictUsageCount(field, v);
+        return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">'
+          + '<div style="flex:1;font-size:12px;color:var(--bright)">' + v
+          + ' <span style="color:var(--dim);font-size:10px">' + used + (used === 1 ? ' ticker' : ' tickers') + '</span></div>'
+          + '<button class="btn-icon" onclick="confirmDeleteDictValue(&apos;' + v.replace(/'/g, "\\'") + '&apos;)" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
+          + '</div>';
+      }).join('')
+    : '<div style="font-size:11px;color:var(--dim);padding:8px 0">Empty</div>';
+  html += '<div style="display:flex;gap:6px;margin-top:12px">'
+    + '<input type="text" id="dictNewValue" placeholder="new value" autocomplete="off" style="flex:1;min-width:0;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:11px;padding:5px 7px;outline:none">'
+    + '<button onclick="addDictValue()" class="btn btn-green" style="padding:5px 12px;font-size:11px">ADD</button>'
+    + '</div>';
+  body.innerHTML = html;
+}
+function addDictValue() {
+  var field = window._dictManageField;
+  var input = document.getElementById('dictNewValue');
+  var v = (input.value || '').trim();
+  if (!v) return;
+  addToDict(DICT_META[field].dict(), v);
+  saveDicts();
+  input.value = '';
+  renderDictManageModal();
+  save();
+}
+function confirmDeleteDictValue(value) {
+  var field = window._dictManageField;
+  var used = dictUsageCount(field, value);
+  var msg = 'Delete "' + value + '"?';
+  // Deleting reaches past the dictionary into the tickers using it.
+  if (used) msg += '\n\nIt will be cleared from ' + used + (used === 1 ? ' ticker.' : ' tickers.');
+  if (!confirm(msg)) return;
+  var dict = DICT_META[field].dict();
+  var idx = dict.indexOf(value);
+  if (idx !== -1) dict.splice(idx, 1);
+  Object.keys(tickerData).forEach(function(t) {
+    if (tickerData[t] && tickerData[t][field] === value) setTickerAttr(t, field, '');
+  });
+  saveDicts();
+  saveTickerDataLS();
+  renderDictManageModal();
+  save();
+}
+
+// One attribute picker: current value plus a menu of the dictionary, ending
+// with a way to manage the dictionary itself. Ticker-level, so it edits in
+// place rather than through the position form — which an aggregated row
+// doesn't even have.
+function tickerAttrPickerHtml(ticker, field, label, dict) {
+  var cur = getTickerAttr(ticker, field);
+  var menuId = 'attrMenu_' + field + '_' + ticker;
+  var opts = [{ v: '', label: '—' }].concat(dict.map(function(d) { return { v: d, label: d }; }));
+  var menu = '<div id="' + menuId + '" style="display:none;position:absolute;left:0;top:100%;min-width:130px;max-height:220px;overflow-y:auto;background:var(--bg2);border:1px solid var(--border);z-index:100">'
+    + opts.map(function(o) {
+        var sel = o.v === (cur || '');
+        return '<div onclick="pickTickerAttr(&apos;' + ticker + '&apos;,&apos;' + field + '&apos;,&apos;' + o.v.replace(/'/g, "\\'") + '&apos;)" style="padding:7px 12px;cursor:pointer;font-size:11px;color:' + (sel ? 'var(--green)' : 'var(--bright)') + '">' + o.label + '</div>';
+      }).join('')
+    + '<div style="border-top:1px solid var(--border)"></div>'
+    + '<div onclick="openDictManageModal(&apos;' + field + '&apos;)" style="padding:7px 12px;cursor:pointer;font-size:10px;letter-spacing:1px;color:var(--dim)">manage&hellip;</div>'
+    + '</div>';
+  return '<span style="white-space:nowrap;position:relative;display:inline-flex;align-items:center;gap:4px">'
+    + '<span style="opacity:0.6">' + label + '</span>'
+    + '<span onclick="toggleAttrMenu(&apos;' + menuId + '&apos;)" style="color:var(--bright);cursor:pointer;border-bottom:1px dotted var(--border)">' + (cur || '—') + '</span>'
+    + menu + '</span>';
+}
+function toggleAttrMenu(menuId) {
+  var m = document.getElementById(menuId);
+  if (!m) return;
+  var open = getComputedStyle(m).display !== 'none';
+  // Only one at a time, so a second picker doesn't open behind the first.
+  var all = document.querySelectorAll('[id^="attrMenu_"]');
+  for (var i = 0; i < all.length; i++) all[i].style.display = 'none';
+  m.style.display = open ? 'none' : 'block';
+}
+function pickTickerAttr(ticker, field, value) {
+  setTickerAttr(ticker, field, value || null);
+  saveTickerDataLS();
+  save();
+  render();
+}
+
+// The attribute line. Editable everywhere, realized included: the ticker is the
+// same one, and classifying it often happens after the position is closed.
+function tickerAttrsRowHtml(ticker) {
+  function cell(field, label, dict) {
+    return tickerAttrPickerHtml(ticker, field, label, dict);
+  }
+  return '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px;margin-top:6px">'
+    + cell('category', 'CAT', catDict)
+    + cell('region', 'REG', regDict)
+    + cell('sector', 'SEC', secDict)
+    + '</div>';
+}
+
 function buildExpandedInner(p) {
   // First two rows (broker/date/ISIN + CAT/REG/SEC) only appear for real
   // securities (EQUITY/ETF). For indices/futures/crypto/currencies these
@@ -4245,13 +4387,7 @@ function buildExpandedInner(p) {
   }
   row1Parts += exTypeHtml;
   var row1Html = '<div style="display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;font-size:10px;color:var(--dim);letter-spacing:1px">' + row1Parts + '</div>';
-  var row2Html = isSecurity
-    ? '<div style="display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;font-size:10px;color:var(--dim);letter-spacing:1px;' + (row1Html ? 'margin-top:6px' : '') + '">'
-      + '<span style="white-space:nowrap"><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'category') || '—') + '</span></span>'
-      + '<span style="white-space:nowrap"><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'region') || '—') + '</span></span>'
-      + '<span style="white-space:nowrap"><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'sector') || '—') + '</span></span>'
-      + '</div>'
-    : '';
+  var row2Html = isSecurity ? tickerAttrsRowHtml(p.ticker) : '';
   // The company name is only a column in MARKET and WEIGHTS, so P&L gave no way
   // to see it without switching views. Showing it first in every expanded row
   // makes that unnecessary.
@@ -4343,11 +4479,7 @@ function buildExpandedInnerAgg(p, group) {
   }
   html += '<div style="display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;font-size:10px;color:var(--dim);letter-spacing:1px">' + aggRow1Parts + '</div>';
   if (isSecurity) {
-    html += '<div style="display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;font-size:10px;color:var(--dim);letter-spacing:1px;margin-top:6px">'
-      + '<span style="white-space:nowrap"><span style="opacity:0.6">CAT</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'category') || '—') + '</span></span>'
-      + '<span style="white-space:nowrap"><span style="opacity:0.6">REG</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'region') || '—') + '</span></span>'
-      + '<span style="white-space:nowrap"><span style="opacity:0.6">SEC</span> <span style="color:var(--bright)">' + (getTickerAttr(p.ticker, 'sector') || '—') + '</span></span>'
-      + '</div>';
+    html += tickerAttrsRowHtml(p.ticker);
   }
   // Realized aggregates stop here, matching a single realized row: flag, note,
   // alerts and fundamentals all speak to a position still being decided about.
@@ -4737,7 +4869,7 @@ function saveEdit(id) {
   // cancel, applyIsinInput restores the field and we abort with the edit
   // form still open — nothing else has been mutated yet.
   if (!applyIsinInput(ticker, document.getElementById('editIsin'))) return;
-  var catEl = document.getElementById('editCategory'); var regEl = document.getElementById('editRegion'); var secEl = document.getElementById('editSector'); var dateEl = document.getElementById('editDate'); var broEl = document.getElementById('editBroker');
+  var dateEl = document.getElementById('editDate'); var broEl = document.getElementById('editBroker');
   var purchaseDate = dateEl ? (dateEl.value.trim() || null) : pos.purchaseDate;
   var broker   = broEl ? (broEl.value.trim() || null) : pos.broker;
   // Same rule as add, against the edited values: a qty=0 lot keeps no broker,
@@ -4749,9 +4881,7 @@ function saveEdit(id) {
   // Category/region/sector are ticker-level — write straight to tickerData.
   // Every position of this ticker (in any portfolio) picks up the change at
   // render time, so there's no per-position copy or cross-portfolio sync.
-  if (catEl) setTickerAttr(ticker, 'category', catEl.value.trim() || null);
-  if (regEl) setTickerAttr(ticker, 'region',   regEl.value.trim() || null);
-  if (secEl) setTickerAttr(ticker, 'sector',   secEl.value.trim() || null);
+
   // current is ticker-level. For an active position, a manual edit sets the
   // ticker's current price (all its active positions reflect it). A sold
   // position's price is its own sellPrice — update that instead.
@@ -5168,6 +5298,25 @@ document.addEventListener('click', function(e) {
     menu.style.display = 'none';
   }
 });
+// Dismiss open pickers on an outside tap. Without this the only way out of a
+// flag or attribute menu was to pick something, so opening one by mistake
+// forced a change.
+document.addEventListener('click', function(e) {
+  var flagMenus = document.querySelectorAll('[id^="flagMenu_"]');
+  for (var i = 0; i < flagMenus.length; i++) {
+    var fm = flagMenus[i];
+    if (fm.style.display !== 'none' && !fm.parentNode.contains(e.target)) fm.style.display = 'none';
+  }
+  if (_openDictDrop) {
+    var dd = document.getElementById('dictDrop_' + _openDictDrop);
+    var trig = document.getElementById('dictTrigger_' + _openDictDrop);
+    if (dd && !dd.contains(e.target) && (!trig || !trig.contains(e.target))) {
+      dd.style.display = 'none';
+      _openDictDrop = null;
+    }
+  }
+});
+
 // --- Market state icons (user-customizable) ---
 var MARKET_ICONS_DEFAULTS = { regular: '', pre: '🌤️', post: '🌙', closed: '✦' };
 var MARKET_ICONS_STORAGE_KEY = 'pt_market_icons';
@@ -8804,11 +8953,6 @@ function render() {
             var initialVal = isKnownIsin(known) ? known : '';
             return '<div class="field"><label>ISIN</label><input type="text" id="editIsin" value="' + initialVal + '" placeholder="US0378331005" maxlength="12" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" style="width:130px" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,\'\')"></div>';
           })()
-        + '</div>'
-        + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">'
-        + buildDictSelectHtml('cat', catDict, getTickerAttr(p.ticker, 'category'), 'CATEGORY', '115px')
-        + buildDictSelectHtml('reg', regDict, getTickerAttr(p.ticker, 'region'), 'REGION', '80px')
-        + buildDictSelectHtml('sec', secDict, getTickerAttr(p.ticker, 'sector'), 'SECTOR', '120px')
         + '</div>'
         + '<div style="margin-top:12px;display:flex;gap:8px">'
         + '<button class="btn btn-green" style="padding:6px 16px" onclick="saveEdit(' + p.id + ')">SAVE</button>'
