@@ -397,7 +397,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.68';
+var APP_VERSION = 'v1.5.69';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -2474,6 +2474,7 @@ function switchToArchiveSummary() {
 }
 
 function switchToSummary() {
+  clearAggReturn();
   currentSetId = null; focusTicker = null;  // leaving the set context
   // Σ Summary by portfolio = per-portfolio aggregate views only (summary/
   // summary-market/summary-chart). The summary-movers/summary-alerts
@@ -2511,6 +2512,7 @@ function switchToSet(setId) {
 }
 
 function switchToAllPositions() {
+  clearAggReturn();
   currentSetId = null; focusTicker = null;  // leaving the set context
   // ALL POSITIONS = cross-portfolio position-level views (movers, alerts,
   // weights, analytics). Default view is MARKET (= summary-movers). If
@@ -2554,6 +2556,7 @@ function switchToBondSummary() {
 }
 
 function switchPortfolio(id) {
+  clearAggReturn();
   currentSetId = null; focusTicker = null;  // leaving the set context
   if (!portfolios[id]) return;
   currentPortfolioId = id;
@@ -4806,7 +4809,7 @@ var _alertCondQuick = '>';
 function toggleAlertCondQuick(el) { _alertCondQuick = _alertCondQuick === '>' ? '<' : '>'; el.textContent = _alertCondQuick; }
 function toggleExpand(id) { expandedId = (expandedId === id) ? null : id; render(); }
 function startEdit(id) { editId = id; expandedId = null; render(); }
-function cancelEdit() { editId = null; render(); }
+function cancelEdit() { editId = null; render(); reopenAggDetailIfPending(); }
 // The note is ticker-level: one note per ticker, shared by every lot of it in
 // every portfolio. Editable from the expanded row (single or aggregated) — the
 // modal is the only way to edit it.
@@ -4934,7 +4937,7 @@ function saveEdit(id) {
   });
   portfolios[currentPortfolioId].positions = positions;
   saveTickerDataLS();
-  savePortfolios(); if (getCloudBackend() === 'kv') cloudSaveKV(); else cloudSave(); editId = null; render();
+  savePortfolios(); if (getCloudBackend() === 'kv') cloudSaveKV(); else cloudSave(); editId = null; render(); reopenAggDetailIfPending();
 }
 
 // Fetch a ticker's price and apply it to all non-sold positions of that
@@ -5277,6 +5280,7 @@ function updateViewMenuActive() {
 }
 
 function setView(mode) {
+  clearAggReturn();
   // Reset fundamentals view state on entry (no persistence per spec)
   if (mode === 'fundamentals') resetFundamentalsState();
   // Context-specific remapping. Each context's view menu shows only a
@@ -5897,36 +5901,43 @@ window._expandedSetId = null; // set whose contents are previewed read-only
 // by index to avoid escaping broker names through inline onclick handlers.
 var _aggOverlayState = null;
 
-// Acting on one lot from the ×N modal. startEdit and removePosition both work
-// against the current portfolio's positions, but in All Positions the lot may
-// live in another one — so switch there first, or the id resolves to nothing.
-function portfolioIdOfPosition(id) {
-  var found = null;
-  Object.keys(portfolios).some(function(pid) {
-    if ((portfolios[pid].positions || []).some(function(p) { return p.id === id; })) { found = pid; return true; }
-    return false;
-  });
-  return found;
-}
+// Acting on one lot from the ×N modal. Only ever within the open portfolio —
+// see the actions cell above — so the id resolves against `positions` directly.
+// Remembers which ×N modal to reopen once the edit finishes, so correcting
+// several lots in a row doesn't mean reopening it each time.
+var _aggReturn = null;
+
 function editLotFromAggDetail(id) {
-  var pid = portfolioIdOfPosition(id);
-  if (!pid) return;
+  _aggReturn = { ticker: _aggDetailTicker, sold: _aggDetailSold, cur: _aggDetailCur };
   closeAggDetailModal();
-  // The edit form is a row in the table underneath, so the portfolio has to be
-  // the open one for it to appear.
-  if (pid !== currentPortfolioId) switchPortfolio(pid);
   startEdit(id);
 }
 function deleteLotFromAggDetail(id) {
-  var pid = portfolioIdOfPosition(id);
-  if (!pid) return;
+  _aggReturn = { ticker: _aggDetailTicker, sold: _aggDetailSold, cur: _aggDetailCur };
   closeAggDetailModal();
-  if (pid !== currentPortfolioId) switchPortfolio(pid);
   removePosition(id);
+  // removePosition returns straight away if the user declines, so the pending
+  // return has to be resolved here rather than on a form close.
+  reopenAggDetailIfPending();
 }
+// Called after the form closes either way. Reopening is conditional: deleting
+// the last lot leaves no aggregate to return to.
+function reopenAggDetailIfPending() {
+  var r = _aggReturn;
+  _aggReturn = null;
+  if (!r) return;
+  showAggDetail(r.ticker, r.sold, r.cur);
+}
+// Any other navigation drops the pending return, so the modal can't resurface
+// somewhere it doesn't belong.
+function clearAggReturn() { _aggReturn = null; }
+
+var _aggDetailTicker = null, _aggDetailSold = null, _aggDetailCur = null;
 
 function showAggDetail(ticker, soldFlag, curCode) {
   var isSold = soldFlag === 1 || soldFlag === '1' || soldFlag === true;
+  // Kept so an edit launched from here knows which modal to reopen.
+  _aggDetailTicker = ticker; _aggDetailSold = soldFlag; _aggDetailCur = curCode;
   var aggIsAll = isAllPositions();
   // Collect the visible (filtered) positions matching this aggregation, so the
   // detail list matches the ×N count and what move/delete act on. In All
@@ -6006,10 +6017,13 @@ function showAggDetail(ticker, soldFlag, curCode) {
     }
     // Per-lot actions. An aggregated row has no pencil of its own, so this is
     // the only place a single lot's broker or date can be corrected.
-    var actions = '<td style="padding:6px 4px;white-space:nowrap;text-align:right">'
-      + '<button class="btn-icon" onclick="editLotFromAggDetail(' + p.id + ')" title="Edit" style="font-size:12px;padding:0 3px">&#9998;</button>'
-      + '<button class="btn-icon" onclick="deleteLotFromAggDetail(' + p.id + ')" title="Delete" style="font-size:12px;padding:0 3px;color:var(--red)">&#10005;</button>'
-      + '</td>';
+    // Not in All Positions: that context hides every per-lot action by design,
+    // and this modal shouldn't be a back door into editing.
+    var actions = aggIsAll ? '<td></td>'
+      : '<td style="padding:6px 4px;white-space:nowrap;text-align:right">'
+        + '<button class="btn-icon" onclick="editLotFromAggDetail(' + p.id + ')" title="Edit" style="font-size:12px;padding:0 3px">&#9998;</button>'
+        + '<button class="btn-icon" onclick="deleteLotFromAggDetail(' + p.id + ')" title="Delete" style="font-size:12px;padding:0 3px;color:var(--red)">&#10005;</button>'
+        + '</td>';
     return '<tr style="' + (isSold ? 'opacity:0.75' : '') + '">'
       + '<td style="' + tdStyleL + '">' + qty + '</td>'
       + '<td style="' + tdStyle + '">' + currSym + f2(entry) + '</td>'
