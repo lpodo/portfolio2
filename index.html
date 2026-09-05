@@ -330,9 +330,6 @@
   </div>
   <div class="api-status" id="backupStatus"></div>
 
-  <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">DICTIONARIES</div>
-  <div id="dictsPanel"></div>
-
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">ANALYTICS CSV</div>
   <div style="display:flex;gap:6px">
     <button class="btn" onclick="openCsvImport()" style="flex:1;padding:5px 2px;font-size:9px;letter-spacing:1px">&uarr; IMPORT CSV</button>
@@ -400,7 +397,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.66';
+var APP_VERSION = 'v1.5.67';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -742,7 +739,6 @@ function setDefaultBroker(broker) {
   _defaultBroker = broker;
   saveDicts();
   if (getCloudBackend() === 'kv') cloudSaveKV(); else cloudSave();
-  renderDictsPanel();
 }
 
 var _openDictDrop = null;
@@ -833,77 +829,12 @@ function confirmDictNew(field) {
   if (trigger) trigger.style.display = '';
   var ns = document.getElementById('dictNew_' + field);
   if (ns) ns.style.display = 'none';
-  renderDictsPanel();
 }
 function cancelDictNew(field) {
   var trigger = document.getElementById('dictTrigger_' + field);
   if (trigger) trigger.style.display = '';
   var ns = document.getElementById('dictNew_' + field);
   if (ns) ns.style.display = 'none';
-}
-function removeFromDict(field, value) {
-  var dict = _dictRef(field);
-  if (!dict) return;
-  // Special handling for brokers: refuse if any position still uses it
-  if (field === 'bro') {
-    var n = countPositionsWithBroker(value);
-    if (n > 0) {
-      alert('Cannot delete "' + value + '": ' + n + ' position' + (n === 1 ? '' : 's') + ' still use' + (n === 1 ? 's' : '') + ' this broker. Reassign or delete those positions first.');
-      return;
-    }
-  }
-  if (!confirm('Delete "' + value + '"?')) return;
-  var idx = dict.indexOf(value);
-  if (idx !== -1) dict.splice(idx, 1);
-  // If we just removed the default broker, auto-promote the first remaining one
-  if (field === 'bro' && _defaultBroker === value) {
-    _defaultBroker = brokerDict[0] || null;
-  }
-  saveDicts();
-  renderDictsPanel();
-}
-function showDictPanel(field) {
-  _activeDictPanel = (_activeDictPanel === field) ? null : field;
-  renderDictsPanel();
-}
-function renderDictsPanel() {
-  var el = document.getElementById('dictsPanel');
-  if (!el) return;
-  var btns = ['cat','reg','sec','bro','ccat'].map(function(f) {
-    var label = f === 'cat' ? 'CATEGORIES'
-              : f === 'reg' ? 'REGIONS'
-              : f === 'sec' ? 'SECTORS'
-              : f === 'bro' ? 'BROKERS'
-              : 'CASH CAT';
-    var active = _activeDictPanel === f;
-    return '<button onclick="showDictPanel(\'' + f + '\')" class="btn' + (active ? ' btn-green' : '') + '" style="flex:1;padding:5px 2px;font-size:9px;letter-spacing:1px">' + label + '</button>';
-  }).join('');
-  var content = '';
-  if (_activeDictPanel) {
-    var dict = _dictRef(_activeDictPanel);
-    var field = _activeDictPanel;
-    var isBroker = field === 'bro';
-    content = '<div style="margin-top:8px;max-height:140px;overflow-y:auto">'
-      + (dict.length ? dict.map(function(v) {
-          var esc = v.replace(/&/g,'&amp;').replace(/'/g,'&#39;');
-          var nameHtml;
-          if (isBroker) {
-            var isDefault = (v === _defaultBroker);
-            nameHtml = '<span onclick="setDefaultBroker(\'' + esc + '\')" style="font-size:11px;color:var(--bright);cursor:pointer" title="Click to set as default">'
-                     + v.replace(/&/g,'&amp;')
-                     + '</span>'
-                     + (isDefault ? ' <span style="font-size:9px;color:var(--dim);letter-spacing:1px">(default)</span>' : '');
-          } else {
-            nameHtml = '<span style="font-size:11px;color:var(--bright)">' + v.replace(/&/g,'&amp;') + '</span>';
-          }
-          return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">'
-            + nameHtml
-            + '<button onclick="removeFromDict(\'' + field + '\',\'' + esc + '\')" class="btn" style="padding:1px 6px;font-size:10px;color:var(--red)">&#10005;</button>'
-            + '</div>';
-        }).join('') : '<div style="font-size:10px;color:var(--dim);font-style:italic">empty</div>')
-      + '</div>';
-  }
-  el.innerHTML = '<div style="display:flex;gap:6px">' + btns + '</div>' + content;
 }
 
 // --- Portfolio switcher ---
@@ -3608,7 +3539,7 @@ function toggleSettings() {
   var o = document.getElementById('overlay');
   p.classList.toggle('open');
   o.classList.toggle('open');
-  if (p.classList.contains('open')) { renderDictsPanel(); renderAlertCheckSettings(); renderPushStatus(); refreshAlertSettingsFromCloud(); }
+  if (p.classList.contains('open')) { renderAlertCheckSettings(); renderPushStatus(); refreshAlertSettingsFromCloud(); }
 }
 function closeSettings() {
   document.getElementById('settingsPanel').classList.remove('open');
