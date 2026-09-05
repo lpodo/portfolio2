@@ -397,7 +397,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.67';
+var APP_VERSION = 'v1.5.68';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -5897,6 +5897,34 @@ window._expandedSetId = null; // set whose contents are previewed read-only
 // by index to avoid escaping broker names through inline onclick handlers.
 var _aggOverlayState = null;
 
+// Acting on one lot from the ×N modal. startEdit and removePosition both work
+// against the current portfolio's positions, but in All Positions the lot may
+// live in another one — so switch there first, or the id resolves to nothing.
+function portfolioIdOfPosition(id) {
+  var found = null;
+  Object.keys(portfolios).some(function(pid) {
+    if ((portfolios[pid].positions || []).some(function(p) { return p.id === id; })) { found = pid; return true; }
+    return false;
+  });
+  return found;
+}
+function editLotFromAggDetail(id) {
+  var pid = portfolioIdOfPosition(id);
+  if (!pid) return;
+  closeAggDetailModal();
+  // The edit form is a row in the table underneath, so the portfolio has to be
+  // the open one for it to appear.
+  if (pid !== currentPortfolioId) switchPortfolio(pid);
+  startEdit(id);
+}
+function deleteLotFromAggDetail(id) {
+  var pid = portfolioIdOfPosition(id);
+  if (!pid) return;
+  closeAggDetailModal();
+  if (pid !== currentPortfolioId) switchPortfolio(pid);
+  removePosition(id);
+}
+
 function showAggDetail(ticker, soldFlag, curCode) {
   var isSold = soldFlag === 1 || soldFlag === '1' || soldFlag === true;
   var aggIsAll = isAllPositions();
@@ -5976,6 +6004,12 @@ function showAggDetail(ticker, soldFlag, curCode) {
     } else {
       dateCell = '<td style="padding:6px 8px;text-align:right;white-space:nowrap">&mdash;</td>';
     }
+    // Per-lot actions. An aggregated row has no pencil of its own, so this is
+    // the only place a single lot's broker or date can be corrected.
+    var actions = '<td style="padding:6px 4px;white-space:nowrap;text-align:right">'
+      + '<button class="btn-icon" onclick="editLotFromAggDetail(' + p.id + ')" title="Edit" style="font-size:12px;padding:0 3px">&#9998;</button>'
+      + '<button class="btn-icon" onclick="deleteLotFromAggDetail(' + p.id + ')" title="Delete" style="font-size:12px;padding:0 3px;color:var(--red)">&#10005;</button>'
+      + '</td>';
     return '<tr style="' + (isSold ? 'opacity:0.75' : '') + '">'
       + '<td style="' + tdStyleL + '">' + qty + '</td>'
       + '<td style="' + tdStyle + '">' + currSym + f2(entry) + '</td>'
@@ -5983,6 +6017,7 @@ function showAggDetail(ticker, soldFlag, curCode) {
       + '<td class="' + cls(pnlAbs) + '" style="' + tdStyle + '">' + fSign(pnlAbs) + '</td>'
       + '<td class="' + cls(pnlPct) + '" style="' + tdStyle + '">' + fPct(pnlPct) + '</td>'
       + dateCell
+      + actions
       + '</tr>';
   }
   function subtotalRow(qty, entry, current) {
@@ -5994,6 +6029,7 @@ function showAggDetail(ticker, soldFlag, curCode) {
       + '<td style="' + tdStyle + '">' + currSym + f2(current) + '</td>'
       + '<td class="' + cls(pnlAbs) + '" style="' + tdStyle + '">' + fSign(pnlAbs) + '</td>'
       + '<td class="' + cls(pnlPct) + '" style="' + tdStyle + '">' + fPct(pnlPct) + '</td>'
+      + '<td></td>'
       + '<td></td>'
       + '</tr>';
   }
@@ -6025,6 +6061,7 @@ function showAggDetail(ticker, soldFlag, curCode) {
       + '<th style="' + headStyle + ';text-align:right">P&amp;L</th>'
       + '<th style="' + headStyle + ';text-align:right">%</th>'
       + '<th style="' + headStyle + ';text-align:right">BUY DATE</th>'
+      + '<th style="' + headStyle + '"></th>'
       + '</tr></thead>'
       + '<tbody>' + bd.group.map(positionRow).join('') + '</tbody>'
       + (bd.group.length > 1 ? '<tfoot>' + subtotalRow(bd.qty, bd.avgEntry, bd.current) + '</tfoot>' : '')
