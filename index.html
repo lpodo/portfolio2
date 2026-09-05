@@ -397,7 +397,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.70';
+var APP_VERSION = 'v1.5.71';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -6050,9 +6050,9 @@ function showAggDetail(ticker, soldFlag, curCode) {
     // Not in All Positions: that context hides every per-lot action by design,
     // and this modal shouldn't be a back door into editing.
     var actions = aggIsAll ? '<td></td>'
-      : '<td style="padding:4px 2px;white-space:nowrap;text-align:right">'
-        + '<button class="btn-icon" onclick="editLotFromAggDetail(' + p.id + ')" title="Edit" style="font-size:13px;padding:8px 7px">&#9998;</button>'
-        + '<button class="btn-icon" onclick="deleteLotFromAggDetail(' + p.id + ')" title="Delete" style="font-size:13px;padding:8px 7px;margin-left:6px;color:var(--red)">&#10005;</button>'
+      : '<td style="padding:6px 8px;white-space:nowrap;text-align:right;line-height:1">'
+        + '<button class="btn-icon" onclick="editLotFromAggDetail(' + p.id + ')" title="Edit" style="font-size:13px;padding:8px 7px;margin:-8px 0">&#9998;</button>'
+        + '<button class="btn-icon" onclick="deleteLotFromAggDetail(' + p.id + ')" title="Delete" style="font-size:13px;padding:8px 7px;margin:-8px 0 -8px 6px;color:var(--red)">&#10005;</button>'
         + '</td>';
     return '<tr style="' + (isSold ? 'opacity:0.75' : '') + '">'
       + '<td style="' + tdStyleL + '">' + qty + '</td>'
