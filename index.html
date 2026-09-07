@@ -57,6 +57,7 @@
     </div>
   </div>
 
+  <datalist id="knownTickers"></datalist>
   <div class="add-form" id="stockAddForm">
     <div class="form-label">+ Add position</div>
     <div class="form-row" style="margin-bottom:8px">
@@ -66,6 +67,7 @@
           <input type="search" id="fTicker" placeholder="NVDA, CJPU.L, CEBZ.DE..."
             inputmode="text" autocomplete="off" autocorrect="off"
             autocapitalize="characters" spellcheck="false"
+            list="knownTickers"
             style="flex:1;min-width:0"
             oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9.\-^=]/g,'');var i=document.getElementById('fIsin');if(i)i.value=''"
             onblur="tryAutofillIsinInAddForm()"
@@ -397,7 +399,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.71';
+var APP_VERSION = 'v1.5.72';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4357,6 +4359,64 @@ function tickerAttrsRowHtml(ticker) {
     + '</div>';
 }
 
+// Top up an existing holding. Everything that carries over is filled in, so
+// only the quantity is actually left to type — the ticker in particular, since
+// symbols like PHYS-U.TO are easy to mistype and tedious to enter.
+// Suggestions for the ticker field: every symbol already held anywhere. Helps
+// with a top-up in another portfolio and, more to the point, with symbols
+// nobody wants to type twice.
+function refreshKnownTickersList() {
+  var dl = document.getElementById('knownTickers');
+  if (!dl) return;
+  var seen = {};
+  Object.keys(portfolios).forEach(function(pid) {
+    (portfolios[pid].positions || []).forEach(function(pos) {
+      if (pos.ticker) seen[pos.ticker] = true;
+    });
+  });
+  dl.innerHTML = Object.keys(seen).sort().map(function(t) {
+    var name = getTickerAttr(t, 'shortName') || '';
+    return '<option value="' + t + '"' + (name ? ' label="' + name.replace(/"/g, '&quot;') + '"' : '') + '>';
+  }).join('');
+}
+
+function buyMoreOf(id) {
+  var pos = positions.find(function(p) { return p.id === id; });
+  if (!pos) return;
+
+  var t = document.getElementById('fTicker');
+  var q = document.getElementById('fQty');
+  var e = document.getElementById('fEntry');
+  var d = document.getElementById('fDate');
+  if (!t || !q || !e) return;
+
+  t.value = pos.ticker;
+  q.value = '';
+  // The price now is the natural starting point for a purchase today; the
+  // original entry price would be misleading.
+  var cur = getPositionCurrent(pos);
+  e.value = (cur !== null && cur !== undefined) ? cur : '';
+  // Today, not the original purchase date — this is a new lot.
+  if (d) d.value = todayLocalISO();
+
+  var curEl = document.getElementById('fCurrent');
+  if (curEl) curEl.value = '';
+
+  // Same broker as the lot being topped up, which is nearly always right.
+  var broInput = document.getElementById('addBroker');
+  var broTrigger = document.getElementById('dictTrigger_broAdd');
+  if (broInput && pos.broker) {
+    broInput.value = pos.broker;
+    if (broTrigger) broTrigger.textContent = pos.broker;
+  }
+
+  // The form sits above the table; bring it into view before focusing, or the
+  // keyboard opens over a field the user can't see.
+  var form = document.getElementById('stockAddForm');
+  if (form && form.scrollIntoView) form.scrollIntoView({ block: 'center' });
+  q.focus();
+}
+
 function buildExpandedInner(p) {
   // First two rows (broker/date/ISIN + CAT/REG/SEC) only appear for real
   // securities (EQUITY/ETF). For indices/futures/crypto/currencies these
@@ -4413,7 +4473,14 @@ function buildExpandedInner(p) {
     + '<button class="btn-icon" onclick="openNoteModal(&apos;' + p.ticker + '&apos;)" title="Edit note" style="font-size:12px;padding:0 3px">&#9998;</button>'
     + '</div>'
     + (p.sold ? '' :
-      '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+      // Buying more of something already held shouldn't mean retyping its
+      // ticker — PHYS-U.TO and the like are error-prone by hand. Placed above
+      // the alerts because it's the more consequential action, and in the
+      // expanded row because that's where the numbers you'd check first are.
+      '<div style="margin-top:8px">'
+      + '<button class="btn" onclick="buyMoreOf(' + p.id + ')" style="padding:5px 16px;font-size:10px;letter-spacing:2px;color:var(--green);border-color:var(--green)">BUY</button>'
+      + '</div>'
+      + '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
       + '<span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
       + (function() {
           var alerts = getTickerAlerts(p.ticker);
@@ -4490,6 +4557,9 @@ function buildExpandedInnerAgg(p, group) {
     + '<button class="btn-icon" onclick="openNoteModal(&apos;' + p.ticker + '&apos;)" title="Edit note" style="font-size:12px;padding:0 3px">&#9998;</button>'
     + '</div>';
   if (!p.sold) {
+    html += '<div style="margin-top:8px">'
+      + '<button class="btn" onclick="buyMoreOf(' + p.id + ')" style="padding:5px 16px;font-size:10px;letter-spacing:2px;color:var(--green);border-color:var(--green)">BUY</button>'
+      + '</div>';
     var allAlerts = getTickerAlerts(p.ticker);
     html += '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
       + '<span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
@@ -8759,6 +8829,7 @@ function render() {
   updateViewMenuBtn();
   updateFilterBtn();
   var stockForm = document.getElementById('stockAddForm');
+  refreshKnownTickersList();
   var formHiddenHere = ['bonds','bond-summary','cash','archive-summary'].indexOf(viewMode) !== -1;
   if (stockForm) stockForm.style.display = (isCrossPortfolioContext() || formHiddenHere) ? 'none' : '';
   // A set has nothing to add a position to, so its edit bar takes the same slot
