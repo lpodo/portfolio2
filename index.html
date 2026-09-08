@@ -399,7 +399,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.72';
+var APP_VERSION = 'v1.5.73';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4402,6 +4402,11 @@ function buyMoreOf(id) {
   var curEl = document.getElementById('fCurrent');
   if (curEl) curEl.value = '';
 
+  // Same as typing the ticker by hand: the ISIN is known, so fill it in.
+  var isinEl = document.getElementById('fIsin');
+  if (isinEl) isinEl.value = '';
+  tryAutofillIsinInAddForm();
+
   // Same broker as the lot being topped up, which is nearly always right.
   var broInput = document.getElementById('addBroker');
   var broTrigger = document.getElementById('dictTrigger_broAdd');
@@ -4415,6 +4420,17 @@ function buyMoreOf(id) {
   var form = document.getElementById('stockAddForm');
   if (form && form.scrollIntoView) form.scrollIntoView({ block: 'center' });
   q.focus();
+}
+
+// Buying more of something already held shouldn't mean retyping its ticker.
+// Sits between the factual rows above and the judgement calls below, and is
+// offered for sold lots too — re-entering a closed position is ordinary — but
+// not in an archive, where nothing is bought any more.
+function buyButtonHtml(p) {
+  if (currentPortfolio() && currentPortfolio().archive) return '';
+  return '<div style="margin-top:8px">'
+    + '<button class="btn" onclick="buyMoreOf(' + p.id + ')" style="padding:5px 16px;font-size:10px;letter-spacing:2px;color:var(--green);border-color:var(--green)">BUY</button>'
+    + '</div>';
 }
 
 function buildExpandedInner(p) {
@@ -4460,11 +4476,12 @@ function buildExpandedInner(p) {
   // truncated. Note, alerts and flag are omitted: they're about deciding what
   // to do next, and this position is closed.
   if (p.sold) {
-    return nameHtml + row1Html + row2Html;
+    return nameHtml + row1Html + buyButtonHtml(p) + row2Html;
   }
 
   return nameHtml
     + row1Html
+    + buyButtonHtml(p)
     + row2Html
     + tickerFlagRowHtml(p.ticker)
     + '<div style="margin-top:6px;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
@@ -4473,14 +4490,7 @@ function buildExpandedInner(p) {
     + '<button class="btn-icon" onclick="openNoteModal(&apos;' + p.ticker + '&apos;)" title="Edit note" style="font-size:12px;padding:0 3px">&#9998;</button>'
     + '</div>'
     + (p.sold ? '' :
-      // Buying more of something already held shouldn't mean retyping its
-      // ticker — PHYS-U.TO and the like are error-prone by hand. Placed above
-      // the alerts because it's the more consequential action, and in the
-      // expanded row because that's where the numbers you'd check first are.
-      '<div style="margin-top:8px">'
-      + '<button class="btn" onclick="buyMoreOf(' + p.id + ')" style="padding:5px 16px;font-size:10px;letter-spacing:2px;color:var(--green);border-color:var(--green)">BUY</button>'
-      + '</div>'
-      + '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+      '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
       + '<span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
       + (function() {
           var alerts = getTickerAlerts(p.ticker);
@@ -4545,6 +4555,7 @@ function buildExpandedInnerAgg(p, group) {
   }
   html += '<div style="display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;font-size:10px;color:var(--dim);letter-spacing:1px">' + aggRow1Parts + '</div>';
   if (isSecurity) {
+    html += buyButtonHtml(p);
     html += tickerAttrsRowHtml(p.ticker);
   }
   // Realized aggregates stop here, matching a single realized row: flag, note,
@@ -4557,9 +4568,6 @@ function buildExpandedInnerAgg(p, group) {
     + '<button class="btn-icon" onclick="openNoteModal(&apos;' + p.ticker + '&apos;)" title="Edit note" style="font-size:12px;padding:0 3px">&#9998;</button>'
     + '</div>';
   if (!p.sold) {
-    html += '<div style="margin-top:8px">'
-      + '<button class="btn" onclick="buyMoreOf(' + p.id + ')" style="padding:5px 16px;font-size:10px;letter-spacing:2px;color:var(--green);border-color:var(--green)">BUY</button>'
-      + '</div>';
     var allAlerts = getTickerAlerts(p.ticker);
     html += '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
       + '<span style="font-size:10px;color:var(--dim);letter-spacing:1px;opacity:0.6">ALERTS</span>'
