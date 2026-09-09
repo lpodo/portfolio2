@@ -399,7 +399,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.75';
+var APP_VERSION = 'v1.5.76';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4429,7 +4429,9 @@ function buyMoreOf(id) {
 function buyMoreLinkHtml(p) {
   var pf = currentPortfolio();
   if (!pf || pf.archive) return '';
-  return '<span onclick="buyMoreOf(' + p.id + ')" style="white-space:nowrap;cursor:pointer;color:var(--green);letter-spacing:1px">BUY MORE</span>';
+  // Border matching the alert-add and MORE controls: in the text's own colour
+  // and sized to it, so it reads as an action without breaking the line.
+  return '<span onclick="buyMoreOf(' + p.id + ')" style="white-space:nowrap;cursor:pointer;color:var(--green);border:1px solid var(--green);padding:1px 5px;letter-spacing:1px">BUY MORE</span>';
 }
 
 function buildExpandedInner(p) {
