@@ -399,7 +399,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.74';
+var APP_VERSION = 'v1.5.75';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4422,22 +4422,14 @@ function buyMoreOf(id) {
   q.focus();
 }
 
-// Buying more of something already held shouldn't mean retyping its ticker.
-// Sits between the factual rows above and the judgement calls below. Offered
-// for sold lots too — re-entering a closed position is ordinary — but only
-// where a stock purchase makes sense: a watchlist holds nothing, an archive is
-// closed, and cash or bonds are entered through their own forms.
-function buyButtonHtml(p) {
+// Top-up action, inline in the purchase row rather than a framed button: it
+// was the only action among plain text, which is why no placement looked right.
+// Offered for sold lots too — re-entering a closed position is ordinary — but
+// not in an archive. Watchlists never reach here; their purchase row is hidden.
+function buyMoreLinkHtml(p) {
   var pf = currentPortfolio();
-  if (!pf || pf.archive || pf.watchlist) return '';
-  // A sold lot often has no instrument type left — quotes stop being fetched
-  // for it — so requiring one outright would hide the button exactly where
-  // buying back is most likely.
-  var t = getPositionInstrumentType(p);
-  if (!(t === 'EQUITY' || t === 'ETF' || (p.sold && !t))) return '';
-  return '<div style="margin-top:8px">'
-    + '<button class="btn" onclick="buyMoreOf(' + p.id + ')" style="padding:5px 16px;font-size:10px;letter-spacing:2px;color:var(--green);border-color:var(--green)">BUY</button>'
-    + '</div>';
+  if (!pf || pf.archive) return '';
+  return '<span onclick="buyMoreOf(' + p.id + ')" style="white-space:nowrap;cursor:pointer;color:var(--green);letter-spacing:1px">BUY MORE</span>';
 }
 
 function buildExpandedInner(p) {
@@ -4457,17 +4449,30 @@ function buildExpandedInner(p) {
   // fields, so the row keeps the same shape everywhere. EXCHANGE · TYPE are
   // appended in ALL cases — including non-securities, where this row previously
   // didn't render at all. The row scrolls horizontally rather than wrapping.
-  var exTypeHtml = '<span style="white-space:nowrap"><span style="opacity:0.6">EXCHANGE</span> <span style="color:var(--bright)">' + (getPositionExchange(p) || '—') + '</span></span>'
-    + '<span style="white-space:nowrap"><span style="opacity:0.6">TYPE</span> <span style="color:var(--bright)">' + (getPositionInstrumentType(p) || '—') + '</span></span>';
-  var row1Parts = '';
+  // What it is: shown for everything. ISIN only where it means something — an
+  // index or a future doesn't have one.
+  var identParts = '';
   if (isSecurity) {
-    row1Parts = '<span style="white-space:nowrap"><span style="opacity:0.6">BROKER</span> <span style="color:var(--bright)">' + (getPositionBrokerDisplay(p) || '—') + '</span></span>'
-      + '<span style="white-space:nowrap"><span style="opacity:0.6">BUY DATE</span> <span style="color:var(--bright)">' + (p.purchaseDate || '—') + '</span></span>'
-      + '<span style="white-space:nowrap"><span style="opacity:0.6">ISIN</span> <span style="color:var(--bright)">' + isinDisplay + '</span>'
+    identParts = '<span style="white-space:nowrap"><span style="opacity:0.6">ISIN</span> <span style="color:var(--bright)">' + isinDisplay + '</span>'
       + '<button class="btn-icon" onclick="openIsinModal(&apos;' + p.ticker + '&apos;)" title="Edit ISIN" style="font-size:11px;padding:0 3px">&#9998;</button></span>';
   }
-  row1Parts += exTypeHtml;
-  var row1Html = '<div style="display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;font-size:10px;color:var(--dim);letter-spacing:1px">' + row1Parts + '</div>';
+  identParts += '<span style="white-space:nowrap"><span style="opacity:0.6">EXCHANGE</span> <span style="color:var(--bright)">' + (getPositionExchange(p) || '\u2014') + '</span></span>'
+    + '<span style="white-space:nowrap"><span style="opacity:0.6">TYPE</span> <span style="color:var(--bright)">' + (getPositionInstrumentType(p) || '\u2014') + '</span></span>';
+
+  // How it was bought: hidden in a watchlist, where nothing was. Ends with the
+  // top-up action, so it reads as a continuation — bought here, then, buy more.
+  var pfHere = currentPortfolio();
+  var isWatchlistHere = !!(pfHere && pfHere.watchlist);
+  var purchaseParts = '';
+  if (isSecurity && !isWatchlistHere) {
+    purchaseParts = '<span style="white-space:nowrap"><span style="opacity:0.6">BROKER</span> <span style="color:var(--bright)">' + (getPositionBrokerDisplay(p) || '\u2014') + '</span></span>'
+      + '<span style="white-space:nowrap"><span style="opacity:0.6">BUY DATE</span> <span style="color:var(--bright)">' + (p.purchaseDate || '\u2014') + '</span></span>'
+      + buyMoreLinkHtml(p);
+  }
+
+  var rowStyle = 'display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;font-size:10px;color:var(--dim);letter-spacing:1px';
+  var row1Html = (purchaseParts ? '<div style="' + rowStyle + '">' + purchaseParts + '</div>' : '')
+    + '<div style="' + rowStyle + (purchaseParts ? ';margin-top:4px' : '') + '">' + identParts + '</div>';
   var row2Html = isSecurity ? tickerAttrsRowHtml(p.ticker) : '';
   // The company name is only a column in MARKET and WEIGHTS, so P&L gave no way
   // to see it without switching views. Showing it first in every expanded row
@@ -4483,12 +4488,11 @@ function buildExpandedInner(p) {
   // truncated. Note, alerts and flag are omitted: they're about deciding what
   // to do next, and this position is closed.
   if (p.sold) {
-    return nameHtml + row1Html + buyButtonHtml(p) + row2Html;
+    return nameHtml + row1Html + row2Html;
   }
 
   return nameHtml
     + row1Html
-    + buyButtonHtml(p)
     + row2Html
     + tickerFlagRowHtml(p.ticker)
     + '<div style="margin-top:6px;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
@@ -4544,25 +4548,33 @@ function buildExpandedInnerAgg(p, group) {
     : '<span style="color:var(--dim)">' + dateKeys.length + ' dates</span>';
   var isinRaw = getTickerIsin(p.ticker);
   var isinDisplay = isKnownIsin(isinRaw) ? isinRaw : '—';
-  var exTypeHtml = '<span style="white-space:nowrap"><span style="opacity:0.6">EXCHANGE</span> <span style="color:var(--bright)">' + (getPositionExchange(p) || '—') + '</span></span>'
-    + '<span style="white-space:nowrap"><span style="opacity:0.6">TYPE</span> <span style="color:var(--bright)">' + (getPositionInstrumentType(p) || '—') + '</span></span>';
-  var aggRow1Parts = '';
+  // Same split as a single position: how it was bought, then what it is.
+  var aggIdentParts = '';
   if (isSecurity) {
-    aggRow1Parts = '<span style="white-space:nowrap"><span style="opacity:0.6">BROKER</span> ' + brokerValueHtml + '</span>'
-      + '<span style="white-space:nowrap"><span style="opacity:0.6">BUY DATE</span> ' + dateValueHtml + '</span>'
-      + '<span style="white-space:nowrap"><span style="opacity:0.6">ISIN</span> <span style="color:var(--bright)">' + isinDisplay + '</span>'
+    aggIdentParts = '<span style="white-space:nowrap"><span style="opacity:0.6">ISIN</span> <span style="color:var(--bright)">' + isinDisplay + '</span>'
       + '<button class="btn-icon" onclick="openIsinModal(&apos;' + p.ticker + '&apos;)" title="Edit ISIN" style="font-size:11px;padding:0 3px">&#9998;</button></span>';
   }
-  aggRow1Parts += exTypeHtml;
+  aggIdentParts += '<span style="white-space:nowrap"><span style="opacity:0.6">EXCHANGE</span> <span style="color:var(--bright)">' + (getPositionExchange(p) || '\u2014') + '</span></span>'
+    + '<span style="white-space:nowrap"><span style="opacity:0.6">TYPE</span> <span style="color:var(--bright)">' + (getPositionInstrumentType(p) || '\u2014') + '</span></span>';
+
+  var aggPf = currentPortfolio();
+  var aggIsWatchlist = !!(aggPf && aggPf.watchlist);
+  var aggPurchaseParts = '';
+  if (isSecurity && !aggIsWatchlist) {
+    aggPurchaseParts = '<span style="white-space:nowrap"><span style="opacity:0.6">BROKER</span> ' + brokerValueHtml + '</span>'
+      + '<span style="white-space:nowrap"><span style="opacity:0.6">BUY DATE</span> ' + dateValueHtml + '</span>'
+      + buyMoreLinkHtml(p);
+  }
   var html = '';
   // Same as a single position: name first, so it's available in every view.
   var aggName = getPositionShortName(p);
   if (aggName) {
     html += '<div style="font-size:11px;color:var(--bright);letter-spacing:1px;margin-bottom:6px">' + aggName + '</div>';
   }
-  html += '<div style="display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;font-size:10px;color:var(--dim);letter-spacing:1px">' + aggRow1Parts + '</div>';
+  var aggRowStyle = 'display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;font-size:10px;color:var(--dim);letter-spacing:1px';
+  if (aggPurchaseParts) html += '<div style="' + aggRowStyle + '">' + aggPurchaseParts + '</div>';
+  html += '<div style="' + aggRowStyle + (aggPurchaseParts ? ';margin-top:4px' : '') + '">' + aggIdentParts + '</div>';
   if (isSecurity) {
-    html += buyButtonHtml(p);
     html += tickerAttrsRowHtml(p.ticker);
   }
   // Realized aggregates stop here, matching a single realized row: flag, note,
