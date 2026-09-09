@@ -399,7 +399,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.73';
+var APP_VERSION = 'v1.5.74';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4423,11 +4423,18 @@ function buyMoreOf(id) {
 }
 
 // Buying more of something already held shouldn't mean retyping its ticker.
-// Sits between the factual rows above and the judgement calls below, and is
-// offered for sold lots too — re-entering a closed position is ordinary — but
-// not in an archive, where nothing is bought any more.
+// Sits between the factual rows above and the judgement calls below. Offered
+// for sold lots too — re-entering a closed position is ordinary — but only
+// where a stock purchase makes sense: a watchlist holds nothing, an archive is
+// closed, and cash or bonds are entered through their own forms.
 function buyButtonHtml(p) {
-  if (currentPortfolio() && currentPortfolio().archive) return '';
+  var pf = currentPortfolio();
+  if (!pf || pf.archive || pf.watchlist) return '';
+  // A sold lot often has no instrument type left — quotes stop being fetched
+  // for it — so requiring one outright would hide the button exactly where
+  // buying back is most likely.
+  var t = getPositionInstrumentType(p);
+  if (!(t === 'EQUITY' || t === 'ETF' || (p.sold && !t))) return '';
   return '<div style="margin-top:8px">'
     + '<button class="btn" onclick="buyMoreOf(' + p.id + ')" style="padding:5px 16px;font-size:10px;letter-spacing:2px;color:var(--green);border-color:var(--green)">BUY</button>'
     + '</div>';
