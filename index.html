@@ -399,7 +399,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.79';
+var APP_VERSION = 'v1.5.80';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4115,7 +4115,7 @@ function tickerFlagRowHtml(ticker) {
     + '<div style="border-top:1px solid var(--border)"></div>'
     + '<div onclick="openFlagsModal()" style="padding:8px 12px;cursor:pointer;font-size:10px;letter-spacing:2px;color:var(--dim)">manage flags&hellip;</div>'
     + '</div>';
-  return '<div style="margin-top:6px;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
+  return '<div style="margin-top:6px;line-height:1.4;font-size:10px;color:var(--dim);letter-spacing:1px;display:flex;align-items:center;gap:6px">'
     + '<span style="opacity:0.6">FLAG</span>'
     + '<div style="position:relative">'
     + '<div onclick="toggleFlagMenu(&apos;' + ticker + '&apos;)" style="cursor:pointer;color:var(--bright);font-size:10px;letter-spacing:2px;padding:2px 0;display:flex;align-items:center;gap:6px;user-select:none">'
@@ -4352,7 +4352,7 @@ function tickerAttrsRowHtml(ticker) {
   function cell(field, label, dict) {
     return tickerAttrPickerHtml(ticker, field, label, dict);
   }
-  return '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--dim);letter-spacing:1px;margin-top:6px">'
+  return '<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;line-height:1.4;font-size:10px;color:var(--dim);letter-spacing:1px;margin-top:6px">'
     + cell('category', 'CAT', catDict)
     + cell('region', 'REG', regDict)
     + cell('sector', 'SEC', secDict)
@@ -4475,7 +4475,7 @@ function buildExpandedInner(p) {
       + buyMoreLinkHtml(p);
   }
 
-  var rowStyle = 'display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;align-items:center;font-size:10px;color:var(--dim);letter-spacing:1px';
+  var rowStyle = 'display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;align-items:center;line-height:1.4;font-size:10px;color:var(--dim);letter-spacing:1px';
   var row1Html = (purchaseParts ? '<div style="' + rowStyle + '">' + purchaseParts + '</div>' : '')
     + '<div style="' + rowStyle + (purchaseParts ? ';margin-top:6px' : '') + '">' + identParts + '</div>';
   var row2Html = isSecurity ? tickerAttrsRowHtml(p.ticker) : '';
@@ -4576,7 +4576,7 @@ function buildExpandedInnerAgg(p, group) {
   if (aggName) {
     html += '<div style="font-size:11px;color:var(--bright);letter-spacing:1px;margin-bottom:6px">' + aggName + '</div>';
   }
-  var aggRowStyle = 'display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;align-items:center;font-size:10px;color:var(--dim);letter-spacing:1px';
+  var aggRowStyle = 'display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;align-items:center;line-height:1.4;font-size:10px;color:var(--dim);letter-spacing:1px';
   if (aggPurchaseParts) html += '<div style="' + aggRowStyle + '">' + aggPurchaseParts + '</div>';
   html += '<div style="' + aggRowStyle + (aggPurchaseParts ? ';margin-top:6px' : '') + '">' + aggIdentParts + '</div>';
   if (isSecurity) {
