@@ -399,7 +399,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.77';
+var APP_VERSION = 'v1.5.78';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4431,8 +4431,10 @@ function buyMoreLinkHtml(p) {
   if (!pf || pf.archive) return '';
   // Padding taken from the SELL button in the ×N modal, where the balance
   // between a border and small text was already worked out: tight padding makes
-  // the frame read as a badge rather than a control.
-  return '<span onclick="buyMoreOf(' + p.id + ')" style="white-space:nowrap;cursor:pointer;color:var(--green);border:1px solid var(--green);padding:5px 14px;margin:-5px 0;font-size:9px;letter-spacing:1px">BUY MORE</span>';
+  // the frame read as a badge rather than a control. The row is left to grow —
+  // pulling the button back with a negative margin clipped its top and bottom
+  // edges against the row's overflow, leaving a frame open at both ends.
+  return '<span onclick="buyMoreOf(' + p.id + ')" style="white-space:nowrap;cursor:pointer;color:var(--green);border:1px solid var(--green);padding:5px 14px;font-size:9px;letter-spacing:1px">BUY MORE</span>';
 }
 
 function buildExpandedInner(p) {
@@ -4473,7 +4475,7 @@ function buildExpandedInner(p) {
       + buyMoreLinkHtml(p);
   }
 
-  var rowStyle = 'display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;font-size:10px;color:var(--dim);letter-spacing:1px';
+  var rowStyle = 'display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;align-items:center;font-size:10px;color:var(--dim);letter-spacing:1px';
   var row1Html = (purchaseParts ? '<div style="' + rowStyle + '">' + purchaseParts + '</div>' : '')
     + '<div style="' + rowStyle + (purchaseParts ? ';margin-top:4px' : '') + '">' + identParts + '</div>';
   var row2Html = isSecurity ? tickerAttrsRowHtml(p.ticker) : '';
@@ -4574,7 +4576,7 @@ function buildExpandedInnerAgg(p, group) {
   if (aggName) {
     html += '<div style="font-size:11px;color:var(--bright);letter-spacing:1px;margin-bottom:6px">' + aggName + '</div>';
   }
-  var aggRowStyle = 'display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;font-size:10px;color:var(--dim);letter-spacing:1px';
+  var aggRowStyle = 'display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;align-items:center;font-size:10px;color:var(--dim);letter-spacing:1px';
   if (aggPurchaseParts) html += '<div style="' + aggRowStyle + '">' + aggPurchaseParts + '</div>';
   html += '<div style="' + aggRowStyle + (aggPurchaseParts ? ';margin-top:4px' : '') + '">' + aggIdentParts + '</div>';
   if (isSecurity) {
