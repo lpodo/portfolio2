@@ -399,7 +399,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.80';
+var APP_VERSION = 'v1.5.81';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -10502,6 +10502,11 @@ function render() {
       return;
     }
     // Deduplicate by ticker for market view
+    function marketRowRank(p) {
+      if (!p.sold && p.qty > 0) return 0;
+      if (p.sold) return 1;
+      return 2;
+    }
     var marketPositions = (function() {
       var seen = {};
       var result = [];
@@ -10512,6 +10517,9 @@ function render() {
         } else {
           seen[p.ticker].group.push(p);
           if (!p.sold && p.qty > 0) seen[p.ticker].hasActive = true;
+          // Rank: held > sold > watch-only. Taking whichever lot came first
+          // meant a ticker still held could be represented by a closed lot.
+          if (marketRowRank(p) < marketRowRank(seen[p.ticker].pos)) seen[p.ticker].pos = p;
         }
       });
       return result.map(function(t) { return seen[t]; });
@@ -10525,7 +10533,9 @@ function render() {
       var mktExpandedRow = isExpanded
         ? '<tr><td colspan="7" style="padding:4px 8px 8px;background:var(--bg2)">' + (entry.group.length > 1 ? buildExpandedInnerAgg(p, entry.group) : buildExpandedInner(p)) + '</td></tr>'
         : '';
-      var pcur = getPositionCurrent(p);
+      // The ticker's live price, not the position's — a sold lot would otherwise
+      // report its exit price, which says nothing about the market now.
+      var pcur = getTickerMeta(p.ticker, 'current');
       if (pcur == null) {
         marketRows += '<tr>'
           + '<td style="text-align:left">' + mktTickerCell + '</td>'
@@ -10540,9 +10550,7 @@ function render() {
         return;
       }
       var regPrice;
-      if (p.sold) {
-        regPrice = pcur;
-      } else if (HIST_MODES.indexOf(closeMode) !== -1) {
+      if (HIST_MODES.indexOf(closeMode) !== -1) {
         regPrice = getHistoricalClose(p.ticker, closeMode);
       } else {
         regPrice = closeMode === 'prev' ? (getPositionPreviousClose(p) || getPositionRegularMarketPrice(p) || pcur) : (getPositionRegularMarketPrice(p) || pcur);
