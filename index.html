@@ -399,7 +399,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.83';
+var APP_VERSION = 'v1.5.85';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -453,30 +453,45 @@ var tickerData = {};
 // If all fields end up empty, the whole ticker entry is removed.
 // Idempotent — safely callable for any ticker.
 function pruneTickerData(ticker) {
-  // Runs when the ticker has EITHER a tickerData entry or alerts: alerts now
-  // live in their own store, so a ticker can have alerts with no tickerData
-  // left, and those still need pruning.
+  // Runs when the ticker has EITHER a tickerData entry or alerts: alerts live
+  // in their own store, so a ticker can have alerts with no tickerData left.
   if (!ticker || (!tickerData[ticker] && !alertStore[ticker])) return;
-  var hasLiveOrWL = false;
-  var hasAnywhere = false;
+
+  // The dividing line is "does this ticker still live anywhere outside an
+  // archive". Selling out of a position doesn't cross it: the ticker is still
+  // being worked with, and its flag, note and alerts stay useful — you may buy
+  // back. Once only archived copies remain, none of that applies.
+  var liveSomewhere = false;
+  var existsAnywhere = false;
   Object.keys(portfolios).forEach(function(pid) {
     var port = portfolios[pid];
     (port.positions || []).forEach(function(pos) {
       if (pos.ticker !== ticker) return;
-      hasAnywhere = true;
-      if (port.archive) return;
-      if (port.watchlist) { hasLiveOrWL = true; return; }
-      if (!pos.sold) hasLiveOrWL = true;
+      existsAnywhere = true;
+      if (!port.archive) liveSomewhere = true;
     });
   });
-  if (!hasLiveOrWL && alertStore[ticker]) { delete alertStore[ticker]; saveAlertsLS(); }
-  if (!tickerData[ticker]) return;
-  if (!hasAnywhere) {
+
+  if (!liveSomewhere) {
+    // Flag, note and alerts say what you intend to do next; in an archive
+    // there's nothing left to decide, so they go.
+    if (alertStore[ticker]) { delete alertStore[ticker]; saveAlertsLS(); }
+    if (tickerData[ticker]) {
+      delete tickerData[ticker].flag;
+      delete tickerData[ticker].note;
+    }
+  }
+  // Category, region, sector and ISIN describe the instrument rather than any
+  // plan for it, and archived positions are still analysed by them — so they
+  // survive archiving and only go when the ticker is gone altogether.
+  if (!existsAnywhere && tickerData[ticker]) {
     delete tickerData[ticker].isin;
     delete tickerData[ticker].category;
     delete tickerData[ticker].region;
     delete tickerData[ticker].sector;
   }
+
+  if (!tickerData[ticker]) return;
   if (!Object.keys(tickerData[ticker]).length) delete tickerData[ticker];
   saveTickerDataLS();
 }
@@ -912,7 +927,13 @@ function archivePortfolio(id) {
   if (!allSold) { alert('Can only move to Realized when all positions are sold.'); return; }
   if (!confirm('Move portfolio "' + p.name + '" to Realized?')) return;
   portfolios[id].archive = true;
+  // Tickers that now live only in archives lose their annotations — this is the
+  // moment that boundary is crossed, so prune here rather than waiting for some
+  // later edit to notice.
+  var touched = {};
+  (p.positions || []).forEach(function(pos) { if (pos.ticker) touched[pos.ticker] = true; });
   savePortfolios();
+  Object.keys(touched).forEach(pruneTickerData);
   save();
   // Switch to first active portfolio
   var activeIds = Object.keys(portfolios).filter(function(pid) { return !portfolios[pid].archive && !portfolios[pid].watchlist; });
@@ -1597,6 +1618,11 @@ function moveToArchive(archivePid) {
   });
   positions = positions.filter(function(p) { return archiveMenuPosIds.indexOf(p.id) === -1; });
   archiveMenuPosIds = null;
+  // These tickers may now exist only in archives, which is when their
+  // annotations stop applying.
+  var movedTickers = {};
+  toMove.forEach(function(pos) { if (pos.ticker) movedTickers[pos.ticker] = true; });
+  Object.keys(movedTickers).forEach(pruneTickerData);
   save();
   render();
 }
