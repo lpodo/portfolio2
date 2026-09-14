@@ -399,7 +399,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.86';
+var APP_VERSION = 'v1.5.87';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -7014,6 +7014,15 @@ function setMoversLimit(n) {
 // deduplicated by ticker, sortable via marketSort). With opts.alertsOnly,
 // becomes the cross-portfolio ALERTS view — strict subset filtered to
 // positions with at least one alert set.
+// How well a lot represents its ticker in a MARKET row: a held lot describes
+// the holding best, a sold one next, a watch-only entry last. Shared by the
+// single-portfolio and cross-portfolio views so both rank alike.
+function marketRowRank(p) {
+  if (!p.sold && p.qty > 0) return 0;
+  if (p.sold) return 1;
+  return 2;
+}
+
 function buildMoversView(area, opts) {
   opts = opts || {};
   var bmvAlertsOnly = !!opts.alertsOnly;
@@ -7032,9 +7041,16 @@ function buildMoversView(area, opts) {
     // which is exactly how a watchlist ticker added to a set becomes visible.
     var bmvPosns = bmvDoFilter ? filterPositions(ctxPortfolioPositions(pid)) : ctxPortfolioPositions(pid);
     bmvPosns.forEach(function(pos) {
-      if (pos.sold) return;
       if (bmvAlertsOnly && !getTickerAlerts(pos.ticker).length) return;
-      if (!seen[pos.ticker]) { seen[pos.ticker] = true; allPos.push(pos); }
+      // Held > sold > watch-only: the row should describe the holding by its
+      // most active lot, whichever order they happen to arrive in.
+      if (!seen[pos.ticker]) {
+        seen[pos.ticker] = pos;
+        allPos.push(pos);
+      } else if (marketRowRank(pos) < marketRowRank(seen[pos.ticker])) {
+        allPos[allPos.indexOf(seen[pos.ticker])] = pos;
+        seen[pos.ticker] = pos;
+      }
       allPosFull.push(pos);
       var pc = getPositionCurrencyCode(pos);
       if (pc !== 'USD' && bmvNonUSD.indexOf(pc) === -1) bmvNonUSD.push(pc);
@@ -7049,7 +7065,9 @@ function buildMoversView(area, opts) {
   // Compute delta% for each using closeMode/currentMode
   var withDelta = allPos.map(function(p) {
     var close = getCloseForMode(p);
-    var cur = currentMode === 'reg' ? (getPositionRegularMarketPrice(p) || null) : (getPositionCurrent(p) || null);
+    // The ticker's live price, not the position's: a sold lot would otherwise
+    // report its exit price, and this view is about the market.
+    var cur = currentMode === 'reg' ? (getPositionRegularMarketPrice(p) || null) : (getTickerMeta(p.ticker, 'current') || null);
     var delta = (close && cur) ? (cur - close) / close * 100 : null;
     return { pos: p, close: close, cur: cur, delta: delta };
   }).filter(function(x) { return x.delta !== null; });
@@ -10534,11 +10552,6 @@ function render() {
       return;
     }
     // Deduplicate by ticker for market view
-    function marketRowRank(p) {
-      if (!p.sold && p.qty > 0) return 0;
-      if (p.sold) return 1;
-      return 2;
-    }
     var marketPositions = (function() {
       var seen = {};
       var result = [];
