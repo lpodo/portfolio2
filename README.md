@@ -131,7 +131,7 @@ Portfolios in the **REALIZED** tab hold closed positions and show their actual r
 - Add position: ticker + qty (0 allowed) + entry price + current price (optional) + purchase date (defaults to today) + broker (current default pre-selected, see [Brokers](#brokers)) + **ISIN** (optional, 12 alphanumeric chars, uppercase-only, `US0378331005` format).
 - Adding a position validates the ticker against Yahoo Finance — unknown tickers are rejected.
 - Editing the ticker in the Add form clears any typed ISIN — a different ticker implies a different ISIN.
-- Inline edit (✎) and delete (✕). Editing exposes the same set of fields plus the classification dropdowns (CAT / REG / SEC).
+- Inline edit (✎) and delete (✕). The edit form covers the lot only — qty, prices, purchase date, broker. Everything describing the security itself is edited from the [expanded row](#expanded-row) instead.
 
 **qty=0** is allowed — used for watchlist candidates. P&L $ shows `—`, P&L % is calculated if entry > 0. Entry=0 is allowed only when qty=0 (pure price tracking). Excluded from WEIGHTS and Analytics totals.
 
@@ -150,7 +150,7 @@ Any position in a regular portfolio can be marked as sold via the **SELL** butto
 - **Partial sell**: if quantity < position qty, the position is split into two records — the sold portion (marked `sold` with sell price) and the remainder (active, original entry price).
 - The position is marked `sold` with the sell price locked as `current`.
 - Sold positions are displayed in *italic* with reduced opacity and a ⊘ icon instead of market state.
-- Sold positions are excluded from Refresh — their price is frozen at the sell price.
+- A sold lot's own figures are frozen at the sell price, but its ticker is still quoted on Refresh, so MARKET keeps showing what the instrument is doing now.
 - Sold positions are included in portfolio totals and weights.
 - The sell price can be corrected via the edit (✎) button.
 - Sorting by ticker: sold positions appear first among same-ticker entries.
@@ -163,13 +163,11 @@ The ⇨ button moves any position to another active portfolio, preserving all fi
 
 ### Brokers
 
-Each position can be tagged with a **broker** — useful when the same ticker is held at multiple brokerages and needs to be tracked separately. Brokers are managed as a dictionary (Settings → DICTIONARIES → BROKERS); set on a position via the dropdown in the Add or ✎ Edit form.
+Each position can be tagged with a **broker** — useful when the same ticker is held at multiple brokerages and needs to be tracked separately. Set on a position via the dropdown in the Add or ✎ Edit form; the list of brokers is a [dictionary](#dictionaries) like any other.
 
-**Default broker:** one entry in the dictionary is marked as default. To set the default, open Settings → BROKERS and click a broker name (a small `(default)` tag appears next to it). When a position has no explicit broker set, `getPositionBroker(p)` substitutes the current default at read time — so changing the default reassigns every still-default position retroactively. The first broker added to an empty dictionary auto-becomes the default.
+**Default broker:** one entry in the dictionary is marked as default, via the ● toggle in the brokers [dictionary modal](#dictionaries). When a position has no explicit broker set, `getPositionBroker(p)` substitutes the current default at read time — so changing the default reassigns every still-default position retroactively. The first broker added to an empty dictionary auto-becomes the default.
 
 **Default fallback:** if the stored default broker is later removed from the dictionary, positions referring to it fall back to the first remaining entry alphabetically. If the dictionary is empty (no brokers ever defined), positions without a `broker` field render under the literal label `default` in places that show one (e.g. aggregation subgroups).
-
-**Deletion guard:** a broker cannot be removed from the dictionary while any position still uses it explicitly — the delete attempt is rejected with a message listing the number of positions still referring to it. Reassign or delete those positions first.
 
 Brokers feed three downstream features:
 
@@ -241,7 +239,7 @@ Clicking the **×N** button opens a modal listing the individual positions makin
 
 - Subgroup header: `BROKER {name}` on the left; for active aggregations, a **SELL** button on the right.
 - Column headers: QTY · ENTRY · CURRENT (or SOLD for sold aggregations) · P&L · % · BUY DATE.
-- Position rows sorted by purchase date ascending (FIFO), then by id as tiebreaker.
+- Position rows sorted by purchase date ascending (FIFO), then by id as tiebreaker. Each row carries ✎ and ✕ for editing or deleting that individual lot without leaving the modal.
 - A subtotal row appears only if the subgroup has more than one position; with a single position the subtotal is suppressed as redundant.
 
 Positions without a `broker` field land in the subgroup of the current default broker. If no brokers are defined at all, every position appears under the literal label `default`.
@@ -304,7 +302,7 @@ A **global set** is a named group of tickers spanning every portfolio — "the A
 
 **In the switcher.** The **＋** button on the ALL POSITIONS row opens set management (create, rename, edit membership, delete, pin); the ticker list there has a filter box, and anything already ticked stays ticked while hidden, so a long set can be assembled in several passes. A **pinned** set is listed directly beneath ALL POSITIONS in the same block, with its own count and its own pin / ✎ / ✕ controls — so the block reads as "the whole union, then the slices of it you use often". Both live in the STOCKS tab; the realized ALL POSITIONS has no sets.
 
-An open set is editable in place: each row's last column carries a grey ✕ that drops that ticker from the set (the position itself is untouched, so no confirmation), and a bar under the table shows the set's name with a ✎ opening its edit form directly.
+An open set is editable in place: each row's last column carries a grey ✕ that drops that ticker from the set (the position itself is untouched, so no confirmation), and a bar under the table shows the set's name with a ✎ opening its edit form directly and an export of what's on screen.
 
 Sets are also used in two other places:
 
@@ -479,16 +477,20 @@ Row order is stable across subview switches — groups are sorted by base value 
 
 Four **classification** attributes describe the security itself rather than any specific holding: **category**, **region**, **sector**, and **ISIN**. They live on the ticker (in the [Ticker data registry](#ticker-data-registry)) — one value per ticker, shared by every position of that ticker across every portfolio.
 
-- **CATEGORY / REGION / SECTOR** — must be chosen from dictionaries (Settings → DICTIONARIES). Free text is not allowed; this guarantees exact consistency across portfolios so Analytics grouping works.
+- **CATEGORY / REGION / SECTOR** — must be chosen from [dictionaries](#dictionaries). Free text is not allowed; this guarantees exact consistency across portfolios so Analytics grouping works.
 - **ISIN** — free text, 12-character ISO 6166 code. Uppercase-only, alphanumeric.
 
-These attributes are shown and edited only for real securities (`EQUITY` / `ETF`) — for indices, currencies, futures, crypto, etc. the fields are hidden entirely in both the expanded row and the edit form, since they have no meaningful company-level classification.
+These attributes are shown and edited only for real securities (`EQUITY` / `ETF`) — for indices, currencies, futures and the like the fields are hidden entirely, since they have no meaningful company-level classification.
 
-**Setting values:** open the ✎ edit form for any position. Each dictionary-backed field shows a custom dropdown — tap/click to open the list. Select a value, or choose **+ new...** to add a new value inline: a text input appears with ✓ (confirm) and ✕ (cancel) buttons. Confirming adds the value to the dictionary and selects it. Saving updates the ticker — so every other position of the same ticker sees the change immediately.
+**Setting values:** each field is a dropdown in the [expanded row](#expanded-row). Pick a value, or choose **+ new…** to add one inline; the dropdown also ends with **manage…**, opening that dictionary's [management modal](#dictionaries). The change applies to the ticker, so every position of it sees the new value immediately.
 
 For ISIN, overwriting or clearing an existing value triggers a confirmation dialog. Setting an ISIN on an empty slot happens silently.
 
-**Dictionaries** (Settings → DICTIONARIES): five buttons — CATEGORIES, REGIONS, SECTORS, BROKERS, CASH CAT. Tap a button to expand the list of values for that dictionary. Each value has a ✕ button to delete it from the dictionary. Deleting a value from the dictionary does not remove it from existing tickers — except for BROKERS, where deletion is rejected while any position still references the broker (see [Brokers](#brokers)).
+#### Dictionaries
+
+Every dictionary — categories, regions, sectors, brokers, cash categories — is managed from the same modal, reached by **manage…** at the bottom of that field's dropdown wherever it's used. No separate Settings panel: a dictionary is edited where its values are chosen.
+
+The modal lists each value with a count of how many tickers (or positions, or cash entries) currently use it, and a field to add a new one. Deleting a value that's in use asks for confirmation naming the count, then clears it from everything holding it. The brokers dictionary additionally carries a ● toggle marking the default broker.
 
 Dictionaries are included in cloud sync and backup/restore. Grouping in Analytics normalizes whitespace (trims and collapses multiple spaces) but preserves original casing.
 
@@ -531,38 +533,40 @@ Tapping/clicking the **ticker name** in any market-style view toggles an expanda
 
 ### Position metadata
 
-The first row always ends with **EXCHANGE** and **TYPE**, shown for every position including non-securities. What precedes them depends on the instrument type:
+The expanded row opens with the company name, then a set of rows that varies with context — a security shows more than an index, a live portfolio more than an archive. It is also where everything ticker-level is edited, the position's own ✎ form being reserved for the lot.
 
-- **Real security (`EQUITY` / `ETF`)** — two rows. Unset fields show `—` rather than disappearing, so the row keeps the same shape everywhere:
-  ```
-  BROKER  ETrade   BUY DATE  2024-08-19   ISIN  US26884L1098   EXCHANGE  NMS   TYPE  EQUITY
-    CAT  AI & Semi    REG  US    SEC  Technology
-  ```
-- **Non-security** (`INDEX`, `CURRENCY`, `FUTURE`, `CRYPTO`, etc.) — only EXCHANGE and TYPE, no second row (no company-level classification):
-  ```
-  EXCHANGE  NYM   TYPE  FUTURE
-  ```
-
-The first row scrolls horizontally rather than wrapping when it gets long.
-
-Fields:
-
-- **BROKER** — the broker tagged on this position, or the current default broker if none is explicitly set (see [Brokers](#brokers)). If no brokers are defined at all, shows `default`.
-- **BUY DATE** — the position's `purchaseDate` (ISO `YYYY-MM-DD`), or `—` if not set.
-- **ISIN** — International Securities Identification Number for the ticker, or `—` if not known. Free-text; the frontend supports lookup via the worker's `/api/isin` endpoint but no free provider currently supplies it (see [Cloudflare Worker](#cloudflare-worker)), so users enter ISINs manually via the ✎ Edit form. Overwriting or clearing an existing ISIN triggers a confirmation dialog.
-- **CAT / REG / SEC** — classification fields, ticker-level (see [Ticker classification fields](#ticker-classification-fields)). Show `—` if empty.
-- **EXCHANGE** — exchange identifier from Yahoo (`exchangeName`, e.g. `NMS`, `NYQ`, `LSE`), or `—` if unknown.
-- **TYPE** — instrument type from Yahoo (`instrumentType`, e.g. `EQUITY`, `ETF`, `INDEX`, `CURRENCY`, `FUTURE`), or `—` if unknown.
-
-Below these, always two more rows:
+A held security in a live portfolio shows the lot's purchase details, the instrument's identity, its classification, and the annotations:
 
 ```
+NVIDIA Corporation
+BROKER  ETrade   BUY DATE  2024-08-19   + buy more
+ISIN  US67066G1040  ✎   EXCHANGE  NMS   TYPE  EQUITY
+CAT  AI & Semi ▾    REG  US ▾    SEC  Technology ▾
+FLAG  review ▾
 NOTE  Bought on dip after earnings  ✎
 ALERTS  > 920  ✕    [>] [price] [+]
 ```
 
-- **NOTE** — free-text annotation for the ticker (see [Note field](#note-field)). Click the ✎ button to open the note editor modal. This is the only place notes can be edited.
-- **ALERTS** — existing alerts with ✕ delete buttons, plus inline quick-add controls. This is the only place alerts can be managed. The row is hidden for sold positions.
+What drops out where:
+
+- **Non-securities** (`INDEX`, `CURRENCY`, `FUTURE`, …) keep only EXCHANGE and TYPE — an index has no ISIN, broker or sector.
+- **Watchlists** omit the purchase row: nothing was bought there.
+- **Realized portfolios** stop after the classification row. Flag, note and alerts are for positions still being decided about.
+- A **sold lot in a live portfolio** keeps everything — it's still a ticker you're working with.
+
+Fields:
+
+- **BROKER** — the broker tagged on this lot, or the current default if none is set (see [Brokers](#brokers)).
+- **BUY DATE** — the lot's `purchaseDate`, or `—` if not set.
+- **+ buy more** — opens the Add form pre-filled for a top-up: same ticker, broker and ISIN, today's date, and the current price as the entry, leaving only the quantity to type. The ticker field also offers every symbol already held as suggestions, which saves retyping things like `PHYS-U.TO`.
+- **ISIN** — identifier for the ticker, `—` if unknown; ✎ opens an editor. No free provider supplies ISINs (see [Cloudflare Worker](#cloudflare-worker)), so they're entered by hand. Overwriting or clearing an existing one asks for confirmation.
+- **CAT / REG / SEC** — [classification](#ticker-classification-fields) dropdowns, applying to the ticker everywhere it's held.
+- **EXCHANGE / TYPE** — from Yahoo (`exchangeName`, `instrumentType`), read-only.
+- **FLAG** — the ticker's [attention flag](#flags).
+- **NOTE** — the ticker's [note](#note-field); ✎ opens the editor.
+- **ALERTS** — existing [alerts](#price-alerts) with ✕ to delete, plus inline quick-add. Hidden for sold positions.
+
+Rows scroll horizontally rather than wrapping when they get long.
 
 ### Yahoo fundamentals & "More" overlay
 
@@ -747,6 +751,8 @@ MU,5,80.00,95.00,true
 
 The **↓ Export CSV** button in the Add form exports all non-sold positions of the current portfolio to a CSV file (`{name}_pl.csv`). Includes columns: `ticker`, `qty`, `entry`, `current`, `pnl`, `pnl_pct`, `category`, `region`, `sector`, `currency`. Useful for pasting into Excel or any spreadsheet tool.
 
+[ALL POSITIONS](#all-positions) and pinned [global sets](#global-sets) export the same way, from the bar under the table — the union rather than one portfolio, aggregated so a ticker held in several places is one line, with a `portfolio` column naming where it came from and a weight column giving its share of the whole.
+
 ## Backup & Restore
 
 From the Settings panel:
@@ -865,7 +871,7 @@ Market state (`REGULAR` / `PRE` / `POST` / `CLOSED`) is determined from `current
 - `/api/kv` — cloud storage proxy (GET to load, PUT to save). Requires the `X-KV-Key` header with the user's storage key. Only available when the Cloudflare KV backend is configured.
 - `/api/profile?ticker=AAPL` — sector/industry/country from Yahoo `assetProfile`. Returns nulls for ETFs and when Yahoo blocks the request.
 - `/api/quotesummary?ticker=AAPL&modules=financialData,defaultKeyStatistics,recommendationTrend,upgradeDowngradeHistory` — Yahoo Finance fundamentals via the `quoteSummary` API. Returns raw module data under `quoteSummary.result[0]`. Requires a Yahoo crumb token for auth; the worker fetches and caches the crumb in-memory automatically. If Yahoo returns 404 for a multi-module request (some ETFs lack certain modules), the worker falls back to per-module fetches and merges what succeeds. Used by the **Expanded Row** fundamentals lines and the **More** overlay.
-- `/api/isin?ticker=AAPL` — ISIN lookup. Currently a **stub**: always returns `{ isin: null }`. No free provider supplies ISIN data reliably (Yahoo doesn't return it, Business Insider scrapes are noisy, Twelve Data gates the field behind a paid add-on). The endpoint stays so the frontend contract is unchanged — users enter ISINs manually via the ✎ Edit form, and a real provider can be wired in later by editing only this handler. The frontend caches a negative result with the `UNRESOLVED` marker so it won't re-query (see [Ticker data registry](#ticker-data-registry)).
+- `/api/isin?ticker=AAPL` — ISIN lookup. Currently a **stub**: always returns `{ isin: null }`. No free provider supplies ISIN data reliably (Yahoo doesn't return it, Business Insider scrapes are noisy, Twelve Data gates the field behind a paid add-on). The endpoint stays so the frontend contract is unchanged — users enter ISINs manually from the expanded row, and a real provider can be wired in later by editing only this handler. The frontend caches a negative result with the `UNRESOLVED` marker so it won't re-query (see [Ticker data registry](#ticker-data-registry)).
 - `/api/hours?ticker=AAPL` — trading periods for the ticker's exchange (pre / regular / post start & end as Unix timestamps, plus `timezone` and `exchangeName`). Powers the trading-hours popover on the market-state icon. Fetched fresh per click, not cached.
 - `/api/alerts` — GET/PUT the user's server-side alert record: thresholds, check settings, and the last run's diagnostics. Stored in KV under `alerts:<key>` in plaintext (the scheduled job has to read it), separately from the main portfolio blob.
 - `/api/push/key` — returns the worker's VAPID public key, so it isn't embedded in the client.
