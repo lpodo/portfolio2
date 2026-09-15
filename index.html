@@ -399,7 +399,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.87';
+var APP_VERSION = 'v1.5.89';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -7017,6 +7017,20 @@ function setMoversLimit(n) {
 // How well a lot represents its ticker in a MARKET row: a held lot describes
 // the holding best, a sold one next, a watch-only entry last. Shared by the
 // single-portfolio and cross-portfolio views so both rank alike.
+// Whether a row should read as "not a live holding": sold, or watch-only.
+// Dimming is a way of telling rows apart, so it's off where they're all alike —
+// a watchlist holds nothing and an archive holds only closed positions, and
+// greying out every row there would just dim the whole list.
+// Shared so P&L and MARKET, per-portfolio and cross-portfolio, agree: each had
+// grown its own test, and the cross-portfolio ones missed sold lots entirely
+// because those keep their quantity.
+function isDimmedRow(p) {
+  if (!p) return false;
+  var pf = currentPortfolio();
+  if (pf && (pf.watchlist || pf.archive)) return false;
+  return !!(p.sold || p.qty === 0);
+}
+
 function marketRowRank(p) {
   if (!p.sold && p.qty > 0) return 0;
   if (p.sold) return 1;
@@ -7088,7 +7102,7 @@ function buildMoversView(area, opts) {
     var p = x.pos;
     var sym = getPositionCurrencySymbol(p);
     var cls = x.delta >= 0 ? 'pos' : 'neg';
-    var dimStyle = p.qty === 0 ? 'font-style:italic;opacity:0.5' : '';
+    var dimStyle = isDimmedRow(p) ? 'font-style:italic;opacity:0.5' : '';
     var isExpanded = expandedId === p.id;
     var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + getTickerFlagHtml(p.ticker) + p.ticker + getAlertDotsHtmlForPosition(p) + '</span>';
     return '<tr style="' + dimStyle + '">'
@@ -9000,7 +9014,7 @@ function render() {
     var rowsSingle = topSingle.map(function(x) {
       var p = x.pos; var sym = getPositionCurrencySymbol(p);
       var cls = x.delta >= 0 ? 'pos' : 'neg';
-      var dimStyle = p.qty === 0 ? 'font-style:italic;opacity:0.5' : '';
+      var dimStyle = isDimmedRow(p) ? 'font-style:italic;opacity:0.5' : '';
       var isExpanded = expandedId === p.id;
       var tickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + getTickerFlagHtml(p.ticker) + p.ticker + getAlertDotsHtmlForPosition(p) + '</span>';
       return '<tr style="' + dimStyle + '">'
@@ -9195,10 +9209,7 @@ function render() {
     var tickerCell = isEdit
       ? '<input class="edit-input" id="editTicker" type="text" value="' + p.ticker + '" readonly title="Ticker can\'t be changed — delete and re-add to use a different ticker" style="width:60px;text-transform:uppercase;opacity:0.6;cursor:not-allowed">'
       : '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + getTickerFlagHtml(p.ticker) + p.ticker + (isEdit ? '' : getAlertDotsHtmlForPosition(p)) + '</span>';
-    // In an archive every row is closed, so dimming them distinguishes nothing —
-    // All Positions realized already shows them plainly.
-    var inArchive = !!(currentPortfolio() && currentPortfolio().archive);
-    var soldStyle = (!inArchive && (p.sold || p.qty === 0)) ? 'font-style:italic;opacity:0.5' : '';
+    var soldStyle = isDimmedRow(p) ? 'font-style:italic;opacity:0.5' : '';
     rows += '<tr style="' + soldStyle + '">'
       + '<td style="white-space:nowrap">' + tickerCell + '</td>'
       + '<td>' + qtyCell + '</td>'
@@ -10572,7 +10583,6 @@ function render() {
     var marketRows = '';
     marketPositions.forEach(function(entry) {
       var p = entry.pos;
-      var allWatchlist = !entry.hasActive;
       var isExpanded = expandedId === p.id;
       var mktTickerCell = '<span style="cursor:pointer" onclick="toggleExpand(' + p.id + ')">' + getTickerFlagHtml(p.ticker) + p.ticker + getAlertDotsHtmlForPosition(p) + '</span>';
       var mktExpandedRow = isExpanded
@@ -10605,7 +10615,7 @@ function render() {
       // same question whether or not the lot is still held.
       var delta = regPrice !== null ? (mktCurrent - regPrice) / regPrice * 100 : null;
       var deltaClass = delta === null ? '' : (delta >= 0 ? 'pos' : 'neg');
-      var mktSoldStyle = (p.sold || p.qty === 0 || allWatchlist) ? 'font-style:italic;opacity:0.5' : '';
+      var mktSoldStyle = isDimmedRow(p) ? 'font-style:italic;opacity:0.5' : '';
       marketRows += '<tr style="' + mktSoldStyle + '">'
         + '<td style="text-align:left;white-space:nowrap">' + mktTickerCell + '</td>'
         + '<td style="text-align:right;padding:5px 4px">' + (regPrice !== null ? getPositionCurrencySymbol(p) + f2(regPrice) : '&mdash;') + '</td>'
