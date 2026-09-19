@@ -399,7 +399,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.92';
+var APP_VERSION = 'v1.5.93';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4458,14 +4458,24 @@ function calcLinkHtml(p) {
   // No frame of its own: the icon stands as tall as the BUY MORE box next to it
   // (9px text on 5px padding inside a 1px border ≈ 25px), so the two line up
   // without a second border competing with the first. Blue rather than green,
-  // matching MORE — both lead away from the row rather than acting on it — and
-  // a thinner stroke: 2.75 is drawn for a large icon and fills in at this size.
-  var svg = '<svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
-    + ' stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="display:block">'
-    + '<path d="M4 3m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z"/>'
-    + '<path d="M8 7m0 1a1 1 0 0 1 1 -1h6a1 1 0 0 1 1 1v1a1 1 0 0 1 -1 1h-6a1 1 0 0 1 -1 -1z"/>'
+  // matching MORE — both lead away from the row rather than acting on it.
+  //
+  // Solid body with the screen and keys knocked out of it, rather than an
+  // outline. The cut-outs are done with a mask so they're genuinely
+  // transparent: painting them in the row's colour would show as a seam
+  // wherever the icon sat on anything else. The id is per-position because two
+  // masks with one id on a page would collide.
+  var mid = 'calcMask' + p.id;
+  var svg = '<svg width="25" height="25" viewBox="0 0 24 24" style="display:block">'
+    + '<mask id="' + mid + '">'
+    + '<rect x="0" y="0" width="24" height="24" fill="black"/>'
+    + '<path fill="white" d="M4 3m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z"/>'
+    + '<path fill="black" d="M8 7m0 1a1 1 0 0 1 1 -1h6a1 1 0 0 1 1 1v1a1 1 0 0 1 -1 1h-6a1 1 0 0 1 -1 -1z"/>'
+    + '<g stroke="black" stroke-width="2.5" stroke-linecap="round">'
     + '<path d="M8 14l0 .01"/><path d="M12 14l0 .01"/><path d="M16 14l0 .01"/>'
     + '<path d="M8 17l0 .01"/><path d="M12 17l0 .01"/><path d="M16 17l0 .01"/>'
+    + '</g></mask>'
+    + '<rect x="0" y="0" width="24" height="24" fill="currentColor" mask="url(#' + mid + ')"/>'
     + '</svg>';
   return '<span onclick="openCalcModal(' + p.id + ')" title="Calculator" style="flex:none;cursor:pointer;color:#5b9cf6;display:inline-flex;align-items:center">' + svg + '</span>';
 }
@@ -4497,7 +4507,7 @@ function openCalcModal(id) {
   modal.style.cssText = 'background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px 18px;width:100%;max-width:340px;box-sizing:border-box';
   modal.innerHTML =
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'
-    + '<span style="font-size:13px;color:var(--bright);letter-spacing:2px">' + pos.ticker + '</span>'
+    + '<span style="font-size:13px;color:var(--bright);font-weight:bold;letter-spacing:2px">' + pos.ticker + '</span>'
     + '<button class="btn-icon" onclick="closeCalcModal()" style="font-size:15px;padding:0 4px">&#10005;</button>'
     + '</div>'
     + calcFieldHtml('calcTarget', 'TARGET', 'target', '')
@@ -4520,7 +4530,7 @@ function calcFieldHtml(id, label, src, unit) {
   return '<div style="margin-bottom:10px">'
     + '<div style="display:flex;align-items:center;gap:10px">'
     + '<span style="white-space:nowrap;flex:none;width:110px;font-size:11px;color:var(--text);letter-spacing:1px">' + label + '</span>'
-    + '<input type="text" id="' + id + '" inputmode="decimal" autocomplete="off" spellcheck="false" oninput="calcRecompute(&apos;' + src + '&apos;)" style="flex:1;min-width:0;font-size:14px;font-family:var(--font);background:var(--bg);border:none;outline:none;-webkit-appearance:none;appearance:none;color:var(--bright);padding:7px 8px;border-radius:4px;text-align:right">'
+    + '<input type="text" id="' + id + '" inputmode="decimal" autocomplete="off" spellcheck="false" oninput="calcRecompute(&apos;' + src + '&apos;)" style="flex:1;min-width:0;font-size:14px;font-family:var(--font);background:var(--bg);border:none;outline:none;-webkit-appearance:none;appearance:none;color:var(--bright);font-weight:bold;padding:7px 8px;border-radius:4px;text-align:right">'
     + '<span style="flex:none;width:12px;font-size:12px;color:var(--text)">' + unit + '</span>'
     + '</div>'
     + (src === 'target' ? ''
