@@ -399,7 +399,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.89';
+var APP_VERSION = 'v1.5.90';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4447,6 +4447,94 @@ function buyMoreOf(id) {
   q.focus();
 }
 
+// "What if it reaches X" — the move from the entry price and from the price
+// now. Styled like BUY MORE next to it so the pair reads as one set of actions.
+function calcLinkHtml(p) {
+  // Same gate as BUY MORE beside it: in an archive there's nothing to work out,
+  // and the two would otherwise appear apart. Security type and watchlist are
+  // already decided by the row this sits in.
+  var pf = currentPortfolio();
+  if (!pf || pf.archive) return '';
+  return '<span onclick="openCalcModal(' + p.id + ')" title="Calculator" style="white-space:nowrap;cursor:pointer;color:var(--green);border:1px solid var(--border);padding:5px 12px;font-size:11px;letter-spacing:1px">&#128425;</span>';
+}
+
+function openCalcModal(id) {
+  // Look in the rendered rows first, not in `positions`. An aggregated row's
+  // representative is a copy of its first lot and shares that lot's id, so
+  // searching positions would find the original — and report that one lot's
+  // entry price instead of the group's weighted average.
+  var pos = null;
+  getSortedForRender().some(function(e) {
+    if (e.pos && e.pos.id === id) { pos = e.pos; return true; }
+    return false;
+  });
+  if (!pos) pos = positions.find(function(x) { return x.id === id; });
+  if (!pos) return;
+
+  window._calcPos = pos;
+  var sym = getPositionCurrencySymbol(pos);
+  var cur = getTickerCurrentPrice(pos.ticker);
+
+  var overlay = document.createElement('div');
+  overlay.id = 'calcOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;display:flex;align-items:center;justify-content:center;padding:24px';
+  overlay.onclick = function(e) { if (e.target === overlay) closeCalcModal(); };
+
+  var modal = document.createElement('div');
+  modal.style.cssText = 'background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:20px;width:100%;max-width:340px;box-sizing:border-box';
+  modal.innerHTML =
+      '<div style="font-size:11px;color:var(--dim);letter-spacing:2px;margin-bottom:14px">' + pos.ticker + '</div>'
+    + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:4px">TARGET PRICE</div>'
+    + '<input type="text" id="calcTarget" inputmode="decimal" autocomplete="off" placeholder="' + (cur !== null && cur !== undefined ? f2(cur) : '0.00') + '" oninput="updateCalcModal()" style="width:100%;box-sizing:border-box;font-size:15px;font-family:var(--font);background:var(--bg);border:none;outline:none;-webkit-appearance:none;appearance:none;color:var(--bright);padding:8px;border-radius:4px">'
+    + '<div id="calcResult" style="margin-top:16px;font-size:10px;color:var(--dim);letter-spacing:1px">'
+    + calcResultHtml(pos, null)
+    + '</div>'
+    + '<div style="display:flex;margin-top:16px">'
+    + '<button class="btn" onclick="closeCalcModal()" style="flex:1;padding:9px;font-size:11px;letter-spacing:1px">CLOSE</button>'
+    + '</div>';
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  var inp = document.getElementById('calcTarget');
+  if (inp) inp.focus();
+}
+function closeCalcModal() {
+  var o = document.getElementById('calcOverlay');
+  if (o) o.remove();
+  window._calcPos = null;
+}
+function updateCalcModal() {
+  var el = document.getElementById('calcResult');
+  var inp = document.getElementById('calcTarget');
+  if (!el || !inp || !window._calcPos) return;
+  var raw = (inp.value || '').trim().replace(',', '.');
+  var target = raw === '' ? null : parseFloat(raw);
+  el.innerHTML = calcResultHtml(window._calcPos, (target !== null && isFinite(target)) ? target : null);
+}
+// One row per baseline. Dashes until a target is typed, so the layout doesn't
+// jump as you enter it.
+function calcResultHtml(pos, target) {
+  var sym = getPositionCurrencySymbol(pos);
+  var cur = getTickerCurrentPrice(pos.ticker);
+
+  function line(label, base) {
+    var baseTxt = (base !== null && base !== undefined && base > 0) ? sym + f2(base) : '\u2014';
+    var diffTxt = '\u2014', pctTxt = '', cls = 'muted';
+    if (target !== null && base !== null && base !== undefined && base > 0) {
+      var diff = target - base;
+      var pct = (diff / base) * 100;
+      cls = diff >= 0 ? 'pos' : 'neg';
+      diffTxt = (diff >= 0 ? '+' : '\u2212') + sym + f2(Math.abs(diff));
+      pctTxt = ' (' + (diff >= 0 ? '+' : '\u2212') + Math.abs(pct).toFixed(2) + '%)';
+    }
+    return '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">'
+      + '<span style="opacity:0.6;width:74px;flex:none">' + label + '</span>'
+      + '<span style="color:var(--bright);width:78px;flex:none">' + baseTxt + '</span>'
+      + '<span class="' + cls + '" style="font-size:11px">' + diffTxt + pctTxt + '</span>'
+      + '</div>';
+  }
+  return line('FROM ENTRY', pos.entry) + line('FROM CURRENT', cur);
+}
+
 // Top-up action, inline in the purchase row rather than a framed button: it
 // was the only action among plain text, which is why no placement looked right.
 // Offered for sold lots too — re-entering a closed position is ordinary — but
@@ -4504,7 +4592,8 @@ function buildExpandedInner(p) {
   if (isSecurity && !isWatchlistHere) {
     purchaseParts = '<span style="white-space:nowrap"><span style="opacity:0.6">BROKER</span> <span style="color:var(--bright)">' + (getPositionBrokerDisplay(p) || '\u2014') + '</span></span>'
       + '<span style="white-space:nowrap"><span style="opacity:0.6">BUY DATE</span> <span style="color:var(--bright)">' + (p.purchaseDate || '\u2014') + '</span></span>'
-      + buyMoreLinkHtml(p);
+      + buyMoreLinkHtml(p)
+      + calcLinkHtml(p);
   }
 
   var rowStyle = 'display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;align-items:center;line-height:1.4;font-size:10px;color:var(--dim);letter-spacing:1px';
@@ -4598,7 +4687,8 @@ function buildExpandedInnerAgg(p, group) {
   if (isSecurity && !aggIsWatchlist) {
     aggPurchaseParts = '<span style="white-space:nowrap"><span style="opacity:0.6">BROKER</span> ' + brokerValueHtml + '</span>'
       + '<span style="white-space:nowrap"><span style="opacity:0.6">BUY DATE</span> ' + dateValueHtml + '</span>'
-      + buyMoreLinkHtml(p);
+      + buyMoreLinkHtml(p)
+      + calcLinkHtml(p);
   }
   var html = '';
   // Same as a single position: name first, so it's available in every view.
