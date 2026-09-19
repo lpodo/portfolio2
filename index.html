@@ -399,7 +399,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.90';
+var APP_VERSION = 'v1.5.91';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4455,7 +4455,18 @@ function calcLinkHtml(p) {
   // already decided by the row this sits in.
   var pf = currentPortfolio();
   if (!pf || pf.archive) return '';
-  return '<span onclick="openCalcModal(' + p.id + ')" title="Calculator" style="white-space:nowrap;cursor:pointer;color:var(--green);border:1px solid var(--border);padding:5px 12px;font-size:11px;letter-spacing:1px">&#128425;</span>';
+  // No frame of its own: the icon itself stands as tall as the BUY MORE box
+  // next to it (9px text on 5px padding inside a 1px border ≈ 25px), so the two
+  // line up without a second border competing with the first. stroke uses
+  // currentColor to follow the button's colour rather than the icon set's own.
+  var svg = '<svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+    + ' stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round" style="display:block">'
+    + '<path d="M4 3m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z"/>'
+    + '<path d="M8 7m0 1a1 1 0 0 1 1 -1h6a1 1 0 0 1 1 1v1a1 1 0 0 1 -1 1h-6a1 1 0 0 1 -1 -1z"/>'
+    + '<path d="M8 14l0 .01"/><path d="M12 14l0 .01"/><path d="M16 14l0 .01"/>'
+    + '<path d="M8 17l0 .01"/><path d="M12 17l0 .01"/><path d="M16 17l0 .01"/>'
+    + '</svg>';
+  return '<span onclick="openCalcModal(' + p.id + ')" title="Calculator" style="flex:none;cursor:pointer;color:var(--green);display:inline-flex;align-items:center">' + svg + '</span>';
 }
 
 function openCalcModal(id) {
@@ -4472,67 +4483,110 @@ function openCalcModal(id) {
   if (!pos) return;
 
   window._calcPos = pos;
-  var sym = getPositionCurrencySymbol(pos);
-  var cur = getTickerCurrentPrice(pos.ticker);
 
   var overlay = document.createElement('div');
   overlay.id = 'calcOverlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;display:flex;align-items:center;justify-content:center;padding:24px';
+  // Anchored to the top rather than centred: opening the keyboard doesn't
+  // shrink the viewport a fixed element is measured against, so a centred
+  // dialog ends up behind it.
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto';
   overlay.onclick = function(e) { if (e.target === overlay) closeCalcModal(); };
 
   var modal = document.createElement('div');
-  modal.style.cssText = 'background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:20px;width:100%;max-width:340px;box-sizing:border-box';
+  modal.style.cssText = 'background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px 18px;width:100%;max-width:340px;box-sizing:border-box';
   modal.innerHTML =
-      '<div style="font-size:11px;color:var(--dim);letter-spacing:2px;margin-bottom:14px">' + pos.ticker + '</div>'
-    + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:4px">TARGET PRICE</div>'
-    + '<input type="text" id="calcTarget" inputmode="decimal" autocomplete="off" placeholder="' + (cur !== null && cur !== undefined ? f2(cur) : '0.00') + '" oninput="updateCalcModal()" style="width:100%;box-sizing:border-box;font-size:15px;font-family:var(--font);background:var(--bg);border:none;outline:none;-webkit-appearance:none;appearance:none;color:var(--bright);padding:8px;border-radius:4px">'
-    + '<div id="calcResult" style="margin-top:16px;font-size:10px;color:var(--dim);letter-spacing:1px">'
-    + calcResultHtml(pos, null)
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'
+    + '<span style="font-size:11px;color:var(--dim);letter-spacing:2px">' + pos.ticker + '</span>'
+    + '<button class="btn-icon" onclick="closeCalcModal()" style="font-size:15px;padding:0 4px">&#10005;</button>'
     + '</div>'
-    + '<div style="display:flex;margin-top:16px">'
-    + '<button class="btn" onclick="closeCalcModal()" style="flex:1;padding:9px;font-size:11px;letter-spacing:1px">CLOSE</button>'
-    + '</div>';
+    + calcFieldHtml('calcTarget', 'TARGET', 'target', '')
+    + calcFieldHtml('calcFromEntry', 'FROM ENTRY', 'entry', '%')
+    + calcFieldHtml('calcFromCurrent', 'FROM CURRENT', 'cur', '%');
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
+  calcRecompute('target');
   var inp = document.getElementById('calcTarget');
   if (inp) inp.focus();
 }
+
+// All three fields are inputs: type in any one and the other two follow. The
+// label is kept on one line — wrapping it would shunt its field out of line
+// with the rest.
+function calcFieldHtml(id, label, src, unit) {
+  return '<div style="margin-bottom:10px">'
+    + '<div style="display:flex;align-items:center;gap:10px">'
+    + '<span style="white-space:nowrap;flex:none;width:96px;font-size:9px;color:var(--dim);letter-spacing:1px;opacity:0.6">' + label + '</span>'
+    + '<input type="text" id="' + id + '" inputmode="decimal" autocomplete="off" spellcheck="false" oninput="calcRecompute(&apos;' + src + '&apos;)" style="flex:1;min-width:0;font-size:14px;font-family:var(--font);background:var(--bg);border:none;outline:none;-webkit-appearance:none;appearance:none;color:var(--bright);padding:7px 8px;border-radius:4px;text-align:right">'
+    + '<span style="flex:none;width:10px;font-size:11px;color:var(--dim)">' + unit + '</span>'
+    + '</div>'
+    + (src === 'target' ? ''
+        : '<div id="' + id + '_hint" style="margin-left:106px;margin-top:3px;font-size:9px;color:var(--dim);letter-spacing:1px;min-height:11px"></div>')
+    + '</div>';
+}
+
 function closeCalcModal() {
   var o = document.getElementById('calcOverlay');
   if (o) o.remove();
   window._calcPos = null;
 }
-function updateCalcModal() {
-  var el = document.getElementById('calcResult');
-  var inp = document.getElementById('calcTarget');
-  if (!el || !inp || !window._calcPos) return;
-  var raw = (inp.value || '').trim().replace(',', '.');
-  var target = raw === '' ? null : parseFloat(raw);
-  el.innerHTML = calcResultHtml(window._calcPos, (target !== null && isFinite(target)) ? target : null);
-}
-// One row per baseline. Dashes until a target is typed, so the layout doesn't
-// jump as you enter it.
-function calcResultHtml(pos, target) {
-  var sym = getPositionCurrencySymbol(pos);
-  var cur = getTickerCurrentPrice(pos.ticker);
 
-  function line(label, base) {
-    var baseTxt = (base !== null && base !== undefined && base > 0) ? sym + f2(base) : '\u2014';
-    var diffTxt = '\u2014', pctTxt = '', cls = 'muted';
-    if (target !== null && base !== null && base !== undefined && base > 0) {
-      var diff = target - base;
-      var pct = (diff / base) * 100;
-      cls = diff >= 0 ? 'pos' : 'neg';
-      diffTxt = (diff >= 0 ? '+' : '\u2212') + sym + f2(Math.abs(diff));
-      pctTxt = ' (' + (diff >= 0 ? '+' : '\u2212') + Math.abs(pct).toFixed(2) + '%)';
-    }
-    return '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">'
-      + '<span style="opacity:0.6;width:74px;flex:none">' + label + '</span>'
-      + '<span style="color:var(--bright);width:78px;flex:none">' + baseTxt + '</span>'
-      + '<span class="' + cls + '" style="font-size:11px">' + diffTxt + pctTxt + '</span>'
-      + '</div>';
+// Plain ASCII sign: the value goes back into an input the user may edit, and a
+// typographic minus wouldn't parse when it does.
+function calcSigned(n) {
+  return (n >= 0 ? '+' : '-') + Math.abs(n).toFixed(2);
+}
+function calcNum(v) {
+  var raw = (v || '').trim().replace(',', '.').replace(/^\+/, '');
+  if (raw === '' || raw === '-' || raw === '.' || raw === '-.') return null;
+  var n = parseFloat(raw);
+  return isFinite(n) ? n : null;
+}
+
+// Whichever field was typed in drives the other two. The source field is never
+// rewritten, so the caret stays where it is mid-entry.
+function calcRecompute(source) {
+  var pos = window._calcPos;
+  if (!pos) return;
+  var tEl = document.getElementById('calcTarget');
+  var eEl = document.getElementById('calcFromEntry');
+  var cEl = document.getElementById('calcFromCurrent');
+  if (!tEl || !eEl || !cEl) return;
+
+  var entry = pos.entry > 0 ? pos.entry : null;
+  var cur = getTickerCurrentPrice(pos.ticker);
+  if (!(cur > 0)) cur = null;
+
+  var target = null;
+  if (source === 'target') {
+    target = calcNum(tEl.value);
+  } else if (source === 'entry') {
+    var pe = calcNum(eEl.value);
+    if (pe !== null && entry !== null) target = entry * (1 + pe / 100);
+  } else if (source === 'cur') {
+    var pc = calcNum(cEl.value);
+    if (pc !== null && cur !== null) target = cur * (1 + pc / 100);
   }
-  return line('FROM ENTRY', pos.entry) + line('FROM CURRENT', cur);
+
+  if (source !== 'target') tEl.value = target === null ? '' : f2(target);
+  if (source !== 'entry') eEl.value = (target !== null && entry !== null) ? calcSigned((target - entry) / entry * 100) : '';
+  if (source !== 'cur') cEl.value = (target !== null && cur !== null) ? calcSigned((target - cur) / cur * 100) : '';
+
+  var sym = getPositionCurrencySymbol(pos);
+  setCalcHint('calcFromEntry_hint', entry, target, sym);
+  setCalcHint('calcFromCurrent_hint', cur, target, sym);
+}
+
+// The baseline each percentage is measured from, plus the move in money.
+function setCalcHint(id, base, target, sym) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  if (base === null) { el.textContent = '\u2014'; return; }
+  var txt = sym + f2(base);
+  if (target !== null) {
+    var d = target - base;
+    txt += '   ' + (d >= 0 ? '+' : '\u2212') + sym + f2(Math.abs(d));
+  }
+  el.textContent = txt;
 }
 
 // Top-up action, inline in the purchase row rather than a framed button: it
