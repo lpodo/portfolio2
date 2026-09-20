@@ -437,7 +437,7 @@ The current selection is remembered per portfolio in localStorage (`pt_fund_set_
 
 Fundamentals data is meaningful only for individual stocks. Other instrument types (ETFs, indices, mutual funds, currencies, etc.) are filtered out of the comparative table — the worker tags every quote with an `instrumentType` field (sourced from Yahoo's `meta.instrumentType`), and only `EQUITY` rows are included. The number of skipped tickers is shown below the table, e.g. `2 non-equity tickers (ETF / index / etc.) skipped`.
 
-### Expanded row
+### Row expansion
 
 Tap a ticker in any of the four tabs to toggle a minimal sub-row beneath it, holding a single `[›]` button that opens the full **More** overlay (the same overlay reached from the main [Expanded Row](#expanded-row)). Nothing else is repeated here: the fundamentals data is already inline in the comparison table above.
 
@@ -539,7 +539,7 @@ A held security in a live portfolio shows the lot's purchase details, the instru
 
 ```
 NVIDIA Corporation
-BROKER  ETrade   BUY DATE  2024-08-19   + buy more
+BROKER  ETrade   BUY DATE  2024-08-19   + buy more   🖩 calc
 ISIN  US67066G1040  ✎   EXCHANGE  NMS   TYPE  EQUITY
 CAT  AI & Semi ▾    REG  US ▾    SEC  Technology ▾
 FLAG  review ▾
@@ -559,6 +559,7 @@ Fields:
 - **BROKER** — the broker tagged on this lot, or the current default if none is set (see [Brokers](#brokers)).
 - **BUY DATE** — the lot's `purchaseDate`, or `—` if not set.
 - **+ buy more** — opens the Add form pre-filled for a top-up: same ticker, broker and ISIN, today's date, and the current price as the entry, leaving only the quantity to type. The ticker field also offers every symbol already held as suggestions, which saves retyping things like `PHYS-U.TO`.
+- **Calculator** — a "what if it reaches X" pad for the ticker. Three linked fields — target price, change from entry, change from current — where typing in any one fills the other two, with the absolute gain or loss in the position's currency shown beneath. On an aggregated row it works from the group's weighted-average entry.
 - **ISIN** — identifier for the ticker, `—` if unknown; ✎ opens an editor. No free provider supplies ISINs (see [Cloudflare Worker](#cloudflare-worker)), so they're entered by hand. Overwriting or clearing an existing one asks for confirmation.
 - **CAT / REG / SEC** — [classification](#ticker-classification-fields) dropdowns, applying to the ticker everywhere it's held.
 - **EXCHANGE / TYPE** — from Yahoo (`exchangeName`, `instrumentType`), read-only.
