@@ -399,7 +399,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.94';
+var APP_VERSION = 'v1.5.95';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4458,7 +4458,10 @@ function calcLinkHtml(p) {
   // No frame of its own: the icon stands as tall as the BUY MORE box next to it
   // (9px text on 5px padding inside a 1px border ≈ 25px), so the two line up
   // without a second border competing with the first. Blue rather than green,
-  // matching MORE — both lead away from the row rather than acting on it.
+  // matching MORE — both lead away from the row rather than acting on it. The
+  // hex is deliberately darker than MORE's #5b9cf6: this icon is a solid block
+  // where MORE is thin strokes, and the same colour over that much area reads
+  // considerably lighter. Matching by eye means not matching by value.
   //
   // Solid body with the screen and keys knocked out of it, rather than an
   // outline — the same drawing as the outline version, inverted, so every
@@ -4481,7 +4484,7 @@ function calcLinkHtml(p) {
     + '</g></mask>'
     + '<rect x="0" y="0" width="24" height="24" fill="currentColor" mask="url(#' + mid + ')"/>'
     + '</svg>';
-  return '<span onclick="openCalcModal(' + p.id + ')" title="Calculator" style="flex:none;cursor:pointer;color:#5b9cf6;display:inline-flex;align-items:center">' + svg + '</span>';
+  return '<span onclick="openCalcModal(' + p.id + ')" title="Calculator" style="flex:none;cursor:pointer;color:#3a639d;display:inline-flex;align-items:center">' + svg + '</span>';
 }
 
 function openCalcModal(id) {
