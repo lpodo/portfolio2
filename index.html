@@ -399,7 +399,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.93';
+var APP_VERSION = 'v1.5.94';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4461,17 +4461,21 @@ function calcLinkHtml(p) {
   // matching MORE — both lead away from the row rather than acting on it.
   //
   // Solid body with the screen and keys knocked out of it, rather than an
-  // outline. The cut-outs are done with a mask so they're genuinely
-  // transparent: painting them in the row's colour would show as a seam
-  // wherever the icon sat on anything else. The id is per-position because two
-  // masks with one id on a page would collide.
+  // outline — the same drawing as the outline version, inverted, so every
+  // coordinate and the 1.75 stroke are unchanged. The cut-outs use a mask so
+  // they're genuinely transparent: painting them in the row's colour would show
+  // as a seam wherever the icon sat on anything else. The mask id is
+  // per-position because two masks sharing one id on a page would collide.
   var mid = 'calcMask' + p.id;
   var svg = '<svg width="25" height="25" viewBox="0 0 24 24" style="display:block">'
     + '<mask id="' + mid + '">'
     + '<rect x="0" y="0" width="24" height="24" fill="black"/>'
     + '<path fill="white" d="M4 3m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z"/>'
+    + '<g stroke="black" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">'
+    // The screen is filled AND stroked at the keys' width. Filled alone it would
+    // come out one stroke narrower than the row of keys below it, since a stroke
+    // grows outward from the path but a fill stops at it.
     + '<path fill="black" d="M8 7m0 1a1 1 0 0 1 1 -1h6a1 1 0 0 1 1 1v1a1 1 0 0 1 -1 1h-6a1 1 0 0 1 -1 -1z"/>'
-    + '<g stroke="black" stroke-width="2.5" stroke-linecap="round">'
     + '<path d="M8 14l0 .01"/><path d="M12 14l0 .01"/><path d="M16 14l0 .01"/>'
     + '<path d="M8 17l0 .01"/><path d="M12 17l0 .01"/><path d="M16 17l0 .01"/>'
     + '</g></mask>'
