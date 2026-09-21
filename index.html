@@ -399,7 +399,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.95';
+var APP_VERSION = 'v1.5.96';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -2306,11 +2306,17 @@ function renderSwitcher() {
 
   if (switcherTab === 'archive') {
     // Archive tab — hosts both archived stock portfolios and cash portfolios
-    var archiveIds = ids.filter(function(id) { return portfolios[id].archive; }).sort(function(a,b) { return portfolios[a].name.localeCompare(portfolios[b].name); });
-    archiveIds.forEach(function(id) {
+    // Own archives here; foreign ones get their own section below the summary,
+    // as on the active tab. Keeping them apart also keeps the counters honest:
+    // every realized total already excludes foreign portfolios, so mixing them
+    // into this list made the ALL POSITIONS count larger than the view it opens.
+    var byName = function(a, b) { return portfolios[a].name.localeCompare(portfolios[b].name); };
+    var archiveIds = ids.filter(function(id) { return portfolios[id].archive && !portfolios[id].foreign; }).sort(byName);
+    var foreignArchiveIds = ids.filter(function(id) { return portfolios[id].archive && portfolios[id].foreign; }).sort(byName);
+    var archiveRowHtml = function(id) {
       var p = portfolios[id];
       var active = id === currentPortfolioId && viewMode !== 'cash';
-      html += '<div class="portfolio-item' + (active ? ' active' : '') + '" style="display:flex;align-items:center">'
+      return '<div class="portfolio-item' + (active ? ' active' : '') + '" style="display:flex;align-items:center">'
         + '<div onclick="switchPortfolio(&apos;' + id + '&apos;)" style="flex:1;cursor:pointer;min-width:0">'
         + '<span class="portfolio-item-name">' + p.name + '</span> <span style="color:var(--dim);font-size:10px">' + (p.currencyCode || 'USD') + '</span> '
         + '<span class="portfolio-item-count">' + activeTickerCount(p) + ' pos' + (active ? ' &#10003;' : '') + '</span>'
@@ -2319,7 +2325,8 @@ function renderSwitcher() {
         + '<button class="btn-icon" onclick="deletePortfolio(&apos;' + id + '&apos;)" title="Delete" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
         + '</div>'
         + (editingPortfolioId === id ? portfolioEditFormHtml(id, p) : '');
-    });
+    };
+    archiveIds.forEach(function(id) { html += archiveRowHtml(id); });
     if (archiveIds.length === 0) {
       // Don't show "No archive portfolios" here — wait until we know if bond/cash also empty
     } else {
@@ -2379,7 +2386,7 @@ function renderSwitcher() {
     }
 
     // Show fallback message only when all sections are empty
-    if (archiveIds.length === 0 && bondArchiveIds.length === 0 && cashIds.length === 0) {
+    if (archiveIds.length === 0 && foreignArchiveIds.length === 0 && bondArchiveIds.length === 0 && cashIds.length === 0) {
       html += '<div style="padding:10px 14px;font-size:11px;color:var(--dim)">No realized portfolios</div>';
     }
 
@@ -2387,6 +2394,10 @@ function renderSwitcher() {
     html += '<div class="portfolio-item portfolio-item-meta' + (viewMode === 'archive-summary' ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:8px 14px" onclick="switchToArchiveSummary()">'
       + '<div style="flex:1"><span class="portfolio-item-name">&#931; SUMMARY</span></div>'
       + '</div>';
+    if (foreignArchiveIds.length) {
+      html += '<div style="border-top:1px solid var(--border);padding:8px 14px 4px;font-size:9px;color:var(--dim);letter-spacing:2px">FOREIGN</div>';
+      foreignArchiveIds.forEach(function(id) { html += archiveRowHtml(id); });
+    }
     list.innerHTML = html;
     return;
   }
