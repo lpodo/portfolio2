@@ -208,6 +208,7 @@ Columns TICKER / CLOSE / CURRENT / Δ%; sortable by TICKER or Δ%. The Δ% colum
 - **CURRENT column**: `Current` (current price including extended hours, default) or `Reg.Price` (regularMarketPrice).
 - Δ% is always computed from the selected CLOSE vs the selected CURRENT values.
 - Settings apply globally to all portfolios (regular, watchlist, summary) and persist across sessions.
+- Sold lots stay in the table, but the totals bar beneath covers held lots only. The same holds for ALERTS and for ALL POSITIONS → MARKET.
 
 ### WEIGHTS
 
@@ -275,7 +276,7 @@ Selected from the portfolio switcher (**Σ SUMMARY** at the bottom of the STOCKS
 The ⋮ dropdown menu shows three views:
 
 - **P&L** (default) — NAME / VALUE (in native currency) / P&L / RETURN / SHARE%. Sold lots are split into a separate `(closed)` row for the portfolio, valued at their sale proceeds and carrying no weight; they're totalled in their own **TOTAL CLOSED** bar beneath the main one. Totals are in USD with live FX conversion. Clicking a portfolio name switches to it.
-- **MARKET** — per-portfolio aggregates: PORTFOLIO / [close] / [current] / Δ / Δ%. Uses the same CLOSE/CURRENT mode menus as the regular MARKET view (including historical periods 5D/1M/3M/6M/1Y/5Y); the value in each row is the portfolio's total at the chosen price.
+- **MARKET** — per-portfolio aggregates: PORTFOLIO / [close] / [current] / Δ / Δ%. Uses the same CLOSE/CURRENT mode menus as the regular MARKET view (including historical periods 5D/1M/3M/6M/1Y/5Y); the value in each row is the portfolio's total at the chosen price, over its held lots only, so the rows add up to the totals bar.
 - **CHART** — see [Summary Chart](#summary-chart) — TOTAL or BY PORTFOLIO modes.
 
 ## All Positions

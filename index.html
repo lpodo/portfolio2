@@ -399,7 +399,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.98';
+var APP_VERSION = 'v1.5.99';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -5991,6 +5991,9 @@ function computeSummaryMarketRows(smPids, fxRates) {
     var closeVal = 0, currentVal = 0, closeUSD = 0, currentUSD = 0, hasPos = false;
     var smPosns = smDoFilter ? filterPositions(p.positions || []) : (p.positions || []);
     smPosns.forEach(function(pos) {
+      // Each row is a portfolio's total, so like any total it covers only the
+      // lots still held — and rows then add up to the bar beneath.
+      if (pos.sold) return;
       var pcur = getPositionCurrent(pos);
       if (pcur != null && pos.qty > 0) {
         var pc = getPositionCurrencyCode(pos, base);
@@ -6040,6 +6043,8 @@ function buildMarketTotals(fxMap, baseCode, baseSym, srcArr) {
   var src = srcArr || getSorted();
   var mktTotClose = 0, mktTotCurrent = 0, mktHasAny = false;
   src.forEach(function(p) {
+    // Sold lots stay in the table but not in the total — it covers what's held.
+    if (p.sold) return;
     var pcur = getPositionCurrent(p);
     if (pcur != null && p.qty > 0) {
       var closeVal = p.sold ? pcur : (HIST_MODES.indexOf(closeMode) !== -1 ? (getHistoricalClose(p.ticker, closeMode) || getPositionRegularMarketPrice(p) || pcur) : (closeMode === 'prev' ? (getPositionPreviousClose(p) || getPositionRegularMarketPrice(p) || pcur) : (getPositionRegularMarketPrice(p) || pcur)));
@@ -7229,8 +7234,8 @@ function buildMoversView(area, opts) {
   opts = opts || {};
   var bmvAlertsOnly = !!opts.alertsOnly;
   // Collect all positions from regular + watchlist (not archive), not sold.
-  // allPos is deduplicated by ticker (for the rows); allPosFull keeps every lot
-  // (for the value total, which must count quantities across all lots).
+  // allPos is deduplicated by ticker (for the rows); allPosFull keeps every held
+  // lot (for the value total, which must count quantities across all lots).
   var seen = {}, allPos = [], allPosFull = [];
   var bmvNonUSD = [];
   var bmvDoFilter = filterActiveForSummary(false); // movers/alerts are active-only
@@ -7253,7 +7258,7 @@ function buildMoversView(area, opts) {
         allPos[allPos.indexOf(seen[pos.ticker])] = pos;
         seen[pos.ticker] = pos;
       }
-      allPosFull.push(pos);
+      if (!pos.sold) allPosFull.push(pos); // the total covers held lots only
       var pc = getPositionCurrencyCode(pos);
       if (pc !== 'USD' && bmvNonUSD.indexOf(pc) === -1) bmvNonUSD.push(pc);
     });
