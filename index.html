@@ -402,7 +402,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.100';
+var APP_VERSION = 'v1.5.101';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -1393,19 +1393,6 @@ function saveDepPosEdit(posId) {
     if (newCloseDate) pos.closeDate = newCloseDate;
     if (!isNaN(newCloseInterest) && newCloseInterest >= 0) pos.closeInterest = newCloseInterest;
   }
-  editingDepPosId = null;
-  saveBondPortfolios();
-  render();
-}
-
-// Undoes an early close: the deposit goes back to running its full term.
-function reopenDepositPosition(posId) {
-  var bp = bondPortfolios[currentBondPortfolioId];
-  if (!bp) return;
-  var pos = (bp.positions || []).find(function(p) { return p.id === posId; });
-  if (!pos) return;
-  delete pos.closeDate;
-  delete pos.closeInterest;
   editingDepPosId = null;
   saveBondPortfolios();
   render();
@@ -10126,13 +10113,13 @@ function render() {
           + '<td class="' + pClass + '">' + depCurrSym + f2(calc.profit) + '</td>'
           + '<td class="' + pClass + '">' + (calc.ret !== null ? f2(calc.ret) + '%' : '&mdash;') + '</td>'
           + '<td class="' + pClass + '">' + (calc.annYield != null ? f2(calc.annYield) + '%' : '&mdash;') + '</td>'
-          + '<td style="white-space:nowrap">'
+          + '<td style="white-space:nowrap"><div style="display:flex;align-items:center;justify-content:flex-end;gap:10px">'
             + (calc.isMatured
                 ? '<button class="btn-icon" onclick="archiveBondPosition(&apos;' + dep.id + '&apos;, this)" title="Move to Realized" style="font-size:14px;padding:0 4px;color:var(--dim)">&#8863;</button>'
                 : '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--bright)" onclick="closeDepositPosition(&apos;' + dep.id + '&apos;)">CLOSE</button>')
             + '<button class="btn-icon" onclick="editDepositPosition(&apos;' + dep.id + '&apos;)" style="' + (isEditingDep ? 'color:var(--green)' : '') + '">&#9998;</button>'
             + '<button class="btn-icon" onclick="deleteDepositPosition(&apos;' + dep.id + '&apos;)" style="color:var(--red)">&#10005;</button>'
-          + '</td>'
+          + '</div></td>'
           + '</tr>';
         if (isEditingDep) {
           var isMat = dep.depositType === 'at-maturity', isReg = dep.depositType === 'regular-payouts', isCom = dep.depositType === 'compounded';
@@ -10160,7 +10147,6 @@ function render() {
                 + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:flex-end">'
                 + '<div class="field"><label>CLOSE DATE</label><input type="date" id="editDepCloseDate" value="' + dep.closeDate + '" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none"></div>'
                 + '<div class="field"><label>INTEREST RECEIVED</label><input type="number" id="editDepCloseInterest" value="' + (dep.closeInterest || 0) + '" min="0" step="any" style="width:100px"></div>'
-                + '<button class="btn" onclick="reopenDepositPosition(&apos;' + dep.id + '&apos;)" style="padding:6px 12px;color:var(--dim)">REOPEN</button>'
                 + '</div>'
               : '')
             + '<div style="display:flex;gap:6px">'
