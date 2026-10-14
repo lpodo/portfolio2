@@ -399,7 +399,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.97';
+var APP_VERSION = 'v1.5.98';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -9425,7 +9425,6 @@ function render() {
         : ''));
   });
 
-  var totCost = 0, totVal = 0, hasAny = false;
   var baseCode = mainIsAll ? 'USD' : (currentPortfolio().currencyCode || 'USD').toUpperCase();
   var baseSym = mainIsAll ? '$' : getCurrency();
   // Totals reflect the filter (a filtered view shows the totals of that slice).
@@ -9437,37 +9436,48 @@ function render() {
     if (getPositionCurrent(p) != null && pc !== baseCode && posFxNeeded.indexOf(pc) === -1) posFxNeeded.push(pc);
   });
 
+  // In a live context sold lots are totalled apart from the open ones, as in a
+  // bond portfolio: VALUE covers what's still held, CLOSED VALUE what's been
+  // sold (proceeds against cost). A realized portfolio or the realized ALL
+  // POSITIONS is closed by definition, so it keeps a single bar.
+  var mainIsRealizedPortfolio = !mainIsAll && !!(currentPortfolio() && currentPortfolio().archive);
+  var splitClosedTotals = !mainIsRealizedAll && !mainIsRealizedPortfolio;
+
   function buildTotals(fxMap) {
-    var tCost = 0, tVal = 0, tHas = false;
+    var t = {
+      active: { cost: 0, val: 0, has: false },
+      closed: { cost: 0, val: 0, has: false }
+    };
     tPosns.forEach(function(p) {
       var pcur = getPositionCurrent(p);
       if (pcur !== null && pcur !== undefined) {
         var rate = 1;
         var pc = getPositionCurrencyCode(p);
         if (pc !== baseCode) rate = fxMap[pc + baseCode] || fxMap[pc] || 1;
-        tCost += p.qty * p.entry * rate;
-        tVal += p.qty * pcur * rate;
-        tHas = true;
+        var a = (splitClosedTotals && p.sold) ? t.closed : t.active;
+        a.cost += p.qty * p.entry * rate;
+        a.val += p.qty * pcur * rate;
+        a.has = true;
       }
     });
-    return { cost: tCost, val: tVal, has: tHas };
+    return t;
+  }
+
+  function totalsBarHtml(a, label, dim) {
+    var pnl = a.val - a.cost;
+    var pct = a.cost ? (pnl / a.cost) * 100 : null;
+    var c = pnl >= 0 ? 'pos' : 'neg';
+    return '<div class="totals-bar"' + (dim ? ' style="opacity:0.6"' : '') + '>'
+      + '<div class="total-block"><div class="total-label">' + label + '</div><div class="total-value" style="color:var(--bright)">' + baseSym + f2(a.val) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">P&amp;L</div><div class="total-value ' + c + '">' + fSign(pnl) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + c + '">' + fPct(pct) + '</div></div>'
+      + '</div>';
   }
 
   function renderTotals(fxMap) {
     var t = buildTotals(fxMap);
-    totVal = t.val; totCost = t.cost; hasAny = t.has;
-    var totPnL = totVal - totCost;
-    var totPct = totCost ? (totPnL / totCost) * 100 : null;
-    var totalsHtml = '';
-    if (hasAny) {
-      var c = totPnL >= 0 ? 'pos' : 'neg';
-      totalsHtml = '<div class="totals-bar">'
-        + '<div class="total-block"><div class="total-label">VALUE</div><div class="total-value" style="color:var(--bright)">' + baseSym + f2(totVal) + '</div></div>'
-        + '<div class="total-block"><div class="total-label">P&amp;L</div><div class="total-value ' + c + '">' + fSign(totPnL) + '</div></div>'
-        + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + c + '">' + fPct(totPct) + '</div></div>'
-        + '</div>';
-    }
-    return totalsHtml;
+    return (t.active.has ? totalsBarHtml(t.active, 'VALUE', false) : '')
+      + (t.closed.has ? totalsBarHtml(t.closed, 'CLOSED VALUE', true) : '');
   }
 
   var totalsHtml = '';
@@ -11123,6 +11133,10 @@ function render() {
 
 // Weight view
   if (viewMode === 'weight') {
+    // Weights describe what's held: in a live portfolio sold lots stay listed,
+    // dimmed, but take no weight and don't count toward the total. A realized
+    // portfolio is all sold lots, so there they keep their weights.
+    var weightSkipsSold = !(currentPortfolio() && currentPortfolio().archive);
     function buildWeightRows(wFxMap) {
       var weightSource = isAggregated() ? aggregatePositions(applyFilter(positions)) : getSorted().map(function(p) { return { agg: false, pos: p }; });
       var weightRows = '';
@@ -11130,14 +11144,19 @@ function render() {
       weightSource.forEach(function(wEntry) {
         var p = wEntry.pos;
         var pcur = getPositionCurrent(p);
-        if (pcur != null && p.qty > 0) {
+        if (pcur != null && p.qty > 0 && !(weightSkipsSold && p.sold)) {
           var rate2 = 1;
           var pc2 = getPositionCurrencyCode(p);
           if (pc2 !== baseCode) rate2 = wFxMap[pc2 + baseCode] || 1;
           wTotVal += p.qty * pcur * rate2;
         }
       });
-      getWeightSorted(weightSource.map(function(e) { return e.pos; }), wTotVal, wFxMap, baseCode).forEach(function(p) {
+      var wSorted = getWeightSorted(weightSource.map(function(e) { return e.pos; }), wTotVal, wFxMap, baseCode);
+      // Sorting by weight would scatter weightless sold rows among held ones.
+      if (weightSkipsSold && weightSort.key === 'weight') {
+        wSorted = wSorted.filter(function(p) { return !p.sold; }).concat(wSorted.filter(function(p) { return p.sold; }));
+      }
+      wSorted.forEach(function(p) {
         var wSoldStyle = p.sold ? 'font-style:italic;opacity:0.5' : '';
         var pcur = getPositionCurrent(p);
         if (pcur === null || pcur === undefined || p.qty === 0) {
@@ -11146,7 +11165,7 @@ function render() {
         var pc = getPositionCurrencyCode(p);
         var rate = pc !== baseCode ? (wFxMap[pc + baseCode] || 1) : 1;
         var posValBase = p.qty * pcur * rate;
-        var weight = wTotVal > 0 ? (posValBase / wTotVal) * 100 : null;
+        var weight = (wTotVal > 0 && !(weightSkipsSold && p.sold)) ? (posValBase / wTotVal) * 100 : null;
         weightRows += '<tr style="' + wSoldStyle + '">'
           + '<td style="text-align:left;white-space:nowrap">' + getTickerFlagHtml(p.ticker) + p.ticker + '</td>'
           + '<td style="padding:5px 4px;white-space:nowrap;color:var(--dim)">' + getPositionCurrencySymbol(p) + f2(p.qty * pcur) + '</td>'

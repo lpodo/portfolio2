@@ -151,7 +151,7 @@ Any position in a regular portfolio can be marked as sold via the **SELL** butto
 - The position is marked `sold` with the sell price locked as `current`.
 - Sold positions are displayed in *italic* with reduced opacity and a ⊘ icon instead of market state.
 - A sold lot's own figures are frozen at the sell price, but its ticker is still quoted on Refresh, so MARKET keeps showing what the instrument is doing now.
-- Sold positions are included in portfolio totals and weights.
+- Sold positions stay in the table but are totalled separately and take no weight (see [Prices & P&L](#prices--pl) and [WEIGHTS](#weights)).
 - The sell price can be corrected via the edit (✎) button.
 - Sorting by ticker: sold positions appear first among same-ticker entries.
 
@@ -181,7 +181,7 @@ Brokers feed three downstream features:
 - Sort by any column — persists across sessions.
 - **P&L $** for full position: `(current - entry) × qty`
 - **P&L %** per share: `(current - entry) / entry × 100`
-- **Totals**: VALUE, P&L, RETURN.
+- **Totals**: VALUE, P&L, RETURN over the lots still held; sold lots get their own dimmed **CLOSED VALUE** bar beneath, sale proceeds against cost. In a realized portfolio, where every lot is sold, there's a single bar.
 
 **Market state indicator** (shown after P&L %):
 
@@ -211,7 +211,7 @@ Columns TICKER / CLOSE / CURRENT / Δ%; sortable by TICKER or Δ%. The Δ% colum
 
 ### WEIGHTS
 
-Columns TICKER / VALUE / WEIGHT %; sortable by any column.
+Columns TICKER / VALUE / WEIGHT %; sortable by any column. Sold lots are listed dimmed with no weight, and the total covers held lots only; sorting by weight puts them last.
 
 ### Aggregation mode
 
