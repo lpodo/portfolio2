@@ -1422,6 +1422,19 @@ function calcDeposit(dep, currencyCode) {
   var maturityDate = new Date(openDate);
   maturityDate.setMonth(maturityDate.getMonth() + dep.termMonths);
   var today = new Date(); today.setHours(0,0,0,0);
+  var currSym = CURRENCY_SYMBOLS[currencyCode] || currencyCode;
+  // Closed early: the term formula no longer applies — the profit is whatever
+  // interest was actually received, and the yield runs to the close date.
+  // isMatured covers both endings (by date or early), since every consumer
+  // treats it as "closed".
+  if (dep.closeDate) {
+    var closeD = new Date(dep.closeDate);
+    var cProfit = dep.closeInterest || 0;
+    var cRet = dep.amount > 0 ? cProfit / dep.amount * 100 : null;
+    var cDays = (closeD - openDate) / 86400000;
+    var cYield = (cRet !== null && cDays > 0) ? cRet / cDays * 365 : null;
+    return { profit: cProfit, ret: cRet, annYield: cYield, maturityDate: maturityDate, isMatured: true, isClosedEarly: true, closeDate: dep.closeDate, currSym: currSym };
+  }
   var isMatured = maturityDate <= today;
   var profit, annYield;
   if (dep.depositType === 'compounded') {
@@ -1433,7 +1446,7 @@ function calcDeposit(dep, currencyCode) {
     annYield = dep.rate;
   }
   var ret = dep.amount > 0 ? profit / dep.amount * 100 : null;
-  return { profit: profit, ret: ret, annYield: annYield, maturityDate: maturityDate, isMatured: isMatured, currSym: CURRENCY_SYMBOLS[currencyCode] || currencyCode };
+  return { profit: profit, ret: ret, annYield: annYield, maturityDate: maturityDate, isMatured: isMatured, isClosedEarly: false, currSym: currSym };
 }
 function fetchWithTimeout(url, opts, ms) {
   ms = ms || 10000;

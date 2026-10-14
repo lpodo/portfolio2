@@ -207,10 +207,13 @@
     </div>
     <div id="archivePortfolioTypeRow" style="padding:4px 0 6px;display:none;gap:16px;flex-wrap:wrap">
       <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
-        <input type="radio" name="archivePortfolioType" value="archive" checked class="radio-styled" onchange="updateArchiveAddPlaceholder()"> REALIZED STOCKS
+        <input type="radio" name="archivePortfolioType" value="archive" checked class="radio-styled" onchange="updateArchiveAddPlaceholder()"> STOCKS
       </label>
       <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
-        <input type="radio" name="archivePortfolioType" value="bond-archive" class="radio-styled" onchange="updateArchiveAddPlaceholder()"> REALIZED BONDS
+        <input type="radio" name="archivePortfolioType" value="bond-archive" class="radio-styled" onchange="updateArchiveAddPlaceholder()"> BONDS
+      </label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
+        <input type="radio" name="archivePortfolioType" value="deposit-archive" class="radio-styled" onchange="updateArchiveAddPlaceholder()"> DEPOSITS
       </label>
       <label style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--dim);letter-spacing:1px;cursor:pointer">
         <input type="radio" name="archivePortfolioType" value="cash" class="radio-styled" onchange="updateArchiveAddPlaceholder()"> CASH
@@ -399,7 +402,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.99';
+var APP_VERSION = 'v1.5.100';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -902,6 +905,7 @@ function updateArchiveAddPlaceholder() {
     var v = sel ? sel.value : 'archive';
     if (v === 'cash') nameInput.placeholder = 'CASH NAME';
     else if (v === 'bond-archive') nameInput.placeholder = 'REALIZED BONDS NAME';
+    else if (v === 'deposit-archive') nameInput.placeholder = 'REALIZED DEPOSITS NAME';
     else nameInput.placeholder = 'REALIZED STOCKS NAME';
   } else {
     nameInput.placeholder = 'NAME';
@@ -1345,8 +1349,9 @@ function openDepositDetail(posId) {
     + '<span style="color:var(--dim)">AMOUNT</span><span>' + calc.currSym + f2(pos.amount) + '</span>'
     + '<span style="color:var(--dim)">PROFIT</span><span class="' + (calc.profit >= 0 ? 'pos' : 'neg') + '">' + calc.currSym + f2(calc.profit) + '</span>'
     + '<span style="color:var(--dim)">RETURN</span><span class="' + (calc.ret >= 0 ? 'pos' : 'neg') + '">' + f2(calc.ret) + '%</span>'
-    + '<span style="color:var(--dim)">ANN.YIELD</span><span>' + f2(calc.annYield) + '%</span>'
-    + '<span style="color:var(--dim)">STATUS</span><span style="color:var(--' + (calc.isMatured ? 'dim' : 'green') + ')">' + (calc.isMatured ? 'Matured' : 'Active') + '</span>'
+    + '<span style="color:var(--dim)">ANN.YIELD</span><span>' + (calc.annYield != null ? f2(calc.annYield) + '%' : '&mdash;') + '</span>'
+    + (calc.isClosedEarly ? '<span style="color:var(--dim)">CLOSED</span><span>' + calc.closeDate + '</span>' : '')
+    + '<span style="color:var(--dim)">STATUS</span><span style="color:var(--' + (calc.isMatured ? 'dim' : 'green') + ')">' + (calc.isClosedEarly ? 'Closed early' : (calc.isMatured ? 'Matured' : 'Active')) + '</span>'
     + '</div></div>';
   document.body.appendChild(modal);
   modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
@@ -1380,7 +1385,105 @@ function saveDepPosEdit(posId) {
   if (newTerm > 0) pos.termMonths = newTerm;
   if (newFreq > 0) pos.freqPerYear = newFreq;
   if (typeEl) pos.depositType = typeEl.value;
+  // A deposit closed early also edits its close date and interest received.
+  var closeDateEl = document.getElementById('editDepCloseDate');
+  if (pos.closeDate && closeDateEl) {
+    var newCloseDate = (closeDateEl.value || '').trim();
+    var newCloseInterest = parseFloat(document.getElementById('editDepCloseInterest').value);
+    if (newCloseDate) pos.closeDate = newCloseDate;
+    if (!isNaN(newCloseInterest) && newCloseInterest >= 0) pos.closeInterest = newCloseInterest;
+  }
   editingDepPosId = null;
+  saveBondPortfolios();
+  render();
+}
+
+// Undoes an early close: the deposit goes back to running its full term.
+function reopenDepositPosition(posId) {
+  var bp = bondPortfolios[currentBondPortfolioId];
+  if (!bp) return;
+  var pos = (bp.positions || []).find(function(p) { return p.id === posId; });
+  if (!pos) return;
+  delete pos.closeDate;
+  delete pos.closeInterest;
+  editingDepPosId = null;
+  saveBondPortfolios();
+  render();
+}
+
+// Early closure. Asks when the deposit was closed and how much interest was
+// actually paid — banks rarely honour the full rate on early withdrawal, so
+// the term formula no longer applies and these two figures become the result.
+function closeDepositPosition(posId) {
+  var bp = bondPortfolios[currentBondPortfolioId];
+  if (!bp) return;
+  var pos = (bp.positions || []).find(function(p) { return p.id === posId; });
+  if (!pos) return;
+  var currSym = CURRENCY_SYMBOLS[bp.currencyCode || 'USD'] || (bp.currencyCode || 'USD');
+  var existing = document.getElementById('closeDepOverlay');
+  if (existing) existing.remove();
+  var overlay = document.createElement('div');
+  overlay.id = 'closeDepOverlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:500;display:flex;align-items:flex-start;justify-content:center;padding-top:60px';
+  overlay.innerHTML =
+    '<div style="background:var(--bg2);border:1px solid var(--border);padding:20px 24px;min-width:280px;max-width:90vw" onclick="event.stopPropagation()">'
+    + '<div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:14px">CLOSE ' + pos.name + '</div>'
+    + '<div style="display:flex;flex-direction:column;gap:10px">'
+    + '<div class="field"><label>CLOSE DATE</label><input type="date" id="closeDepDate" value="' + todayLocalISO() + '" oninput="previewDepositClose(&apos;' + posId + '&apos;)" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);padding:4px 6px"></div>'
+    + '<div class="field"><label>INTEREST RECEIVED (' + currSym + ')</label><input type="number" id="closeDepInterest" value="0" min="0" step="any" oninput="previewDepositClose(&apos;' + posId + '&apos;)" style="width:100%;box-sizing:border-box"></div>'
+    + '</div>'
+    + '<div id="closeDepPreview" style="margin-top:14px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);font-size:11px"></div>'
+    + '<div style="display:flex;gap:8px;margin-top:16px">'
+    + '<button class="btn-primary" onclick="confirmDepositClose(&apos;' + posId + '&apos;)" style="flex:1">CLOSE DEPOSIT</button>'
+    + '<button class="btn" onclick="document.getElementById(\'closeDepOverlay\').remove()" style="flex:1">CANCEL</button>'
+    + '</div>'
+    + '<div id="closeDepErr" style="color:var(--red);font-size:11px;margin-top:6px"></div>'
+    + '</div>';
+  overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+  document.body.appendChild(overlay);
+  previewDepositClose(posId);
+  setTimeout(function() { var el = document.getElementById('closeDepInterest'); if (el) el.focus(); }, 50);
+}
+
+// Reads the dialog's two fields; returns { date, interest } or an error string.
+function readDepositCloseInputs(pos) {
+  var date = (document.getElementById('closeDepDate').value || '').trim();
+  var interest = parseFloat(document.getElementById('closeDepInterest').value);
+  if (!date) return 'Invalid close date';
+  if (pos.openDate && new Date(date) < new Date(pos.openDate)) return 'Close date is before open date';
+  if (isNaN(interest) || interest < 0) return 'Invalid interest';
+  return { date: date, interest: interest };
+}
+
+function previewDepositClose(posId) {
+  var bp = bondPortfolios[currentBondPortfolioId];
+  if (!bp) return;
+  var pos = (bp.positions || []).find(function(p) { return p.id === posId; });
+  var pv = document.getElementById('closeDepPreview');
+  var errEl = document.getElementById('closeDepErr');
+  if (!pos || !pv) return;
+  var r = readDepositCloseInputs(pos);
+  if (typeof r === 'string') { pv.innerHTML = '<span style="color:var(--dim)">&mdash;</span>'; errEl.textContent = r; return; }
+  errEl.textContent = '';
+  var calc = calcDeposit(Object.assign({}, pos, { closeDate: r.date, closeInterest: r.interest }), bp.currencyCode || 'USD');
+  var cls = calc.profit >= 0 ? 'pos' : 'neg';
+  pv.innerHTML = '<div style="display:grid;grid-template-columns:auto 1fr;gap:5px 24px">'
+    + '<span style="color:var(--dim)">PROFIT</span><span class="' + cls + '" style="text-align:right">' + calc.currSym + f2(calc.profit) + '</span>'
+    + '<span style="color:var(--dim)">RETURN</span><span class="' + cls + '" style="text-align:right">' + (calc.ret !== null ? f2(calc.ret) + '%' : '&mdash;') + '</span>'
+    + '<span style="color:var(--dim)">ANN.YIELD</span><span class="' + cls + '" style="text-align:right">' + (calc.annYield !== null ? f2(calc.annYield) + '%' : '&mdash;') + '</span>'
+    + '</div>';
+}
+
+function confirmDepositClose(posId) {
+  var bp = bondPortfolios[currentBondPortfolioId];
+  if (!bp) return;
+  var pos = (bp.positions || []).find(function(p) { return p.id === posId; });
+  if (!pos) return;
+  var r = readDepositCloseInputs(pos);
+  if (typeof r === 'string') { document.getElementById('closeDepErr').textContent = r; return; }
+  pos.closeDate = r.date;
+  pos.closeInterest = r.interest;
+  document.getElementById('closeDepOverlay').remove();
   saveBondPortfolios();
   render();
 }
@@ -1635,12 +1738,22 @@ function archiveBondPosition(posId, btn) {
   bondPortfolios = getBondPortfolios();
   var menu = document.getElementById('archivePosMenu');
   var list = document.getElementById('archivePosMenuList');
+  // A deposit goes only to realized deposits, a bond only to realized bonds.
+  // A deposit has no currency of its own — its amount is in the portfolio's —
+  // so it may only move to a realized portfolio in the same currency, or the
+  // figure would silently change meaning.
+  var srcBp = bondPortfolios[currentBondPortfolioId];
+  var srcIsDeposit = !!(srcBp && srcBp.type === 'deposit');
+  var srcCur = ((srcBp && srcBp.currencyCode) || 'USD').toUpperCase();
   var bondArchiveIds = Object.keys(bondPortfolios).filter(function(pid) {
-    return bondPortfolios[pid].archive && pid !== currentBondPortfolioId;
+    var t = bondPortfolios[pid];
+    return t.archive && pid !== currentBondPortfolioId
+      && (t.type === 'deposit') === srcIsDeposit
+      && (!srcIsDeposit || (t.currencyCode || 'USD').toUpperCase() === srcCur);
   }).sort(function(a,b) { return bondPortfolios[a].name.localeCompare(bondPortfolios[b].name); });
 
   if (bondArchiveIds.length === 0) {
-    list.innerHTML = '<div style="padding:10px 12px;font-size:11px;color:var(--dim)">No realized bond portfolios</div>';
+    list.innerHTML = '<div style="padding:10px 12px;font-size:11px;color:var(--dim)">' + (srcIsDeposit ? 'No realized deposit portfolios in ' + srcCur : 'No realized bond portfolios') + '</div>';
   } else {
     list.innerHTML = bondArchiveIds.map(function(pid) {
       return '<div onclick="moveToBondArchive(&apos;' + pid + '&apos;)" style="padding:9px 14px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--border);color:var(--bright)">' + bondPortfolios[pid].name + '</div>';
@@ -1702,13 +1815,15 @@ function addBondPortfolio() {
   showBondPortfolio(id);
 }
 
-function addBondArchivePortfolio() {
+// Creates a realized portfolio in the bond family — bonds by default, or
+// deposits when type is 'deposit'. Same storage, told apart by type.
+function addBondArchivePortfolio(type) {
   var name = document.getElementById('newPortfolioName').value.trim().toUpperCase();
   if (!name) return;
   var curCode = (document.getElementById('newPortfolioCurrencyCode').value.trim() || 'USD').toUpperCase();
   bondPortfolios = getBondPortfolios();
   var id = 'bp_' + Date.now();
-  bondPortfolios[id] = { name: name, type: 'bonds', currencyCode: curCode, positions: [], archive: true };
+  bondPortfolios[id] = { name: name, type: type === 'deposit' ? 'deposit' : 'bonds', currencyCode: curCode, positions: [], archive: true };
   saveBondPortfolios();
   document.getElementById('newPortfolioName').value = '';
   document.getElementById('newPortfolioCurrencyCode').value = '';
@@ -1803,6 +1918,7 @@ function renderBondsSwitcher(html, list, summaryActive) {
   function isBpPositionActive(bp, pos) {
     if (bp.type === 'deposit') {
       if (!(pos.amount > 0)) return false;
+      if (pos.closeDate) return false;
       if (pos.openDate && pos.termMonths) {
         var maturity = new Date(pos.openDate);
         maturity.setMonth(maturity.getMonth() + pos.termMonths);
@@ -2345,24 +2461,32 @@ function renderSwitcher() {
         + '</div>';
     }
 
-    // Bond archive portfolios section (separated)
+    // Bond-family archives (separated): realized bonds, then realized deposits
+    // beneath them, divided the same way as on the BONDS tab.
     bondPortfolios = getBondPortfolios();
     var bondArchiveIds = Object.keys(bondPortfolios).filter(function(id) { return bondPortfolios[id].archive; }).sort(function(a,b) { return bondPortfolios[a].name.localeCompare(bondPortfolios[b].name); });
+    var bondOnlyArchiveIds = bondArchiveIds.filter(function(id) { return bondPortfolios[id].type !== 'deposit'; });
+    var depArchiveIds = bondArchiveIds.filter(function(id) { return bondPortfolios[id].type === 'deposit'; });
+    var bondArchiveRowHtml = function(id) {
+      var bp = bondPortfolios[id];
+      var active = id === currentBondPortfolioId && viewMode === 'bonds';
+      return '<div class="portfolio-item' + (active ? ' active' : '') + '" style="display:flex;align-items:center">'
+        + '<div onclick="showBondPortfolio(&apos;' + id + '&apos;)" style="flex:1;cursor:pointer;min-width:0">'
+        + '<span class="portfolio-item-name">' + bp.name + '</span> <span style="color:var(--dim);font-size:10px">' + (bp.currencyCode || 'USD') + '</span> '
+        + '<span class="portfolio-item-count">' + (bp.positions || []).length + (bp.type === 'deposit' ? ' dep' : ' bonds') + (active ? ' &#10003;' : '') + '</span>'
+        + '</div>'
+        + '<button class="btn-icon" onclick="renameBondPortfolio(&apos;' + id + '&apos;)" title="Rename" style="font-size:13px;padding:4px 7px">&#9998;</button>'
+        + '<button class="btn-icon" onclick="deleteBondPortfolio(&apos;' + id + '&apos;)" title="Delete" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
+        + '</div>'
+        + (editingPortfolioId === id ? bondPortfolioEditFormHtml(id, bp) : '');
+    };
     if (bondArchiveIds.length > 0) {
       if (archiveIds.length > 0) html += '<div style="border-top:1px solid var(--border);margin-top:6px"></div>';
-      bondArchiveIds.forEach(function(id) {
-        var bp = bondPortfolios[id];
-        var active = id === currentBondPortfolioId && viewMode === 'bonds';
-        html += '<div class="portfolio-item' + (active ? ' active' : '') + '" style="display:flex;align-items:center">'
-          + '<div onclick="showBondPortfolio(&apos;' + id + '&apos;)" style="flex:1;cursor:pointer;min-width:0">'
-          + '<span class="portfolio-item-name">' + bp.name + '</span> <span style="color:var(--dim);font-size:10px">' + (bp.currencyCode || 'USD') + '</span> '
-          + '<span class="portfolio-item-count">' + (bp.positions || []).length + ' bonds' + (active ? ' &#10003;' : '') + '</span>'
-          + '</div>'
-          + '<button class="btn-icon" onclick="renameBondPortfolio(&apos;' + id + '&apos;)" title="Rename" style="font-size:13px;padding:4px 7px">&#9998;</button>'
-          + '<button class="btn-icon" onclick="deleteBondPortfolio(&apos;' + id + '&apos;)" title="Delete" style="font-size:13px;padding:4px 7px;color:var(--red)">&#10005;</button>'
-          + '</div>'
-          + (editingPortfolioId === id ? bondPortfolioEditFormHtml(id, bp) : '');
-      });
+      bondOnlyArchiveIds.forEach(function(id) { html += bondArchiveRowHtml(id); });
+      if (depArchiveIds.length > 0) {
+        if (bondOnlyArchiveIds.length > 0) html += '<div style="border-top:1px solid var(--border);margin:4px 0"></div>';
+        depArchiveIds.forEach(function(id) { html += bondArchiveRowHtml(id); });
+      }
     }
 
     // Cash portfolios section (separated)
@@ -2649,6 +2773,7 @@ function addPortfolio() {
     var archSel = document.querySelector('input[name="archivePortfolioType"]:checked');
     if (archSel && archSel.value === 'cash') { addCashPortfolio(); return; }
     if (archSel && archSel.value === 'bond-archive') { addBondArchivePortfolio(); return; }
+    if (archSel && archSel.value === 'deposit-archive') { addBondArchivePortfolio('deposit'); return; }
   }
   var typeSel = document.querySelector('input[name="portfolioType"]:checked');
   var isWatchlist = !isArchiveTab && typeSel.value === 'index';
@@ -9588,6 +9713,18 @@ function render() {
         var valBase = 0, profitBase = 0, bodyBase = 0, couponBase = 0;
         var hasAny = false;
         (bp.positions || []).forEach(function(pos) {
+          // A realized deposit: no body to gain or lose, so its whole profit is
+          // income — the coupon column, as on the BONDS-tab summary. Like coupons
+          // it stays out of the grand total, arriving through cash instead.
+          if (bp.type === 'deposit') {
+            if (!(pos.amount > 0)) return;
+            var dc = calcDeposit(pos, bpCur);
+            var dRate = bpCur === 'USD' ? 1 : (archFxRates[bpCur] || 1);
+            valUSD += pos.amount * dRate; profitUSD += dc.profit * dRate; couponUSD += dc.profit * dRate;
+            valBase += pos.amount; profitBase += dc.profit; couponBase += dc.profit;
+            hasAny = true;
+            return;
+          }
           if (pos.qty === 0) return;
           var bond = bondsDb.find(function(b) { return b.id === pos.bondId; });
           if (!bond) return;
@@ -9988,8 +10125,11 @@ function render() {
           + '<td>' + depCurrSym + f2(dep.amount) + '</td>'
           + '<td class="' + pClass + '">' + depCurrSym + f2(calc.profit) + '</td>'
           + '<td class="' + pClass + '">' + (calc.ret !== null ? f2(calc.ret) + '%' : '&mdash;') + '</td>'
-          + '<td class="' + pClass + '">' + f2(calc.annYield) + '%</td>'
+          + '<td class="' + pClass + '">' + (calc.annYield != null ? f2(calc.annYield) + '%' : '&mdash;') + '</td>'
           + '<td style="white-space:nowrap">'
+            + (calc.isMatured
+                ? '<button class="btn-icon" onclick="archiveBondPosition(&apos;' + dep.id + '&apos;, this)" title="Move to Realized" style="font-size:14px;padding:0 4px;color:var(--dim)">&#8863;</button>'
+                : '<button class="btn-icon" style="font-size:9px;letter-spacing:1px;padding:0 4px;color:var(--bright)" onclick="closeDepositPosition(&apos;' + dep.id + '&apos;)">CLOSE</button>')
             + '<button class="btn-icon" onclick="editDepositPosition(&apos;' + dep.id + '&apos;)" style="' + (isEditingDep ? 'color:var(--green)' : '') + '">&#9998;</button>'
             + '<button class="btn-icon" onclick="deleteDepositPosition(&apos;' + dep.id + '&apos;)" style="color:var(--red)">&#10005;</button>'
           + '</td>'
@@ -10015,6 +10155,14 @@ function render() {
             + '<label ' + ls + '><input type="radio" name="editDepType" value="regular-payouts" ' + (isReg ? 'checked' : '') + ' onchange="toggleEditDepFreq(this.value)" ' + ri + '> Regular Payouts</label>'
             + '<label ' + ls + '><input type="radio" name="editDepType" value="compounded" ' + (isCom ? 'checked' : '') + ' onchange="toggleEditDepFreq(this.value)" ' + ri + '> Compounded</label>'
             + '</div>'
+            + (dep.closeDate
+              ? '<div style="font-size:9px;color:var(--dim);letter-spacing:1px;margin-bottom:4px">CLOSED EARLY</div>'
+                + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:flex-end">'
+                + '<div class="field"><label>CLOSE DATE</label><input type="date" id="editDepCloseDate" value="' + dep.closeDate + '" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:5px 8px;outline:none"></div>'
+                + '<div class="field"><label>INTEREST RECEIVED</label><input type="number" id="editDepCloseInterest" value="' + (dep.closeInterest || 0) + '" min="0" step="any" style="width:100px"></div>'
+                + '<button class="btn" onclick="reopenDepositPosition(&apos;' + dep.id + '&apos;)" style="padding:6px 12px;color:var(--dim)">REOPEN</button>'
+                + '</div>'
+              : '')
             + '<div style="display:flex;gap:6px">'
             + '<button class="btn btn-green" onclick="saveDepPosEdit(&apos;' + dep.id + '&apos;)" style="padding:6px 12px">SAVE</button>'
             + '<button class="btn" onclick="editingDepPosId=null;render()" style="padding:6px 12px;color:var(--dim)">CANCEL</button>'
@@ -10038,11 +10186,11 @@ function render() {
           + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + pCA + '">' + (depAmtActive > 0 ? f2(depProfitActive/depAmtActive*100) + '%' : '&mdash;') + '</div></div>'
           + '</div>' : '')
         + (depAmtMatured > 0 ? '<div class="totals-bar" style="opacity:0.6">'
-          + '<div class="total-block"><div class="total-label">MATURED AMOUNT</div><div class="total-value" style="color:var(--bright)">' + depCurrSym + f2(depAmtMatured) + '</div></div>'
+          + '<div class="total-block"><div class="total-label">CLOSED AMOUNT</div><div class="total-value" style="color:var(--bright)">' + depCurrSym + f2(depAmtMatured) + '</div></div>'
           + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + pCM + '">' + depCurrSym + f2(depProfitMatured) + '</div></div>'
           + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + pCM + '">' + (depAmtMatured > 0 ? f2(depProfitMatured/depAmtMatured*100) + '%' : '&mdash;') + '</div></div>'
           + '</div>' : '')
-        + renderDepositAddForm(currentBondPortfolioId);
+        + (bp.archive ? '' : renderDepositAddForm(currentBondPortfolioId));
       return;
     }
     // ────────────────────────────────────────────────────────────────────────

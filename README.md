@@ -78,7 +78,7 @@ The portfolio switcher has three tabs:
 
 - **STOCKS** — regular equity portfolios, watchlists, then a cross-portfolio block: [ALL POSITIONS](#all-positions) with any pinned [global sets](#global-sets) listed under it, and finally Σ SUMMARY (portfolio-level totals).
 - **BONDS** — bond and deposit portfolios, plus their Σ SUMMARY (see [Bonds & Deposits](#bonds--deposits)).
-- **REALIZED** — realized portfolios for both stocks and bonds, listed together and separated by a divider. Cash portfolios appear next, then two cross-portfolio meta-items: ALL POSITIONS (realized) and Σ SUMMARY.
+- **REALIZED** — realized portfolios for stocks, bonds and deposits, listed together and separated by dividers. Cash portfolios appear next, then two cross-portfolio meta-items: ALL POSITIONS (realized) and Σ SUMMARY.
 
 ### Multi-currency portfolios
 
@@ -101,7 +101,7 @@ Selected via the **FOREIGN** radio button at creation. An ordinary portfolio in 
 
 ### Realized portfolios
 
-Portfolios in the **REALIZED** tab hold closed positions and show their actual realized totals — by contrast with the STOCKS and BONDS tabs, which show projected/unrealized values. Two kinds — **stock** and **bond** — appear in the tab, listed separately, then cash portfolios at the bottom.
+Portfolios in the **REALIZED** tab hold closed positions and show their actual realized totals — by contrast with the STOCKS and BONDS tabs, which show projected/unrealized values. Three kinds — **stock**, **bond** and **deposit** — appear in the tab, listed separately, then cash portfolios at the bottom.
 
 **Common properties:**
 
@@ -120,7 +120,14 @@ Portfolios in the **REALIZED** tab hold closed positions and show their actual r
 - Show closed bond positions: sold bonds (with sell date, sell clean price, sell accrued interest) and matured bonds.
 - Populated by moving sold or matured bonds in via the ⊟ button — they don't accept direct position add.
 
-**Creating a realized portfolio:** switch to the REALIZED tab and use the add form. A **STOCKS / BONDS** radio selects the type.
+**Deposits:**
+
+- Listed beneath the realized bonds, as on the BONDS tab.
+- Show closed deposits: matured ones and those [closed early](#deposit-portfolios).
+- Populated by moving closed deposits in via the ⊟ button, only into a realized deposit portfolio in the same currency — a deposit's amount is in its portfolio's currency, so moving it across currencies would change what the figure means.
+- In the realized Σ SUMMARY they sit with the bonds: no body P&L, the whole profit in the COUPON INC column. Like coupons, that interest stays out of the grand total — it's recorded in a cash portfolio when received.
+
+**Creating a realized portfolio:** switch to the REALIZED tab and use the add form. A **STOCKS / BONDS / DEPOSITS / CASH** radio selects the type.
 
 **Closing an entire active portfolio (stocks only):** click ⊟ next to the portfolio name in the STOCKS tab. Only available when **all** positions are sold; the portfolio itself moves to the REALIZED tab.
 
@@ -698,7 +705,9 @@ annYield = ((1 + rate/100 / freq) ^ freq − 1) × 100
 
 **Maturity date** = `openDate + termMonths`. A deposit is considered matured when `maturityDate ≤ today`.
 
-**Table view** — columns: **NAME · OPEN DATE · TERM · RATE · AMOUNT · PROFIT · RETURN · ANN.YIELD**. Click any row to open a detail modal showing all fields plus the calculated maturity date, profit, return, and status (Active / Matured). Edit (✎) and delete (✕) buttons appear on each row. **Editing** opens an inline form beneath the row (same style as bond position editing) with all fields including the Type radio buttons and conditional Freq/yr field. **Matured deposits** are shown in italic with reduced opacity, grouped in a separate MATURED VALUE totals bar; active deposits have their own ACTIVE VALUE totals bar.
+**Closing early.** An open deposit carries a **CLOSE** button. It asks for the close date and the interest actually received — banks rarely pay the full rate on early withdrawal, so the term formula no longer applies — and shows the resulting profit, return and annual yield before committing. Profit then equals the interest received, and annual yield runs from open to close date. A deposit closed by mistake can be reopened from its ✎ form, which for a closed deposit also edits the close date and interest.
+
+**Table view** — columns: **NAME · OPEN DATE · TERM · RATE · AMOUNT · PROFIT · RETURN · ANN.YIELD**. Click any row to open a detail modal showing all fields plus the calculated maturity date, profit, return, and status (Active / Matured / Closed early). Each row has edit (✎) and delete (✕), plus **CLOSE** while the deposit is open or ⊟ once it's closed, which moves it to a [realized deposit portfolio](#realized-portfolios). **Editing** opens an inline form beneath the row (same style as bond position editing) with all fields including the Type radio buttons and conditional Freq/yr field. **Closed deposits** — matured or closed early — are shown in italic with reduced opacity, grouped in a separate dimmed **CLOSED AMOUNT** totals bar; open deposits have their own **AMOUNT** totals bar.
 
 ### Bond & Deposit Σ SUMMARY
 
