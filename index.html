@@ -399,7 +399,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.96';
+var APP_VERSION = 'v1.5.97';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -10479,7 +10479,7 @@ function render() {
         + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + cA + '">' + (totAret !== null ? fPct(totAret) : '&mdash;') + '</div></div>'
         + '</div>' : '')
         + (totMValUSD > 0 ? '<div class="totals-bar" style="opacity:0.6">'
-        + '<div class="total-block"><div class="total-label">CLOSED VALUE</div><div class="total-value" style="color:var(--bright)">$' + f2(totMValUSD) + '</div></div>'
+        + '<div class="total-block"><div class="total-label">TOTAL CLOSED</div><div class="total-value" style="color:var(--bright)">$' + f2(totMValUSD) + '</div></div>'
         + '<div class="total-block"><div class="total-label">BODY P&amp;L</div><div class="total-value">' + fmtBondBody(totMBodyUSD, '$') + '</div></div>'
         + '<div class="total-block"><div class="total-label">COUPON INC</div><div class="total-value">' + fmtBondCoupon(totMCouponUSD, '$') + '</div></div>'
         + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + cM + '">$' + f2(totMProfitUSD) + '</div></div>'
@@ -10585,31 +10585,43 @@ function render() {
       });
     });
 
+    // Each portfolio splits into an active part and a closed part (sold lots),
+    // the same way the bond summary splits active from closed. A sold lot is
+    // valued at its sale proceeds — getPositionCurrent returns sellPrice for
+    // sold — so its P&L is realized. Closed parts take no weight and are
+    // totalled separately.
     function buildPortfolioStats() {
       return summaryPids.map(function(pid) {
         var p = portfolios[pid];
         var baseCur = (p.currencyCode || 'USD').toUpperCase();
-        var valUSD = 0, costUSD = 0, valBase = 0, costBase = 0, hasAny = false;
+        var rateBaseToUSD = baseCur === 'USD' ? 1 : (summaryFxRates[baseCur] || 1);
+        var acc = {
+          active: { valUSD: 0, costUSD: 0, val: 0, cost: 0, any: false },
+          closed: { valUSD: 0, costUSD: 0, val: 0, cost: 0, any: false }
+        };
         var sumStatPosns = summaryDoFilter ? filterPositions(p.positions || []) : (p.positions || []);
         sumStatPosns.forEach(function(pos) {
           var pcur = getPositionCurrent(pos);
           if (pcur != null && pos.qty > 0) {
+            var a = pos.sold ? acc.closed : acc.active;
             var posCur = getPositionCurrencyCode(pos, baseCur);
             var rateToUSD = posCur === 'USD' ? 1 : (summaryFxRates[posCur] || 1);
-            valUSD += pos.qty * pcur * rateToUSD;
-            costUSD += pos.qty * pos.entry * rateToUSD;
-            var rateBaseToUSD = baseCur === 'USD' ? 1 : (summaryFxRates[baseCur] || 1);
-            valBase += pos.qty * pcur * rateToUSD / rateBaseToUSD;
-            costBase += pos.qty * pos.entry * rateToUSD / rateBaseToUSD;
-            hasAny = true;
+            a.valUSD += pos.qty * pcur * rateToUSD;
+            a.costUSD += pos.qty * pos.entry * rateToUSD;
+            a.val += pos.qty * pcur * rateToUSD / rateBaseToUSD;
+            a.cost += pos.qty * pos.entry * rateToUSD / rateBaseToUSD;
+            a.any = true;
           }
         });
+        function part(a) {
+          return a.any ? { val: a.val, cost: a.cost, valUSD: a.valUSD, costUSD: a.costUSD } : null;
+        }
         return {
           id: pid, name: p.name,
           currency: CURRENCY_SYMBOLS[baseCur] || baseCur,
           currencyCode: baseCur,
-          val: hasAny ? valBase : null, cost: hasAny ? costBase : null,
-          valUSD: hasAny ? valUSD : null, costUSD: hasAny ? costUSD : null
+          active: part(acc.active),
+          closed: part(acc.closed)
         };
       });
     }
@@ -10619,29 +10631,42 @@ function render() {
 
     function renderSummaryWithRates() {
       var totalValUSD = 0, totalCostUSD = 0;
+      var totalClosedValUSD = 0, totalClosedCostUSD = 0;
       portfolioStats.forEach(function(s) {
-        if (s.valUSD !== null) { totalValUSD += s.valUSD; totalCostUSD += s.costUSD; }
+        if (s.active) { totalValUSD += s.active.valUSD; totalCostUSD += s.active.costUSD; }
+        if (s.closed) { totalClosedValUSD += s.closed.valUSD; totalClosedCostUSD += s.closed.costUSD; }
       });
+
+      // d is null for a portfolio with no priced positions at all: it still
+      // gets its active row, filled with dashes, as before.
+      function makeRow(s, d, isClosed) {
+        var pnl = d ? d.val - d.cost : null;
+        var ret = (pnl !== null && d.cost) ? pnl / d.cost * 100 : null;
+        var weight = (!isClosed && d && totalValUSD > 0) ? d.valUSD / totalValUSD * 100 : null;
+        var c = pnl === null ? '' : (pnl >= 0 ? 'pos' : 'neg');
+        return '<tr' + (isClosed ? ' style="font-style:italic;opacity:0.6"' : '') + '>'
+          + '<td style="text-align:left;white-space:nowrap;cursor:pointer" onclick="switchPortfolio(&apos;' + s.id + '&apos;)">' + s.name
+            + (isClosed ? ' <span style="font-size:10px;color:var(--dim)">(closed)</span>' : '') + '</td>'
+          + (isClosed ? '<td style="width:0;padding:0 2px 0 0"></td>' : stalePortfolioColHtml(s.id))
+          + '<td>' + (d ? (CURRENCY_SYMBOLS[s.currencyCode] || s.currencyCode) + f2(d.val) : '&mdash;') + '</td>'
+          + '<td class="' + c + '">' + (pnl !== null ? fSign(pnl) : '&mdash;') + '</td>'
+          + '<td class="' + c + '">' + (ret !== null ? fPct(ret) : '&mdash;') + '</td>'
+          + '<td>' + (weight !== null ? fPctNoSign(weight) : '&mdash;') + '</td>'
+          + '</tr>';
+      }
 
       var summaryRows = '';
       portfolioStats.forEach(function(s) {
-        var pnl = s.val !== null ? s.val - s.cost : null;
-        var ret = (pnl !== null && s.cost) ? pnl / s.cost * 100 : null;
-        var weight = (s.valUSD !== null && totalValUSD > 0) ? s.valUSD / totalValUSD * 100 : null;
-        var c = pnl === null ? '' : (pnl >= 0 ? 'pos' : 'neg');
-        summaryRows += '<tr>'
-        + '<td style="text-align:left;white-space:nowrap;cursor:pointer" onclick="switchPortfolio(&apos;' + s.id + '&apos;)">' + s.name + '</td>'
-        + stalePortfolioColHtml(s.id)
-        + '<td>' + (s.val !== null ? (CURRENCY_SYMBOLS[s.currencyCode] || s.currencyCode) + f2(s.val) : '&mdash;') + '</td>'
-        + '<td class="' + c + '">' + (pnl !== null ? fSign(pnl) : '&mdash;') + '</td>'
-        + '<td class="' + c + '">' + (ret !== null ? fPct(ret) : '&mdash;') + '</td>'
-        + '<td>' + (weight !== null ? fPctNoSign(weight) : '&mdash;') + '</td>'
-        + '</tr>';
-    });
+        if (s.active || !s.closed) summaryRows += makeRow(s, s.active, false);
+        if (s.closed) summaryRows += makeRow(s, s.closed, true);
+      });
 
       var totPnL = totalValUSD - totalCostUSD;
       var totRet = totalCostUSD ? totPnL / totalCostUSD * 100 : null;
       var c = totPnL >= 0 ? 'pos' : 'neg';
+      var totClosedPnL = totalClosedValUSD - totalClosedCostUSD;
+      var totClosedRet = totalClosedCostUSD ? totClosedPnL / totalClosedCostUSD * 100 : null;
+      var cClosed = totClosedPnL >= 0 ? 'pos' : 'neg';
 
     area.innerHTML = '<div class="table-wrap">'
       + '<table>'
@@ -10655,11 +10680,16 @@ function render() {
       + '</tr></thead>'
       + '<tbody>' + summaryRows + '</tbody>'
       + '</table></div>'
-      + '<div class="totals-bar">'
+      + ((totalValUSD > 0 || totalClosedValUSD === 0) ? '<div class="totals-bar">'
       + '<div class="total-block"><div class="total-label">TOTAL VALUE</div><div class="total-value" style="color:var(--bright)">$' + f2(totalValUSD) + '</div></div>'
       + '<div class="total-block"><div class="total-label">P&amp;L</div><div class="total-value ' + c + '">' + fSign(totPnL) + '</div></div>'
       + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + c + '">' + (totRet !== null ? fPct(totRet) : '&mdash;') + '</div></div>'
-      + '</div>';
+      + '</div>' : '')
+      + (totalClosedValUSD > 0 ? '<div class="totals-bar" style="opacity:0.6">'
+      + '<div class="total-block"><div class="total-label">TOTAL CLOSED</div><div class="total-value" style="color:var(--bright)">$' + f2(totalClosedValUSD) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">P&amp;L</div><div class="total-value ' + cClosed + '">' + fSign(totClosedPnL) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + cClosed + '">' + (totClosedRet !== null ? fPct(totClosedRet) : '&mdash;') + '</div></div>'
+      + '</div>' : '');
     } // end renderSummaryWithRates
 
     if (nonUSD.length === 0) {

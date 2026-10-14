@@ -274,7 +274,7 @@ Selected from the portfolio switcher (**Σ SUMMARY** at the bottom of the STOCKS
 
 The ⋮ dropdown menu shows three views:
 
-- **P&L** (default) — NAME / VALUE (in native currency) / P&L / RETURN / SHARE%. The total row is always in USD with live FX conversion. Clicking a portfolio name switches to it.
+- **P&L** (default) — NAME / VALUE (in native currency) / P&L / RETURN / SHARE%. Sold lots are split into a separate `(closed)` row for the portfolio, valued at their sale proceeds and carrying no weight; they're totalled in their own **TOTAL CLOSED** bar beneath the main one. Totals are in USD with live FX conversion. Clicking a portfolio name switches to it.
 - **MARKET** — per-portfolio aggregates: PORTFOLIO / [close] / [current] / Δ / Δ%. Uses the same CLOSE/CURRENT mode menus as the regular MARKET view (including historical periods 5D/1M/3M/6M/1Y/5Y); the value in each row is the portfolio's total at the chosen price.
 - **CHART** — see [Summary Chart](#summary-chart) — TOTAL or BY PORTFOLIO modes.
 
