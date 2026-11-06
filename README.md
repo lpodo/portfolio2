@@ -323,7 +323,7 @@ Stored in localStorage (`pt_all_sets`) and cloud-synced, so pinned sets and thei
 
 Each **ticker** can have one or more price alerts. Alerts live in a registry keyed by ticker, so the same ticker held in multiple portfolios, brokers, or watchlists shares one alert set. Alerts are checked on every price refresh and shown across all market-style views.
 
-An alert set persists while at least one **live** position of the ticker exists — meaning a non-sold position in a regular portfolio, or any position in a watchlist (including qty=0 candidates). When the last live position is removed (sold, moved to a realized portfolio, deleted, or its portfolio is deleted), the ticker's alerts are dropped automatically. Realized portfolios don't keep alerts alive.
+An alert set persists while the ticker has any position outside a realized portfolio — including a sold lot, since you may buy back. Once only realized copies remain (or none at all), the ticker's alerts are dropped automatically, together with its flag and note. Realized portfolios don't keep them alive.
 
 ### Setting alerts
 
@@ -1026,8 +1026,10 @@ Storage rules: missing fields aren't stored (no `null` clutter); if an entry end
 
 **Cleanup** — `pruneTickerData(ticker)` runs after operations that may orphan a ticker (sell, delete, move-to-archive, ticker rename, portfolio delete). Retention differs by field group:
 
-- **Alerts** are dropped when no live position of the ticker remains (non-sold in a regular portfolio, or any position in a watchlist). Realized portfolios don't keep alerts alive.
-- **Classification / ISIN / note / market metadata** are dropped only when no position of the ticker exists **anywhere**, including realized portfolios — closed positions still want their metadata for reporting.
+- **Alerts, flag and note** say what you intend to do next, so they're dropped once the ticker exists only in realized portfolios (or nowhere). A sold lot still sitting in a live portfolio keeps them.
+- **Classification and ISIN** describe the instrument, and realized positions are still analysed by them — so they're dropped only when no position of the ticker exists **anywhere**. Market metadata stays with the entry.
+
+The same rule is also swept across every ticker after each load, so annotations left behind out of sight — a realized position has no alerts row to remove them from — don't linger.
 
 The hook is idempotent.
 

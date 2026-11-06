@@ -402,7 +402,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.101';
+var APP_VERSION = 'v1.5.102';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -455,6 +455,19 @@ var tickerData = {};
 //             positions still want their metadata for reporting/analytics)
 // If all fields end up empty, the whole ticker entry is removed.
 // Idempotent — safely callable for any ticker.
+// Applies pruneTickerData to every ticker that still carries ticker data or
+// alerts. Run after loading, so annotations orphaned before the cleanup rules
+// covered every path — or by another device — don't linger out of sight
+// (a realized position shows no alerts row to remove them from).
+function pruneAllTickerData() {
+  var seen = {};
+  Object.keys(tickerData).concat(Object.keys(alertStore)).forEach(function(t) {
+    if (seen[t]) return;
+    seen[t] = true;
+    pruneTickerData(t);
+  });
+}
+
 function pruneTickerData(ticker) {
   // Runs when the ticker has EITHER a tickerData entry or alerts: alerts live
   // in their own store, so a ticker can have alerts with no tickerData left.
@@ -1708,6 +1721,10 @@ function moveToArchive(archivePid) {
   });
   positions = positions.filter(function(p) { return archiveMenuPosIds.indexOf(p.id) === -1; });
   archiveMenuPosIds = null;
+  // Save positions back before cleanup: the orphan check reads portfolios, and
+  // until this line the current one still holds the lots just moved out, so
+  // the ticker would look live and keep its flag, note and alerts.
+  portfolios[currentPortfolioId].positions = positions;
   // These tickers may now exist only in archives, which is when their
   // annotations stop applying.
   var movedTickers = {};
@@ -5219,6 +5236,8 @@ function applyCloudAlerts(data) {
     saveAlertCheckSettingsLS();
     renderAlertCheckSettings();
   }
+  // Portfolios are already applied by every caller, so the check sees them.
+  pruneAllTickerData();
 }
 // What gets written as that sibling field.
 function alertsCloudPayload() {
@@ -9807,6 +9826,12 @@ function render() {
           bondTotBodyUSD += s.bodyUSD; bondTotCouponUSD += s.couponUSD;
         }
       });
+      // Coupon income, and the profit and return built on it, stay out of the
+      // grand total (income arrives through cash), so they're shown dim.
+      function dimBondCoupon(v, currSym) {
+        if (Math.abs(v) < 0.005) return '<span style="color:var(--dim)">&mdash;</span>';
+        return '<span style="color:var(--dim)">+' + currSym + f2(v) + '</span>';
+      }
       var bondRows = '';
       bondStats.forEach(function(s) {
         if (s.val === null) {
@@ -9820,9 +9845,9 @@ function render() {
           + '<td style="text-align:left;white-space:nowrap;cursor:pointer" onclick="showBondPortfolio(&apos;' + s.id + '&apos;)">' + s.name + '</td>'
           + '<td>' + s.currency + f2(s.val) + '</td>'
           + '<td>' + fmtBondBody(s.body, s.currency) + '</td>'
-          + '<td>' + fmtBondCoupon(s.coupon, s.currency) + '</td>'
-          + '<td class="' + c + '">' + s.currency + f2(s.profit) + '</td>'
-          + '<td class="' + c + '">' + (ret !== null ? fPct(ret) : '&mdash;') + '</td>'
+          + '<td>' + dimBondCoupon(s.coupon, s.currency) + '</td>'
+          + '<td style="color:var(--dim)">' + s.currency + f2(s.profit) + '</td>'
+          + '<td style="color:var(--dim)">' + (ret !== null ? fPct(ret) : '&mdash;') + '</td>'
           + '<td>' + (weight !== null ? fPctNoSign(weight) : '&mdash;') + '</td>'
           + '</tr>';
       });
@@ -9844,9 +9869,9 @@ function render() {
           + '<div class="totals-bar">'
           + '<div class="total-block"><div class="total-label">TOTAL VALUE</div><div class="total-value" style="color:var(--bright)">$' + f2(bondTotValUSD) + '</div></div>'
           + '<div class="total-block"><div class="total-label">BODY P&amp;L</div><div class="total-value">' + fmtBondBody(bondTotBodyUSD, '$') + '</div></div>'
-          + '<div class="total-block"><div class="total-label">COUPON INC</div><div class="total-value">' + fmtBondCoupon(bondTotCouponUSD, '$') + '</div></div>'
-          + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value ' + bondTotPC + '">$' + f2(bondTotProfitUSD) + '</div></div>'
-          + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + bondTotPC + '">' + (bondTotRet !== null ? fPct(bondTotRet) : '&mdash;') + '</div></div>'
+          + '<div class="total-block"><div class="total-label">COUPON INC</div><div class="total-value">' + dimBondCoupon(bondTotCouponUSD, '$') + '</div></div>'
+          + '<div class="total-block"><div class="total-label">PROFIT</div><div class="total-value" style="color:var(--dim)">$' + f2(bondTotProfitUSD) + '</div></div>'
+          + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value" style="color:var(--dim)">' + (bondTotRet !== null ? fPct(bondTotRet) : '&mdash;') + '</div></div>'
           + '</div></div>'
         : '');
 
@@ -11479,7 +11504,7 @@ function render() {
     + thBtn('ticker', 'TICKER', 'left')
     + thBtn('qty', 'QTY')
     + thBtn('entry', 'ENTRY')
-    + thBtn('current', currentPortfolio().archive ? 'SELL PRICE' : 'CURRENT')
+    + thBtn('current', (mainIsRealizedAll || mainIsRealizedPortfolio) ? 'SELL PRICE' : 'CURRENT')
     + thBtn('pnl', 'P&amp;L')
     + thBtn('pnlpct', 'P&amp;L %')
     + '<th style="width:16px;padding:0"></th>' + '<th style="width:0;padding:0"></th>'
@@ -11520,6 +11545,7 @@ function render() {
 }
 
 initPortfolios();
+pruneAllTickerData();
 applyAppearancePrefs();
 loadCloudDirty();
 loadLocal();
