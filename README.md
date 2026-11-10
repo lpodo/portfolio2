@@ -221,6 +221,8 @@ Columns TICKER / CLOSE / CURRENT / Δ%; sortable by TICKER or Δ%. The Δ% colum
 
 Columns TICKER / VALUE / WEIGHT %; sortable by any column. Sold lots are listed dimmed with no weight, and the total covers held lots only; sorting by weight puts them last.
 
+The last column's header is a toggle, green like MARKET's column menus: **NAME** (default) or **GROUP**. In GROUP mode, tickers sharing a [group](#ticker-classification-fields) merge into one row — the group's name, the summed value and weight, and ×N in the TICKER column for the number of tickers in it. Useful when one theme is held through several instruments, such as three physical-gold ETFs. Tickers without a group are shown as before. The mode is remembered and shared by every WEIGHTS view, including ALL POSITIONS.
+
 ### Aggregation mode
 
 The ≡ button in the P&L table header (above the action buttons) collapses duplicate tickers into single rows for a cleaner view. Active separately for regular and realized portfolios; state persists across sessions. The ≡ icon turns green when enabled. The Weight view inherits the same mode automatically.
@@ -298,7 +300,7 @@ The ⋮ dropdown offers, in the STOCKS context: **P&L**, **MARKET** (default), *
 - **P&L** — the standard P&L table over the whole union.
 - **MARKET** — same columns and CLOSE/CURRENT menus as the regular [MARKET](#market) view. Default sort: Δ% absolute descending (biggest movers first).
 - **ALERTS** — MARKET filtered to positions whose ticker has at least one alert. See [ALERTS view](#alerts-view).
-- **WEIGHTS** (realized default) — TICKER / VALUE (native, dimmed) / VALUE (\$) / WEIGHT % / NAME, sortable.
+- **WEIGHTS** (realized default) — TICKER / VALUE (native, dimmed) / VALUE (\$) / WEIGHT % / NAME, sortable; the NAME header toggles [GROUP mode](#weights) as in a portfolio.
 - **CHART / FUNDAMENTALS** — same as the per-portfolio [Chart](#charts) and [Fundamentals](#fundamentals) views, over the union's tickers.
 - **ANALYTICS** — same two-dropdown layout as the per-portfolio [Analytics](#analytics), aggregated across the union.
 
@@ -487,16 +489,17 @@ Four **classification** attributes describe the security itself rather than any 
 
 - **CATEGORY / REGION / SECTOR** — must be chosen from [dictionaries](#dictionaries). Free text is not allowed; this guarantees exact consistency across portfolios so Analytics grouping works.
 - **ISIN** — free text, 12-character ISO 6166 code. Uppercase-only, alphanumeric.
+- **GROUP** — chosen from its own dictionary exactly like the three above, and stored on the ticker the same way. It isn't an Analytics rubric: it exists so [WEIGHTS](#weights) can merge tickers that represent one theme.
 
 These attributes are shown and edited only for real securities (`EQUITY` / `ETF`) — for indices, currencies, futures and the like the fields are hidden entirely, since they have no meaningful company-level classification.
 
-**Setting values:** each field is a dropdown in the [expanded row](#expanded-row). Pick a value, or choose **+ new…** to add one inline; the dropdown also ends with **manage…**, opening that dictionary's [management modal](#dictionaries). The change applies to the ticker, so every position of it sees the new value immediately.
+**Setting values:** each field is a dropdown in the [expanded row](#expanded-row). Pick a value; the dropdown ends with **manage…**, opening that dictionary's [management modal](#dictionaries), where new values are added. The change applies to the ticker, so every position of it sees the new value immediately.
 
 For ISIN, overwriting or clearing an existing value triggers a confirmation dialog. Setting an ISIN on an empty slot happens silently.
 
 #### Dictionaries
 
-Every dictionary — categories, regions, sectors, brokers, cash categories — is managed from the same modal, reached by **manage…** at the bottom of that field's dropdown wherever it's used. No separate Settings panel: a dictionary is edited where its values are chosen.
+Every dictionary — categories, regions, sectors, groups, brokers, cash categories — is managed from the same modal, reached by **manage…** at the bottom of that field's dropdown wherever it's used. No separate Settings panel: a dictionary is edited where its values are chosen.
 
 The modal lists each value with a count of how many tickers (or positions, or cash entries) currently use it, and a field to add a new one. Deleting a value that's in use asks for confirmation naming the count, then clears it from everything holding it. The brokers dictionary additionally carries a ● toggle marking the default broker.
 
@@ -549,7 +552,7 @@ A held security in a live portfolio shows the lot's purchase details, the instru
 NVIDIA Corporation
 BROKER  ETrade   BUY DATE  2024-08-19   + buy more   🖩 calc
 ISIN  US67066G1040  ✎   EXCHANGE  NMS   TYPE  EQUITY
-CAT  AI & Semi ▾    REG  US ▾    SEC  Technology ▾
+CAT  AI & Semi ▾    REG  US ▾    SEC  Technology ▾    GRP  — ▾
 FLAG  review ▾
 NOTE  Bought on dip after earnings  ✎
 ALERTS  > 920  ✕    [>] [price] [+]
@@ -569,7 +572,7 @@ Fields:
 - **+ buy more** — opens the Add form pre-filled for a top-up: same ticker, broker and ISIN, today's date, and the current price as the entry, leaving only the quantity to type. The ticker field also offers every symbol already held as suggestions, which saves retyping things like `PHYS-U.TO`.
 - **Calculator** — a "what if it reaches X" pad for the ticker. Three linked fields — target price, change from entry, change from current — where typing in any one fills the other two, with the absolute gain or loss in the position's currency shown beneath. On an aggregated row it works from the group's weighted-average entry.
 - **ISIN** — identifier for the ticker, `—` if unknown; ✎ opens an editor. No free provider supplies ISINs (see [Cloudflare Worker](#cloudflare-worker)), so they're entered by hand. Overwriting or clearing an existing one asks for confirmation.
-- **CAT / REG / SEC** — [classification](#ticker-classification-fields) dropdowns, applying to the ticker everywhere it's held.
+- **CAT / REG / SEC / GRP** — [classification](#ticker-classification-fields) and group dropdowns, applying to the ticker everywhere it's held.
 - **EXCHANGE / TYPE** — from Yahoo (`exchangeName`, `instrumentType`), read-only.
 - **FLAG** — the ticker's [attention flag](#flags).
 - **NOTE** — the ticker's [note](#note-field); ✎ opens the editor.
@@ -785,6 +788,7 @@ Backup format:
   "catDict": ["AI & Semi", "Energy", ...],
   "regDict": ["Europe", "US", ...],
   "secDict": ["Energy", "Technology", ...],
+  "grpDict": ["Gold", "Semis", ...],
   "cashCatDict": ["Salary", "Dividend", ...],
   "brokerDict": ["ETrade", "IB", ...],
   "defaultBroker": "ETrade",
@@ -979,7 +983,7 @@ The central consequence of the data refactor: a ticker-keyed registry holds **ev
 It stores three groups of fields:
 
 1. **Live market metadata** from Yahoo — refreshed on every price update: `current`, `currency`, `shortName`, `instrumentType`, `exchangeName`, `marketState`, `priceType`, `regularMarketPrice`, `previousClose`.
-2. **User annotation** — `category`, `region`, `sector` (dictionary-backed), `isin`, and `note` (free text).
+2. **User annotation** — `category`, `region`, `sector`, `group` (dictionary-backed), `isin`, and `note` (free text).
 3. **Alerts** — `alerts` array.
 
 ```json
@@ -1016,7 +1020,7 @@ It stores three groups of fields:
 Field semantics:
 
 - Market metadata is stored verbatim from Yahoo (numeric fields stay numeric). A `null`/`undefined` clears the field. Read via `getTickerMeta(ticker, field)` and the per-field wrappers (`getPositionCurrent`, `getPositionCurrencyCode`, `getPositionShortName`, etc.).
-- `category` / `region` / `sector` — free-string values chosen from dictionaries (see [Ticker classification fields](#ticker-classification-fields)); hand-typed values are trimmed. Absent means unclassified.
+- `category` / `region` / `sector` / `group` — free-string values chosen from dictionaries (see [Ticker classification fields](#ticker-classification-fields)); hand-typed values are trimmed. Absent means unclassified.
 - `isin` — one of three states: a real ISIN string; the marker `UNRESOLVED` (a provider was asked and returned nothing — don't re-ask); or absent (never looked up). A lookup fires only when the field is falsy, so both a known ISIN and the `UNRESOLVED` marker suppress re-querying. The helper `isKnownIsin(v)` treats any value starting with `UNRESOLVED` as a marker — so a future provider can use a suffixed variant (e.g. `UNRESOLVED_V2`) to auto-requery tickers still carrying the bare marker, without changing the check.
 - `flag` — id of the [attention flag](#flags) set on this ticker, referencing an entry in `flagDefs`. Storing the id rather than the icon means renaming a flag leaves marked tickers untouched; deleting one clears the field everywhere it's referenced.
 - `note` — free-text annotation for the ticker (see [Note field](#note-field)). Absent when empty; saving an empty value removes the key.
@@ -1027,7 +1031,7 @@ Storage rules: missing fields aren't stored (no `null` clutter); if an entry end
 **Cleanup** — `pruneTickerData(ticker)` runs after operations that may orphan a ticker (sell, delete, move-to-archive, ticker rename, portfolio delete). Retention differs by field group:
 
 - **Alerts, flag and note** say what you intend to do next, so they're dropped once the ticker exists only in realized portfolios (or nowhere). A sold lot still sitting in a live portfolio keeps them.
-- **Classification and ISIN** describe the instrument, and realized positions are still analysed by them — so they're dropped only when no position of the ticker exists **anywhere**. Market metadata stays with the entry.
+- **Classification, group and ISIN** describe the instrument, and realized positions are still analysed by them — so they're dropped only when no position of the ticker exists **anywhere**. Market metadata stays with the entry.
 
 The same rule is also swept across every ticker after each load, so annotations left behind out of sight — a realized position has no alerts row to remove them from — don't linger.
 
@@ -1052,6 +1056,7 @@ Primary on-device storage:
 - `pt_cat_dict` — CATEGORY dictionary (sorted array of values)
 - `pt_reg_dict` — REGION dictionary
 - `pt_sec_dict` — SECTOR dictionary
+- `pt_grp_dict` — GROUP dictionary
 - `pt_broker_dict` — BROKER dictionary
 - `pt_default_broker` — default broker name (used by `getPositionBroker` when a position has no explicit `broker`); falls back to the first dict entry if the stored value is missing
 - `pt_agg_active`, `pt_agg_archive` — aggregation mode state
@@ -1065,6 +1070,7 @@ Primary on-device storage:
 - `pt_blink_period` — APPEARANCE base blink period for triggered alerts (`slow` / `med` / `fast`); default `med`
 - `pt_close_mode` — close column mode: `prev` (Prev.Close), `reg` (Reg.Price), or a historical period (`5d`, `1mo`, `3mo`, `6mo`, `1y`, `5y`); default `prev`
 - `pt_current_mode` — current column mode: `cur` (Current) or `reg` (Reg.Price); default `cur`
+- `pt_weight_name_mode` — WEIGHTS last column: `name` or `group`; default `name`
 - `pt_analytics_subview` — Analytics subview: `pnl` / `market` / `chart` / `weights`; default `weights`
 - `pt_filter` — global position filter: `{ purchaseDateFrom?, broker?, setId? }`; absent when no filter is set (see [Filters](#filters))
 - `pt_all_sets` — [global sets](#global-sets), including their pinned flag; also cloud-synced

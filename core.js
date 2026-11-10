@@ -683,6 +683,7 @@ function saveDicts() {
   try { localStorage.setItem('pt_cat_dict', JSON.stringify(catDict)); } catch(e) {}
   try { localStorage.setItem('pt_reg_dict', JSON.stringify(regDict)); } catch(e) {}
   try { localStorage.setItem('pt_sec_dict', JSON.stringify(secDict)); } catch(e) {}
+  try { localStorage.setItem('pt_grp_dict', JSON.stringify(grpDict)); } catch(e) {}
   try { localStorage.setItem('pt_cash_cat_dict', JSON.stringify(cashCatDict)); } catch(e) {}
   try { localStorage.setItem('pt_broker_dict', JSON.stringify(brokerDict)); } catch(e) {}
   try {
@@ -1048,6 +1049,7 @@ function _isArc() { var p = portfolios[currentPortfolioId]; return !!(p && p.arc
 var catDict = [];
 var regDict = [];
 var secDict = [];
+var grpDict = [];   // GROUP: tickers that represent one theme, merged in WEIGHTS
 var brokerDict = [];
 var _defaultBroker = null;
 // Sets for the ALL POSITIONS context. Portfolio sets ride inside the portfolio
@@ -1104,6 +1106,7 @@ function loadDicts() {
   try { catDict = JSON.parse(localStorage.getItem('pt_cat_dict')) || []; } catch(e) { catDict = []; }
   try { regDict = JSON.parse(localStorage.getItem('pt_reg_dict')) || []; } catch(e) { regDict = []; }
   try { secDict = JSON.parse(localStorage.getItem('pt_sec_dict')) || []; } catch(e) { secDict = []; }
+  try { grpDict = JSON.parse(localStorage.getItem('pt_grp_dict')) || []; } catch(e) { grpDict = []; }
   try { cashCatDict = JSON.parse(localStorage.getItem('pt_cash_cat_dict')) || []; } catch(e) { cashCatDict = []; }
   try { brokerDict = JSON.parse(localStorage.getItem('pt_broker_dict')) || []; } catch(e) { brokerDict = []; }
   try { _defaultBroker = localStorage.getItem('pt_default_broker') || null; } catch(e) { _defaultBroker = null; }
