@@ -402,7 +402,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.105';
+var APP_VERSION = 'v1.5.106';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -724,6 +724,55 @@ function toggleWeightNameMode() {
   try { localStorage.setItem('pt_weight_name_mode', weightNameMode); } catch(e) {}
   render();
 }
+// Group rows' members, filled while a WEIGHTS table renders and read by the
+// ×N modal. Indexed rather than keyed by name, so a group name never has to be
+// quoted into an onclick.
+var _weightGroupDetails = [];
+function weightGroupButtonHtml(detail) {
+  var i = _weightGroupDetails.push(detail) - 1;
+  return '<button class="btn-icon" onclick="openWeightGroupDetail(' + i + ')" style="font-size:12px;letter-spacing:1px;color:var(--bright);padding:0 4px;cursor:pointer;background:none;border:none;font-family:var(--font)">&times;' + detail.n + '</button>';
+}
+// The same columns as the WEIGHTS table, without its sort controls.
+function weightDetailHeadHtml(baseLabel) {
+  function th(label, align) {
+    return '<th style="text-align:' + align + ';padding:5px 4px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">' + label + '</th>';
+  }
+  return '<tr>' + th('TICKER', 'left') + th('VALUE', 'right') + th('VALUE (' + baseLabel + ')', 'right') + th('WEIGHT', 'right')
+    + '<th style="text-align:left;padding:5px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap">NAME</th></tr>';
+}
+// The group's TOTAL line, in the WEIGHTS foot format: weight is the group's
+// share of the whole portfolio, not 100%.
+function weightDetailFootHtml(sym, val, weight) {
+  return '<tr style="border-top:2px solid var(--border);font-weight:bold;color:var(--bright)">'
+    + '<td style="text-align:left;white-space:nowrap;padding:6px 4px">TOTAL</td>'
+    + '<td></td>'
+    + '<td style="padding:6px 4px;white-space:nowrap">' + sym + f2(val) + '</td>'
+    + '<td style="padding:6px 4px;white-space:nowrap">' + fPctNoSign(weight) + '</td>'
+    + '<td></td>'
+    + '</tr>';
+}
+function openWeightGroupDetail(i) {
+  var d = _weightGroupDetails[i];
+  if (!d) return;
+  var existing = document.getElementById('weightGroupOverlay');
+  if (existing) existing.remove();
+  var overlay = document.createElement('div');
+  overlay.id = 'weightGroupOverlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:500;display:flex;align-items:flex-start;justify-content:center;padding-top:60px';
+  overlay.innerHTML =
+    '<div style="background:var(--bg2);border:1px solid var(--border);padding:16px 18px;max-width:94vw;max-height:80vh;overflow:auto" onclick="event.stopPropagation()">'
+    + '<div style="display:flex;align-items:center;margin-bottom:10px">'
+    + '<div style="flex:1;font-size:9px;color:var(--dim);letter-spacing:2px">GROUP &middot; <span style="color:var(--bright)">' + d.title + '</span></div>'
+    + '<button class="btn-icon" onclick="document.getElementById(\'weightGroupOverlay\').remove()" style="font-size:13px;padding:2px 6px">&#10005;</button>'
+    + '</div>'
+    + '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
+    + '<table style="width:auto;border-collapse:collapse;font-size:13px">'
+    + '<thead>' + d.head + '</thead><tbody>' + d.rows + '</tbody><tfoot>' + d.foot + '</tfoot>'
+    + '</table></div></div>';
+  overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+  document.body.appendChild(overlay);
+}
+
 // The clickable NAME / GROUP header, green like MARKET's CLOSE / CURRENT menus.
 function weightNameHeaderHtml() {
   return '<th style="text-align:left;padding:5px 8px;font-size:9px;color:var(--green);letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer" onclick="toggleWeightNameMode()">'
@@ -11369,6 +11418,7 @@ function render() {
       } else {
         // GROUP mode: lots whose ticker has a group, and which carry weight,
         // merge into one row per group. Everything else is shown as usual.
+        _weightGroupDetails = [];
         var items = [], groups = {};
         wSorted.forEach(function(p) {
           var pcur = getPositionCurrent(p);
@@ -11379,9 +11429,12 @@ function render() {
           if (!grp) { items.push({ pos: p, pcur: pcur, valBase: posValBase, counts: counts, label: p.ticker }); return; }
           var g = groups[grp];
           if (!g) {
-            g = groups[grp] = { group: grp, label: grp, valBase: 0, valNative: 0, currency: getPositionCurrencyCode(p), mixed: false, tickers: {}, counts: true };
+            g = groups[grp] = { group: grp, label: grp, valBase: 0, valNative: 0, currency: getPositionCurrencyCode(p), mixed: false, tickers: {}, counts: true, members: [] };
             items.push(g);
           }
+          // Members keep the table's current order, so the modal lists them
+          // the way NAME mode would.
+          g.members.push({ p: p, pcur: pcur, valBase: posValBase });
           g.valBase += posValBase;
           g.valNative += p.qty * pcur;
           if (getPositionCurrencyCode(p) !== g.currency) g.mixed = true;
@@ -11398,8 +11451,15 @@ function render() {
           if (!it.group) { weightRows += posRowHtml(it.pos, it.pcur, it.valBase, weight); return; }
           var n = Object.keys(it.tickers).length;
           var gSym = CURRENCY_SYMBOLS[it.currency] || it.currency;
+          var detail = {
+            title: it.group, n: n, head: weightDetailHeadHtml(baseSym),
+            rows: it.members.map(function(m) {
+              return posRowHtml(m.p, m.pcur, m.valBase, wTotVal > 0 ? (m.valBase / wTotVal) * 100 : null);
+            }).join(''),
+            foot: weightDetailFootHtml(baseSym, it.valBase, weight)
+          };
           weightRows += '<tr>'
-            + '<td style="text-align:left;white-space:nowrap;color:var(--dim)">&times;' + n + '</td>'
+            + '<td style="text-align:left;white-space:nowrap">' + weightGroupButtonHtml(detail) + '</td>'
             + '<td style="padding:5px 4px;white-space:nowrap;color:var(--dim)">' + (it.mixed ? '&mdash;' : gSym + f2(it.valNative)) + '</td>'
             + '<td style="padding:5px 4px;white-space:nowrap">' + baseSym + f2(it.valBase) + '</td>'
             + '<td style="padding:5px 4px;white-space:nowrap">' + fPctNoSign(weight) + '</td>'
@@ -11501,7 +11561,10 @@ function render() {
           tm.valUSD += valUSD;
           tm.valNative += pos.qty * pcur;
           if (posCur !== tm.currency) tm.mixed = true;
-          tm.tickers[t] = true;
+          // Per-ticker figures inside a group, for its ×N modal.
+          if (!tm.tickers[t] || tm.tickers[t] === true) tm.tickers[t] = { valUSD: 0, valNative: 0, currency: posCur, shortName: getPositionShortName(pos) || '' };
+          tm.tickers[t].valUSD += valUSD;
+          tm.tickers[t].valNative += pos.qty * pcur;
           if (!tm.shortName) tm.shortName = getPositionShortName(pos) || '';
         });
       });
@@ -11518,10 +11581,37 @@ function render() {
         if (weightSort.key === 'ticker') return weightSort.dir * a.ticker.localeCompare(b.ticker);
         return weightSort.dir * (a.valUSD > b.valUSD ? 1 : a.valUSD < b.valUSD ? -1 : 0);
       });
+      _weightGroupDetails = [];
+      // One row in the ALL POSITIONS format, used for the table and the modal.
+      function gwRowHtml(ticker, valNative, currency, valUSD, weight, nameHtml) {
+        var sym = CURRENCY_SYMBOLS[currency] || currency;
+        return '<tr>'
+          + '<td style="text-align:left;white-space:nowrap">' + ticker + '</td>'
+          + '<td style="padding:5px 4px;white-space:nowrap;color:var(--dim)">' + sym + f2(valNative) + '</td>'
+          + '<td style="padding:5px 4px;white-space:nowrap">$' + f2(valUSD) + '</td>'
+          + '<td style="padding:5px 4px;white-space:nowrap">' + fPctNoSign(weight) + '</td>'
+          + '<td style="text-align:left;white-space:nowrap;font-size:11px;color:var(--dim);padding-left:8px">' + nameHtml + '</td>'
+          + '</tr>';
+      }
+      function groupDetail(r) {
+        var tm = tickerMap['\u0000' + r.group];
+        var members = Object.keys(tm.tickers).map(function(t) { var m = tm.tickers[t]; m.ticker = t; return m; });
+        members.sort(function(a, b) {
+          if (weightSort.key === 'ticker') return weightSort.dir * a.ticker.localeCompare(b.ticker);
+          return weightSort.dir * (a.valUSD > b.valUSD ? 1 : a.valUSD < b.valUSD ? -1 : 0);
+        });
+        return {
+          title: r.group, n: r.n, head: weightDetailHeadHtml('$'),
+          rows: members.map(function(m) {
+            return gwRowHtml(m.ticker, m.valNative, m.currency, m.valUSD, totalValUSD > 0 ? m.valUSD / totalValUSD * 100 : 0, m.shortName);
+          }).join(''),
+          foot: weightDetailFootHtml('$', r.valUSD, r.weight)
+        };
+      }
       var rowsHtml = rows.map(function(r) {
         var nativeSym = CURRENCY_SYMBOLS[r.currency] || r.currency;
         return '<tr>'
-          + '<td style="text-align:left;white-space:nowrap' + (r.group ? ';color:var(--dim)">&times;' + r.n : '">' + r.ticker) + '</td>'
+          + '<td style="text-align:left;white-space:nowrap">' + (r.group ? weightGroupButtonHtml(groupDetail(r)) : r.ticker) + '</td>'
           + '<td style="padding:5px 4px;white-space:nowrap;color:var(--dim)">' + (r.mixed ? '&mdash;' : nativeSym + f2(r.valNative)) + '</td>'
           + '<td style="padding:5px 4px;white-space:nowrap">$' + f2(r.valUSD) + '</td>'
           + '<td style="padding:5px 4px;white-space:nowrap">' + fPctNoSign(r.weight) + '</td>'

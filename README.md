@@ -221,7 +221,7 @@ Columns TICKER / CLOSE / CURRENT / Δ%; sortable by TICKER or Δ%. The Δ% colum
 
 Columns TICKER / VALUE / WEIGHT %; sortable by any column. Sold lots are listed dimmed with no weight, and the total covers held lots only; sorting by weight puts them last.
 
-The last column's header is a toggle, green like MARKET's column menus: **NAME** (default) or **GROUP**. In GROUP mode, tickers sharing a [group](#ticker-classification-fields) merge into one row — the group's name, the summed value and weight, and ×N in the TICKER column for the number of tickers in it. Useful when one theme is held through several instruments, such as three physical-gold ETFs. Tickers without a group are shown as before. The mode is remembered and shared by every WEIGHTS view, including ALL POSITIONS.
+The last column's header is a toggle, green like MARKET's column menus: **NAME** (default) or **GROUP**. In GROUP mode, tickers sharing a [group](#ticker-classification-fields) merge into one row — the group's name, the summed value and weight, and ×N in the TICKER column for the number of tickers in it. Useful when one theme is held through several instruments, such as three physical-gold ETFs. Tapping ×N opens the group's members in the same format as NAME mode, weights still as shares of the whole portfolio, with the group's total beneath. Tickers without a group are shown as before. The mode is remembered and shared by every WEIGHTS view, including ALL POSITIONS.
 
 ### Aggregation mode
 
