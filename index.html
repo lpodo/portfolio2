@@ -97,6 +97,10 @@
         <label>BUY DATE</label>
         <input type="date" id="fDate" style="width:130px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;box-sizing:border-box">
       </div>
+      <div class="field" id="fSellDateField" style="display:none">
+        <label>SELL DATE</label>
+        <input type="date" id="fSellDate" style="width:130px;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;box-sizing:border-box">
+      </div>
       <div class="field">
         <label>ISIN</label>
         <input type="text" id="fIsin" placeholder="US0378331005" maxlength="12"
@@ -402,7 +406,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.106';
+var APP_VERSION = 'v1.5.109';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -965,6 +969,11 @@ function updateAddFormForTab() {
   var isBondsTab = switcherTab === 'bonds';
   var curLabel = document.getElementById('fCurrentLabel');
   if (curLabel) curLabel.textContent = isArchiveTab ? 'SELL PRICE' : 'CURRENT (opt.)';
+  // A position added on the REALIZED tab is already sold, so it needs a date.
+  var sellDateField = document.getElementById('fSellDateField');
+  if (sellDateField) sellDateField.style.display = isArchiveTab ? '' : 'none';
+  var sellDateEl = document.getElementById('fSellDate');
+  if (sellDateEl && !sellDateEl.value) sellDateEl.value = todayLocalISO();
   var addRow = document.getElementById('portfolioAddRow');
   if (addRow) addRow.style.display = isBondsTab ? 'none' : '';
   var radioRow = document.getElementById('portfolioTypeRow');
@@ -1700,6 +1709,7 @@ function moveToPortfolio(targetPid) {
       sold: pos.sold || undefined,
       sellPrice: pos.sold ? pos.sellPrice : undefined,
       sellCurrency: pos.sold ? pos.sellCurrency : undefined,
+      sellDate: pos.sold ? (pos.sellDate || undefined) : undefined,
       purchaseDate: pos.purchaseDate || undefined,
       broker: pos.broker || undefined
     });
@@ -1780,6 +1790,7 @@ function moveToArchive(archivePid) {
       sold: true,
       sellPrice: pos.sellPrice,
       sellCurrency: pos.sellCurrency,
+      sellDate: pos.sellDate || undefined,
       purchaseDate: pos.purchaseDate || undefined,
       broker: pos.broker || undefined
     });
@@ -3915,6 +3926,12 @@ function addPosition() {
     if (!entry) purchaseDate = null;
   }
   var isSold = !!(currentPortfolio().archive);
+  var sellDate = null;
+  if (isSold) {
+    sellDate = (document.getElementById('fSellDate').value || '').trim();
+    var sdErr = sellDateError(sellDate, [purchaseDate]);
+    if (sdErr) { document.getElementById('addErr').textContent = sdErr; return; }
+  }
 
   function doAddPosition(extraFields) {
     // ISIN first: if the user is overwriting/removing a real ISIN and cancels
@@ -3932,6 +3949,7 @@ function addPosition() {
       pos.sold = true;
       pos.sellPrice = current;
       pos.sellCurrency = getPositionCurrencyCode(pos);
+      pos.sellDate = sellDate;
     } else if (current != null) {
       // Active add: seed the ticker's current price (ticker-level). A refresh
       // fires right after and will overwrite it with the live quote.
@@ -3944,6 +3962,7 @@ function addPosition() {
       save();
       ['fTicker','fQty','fEntry','fCurrent','fIsin'].forEach(function(id) { document.getElementById(id).value = ''; });
       document.getElementById('fDate').value = todayLocalISO();
+      document.getElementById('fSellDate').value = todayLocalISO();
       renderAddBrokerSlot(); // refresh dropdown + reset to current default
       render();
       if (!isSold) refreshTicker(ticker);
@@ -4113,6 +4132,7 @@ function sellPosition(id) {
     + '<div style="display:flex;flex-direction:column;gap:10px">'
     + '<div class="field"><label>QTY (max ' + pos.qty + ')</label><input type="number" id="sellQtyInput" value="' + pos.qty + '" min="0.0001" max="' + pos.qty + '" step="any" style="width:100%;box-sizing:border-box"></div>'
     + '<div class="field"><label>SELL PRICE</label><input type="number" id="sellPriceInput" value="' + defaultPrice + '" min="0" step="any" style="width:100%;box-sizing:border-box"></div>'
+    + '<div class="field"><label>SELL DATE</label><input type="date" id="sellDateInput" value="' + todayLocalISO() + '" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none"></div>'
     + '</div>'
     + '<div style="display:flex;gap:8px;margin-top:16px">'
     + '<button class="btn-primary" onclick="confirmSell(' + id + ')" style="flex:1">SELL</button>'
@@ -4125,6 +4145,17 @@ function sellPosition(id) {
   document.getElementById('sellPriceInput').focus();
 }
 
+// A sale date: required, not in the future, and not before any purchase it
+// closes. ISO dates compare correctly as strings. Returns an error or null.
+function sellDateError(dateStr, purchaseDates) {
+  if (!dateStr) return 'Enter sell date';
+  if (dateStr > todayLocalISO()) return 'Sell date is in the future';
+  for (var i = 0; i < (purchaseDates || []).length; i++) {
+    if (purchaseDates[i] && dateStr < purchaseDates[i]) return 'Sell date is before purchase date (' + purchaseDates[i] + ')';
+  }
+  return null;
+}
+
 function confirmSell(id) {
   var pos = positions.find(function(p) { return p.id === id; });
   if (!pos) return;
@@ -4135,6 +4166,9 @@ function confirmSell(id) {
   if (isNaN(priceInput) || priceInput <= 0) { errEl.textContent = 'Invalid price'; return; }
   if (isNaN(qtyInput) || qtyInput <= 0) { errEl.textContent = 'Invalid quantity'; return; }
   if (qtyInput > pos.qty) { errEl.textContent = 'Quantity exceeds position (' + pos.qty + ')'; return; }
+  var sellDate = (document.getElementById('sellDateInput').value || '').trim();
+  var dErr = sellDateError(sellDate, [pos.purchaseDate]);
+  if (dErr) { errEl.textContent = dErr; return; }
 
   // Remove modal
   var overlay = document.getElementById('sellOverlay');
@@ -4143,11 +4177,11 @@ function confirmSell(id) {
   if (Math.abs(qtyInput - pos.qty) < 0.0001) {
     // Sell entire position
     positions = positions.map(function(p) {
-      return p.id === id ? Object.assign({}, p, { sold: true, sellPrice: priceInput, sellCurrency: getPositionCurrencyCode(p) }) : p;
+      return p.id === id ? Object.assign({}, p, { sold: true, sellPrice: priceInput, sellCurrency: getPositionCurrencyCode(p), sellDate: sellDate }) : p;
     });
   } else {
     // Partial sell: replace original with two records
-    var soldPart = Object.assign({}, pos, { id: Date.now(), qty: qtyInput, sold: true, sellPrice: priceInput, sellCurrency: getPositionCurrencyCode(pos) });
+    var soldPart = Object.assign({}, pos, { id: Date.now(), qty: qtyInput, sold: true, sellPrice: priceInput, sellCurrency: getPositionCurrencyCode(pos), sellDate: sellDate });
     var remaining = Object.assign({}, pos, { id: Date.now() + 1, qty: Math.round((pos.qty - qtyInput) * 1e10) / 1e10 });
     positions = positions.reduce(function(acc, p) {
       if (p.id === id) { acc.push(soldPart); acc.push(remaining); }
@@ -4891,6 +4925,7 @@ function buildExpandedInner(p) {
   if (isSecurity && !isWatchlistHere) {
     purchaseParts = '<span style="white-space:nowrap"><span style="opacity:0.6">BROKER</span> <span style="color:var(--bright)">' + (getPositionBrokerDisplay(p) || '\u2014') + '</span></span>'
       + '<span style="white-space:nowrap"><span style="opacity:0.6">BUY DATE</span> <span style="color:var(--bright)">' + (p.purchaseDate || '\u2014') + '</span></span>'
+      + (p.sold ? '<span style="white-space:nowrap"><span style="opacity:0.6">SELL DATE</span> <span style="color:var(--bright)">' + (p.sellDate || '\u2014') + '</span></span>' : '')
       + buyMoreLinkHtml(p)
       + calcLinkHtml(p);
   }
@@ -4966,6 +5001,13 @@ function buildExpandedInnerAgg(p, group) {
     dateSet[g.purchaseDate || '—'] = true;
   });
   var dateKeys = Object.keys(dateSet);
+  // A sold aggregation holds only sold lots, so its sale dates read the same way.
+  var sellDateSet = {};
+  if (p.sold) group.forEach(function(g) { sellDateSet[g.sellDate || '—'] = true; });
+  var sellDateKeys = Object.keys(sellDateSet);
+  var sellDateValueHtml = sellDateKeys.length === 1
+    ? '<span style="color:var(--bright)">' + sellDateKeys[0] + '</span>'
+    : '<span style="color:var(--dim)">' + sellDateKeys.length + ' dates</span>';
   var dateValueHtml = dateKeys.length === 1
     ? '<span style="color:var(--bright)">' + dateKeys[0] + '</span>'
     : '<span style="color:var(--dim)">' + dateKeys.length + ' dates</span>';
@@ -4986,6 +5028,7 @@ function buildExpandedInnerAgg(p, group) {
   if (isSecurity && !aggIsWatchlist) {
     aggPurchaseParts = '<span style="white-space:nowrap"><span style="opacity:0.6">BROKER</span> ' + brokerValueHtml + '</span>'
       + '<span style="white-space:nowrap"><span style="opacity:0.6">BUY DATE</span> ' + dateValueHtml + '</span>'
+      + (p.sold ? '<span style="white-space:nowrap"><span style="opacity:0.6">SELL DATE</span> ' + sellDateValueHtml + '</span>' : '')
       + buyMoreLinkHtml(p)
       + calcLinkHtml(p);
   }
@@ -5437,6 +5480,14 @@ function saveEdit(id) {
     broker = null;
     if (!entry) purchaseDate = null;
   }
+  // Sale date, for a sold lot. It may be left empty (older lots predate the
+  // field), but a date that's given has to make sense.
+  var sellDateEl = document.getElementById('editSellDate');
+  var sellDate = pos.sold ? (sellDateEl ? (sellDateEl.value.trim() || null) : (pos.sellDate || null)) : null;
+  if (sellDate) {
+    var seErr = sellDateError(sellDate, [purchaseDate]);
+    if (seErr) { var ee = document.getElementById('editErr'); if (ee) ee.textContent = seErr; return; }
+  }
   // Category/region/sector are ticker-level — write straight to tickerData.
   // Every position of this ticker (in any portfolio) picks up the change at
   // render time, so there's no per-position copy or cross-portfolio sync.
@@ -5455,6 +5506,7 @@ function saveEdit(id) {
     if (purchaseDate) np.purchaseDate = purchaseDate; else delete np.purchaseDate;
     if (broker) np.broker = broker; else delete np.broker;
     if (p.sold) np.sellPrice = current;
+    if (p.sold) { if (sellDate) np.sellDate = sellDate; else delete np.sellDate; }
     return np;
   });
   portfolios[currentPortfolioId].positions = positions;
@@ -6575,6 +6627,12 @@ function showAggDetail(ticker, soldFlag, curCode) {
     } else {
       dateCell = '<td style="padding:6px 8px;text-align:right;white-space:nowrap">&mdash;</td>';
     }
+    // A sold aggregation also shows when each lot was sold.
+    if (isSold) {
+      dateCell += p.sellDate
+        ? '<td style="padding:6px 8px;text-align:right;white-space:nowrap;font-size:10px;color:var(--dim)">' + p.sellDate + '</td>'
+        : '<td style="padding:6px 8px;text-align:right;white-space:nowrap">&mdash;</td>';
+    }
     // Per-lot actions. An aggregated row has no pencil of its own, so this is
     // the only place a single lot's broker or date can be corrected.
     // Not in All Positions: that context hides every per-lot action by design,
@@ -6604,6 +6662,7 @@ function showAggDetail(ticker, soldFlag, curCode) {
       + '<td class="' + cls(pnlAbs) + '" style="' + tdStyle + '">' + fSign(pnlAbs) + '</td>'
       + '<td class="' + cls(pnlPct) + '" style="' + tdStyle + '">' + fPct(pnlPct) + '</td>'
       + '<td></td>'
+      + (isSold ? '<td></td>' : '')
       + '<td></td>'
       + '</tr>';
   }
@@ -6635,6 +6694,7 @@ function showAggDetail(ticker, soldFlag, curCode) {
       + '<th style="' + headStyle + ';text-align:right">P&amp;L</th>'
       + '<th style="' + headStyle + ';text-align:right">%</th>'
       + '<th style="' + headStyle + ';text-align:right">BUY DATE</th>'
+      + (isSold ? '<th style="' + headStyle + ';text-align:right">SELL DATE</th>' : '')
       + '<th style="' + headStyle + '"></th>'
       + '</tr></thead>'
       + '<tbody>' + bd.group.map(positionRow).join('') + '</tbody>'
@@ -6667,6 +6727,7 @@ function showAggDetail(ticker, soldFlag, curCode) {
       + '<div style="display:flex;flex-direction:column;gap:8px">'
       + '<div class="field"><label>QTY (max <span id="aggSellMax">0</span>)</label><input type="number" id="aggSellQty" min="0.0001" step="any" style="width:100%;box-sizing:border-box" onkeydown="if(event.key===\'Enter\')document.getElementById(\'aggSellPrice\').focus()"></div>'
       + '<div class="field"><label>SELL PRICE</label><input type="number" id="aggSellPrice" min="0" step="any" style="width:100%;box-sizing:border-box" onkeydown="if(event.key===\'Enter\')confirmAggSell()"></div>'
+      + '<div class="field"><label>SELL DATE</label><input type="date" id="aggSellDate" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none"></div>'
       + '</div>'
       + '<div style="display:flex;gap:8px;margin-top:14px">'
       + '<button class="btn-primary" onclick="confirmAggSell()" style="flex:1">SELL</button>'
@@ -6727,6 +6788,8 @@ function showAggSellForm(brokerIndex) {
   if (qtyEl) qtyEl.value = bd.qty;
   var priceEl = document.getElementById('aggSellPrice');
   if (priceEl) priceEl.value = bd.current != null ? bd.current.toFixed(2) : '';
+  var dateEl = document.getElementById('aggSellDate');
+  if (dateEl) dateEl.value = todayLocalISO();
   // Stash the broker for the confirm handler
   _aggOverlayState.activeBrokerIndex = brokerIndex;
   var form = document.getElementById('aggSellForm');
@@ -6795,6 +6858,13 @@ function confirmAggSell() {
     return;
   }
 
+  // FIFO decides which lots this sale closes; the date has to clear every one.
+  var aggSellDate = (document.getElementById('aggSellDate').value || '').trim();
+  var closesDates = [], left = qtyInput;
+  for (var k = 0; k < group.length && left > 0.0001; k++) { closesDates.push(group[k].purchaseDate); left -= group[k].qty; }
+  var aggDErr = sellDateError(aggSellDate, closesDates);
+  if (aggDErr) { showErr(aggDErr); return; }
+
   // Build action plan keyed by position id
   var actions = {};
   var remaining = qtyInput;
@@ -6816,7 +6886,7 @@ function confirmAggSell() {
     if (!(p.id in actions)) { acc.push(p); return acc; }
     var action = actions[p.id];
     if (action.type === 'sell') {
-      acc.push(Object.assign({}, p, { sold: true, sellPrice: priceInput, sellCurrency: getPositionCurrencyCode(p) }));
+      acc.push(Object.assign({}, p, { sold: true, sellPrice: priceInput, sellCurrency: getPositionCurrencyCode(p), sellDate: aggSellDate }));
     } else {
       idOffset++;
       acc.push(Object.assign({}, p, {
@@ -6824,7 +6894,8 @@ function confirmAggSell() {
         qty: action.soldQty,
         sold: true,
         sellPrice: priceInput,
-        sellCurrency: getPositionCurrencyCode(p)
+        sellCurrency: getPositionCurrencyCode(p),
+        sellDate: aggSellDate
       }));
       idOffset++;
       acc.push(Object.assign({}, p, {
@@ -8385,8 +8456,9 @@ function processPositionCsv(text) {
   var entryIdx  = header.indexOf('entry');
   var curIdx    = header.indexOf('current');
   var soldIdx   = header.indexOf('sold');
+  var sellDateIdx = header.indexOf('selldate'); // optional, YYYY-MM-DD
   if (tickerIdx === -1 || qtyIdx === -1 || entryIdx === -1) {
-    alert('CSV must have columns: ticker, qty, entry (current and sold are optional)'); return;
+    alert('CSV must have columns: ticker, qty, entry (current, sold and sellDate are optional)'); return;
   }
   var rows = [];
   for (var i = 1; i < lines.length; i++) {
@@ -8399,7 +8471,9 @@ function processPositionCsv(text) {
     if (!ticker || isNaN(qty) || qty < 0 || isNaN(entry) || (qty > 0 && entry <= 0)) continue;
     var current = (curIdx !== -1 && cols[curIdx]) ? parseFloat(cols[curIdx]) : null;
     var sold    = (soldIdx !== -1 && cols[soldIdx]) ? (cols[soldIdx].toLowerCase() === 'true') : false;
-    rows.push({ ticker: ticker, qty: qty, entry: entry, current: current, sold: sold });
+    var sellDateRaw = (sellDateIdx !== -1 && cols[sellDateIdx]) ? cols[sellDateIdx].trim() : '';
+    var sellDate = /^\d{4}-\d{2}-\d{2}$/.test(sellDateRaw) ? sellDateRaw : null;
+    rows.push({ ticker: ticker, qty: qty, entry: entry, current: current, sold: sold, sellDate: sellDate });
   }
   if (!rows.length) { alert('No valid rows found in CSV'); return; }
 
@@ -8439,6 +8513,7 @@ function processPositionCsv(text) {
             pos.sold = true;
             pos.sellPrice = (row.current != null ? row.current : (d.price != null ? d.price : null));
             pos.sellCurrency = d.currency || (portfolios[currentPortfolioId] && portfolios[currentPortfolioId].currencyCode) || 'USD';
+            if (row.sellDate) pos.sellDate = row.sellDate;
           } else {
             // Active: current is ticker-level → tickerData, so the helper (which
             // reads tickerData) sees it immediately without waiting for a migrate.
@@ -9091,15 +9166,54 @@ function updateViewMenuBtn() {
 // a regular (non-archive, non-watchlist) portfolio, or an active cross-portfolio
 // view (Σ SUMMARY / ALL POSITIONS — but not the realized ones). Lit green when a
 // filter is active, dim otherwise.
+// ── SELL DATE FROM beyond stock lots ──────────────────────────────────────
+// In the realized bond, deposit and cash views (and their summary sections)
+// the sale-date condition reads each item's end date. One definition, so a
+// summary row always matches the portfolio it stands for.
+function sellDateFilterFrom() {
+  return (activeFilter && activeFilter.sellDateFrom) || null;
+}
+// An item counts as ended before the filter when it has no end date at all.
+function endedBeforeSellFilter(endIso) {
+  var from = sellDateFilterFrom();
+  return !!from && (!endIso || endIso < from);
+}
+// YYYY-MM-DD plus whole months, without a timezone shift.
+function addMonthsIso(iso, months) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+  if (!m) return null;
+  return new Date(Date.UTC(+m[1], +m[2] - 1 + months, +m[3])).toISOString().slice(0, 10);
+}
+// A bond ends at its sale, or else at maturity (kept in the bond database).
+function bondPosEndDate(pos) {
+  if (pos.sold) return pos.sellDate || null;
+  var b = (bondsDb || []).find(function(x) { return x.id === pos.bondId; });
+  return b ? (b.maturityDate || null) : null;
+}
+// A deposit ends at its early close, or else at the end of its term.
+function depositEndDate(pos) {
+  return pos.closeDate || addMonthsIso(pos.openDate, pos.termMonths || 0);
+}
+
 function updateFilterBtn() {
   var btn = document.getElementById('filterBtn');
   if (!btn) return;
   var applies;
-  if (isCrossPortfolioContext()) {
-    applies = !isRealizedAllPositions();
+  // These views aren't about the current stock portfolio, so they decide by
+  // what's on screen: realized bonds/deposits, cash and the realized summary
+  // are filtered; the active BONDS views aren't.
+  if (viewMode === 'bonds') {
+    var fbp = getBondPortfolios()[currentBondPortfolioId];
+    applies = !!(fbp && fbp.archive);
+  } else if (viewMode === 'cash' || viewMode === 'archive-summary') {
+    applies = true;
+  } else if (viewMode === 'bond-summary') {
+    applies = false;
+  } else if (isCrossPortfolioContext()) {
+    applies = true;
   } else {
     var p = currentPortfolio();
-    applies = !!p && !p.archive && !p.watchlist;
+    applies = !!p && !p.watchlist;
   }
   btn.style.display = applies ? '' : 'none';
   if (hasActiveFilter()) btn.classList.remove('filter-inactive');
@@ -9192,6 +9306,7 @@ function openFilterModal() {
   overlay.id = 'filterOverlay';
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:600;display:flex;align-items:flex-start;justify-content:center;padding-top:60px';
   var curDate = (activeFilter && activeFilter.purchaseDateFrom) || '';
+  var curSellDate = (activeFilter && activeFilter.sellDateFrom) || '';
   window._filterBrokerVal = (activeFilter && activeFilter.broker) || '';
   window._filterSetVal = (activeFilter && activeFilter.setId) || '';
   var fieldInputStyle = 'width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:13px;padding:7px 8px;outline:none';
@@ -9200,6 +9315,8 @@ function openFilterModal() {
     + '<div style="font-size:11px;letter-spacing:2px;color:var(--dim);margin-bottom:16px">FILTER</div>'
     + '<div class="field" style="margin-bottom:18px"><label>PURCHASE DATE FROM</label>'
     + '<input type="date" id="filterDateFrom" value="' + curDate + '" style="' + fieldInputStyle + '"></div>'
+    + '<div class="field" style="margin-bottom:18px"><label>SELL DATE FROM</label>'
+    + '<input type="date" id="filterSellDateFrom" value="' + curSellDate + '" style="' + fieldInputStyle + '"></div>'
     + '<div class="field" style="margin-bottom:18px;position:relative"><label>BROKER</label>'
     + filterDropdownTriggerHtml('Broker') + filterBrokerMenuHtml() + '</div>'
     + '<div class="field" style="margin-bottom:18px;position:relative"><label>SET</label>'
@@ -9215,13 +9332,15 @@ function openFilterModal() {
 
 function applyFilterModal() {
   var v = document.getElementById('filterDateFrom').value;
+  var sd = document.getElementById('filterSellDateFrom').value;
   var b = window._filterBrokerVal || '';
   var s = window._filterSetVal || '';
   var f = {};
   if (v) f.purchaseDateFrom = v;
+  if (sd) f.sellDateFrom = sd;
   if (b) f.broker = b;
   if (s) f.setId = s;
-  if (f.purchaseDateFrom || f.broker || f.setId) {
+  if (f.purchaseDateFrom || f.sellDateFrom || f.broker || f.setId) {
     activeFilter = f;
     localStorage.setItem('pt_filter', JSON.stringify(activeFilter));
   } else {
@@ -9623,7 +9742,9 @@ function render() {
         + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">'
         + buildDictSelectHtml('bro', brokerDict, p.broker || null, 'BROKER', '115px')
         + '<div class="field"><label>BUY DATE</label><input type="date" id="editDate" value="' + (p.purchaseDate || '') + '" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;box-sizing:border-box;width:130px"></div>'
+        + (p.sold ? '<div class="field"><label>SELL DATE</label><input type="date" id="editSellDate" value="' + (p.sellDate || '') + '" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);font-family:var(--font);font-size:12px;padding:6px 8px;outline:none;box-sizing:border-box;width:130px"></div>' : '')
         + '</div>'
+        + '<div id="editErr" style="color:var(--red);font-size:11px;margin-top:6px"></div>'
         + '<div style="margin-top:12px;display:flex;gap:8px">'
         + '<button class="btn btn-green" style="padding:6px 16px" onclick="saveEdit(' + p.id + ')">SAVE</button>'
         + '<button class="btn" style="padding:6px 16px;color:var(--dim)" onclick="cancelEdit()">CANCEL</button>'
@@ -9732,7 +9853,9 @@ function render() {
         var p = portfolios[pid];
         var baseCur = (p.currencyCode || 'USD').toUpperCase();
         var valUSD = 0, costUSD = 0, valBase = 0, costBase = 0, hasAny = false;
-        (p.positions || []).forEach(function(pos) {
+        // Stock lots honour the filter, so a SELL DATE FROM shows the period's sales.
+        var archPosns = filterActiveForSummary(true) ? filterPositions(p.positions || []) : (p.positions || []);
+        archPosns.forEach(function(pos) {
           var pcur = getPositionCurrent(pos);
           if (pcur != null && pos.qty > 0) {
             var posCur = getPositionCurrencyCode(pos, baseCur);
@@ -9759,9 +9882,11 @@ function render() {
       return archCashIds.map(function(cpid) {
         var cp = archCashPortfolios[cpid];
         var baseCur = (cp.currencyCode || 'USD').toUpperCase();
-        var netBase = 0, netUSD = 0;
+        var netBase = 0, netUSD = 0, entryCount = 0;
         var rateBaseToUSD = baseCur === 'USD' ? 1 : (archFxRates[baseCur] || 1);
         (cp.entries || []).forEach(function(e) {
+          if (endedBeforeSellFilter(e.date)) return;
+          entryCount++;
           var entryCur = (e.currency || baseCur).toUpperCase();
           var rateToUSD = entryCur === 'USD' ? 1 : (archFxRates[entryCur] || 1);
           netUSD += e.amount * rateToUSD;
@@ -9772,11 +9897,14 @@ function render() {
           currencyCode: baseCur,
           currency: CURRENCY_SYMBOLS[baseCur] || baseCur,
           net: netBase, netUSD: netUSD,
-          entryCount: (cp.entries || []).length
+          entryCount: entryCount
         };
       });
     }
 
+    // SELL DATE FROM reaches the bond and cash sections by each item's end
+    // date (see endedBeforeSellFilter); the other filter conditions describe
+    // stock lots only.
     function buildArchBondStats() {
       // For each archived bond portfolio: sum positions converted to portfolio currency
       // (for in-portfolio display) and to USD (for cross-portfolio totals/weight).
@@ -9796,6 +9924,7 @@ function render() {
           // it stays out of the grand total, arriving through cash instead.
           if (bp.type === 'deposit') {
             if (!(pos.amount > 0)) return;
+            if (endedBeforeSellFilter(depositEndDate(pos))) return;
             var dc = calcDeposit(pos, bpCur);
             var dRate = bpCur === 'USD' ? 1 : (archFxRates[bpCur] || 1);
             valUSD += pos.amount * dRate; profitUSD += dc.profit * dRate; couponUSD += dc.profit * dRate;
@@ -9807,6 +9936,7 @@ function render() {
           var bond = bondsDb.find(function(b) { return b.id === pos.bondId; });
           if (!bond) return;
           var isSold = !!pos.sold;
+          if (endedBeforeSellFilter(bondPosEndDate(pos))) return;
           var dirtyPrice = pos.cleanPrice / 100 * bond.parValue + pos.accruedInterest;
           var positionValue = pos.qty * dirtyPrice;
           var endCleanPrice = isSold ? pos.sellCleanPrice : 100;
@@ -10042,7 +10172,7 @@ function render() {
 
     var pCur = (cp.currencyCode || 'USD').toUpperCase();
     var pSym = CURRENCY_SYMBOLS[pCur] || pCur;
-    var entries = (cp.entries || []).slice().sort(function(a, b) {
+    var entries = (cp.entries || []).filter(function(e) { return !endedBeforeSellFilter(e.date); }).sort(function(a, b) {
       // Newest first; secondary by id for stable ordering on same date
       if (a.date !== b.date) return a.date < b.date ? 1 : -1;
       return (b.id || '').localeCompare(a.id || '');
@@ -10184,7 +10314,10 @@ function render() {
       //   1. Name (A→Z)
       //   2. Open date (oldest first)
       //   3. Position id (smallest first)
-      var sortedDeps = (bp.positions || []).slice().sort(function(a, b) {
+      var depSource = bp.archive
+        ? (bp.positions || []).filter(function(d) { return !endedBeforeSellFilter(depositEndDate(d)); })
+        : (bp.positions || []);
+      var sortedDeps = depSource.slice().sort(function(a, b) {
         var nA = a.name || '', nB = b.name || '';
         if (nA !== nB) return nA.localeCompare(nB);
         var odA = a.openDate || '', odB = b.openDate || '';
@@ -10354,7 +10487,10 @@ function render() {
     //      and they differ only by sold flag (same bondId → same maturity), so a
     //      two-way sold/not-sold split is enough — no need to distinguish matured.
     //   4. Position id (smallest first)
-    var sortedPositions = (bp.positions || []).slice().sort(function(a, b) {
+    var bondSource = bp.archive
+      ? (bp.positions || []).filter(function(pos) { return !endedBeforeSellFilter(bondPosEndDate(pos)); })
+      : (bp.positions || []);
+    var sortedPositions = bondSource.slice().sort(function(a, b) {
       var bondA = bondsDb.find(function(x) { return x.id === a.bondId; });
       var bondB = bondsDb.find(function(x) { return x.id === b.bondId; });
       var nameA = bondA ? bondA.name : '';

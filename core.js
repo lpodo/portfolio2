@@ -770,17 +770,20 @@ function fetchIsin(ticker) {
 function filterActive() {
   if (!activeFilter) return false;
   // Cross-portfolio views (All Positions) gate on the view, not on the
-  // last-opened portfolio: a filter set here applies to the union.
-  if (isCrossPortfolioContext()) return !isRealizedAllPositions();
+  // last-opened portfolio: a filter set here applies to the union. Realized
+  // views are filtered too — reviewing past sales is what it's most for.
+  if (isCrossPortfolioContext()) return true;
   var pf = currentPortfolio();
-  return !!pf && !pf.archive && !pf.watchlist;
+  return !!pf && !pf.watchlist;
 }
 // True when the filter should apply to a cross-portfolio view (ALL POSITIONS /
 // Σ SUMMARY). Same global filter, but the gate is the view — active summaries
 // filter, realized (archive) summaries don't. Callers pass whether the current
 // summary context is the realized one.
+// Realized summaries are filtered like the active ones (the argument is kept
+// so call sites still say which kind they are).
 function filterActiveForSummary(isRealized) {
-  return !!activeFilter && !isRealized;
+  return !!activeFilter;
 }
 // Pure filter: reduce a position array to the filter's SET, with NO context
 // gate. Each active condition is a FULL predicate — including its own base
@@ -809,6 +812,12 @@ function filterPositions(posns) {
       if (!p.purchaseDate) return false;
       if (p.purchaseDate < activeFilter.purchaseDateFrom) return false;
     }
+    if (activeFilter.sellDateFrom) {
+      // A sale date filter is about sales: anything unsold — and a sold lot
+      // with no recorded date — counts as sold at -infinity and drops out.
+      if (!p.sold || !p.sellDate) return false;
+      if (p.sellDate < activeFilter.sellDateFrom) return false;
+    }
     if (activeFilter.broker) {
       if (!(p.qty !== 0)) return false;
       if (getPositionBroker(p) !== activeFilter.broker) return false;
@@ -823,7 +832,7 @@ function applyFilter(posns) {
 }
 // True if any condition is actually set (drives the lit filter icon).
 function hasActiveFilter() {
-  return !!(activeFilter && (activeFilter.purchaseDateFrom || activeFilter.broker || activeFilter.setId));
+  return !!(activeFilter && (activeFilter.purchaseDateFrom || activeFilter.sellDateFrom || activeFilter.broker || activeFilter.setId));
 }
 
 // ── Position aggregation & market totals ────────────────────────

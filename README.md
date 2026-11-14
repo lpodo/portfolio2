@@ -112,7 +112,7 @@ Portfolios in the **REALIZED** tab hold closed positions and show their actual r
 **Stocks:**
 
 - Dropdown menu has P&L and WEIGHTS only (no MARKET, CHART, ANALYTICS, FUNDAMENTALS, ALERTS).
-- Positions are created in sold status; CURRENT (sell price) is required on add.
+- Positions are created in sold status; SELL PRICE and SELL DATE are required on add.
 - Populated either by adding sold positions directly, or by moving sold positions in via the ⊟ button.
 
 **Bonds:**
@@ -138,7 +138,7 @@ Portfolios in the **REALIZED** tab hold closed positions and show their actual r
 - Add position: ticker + qty (0 allowed) + entry price + current price (optional) + purchase date (defaults to today) + broker (current default pre-selected, see [Brokers](#brokers)) + **ISIN** (optional, 12 alphanumeric chars, uppercase-only, `US0378331005` format).
 - Adding a position validates the ticker against Yahoo Finance — unknown tickers are rejected.
 - Editing the ticker in the Add form clears any typed ISIN — a different ticker implies a different ISIN.
-- Inline edit (✎) and delete (✕). The edit form covers the lot only — qty, prices, purchase date, broker. Everything describing the security itself is edited from the [expanded row](#expanded-row) instead.
+- Inline edit (✎) and delete (✕). The edit form covers the lot only — qty, prices, purchase date, sell date (for a sold lot), broker. Everything describing the security itself is edited from the [expanded row](#expanded-row) instead.
 
 **qty=0** is allowed — used for watchlist candidates. P&L $ shows `—`, P&L % is calculated if entry > 0. Entry=0 is allowed only when qty=0 (pure price tracking). Excluded from WEIGHTS and Analytics totals.
 
@@ -153,7 +153,7 @@ Deleting a position (✕) saves it to an in-memory clipboard (ticker, qty, entry
 
 Any position in a regular portfolio can be marked as sold via the **SELL** button (appears before ✎ and ✕):
 
-- A modal dialog asks for the quantity to sell (default: full position) and sell price (pre-filled with current price).
+- A modal dialog asks for the quantity to sell (default: full position), sell price (pre-filled with current price) and sell date (default today; not in the future, not before the purchase date).
 - **Partial sell**: if quantity < position qty, the position is split into two records — the sold portion (marked `sold` with sell price) and the remainder (active, original entry price).
 - The position is marked `sold` with the sell price locked as `current`.
 - Sold positions are displayed in *italic* with reduced opacity and a ⊘ icon instead of market state.
@@ -248,13 +248,13 @@ There is no batch edit and no batch sell directly on the row — selling is done
 Clicking the **×N** button opens a modal listing the individual positions making up the aggregation, grouped by **broker** into subgroups. Each subgroup is self-contained:
 
 - Subgroup header: `BROKER {name}` on the left; for active aggregations, a **SELL** button on the right.
-- Column headers: QTY · ENTRY · CURRENT (or SOLD for sold aggregations) · P&L · % · BUY DATE.
+- Column headers: QTY · ENTRY · CURRENT (or SOLD for sold aggregations) · P&L · % · BUY DATE, plus SELL DATE for sold aggregations.
 - Position rows sorted by purchase date ascending (FIFO), then by id as tiebreaker. Each row carries ✎ and ✕ for editing or deleting that individual lot without leaving the modal.
 - A subtotal row appears only if the subgroup has more than one position; with a single position the subtotal is suppressed as redundant.
 
 Positions without a `broker` field land in the subgroup of the current default broker. If no brokers are defined at all, every position appears under the literal label `default`.
 
-**Per-broker SELL form (active aggregations only):** clicking the subgroup's SELL button reveals an inline form asking QTY (max = subgroup quantity) and SELL PRICE. The sell is applied FIFO within the subgroup — the oldest positions are sold first; partial sells split the boundary position as in single-position sells. Positions in other broker subgroups are untouched.
+**Per-broker SELL form (active aggregations only):** clicking the subgroup's SELL button reveals an inline form asking QTY (max = subgroup quantity), SELL PRICE and SELL DATE — the date has to clear the purchase date of every lot the sale closes. The sell is applied FIFO within the subgroup — the oldest positions are sold first; partial sells split the boundary position as in single-position sells. Positions in other broker subgroups are untouched.
 
 **Sold aggregations:** the modal ends with a single **⊟ MOVE TO REALIZED** button that moves every sold position in the aggregation (across all brokers) to a chosen realized portfolio.
 
@@ -262,11 +262,12 @@ Positions without a `broker` field land in the subgroup of the current default b
 
 ### Filters
 
-A global, persistent filter narrows the set of positions shown across every view at once. Toggle it via the **funnel icon** in the app's top bar (next to Refresh). The icon appears only in contexts where the filter applies — individual regular portfolios and the active cross-portfolio views; it's hidden on watchlists, realized portfolios, and the realized ALL POSITIONS view. It's highlighted when a filter is active, dim otherwise. Tapping it opens the filter modal.
+A global, persistent filter narrows the set of positions shown across every view at once. Toggle it via the **funnel icon** in the app's top bar (next to Refresh). The icon appears everywhere the filter applies — every view except watchlists and the active BONDS tab. It's highlighted when a filter is active, dim otherwise. Tapping it opens the filter modal.
 
-Three conditions are available, combined with AND:
+Four conditions are available, combined with AND:
 
 - **PURCHASE DATE FROM** — keeps only positions bought on or after the given date. (Positions with no entry price or no purchase date are excluded by this condition.)
+- **SELL DATE FROM** — keeps only lots sold on or after the given date. It's about sales: unsold positions, and sold lots with no recorded date, are excluded.
 - **BROKER** — keeps only positions at the selected broker. (qty=0 watchlist candidates are excluded by this condition, since broker is meaningless for them.)
 - **SET** — keeps only positions whose ticker is in the chosen [global set](#global-sets).
 
@@ -274,8 +275,9 @@ Three conditions are available, combined with AND:
 
 Scope of the filter:
 
-- **Individual regular portfolios** — the filter applies. Watchlists and realized portfolios ignore it (the funnel icon isn't shown there).
-- **Cross-portfolio views** (ALL POSITIONS, Σ SUMMARY) — the active summaries apply the filter; the realized summary does not.
+- **Stock portfolios**, realized included — the filter applies. Watchlists ignore it.
+- **Realized bond and deposit portfolios, and cash portfolios** — SELL DATE FROM applies, by each item's end date (below); the other conditions describe stock lots and don't. Active bond and deposit portfolios aren't filtered.
+- **Cross-portfolio views** (ALL POSITIONS, Σ SUMMARY) — both the active and the realized ones apply it. In the realized Σ SUMMARY every condition narrows the stock section; SELL DATE FROM also reaches the other sections by each item's end date — a bond's sale or maturity, a deposit's early close or term end, a cash entry's own date. So a SELL DATE FROM gives the period's realized result across the whole summary, grand total included.
 - **What you see is what you act on:** the filter is the single choke point for both display *and* operations — aggregation, bulk move, bulk delete, and totals all operate on the filtered set, so you can't accidentally act on hidden positions.
 
 ## Summary
@@ -569,6 +571,7 @@ Fields:
 
 - **BROKER** — the broker tagged on this lot, or the current default if none is set (see [Brokers](#brokers)).
 - **BUY DATE** — the lot's `purchaseDate`, or `—` if not set.
+- **SELL DATE** — for a sold lot, right after BUY DATE: its `sellDate`, or `—` for lots sold before the field existed.
 - **+ buy more** — opens the Add form pre-filled for a top-up: same ticker, broker and ISIN, today's date, and the current price as the entry, leaving only the quantity to type. The ticker field also offers every symbol already held as suggestions, which saves retyping things like `PHYS-U.TO`.
 - **Calculator** — a "what if it reaches X" pad for the ticker. Three linked fields — target price, change from entry, change from current — where typing in any one fills the other two, with the absolute gain or loss in the position's currency shown beneath. On an aggregated row it works from the group's weighted-average entry.
 - **ISIN** — identifier for the ticker, `—` if unknown; ✎ opens an editor. No free provider supplies ISINs (see [Cloudflare Worker](#cloudflare-worker)), so they're entered by hand. Overwriting or clearing an existing one asks for confirmation.
@@ -610,7 +613,7 @@ A full-screen overlay with additional Yahoo Finance information, organized into 
 
 Expanded rows are enabled for aggregated entries, with the following behavior on the four metadata lines:
 
-- **BROKER / BUY DATE:** each shows the single shared value if all positions in the group agree, or a dim count (`2 brokers`, `2 dates`) if they differ. A missing date counts as its own value, so a mix of dated and undated lots reads as ambiguous rather than borrowing one date. The per-lot breakdown lives in the [aggregation detail modal](#aggregation-detail-modal).
+- **BROKER / BUY DATE / SELL DATE:** each (SELL DATE for a sold aggregation) shows the single shared value if all positions in the group agree, or a dim count (`2 brokers`, `2 dates`) if they differ. A missing date counts as its own value, so a mix of dated and undated lots reads as ambiguous rather than borrowing one date. The per-lot breakdown lives in the [aggregation detail modal](#aggregation-detail-modal).
 - **Attributes (CAT / REG / SEC):** the app enforces identical attributes across all instances of the same ticker, so the values are read from any one position in the aggregated group (the first one).
 - **Notes:** all positions in the group share the same note — notes are keyed by ticker, not by position. The ✎ button opens the same editor as on an individual row, so notes are fully editable in aggregation mode.
 - **Alerts:** all positions in the group share the same alert set — alerts are keyed by ticker, not by position. The list shown in the aggregated row's expansion is the same set you'd see on any individual row of the same ticker. Delete and add controls work as in normal mode.
@@ -743,7 +746,7 @@ A **TOTAL** row at the bottom shows the net balance, converted to the portfolio 
 
 ### Import
 
-The **↑ Import CSV** button in the Add form bulk-imports positions from a CSV file. Each ticker is validated against Yahoo Finance and receives the correct currency and shortName. Supports comma and semicolon delimiters; `current` and `sold` columns are optional. Analytics fields (category/region/sector) are inherited automatically if the ticker already exists elsewhere.
+The **↑ Import CSV** button in the Add form bulk-imports positions from a CSV file. Each ticker is validated against Yahoo Finance and receives the correct currency and shortName. Supports comma and semicolon delimiters; `current`, `sold` and `sellDate` (`YYYY-MM-DD`) columns are optional. Analytics fields (category/region/sector) are inherited automatically if the ticker already exists elsewhere.
 
 Minimal format:
 
@@ -756,9 +759,9 @@ MU,5,80.00
 Full format:
 
 ```
-ticker,qty,entry,current,sold
-NVDA,10,500.00,,
-MU,5,80.00,95.00,true
+ticker,qty,entry,current,sold,sellDate
+NVDA,10,500.00,,,
+MU,5,80.00,95.00,true,2026-03-14
 ```
 
 ### Export
@@ -940,7 +943,7 @@ A sold lot additionally freezes its sale values, which are historical and must n
 {
   "id": 1234567891, "ticker": "EOG", "qty": 8, "entry": 134.00,
   "purchaseDate": "2023-02-10", "broker": "ETrade",
-  "sold": true, "sellPrice": 151.20, "sellCurrency": "USD"
+  "sold": true, "sellPrice": 151.20, "sellCurrency": "USD", "sellDate": "2025-06-30"
 }
 ```
 
@@ -952,7 +955,7 @@ Fields:
 - `entry` — buy price per share.
 - `purchaseDate` — ISO `YYYY-MM-DD` (local timezone). Optional; defaults to today on add. Used for FIFO ordering inside the aggregation detail modal, the purchase-date filter, and display in the [Expanded Row](#expanded-row).
 - `broker` — explicit broker tag for this lot. Optional; when absent, `getPositionBroker(p)` resolves to the current default broker at read time. See [Brokers](#brokers).
-- `sold` — marks the lot as closed. A sold lot carries `sellPrice` and `sellCurrency` (frozen at sale); its price is not refreshed.
+- `sold` — marks the lot as closed. A sold lot carries `sellPrice` and `sellCurrency` (frozen at sale), and `sellDate` (ISO `YYYY-MM-DD`; absent on lots sold before it was recorded); its price is not refreshed.
 
 Everything else a position used to carry — `current`, `currency`, `shortName`, `instrumentType`, `exchangeName`, `marketState`, `priceType`, `regularMarketPrice`, `previousClose`, plus `category` / `region` / `sector` / `isin` / `note` / `alerts` — is ticker-level and lives in the [Ticker data registry](#ticker-data-registry).
 
@@ -1072,7 +1075,7 @@ Primary on-device storage:
 - `pt_current_mode` — current column mode: `cur` (Current) or `reg` (Reg.Price); default `cur`
 - `pt_weight_name_mode` — WEIGHTS last column: `name` or `group`; default `name`
 - `pt_analytics_subview` — Analytics subview: `pnl` / `market` / `chart` / `weights`; default `weights`
-- `pt_filter` — global position filter: `{ purchaseDateFrom?, broker?, setId? }`; absent when no filter is set (see [Filters](#filters))
+- `pt_filter` — global position filter: `{ purchaseDateFrom?, sellDateFrom?, broker?, setId? }`; absent when no filter is set (see [Filters](#filters))
 - `pt_all_sets` — [global sets](#global-sets), including their pinned flag; also cloud-synced
 - `pt_flags` — [attention flag](#flags) definitions (`{ id, name, icon }`); also cloud-synced
 - `pt_chart_set_{portfolioId}` — currently selected set in the Chart view (a set ID or the string `portfolio` for PORTFOLIO mode)
