@@ -406,7 +406,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.109';
+var APP_VERSION = 'v1.5.112';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4883,6 +4883,132 @@ function buyMoreLinkHtml(p) {
   return '<span onclick="buyMoreOf(' + p.id + ')" style="white-space:nowrap;cursor:pointer;color:var(--green);border:1px solid var(--border);padding:5px 14px;font-size:9px;letter-spacing:1px">BUY MORE</span>';
 }
 
+// ── Ticker history ──────────────────────────────────────────────────────────
+// Every lot of one ticker across all own stock portfolios, live and realized,
+// in one list: a held lot is a BUY dated by its purchase, a sold lot a SELL
+// dated by its sale. Watchlists hold nothing and foreign portfolios aren't
+// yours, so both stay out; qty=0 lots were never bought. The filter is not
+// applied — this is the whole record by design.
+function collectTickerHistory(ticker) {
+  var out = [];
+  Object.keys(portfolios).forEach(function(pid) {
+    var pf = portfolios[pid];
+    if (!pf || pf.watchlist || pf.foreign) return;
+    // The open portfolio's lots live in `positions` while it's being edited.
+    var src = (String(pid) === String(currentPortfolioId) && positions) ? positions : (pf.positions || []);
+    src.forEach(function(pos) {
+      if (pos.ticker !== ticker || !(pos.qty > 0)) return;
+      out.push({ pos: pos, pf: pf, date: (pos.sold ? pos.sellDate : pos.purchaseDate) || null });
+    });
+  });
+  // Ascending by date; a missing date sorts first, as in the filter.
+  out.sort(function(a, b) {
+    var ad = a.date || '', bd = b.date || '';
+    if (ad !== bd) return ad < bd ? -1 : 1;
+    return (a.pos.id || 0) - (b.pos.id || 0);
+  });
+  return out;
+}
+
+function tickerHistoryLinkHtml(p) {
+  var t = String(p.ticker).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  return '<span onclick="openTickerHistory(\'' + t + '\')" style="white-space:nowrap;cursor:pointer;color:#5b9cf6;border:1px solid var(--border);padding:5px 14px;font-size:9px;letter-spacing:1px">HISTORY</span>';
+}
+
+// First line of every expanded row: the company name, with HISTORY at the far
+// end so it's reachable in every portfolio type, watchlists and realized included.
+function expandedNameLineHtml(p) {
+  var name = getPositionShortName(p) || '';
+  return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">'
+    + '<div style="flex:1;min-width:0;font-size:11px;color:var(--bright);letter-spacing:1px">' + name + '</div>'
+    + tickerHistoryLinkHtml(p)
+    + '</div>';
+}
+
+function openTickerHistory(ticker) {
+  var items = collectTickerHistory(ticker);
+  var existing = document.getElementById('tickerHistoryOverlay');
+  if (existing) existing.remove();
+  function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  var headStyle = 'padding:6px 8px;font-size:9px;color:var(--dim);letter-spacing:1px;font-weight:normal;border-bottom:1px solid var(--border);white-space:nowrap';
+  var td = 'padding:6px 8px;white-space:nowrap;text-align:right';
+  var tdL = 'padding:6px 8px;white-space:nowrap;text-align:left';
+
+  // Totals per currency — one ticker trades in one, but a sold lot keeps the
+  // currency it was sold in, so a mix is possible and isn't converted.
+  var totals = {}; // code -> { active:{cost,val,has}, closed:{...} }
+  var rows = items.map(function(it) {
+    var p = it.pos;
+    var code = getPositionCurrencyCode(p, it.pf.currencyCode);
+    var sym = CURRENCY_SYMBOLS[code] || code;
+    var cur = getPositionCurrent(p);
+    var pnl = cur != null ? (cur - p.entry) * p.qty : null;
+    var pct = (cur != null && p.entry > 0) ? ((cur / p.entry) - 1) * 100 : null;
+    if (!totals[code]) totals[code] = { sym: sym, active: { cost: 0, val: 0, has: false }, closed: { cost: 0, val: 0, has: false } };
+    if (cur != null) {
+      var a = p.sold ? totals[code].closed : totals[code].active;
+      a.cost += p.qty * p.entry; a.val += p.qty * cur; a.has = true;
+    }
+    return '<tr style="' + (p.sold ? 'font-style:italic;opacity:0.5' : '') + '">'
+      + '<td style="' + tdL + ';font-size:9px;letter-spacing:1px;color:' + (p.sold ? 'var(--bright)' : 'var(--green)') + '">' + (p.sold ? 'SELL' : 'BUY') + '</td>'
+      + '<td style="' + td + '">' + p.qty + '</td>'
+      + '<td style="' + td + '">' + sym + f2(p.entry) + '</td>'
+      + '<td style="' + td + '">' + (cur != null ? sym + f2(cur) : '&mdash;') + '</td>'
+      + '<td class="' + cls(pnl) + '" style="' + td + '">' + fSign(pnl) + '</td>'
+      + '<td class="' + cls(pct) + '" style="' + td + '">' + fPct(pct) + '</td>'
+      + '<td style="' + td + ';font-size:10px;color:var(--dim)">' + (it.date || '&mdash;') + '</td>'
+      // Portfolio last, in the date's type: context, not a figure.
+      + '<td style="' + tdL + ';font-size:10px;color:var(--dim)">' + esc(it.pf.name) + '</td>'
+      + '</tr>';
+  }).join('');
+
+  // Same bars as a portfolio's P&L: VALUE for what's held, CLOSED VALUE (dim)
+  // for what's been sold — proceeds against cost.
+  function bar(a, sym, label, dim) {
+    var pnl = a.val - a.cost;
+    var pct = a.cost ? (pnl / a.cost) * 100 : null;
+    var c = pnl >= 0 ? 'pos' : 'neg';
+    return '<div class="totals-bar"' + (dim ? ' style="opacity:0.6"' : '') + '>'
+      + '<div class="total-block"><div class="total-label">' + label + '</div><div class="total-value" style="color:var(--bright)">' + sym + f2(a.val) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">P&amp;L</div><div class="total-value ' + c + '">' + fSign(pnl) + '</div></div>'
+      + '<div class="total-block"><div class="total-label">RETURN</div><div class="total-value ' + c + '">' + fPct(pct) + '</div></div>'
+      + '</div>';
+  }
+  var codes = Object.keys(totals);
+  var totalsHtml = codes.map(function(c) { return totals[c].active.has ? bar(totals[c].active, totals[c].sym, 'VALUE', false) : ''; }).join('')
+    + codes.map(function(c) { return totals[c].closed.has ? bar(totals[c].closed, totals[c].sym, 'CLOSED VALUE', true) : ''; }).join('');
+
+  var body = items.length
+    ? '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
+      + '<table style="width:auto;border-collapse:collapse;font-size:12px">'
+      + '<thead><tr>'
+      + '<th style="' + headStyle + ';text-align:left"></th>'
+      + '<th style="' + headStyle + ';text-align:right">QTY</th>'
+      + '<th style="' + headStyle + ';text-align:right">ENTRY</th>'
+      + '<th style="' + headStyle + ';text-align:right">PRICE</th>'
+      + '<th style="' + headStyle + ';text-align:right">P&amp;L</th>'
+      + '<th style="' + headStyle + ';text-align:right">%</th>'
+      + '<th style="' + headStyle + ';text-align:right">DATE</th>'
+      + '<th style="' + headStyle + ';text-align:left">PORTFOLIO</th>'
+      + '</tr></thead><tbody>' + rows + '</tbody></table></div>'
+      + totalsHtml
+    : '<div style="font-size:11px;color:var(--dim);letter-spacing:1px;padding:8px 0">No purchases or sales of this ticker.</div>';
+
+  var overlay = document.createElement('div');
+  overlay.id = 'tickerHistoryOverlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:500;display:flex;align-items:flex-start;justify-content:center;padding-top:60px';
+  overlay.innerHTML =
+    '<div style="background:var(--bg2);border:1px solid var(--border);padding:16px 18px;max-width:94vw;max-height:80vh;overflow:auto" onclick="event.stopPropagation()">'
+    + '<div style="display:flex;align-items:center;margin-bottom:10px">'
+    + '<div style="flex:1;font-size:9px;color:var(--dim);letter-spacing:2px">HISTORY &middot; <span style="color:var(--bright)">' + esc(ticker) + '</span></div>'
+    + '<button class="btn-icon" onclick="document.getElementById(\'tickerHistoryOverlay\').remove()" style="font-size:13px;padding:2px 6px">&#10005;</button>'
+    + '</div>'
+    + body
+    + '</div>';
+  overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+  document.body.appendChild(overlay);
+}
+
 // Whether we're looking at an archive — the one place an expanded row is cut
 // short. A sold lot elsewhere is still live work.
 function isArchiveContextHere() {
@@ -4937,11 +5063,7 @@ function buildExpandedInner(p) {
   // The company name is only a column in MARKET and WEIGHTS, so P&L gave no way
   // to see it without switching views. Showing it first in every expanded row
   // makes that unnecessary.
-  var nameHtml = '';
-  var shortName = getPositionShortName(p);
-  if (shortName) {
-    nameHtml = '<div style="font-size:11px;color:var(--bright);letter-spacing:1px;margin-bottom:6px">' + shortName + '</div>';
-  }
+  var nameHtml = expandedNameLineHtml(p);
   // Archive rows stop here. A sold lot in a live portfolio keeps everything —
   // it's still a ticker you're working with, and the note, flag and alerts
   // stay relevant after the position is closed. In an archive nothing is being
@@ -5034,10 +5156,7 @@ function buildExpandedInnerAgg(p, group) {
   }
   var html = '';
   // Same as a single position: name first, so it's available in every view.
-  var aggName = getPositionShortName(p);
-  if (aggName) {
-    html += '<div style="font-size:11px;color:var(--bright);letter-spacing:1px;margin-bottom:6px">' + aggName + '</div>';
-  }
+  html += expandedNameLineHtml(p);
   var aggRowStyle = 'display:flex;gap:16px;flex-wrap:nowrap;overflow-x:auto;align-items:center;line-height:1.4;font-size:10px;color:var(--dim);letter-spacing:1px';
   if (aggPurchaseParts) html += '<div style="' + aggRowStyle + '">' + aggPurchaseParts + '</div>';
   html += '<div style="' + aggRowStyle + (aggPurchaseParts ? ';margin-top:6px' : '') + '">' + aggIdentParts + '</div>';
