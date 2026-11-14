@@ -546,12 +546,12 @@ Tapping/clicking the **ticker name** in any market-style view toggles an expanda
 
 ### Position metadata
 
-The expanded row opens with the company name and a **HISTORY** button, then a set of rows that varies with context — a security shows more than an index, a live portfolio more than an archive. It is also where everything ticker-level is edited, the position's own ✎ form being reserved for the lot.
+The expanded row opens with the company name and, for a stock or ETF, a history icon ⟲, then a set of rows that varies with context — a security shows more than an index, a live portfolio more than an archive. It is also where everything ticker-level is edited, the position's own ✎ form being reserved for the lot.
 
 A held security in a live portfolio shows the lot's purchase details, the instrument's identity, its classification, and the annotations:
 
 ```
-NVIDIA Corporation                                  HISTORY
+NVIDIA Corporation ⟲
 BROKER  ETrade   BUY DATE  2024-08-19   + buy more   🖩 calc
 ISIN  US67066G1040  ✎   EXCHANGE  NMS   TYPE  EQUITY
 CAT  AI & Semi ▾    REG  US ▾    SEC  Technology ▾    GRP  — ▾
@@ -569,7 +569,7 @@ What drops out where:
 
 Fields:
 
-- **HISTORY** — every lot of the ticker across your stock portfolios, live and realized, in one window (see [Ticker history](#ticker-history)). Present in every context, watchlists and realized included.
+- **⟲ history** — every lot of the ticker across your stock portfolios, live and realized, in one window (see [Ticker history](#ticker-history)). Shown for stocks and ETFs in every context, watchlists and realized included.
 - **BROKER** — the broker tagged on this lot, or the current default if none is set (see [Brokers](#brokers)).
 - **BUY DATE** — the lot's `purchaseDate`, or `—` if not set.
 - **SELL DATE** — for a sold lot, right after BUY DATE: its `sellDate`, or `—` for lots sold before the field existed.
@@ -586,7 +586,7 @@ Rows scroll horizontally rather than wrapping when they get long.
 
 ### Ticker history
 
-**HISTORY** collects the ticker's lots from all portfolios — active and realized — in P&L format, one line per lot, ascending by date:
+The **⟲** icon after the company name collects the ticker's lots from all portfolios — active and realized — in P&L format, one line per lot, ascending by date:
 
 ```
        QTY   ENTRY    PRICE      P&L       %    DATE        PORTFOLIO

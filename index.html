@@ -406,7 +406,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.112';
+var APP_VERSION = 'v1.5.113';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -4910,18 +4910,26 @@ function collectTickerHistory(ticker) {
   return out;
 }
 
+// Outline icon in MORE's blue, sized to the name it follows rather than to the
+// 25px calculator: on the name line a full-size icon would make the row taller.
 function tickerHistoryLinkHtml(p) {
   var t = String(p.ticker).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-  return '<span onclick="openTickerHistory(\'' + t + '\')" style="white-space:nowrap;cursor:pointer;color:#5b9cf6;border:1px solid var(--border);padding:5px 14px;font-size:9px;letter-spacing:1px">HISTORY</span>';
+  var svg = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="display:block">'
+    + '<path d="M12 8l0 4l2 2"/><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5"/>'
+    + '</svg>';
+  return '<span onclick="openTickerHistory(\'' + t + '\')" title="History" style="flex:none;cursor:pointer;color:#5b9cf6;display:inline-flex;align-items:center;padding:2px">' + svg + '</span>';
 }
 
-// First line of every expanded row: the company name, with HISTORY at the far
-// end so it's reachable in every portfolio type, watchlists and realized included.
+// First line of every expanded row: the company name, with the history icon
+// right after it. Only for what can be bought and sold — a stock or ETF, or a
+// lot already sold, which counts as one here as it does for the rows below.
 function expandedNameLineHtml(p) {
   var name = getPositionShortName(p) || '';
-  return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">'
-    + '<div style="flex:1;min-width:0;font-size:11px;color:var(--bright);letter-spacing:1px">' + name + '</div>'
-    + tickerHistoryLinkHtml(p)
+  var link = (isRealSecurity(p) || p.sold) ? tickerHistoryLinkHtml(p) : '';
+  if (!name && !link) return '';
+  return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
+    + (name ? '<div style="min-width:0;font-size:11px;color:var(--bright);letter-spacing:1px">' + name + '</div>' : '')
+    + link
     + '</div>';
 }
 
