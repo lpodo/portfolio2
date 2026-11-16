@@ -209,14 +209,12 @@ export default {
         if (url.pathname === '/api/snapshots/preview') {
           if (!holdings) return json({ error: 'no holdings digest yet — save from the app once' }, 404);
           const symbols = snapshotSymbols(holdings);
-          const got = {};
-          const asked = symbols.all.slice(0, SNAP_BUDGET);
-          for (const sym of asked) {
-            try { const q = await getClose(sym); if (q) got[sym] = q; } catch {}
-          }
+          const fetched = await fetchCloses(symbols.all, SNAP_BUDGET);
+          const got = fetched.got;
+          const notAsked = symbols.all.filter(s => !got[s] && !fetched.failed[s]);
           const day = valueHoldings(holdings, sym => got[sym] || null, sym => !!got[sym]);
-          return json(Object.assign({ date: zonedDate(new Date(), SNAP_TZ), holdings: holdingsInfo }, day,
-            symbols.all.length > asked.length ? { notAsked: symbols.all.slice(asked.length) } : {}));
+          return json(Object.assign({ date: zonedDate(new Date(), SNAP_TZ), holdings: holdingsInfo, requests: fetched.spent }, day,
+            notAsked.length ? { notAsked } : {}));
         }
 
         // Restore from a backup the app made of GET's `days`. Days in the file
@@ -1284,9 +1282,10 @@ const SNAP_TZ = 'America/New_York';
 const SNAP_FROM_MIN = 16 * 60 + 10;     // after the close, half-days included
 const SNAP_FALLBACK_MIN = 20 * 60;      // from here a missing close takes the last known one
 const SNAP_RETRY_MS = 30 * 60 * 1000;   // between attempts after a failed fetch
-// One request per close. The invocation's 50 external requests are shared
-// with nothing else — a tick that fetches closes skips alert checks — so most
-// of it can go here; KV calls are counted separately.
+// Requests per tick: closes come 20 to a request (see fetchCloses), with a
+// one-by-one fallback. The invocation's 50 external requests are shared with
+// nothing else — a tick that fetches closes skips alert checks — so most of it
+// can go here; KV calls are counted separately.
 const SNAP_BUDGET = 45;
 
 // Called on every tick. Returns true if it spent this tick's request budget,
@@ -1327,16 +1326,10 @@ async function snapshotOneUser(env, userKey, now, today, minute, budget) {
   // Closes gathered earlier today carry over: a large portfolio is fetched
   // over several ticks, and a retry only asks again for what failed.
   const got = state.pendingDate === today ? (state.got || {}) : {};
-  const failed = {};
-  let spent = 0;
-  for (const sym of symbols.all) {
-    if (got[sym]) continue;
-    if (spent >= budget) break;
-    spent++;
-    let q = null;
-    try { q = await getClose(sym); } catch {}
-    if (q) got[sym] = q; else failed[sym] = true;
-  }
+  const fetched = await fetchCloses(symbols.all.filter(s => !got[s]), budget);
+  Object.assign(got, fetched.got);
+  const failed = fetched.failed;
+  const spent = fetched.spent;
 
   const missing = symbols.all.filter(s => !got[s]);
   const notTried = missing.filter(s => !failed[s]);
@@ -1408,7 +1401,9 @@ function snapshotSymbols(holdings) {
     if (r.currency !== 'USD' && currencies.indexOf(r.currency) === -1) currencies.push(r.currency);
   }
   const fx = currencies.map(c => c + 'USD=X');
-  return { tickers, fx, all: tickers.concat(fx) };
+  // Rates first: each one prices many lines, so a partial fetch is worth
+  // more spent on them.
+  return { tickers, fx, all: fx.concat(tickers) };
 }
 
 // closeOf(sym) → { price, time } or null; isFresh(sym) → whether it's today's.
@@ -1447,6 +1442,52 @@ function valueHoldings(holdings, closeOf, isFresh) {
   return day;
 }
 
+// Closes for many symbols within a request budget. Yahoo's spark endpoint
+// returns the same chart meta for up to SPARK_BATCH symbols in one request, so
+// 70 symbols cost 4 requests instead of 70; whatever it leaves out (or all of
+// it, if the endpoint fails) is then asked one by one through the chart
+// endpoint while the budget lasts.
+//   got    — { sym: { price, time } }
+//   failed — symbols asked one by one with no answer
+//   spent  — requests used
+// A symbol in neither map wasn't reached: the budget ran out first.
+const SPARK_BATCH = 20;
+async function fetchCloses(symbols, budget) {
+  const got = {}, failed = {};
+  let spent = 0;
+  for (let i = 0; i < symbols.length && spent < budget; i += SPARK_BATCH) {
+    const chunk = symbols.slice(i, i + SPARK_BATCH);
+    spent++;
+    try { Object.assign(got, await getClosesBatch(chunk)); } catch {}
+  }
+  for (const sym of symbols) {
+    if (got[sym]) continue;
+    if (spent >= budget) break;
+    spent++;
+    let q = null;
+    try { q = await getClose(sym); } catch {}
+    if (q) got[sym] = q; else failed[sym] = true;
+  }
+  return { got, failed, spent };
+}
+
+async function getClosesBatch(symbols) {
+  const r = await fetch(
+    `https://query1.finance.yahoo.com/v8/finance/spark?symbols=${symbols.map(encodeURIComponent).join(',')}&range=1d&interval=1d`,
+    { headers: yahooHeaders(), signal: AbortSignal.timeout(QUOTE_TIMEOUT_MS) }
+  );
+  if (!r.ok) return {};
+  const d = await r.json();
+  const out = {};
+  for (const res of d?.spark?.result || []) {
+    const q = closeFromMeta(res?.response?.[0]?.meta);
+    // Only symbols that were asked for: a renamed or redirected one is left
+    // to the one-by-one pass, which reports it under the name it was given.
+    if (q && res.symbol && symbols.indexOf(res.symbol) !== -1) out[res.symbol] = q;
+  }
+  return out;
+}
+
 // The regular-session close: no after-hours price, unlike getQuote, which
 // shows the latest trade. Same GBp → GBP normalization, so amounts match the
 // app's. `time` is when that price was set — what the session check reads.
@@ -1457,7 +1498,10 @@ async function getClose(symbol) {
   );
   if (!r.ok) return null;
   const d = await r.json();
-  const meta = d?.chart?.result?.[0]?.meta;
+  return closeFromMeta(d?.chart?.result?.[0]?.meta);
+}
+
+function closeFromMeta(meta) {
   if (!meta || typeof meta.regularMarketPrice !== 'number' || !(meta.regularMarketPrice > 0)) return null;
   const price = meta.currency === 'GBp' ? meta.regularMarketPrice / 100 : meta.regularMarketPrice;
   return { price, time: numOr(meta.regularMarketTime, 0) };

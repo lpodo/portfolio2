@@ -934,7 +934,7 @@ Market state (`REGULAR` / `PRE` / `POST` / `CLOSED`) is determined from `current
 - `/api/hours?ticker=AAPL` — trading periods for the ticker's exchange (pre / regular / post start & end as Unix timestamps, plus `timezone` and `exchangeName`). Powers the trading-hours popover on the market-state icon. Fetched fresh per click, not cached.
 - `/api/alerts` — GET/PUT the user's server-side alert record: thresholds, check settings, and the last run's diagnostics. Stored in KV under `alerts:<key>` in plaintext (the scheduled job has to read it), separately from the main portfolio blob.
 - `/api/snapshots` — GET: the daily snapshot history (`days`, keyed by New York date), the stored holdings digest's age and size, and where the snapshot job stands (last run, last result, a pending retry). PUT `{ days }`: restore from a backup — days in the body replace the same days, the rest are kept; a history the current key can't read answers `409` unless `?replace=1`. Requires `X-KV-Key`.
-- `/api/snapshots/preview` — today's totals valued at the latest closes right now, written nowhere: a way to check the digest without waiting for the close.
+- `/api/snapshots/preview` — today's totals valued at the latest closes right now, written nowhere: a way to check the digest without waiting for the close. `requests` tells how many Yahoo requests it took; `notAsked` lists what didn't fit the budget.
 - `/api/push/key` — returns the worker's VAPID public key, so it isn't embedded in the client.
 - `/api/push/subscribe` — stores (or clears) this device's push subscription in the same `alerts:<key>` record.
 - `/api/push/test` — sends a test notification to every stored subscription.
@@ -977,7 +977,7 @@ Once a day, after the New York close, the worker records the total **value** and
 
 **The snapshot.** From 16:10 New York time, once per New York date:
 
-1. Fetch the regular-session close of every ticker and the USD rate of every other currency — the close, not an after-hours price. A large digest is fetched over several ticks.
+1. Fetch the regular-session close of every ticker and the USD rate of every other currency — the close, not an after-hours price. Closes come 20 to a request through Yahoo's spark endpoint, so a 70-ticker portfolio costs four requests; anything the batch leaves out is asked one by one. What doesn't fit one tick's budget carries over to the next.
 2. If any close failed, retry every 30 minutes. From 20:00 a missing close takes the last known one and the ticker is listed as `stale`; one never priced is left out of value and cost and listed as `missing`.
 3. Check that a market traded: at least one close must be later than the latest close the previous snapshot saw. Weekends and holidays, in any time zone, are skipped with no calendar. The first snapshot is taken unconditionally.
 4. Value: active `Σ qty × close × fx` and `Σ cost × fx`; realized `Σ proceeds × fx` and `Σ cost × fx`. Write the day.
