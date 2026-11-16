@@ -2,7 +2,7 @@
 
 Portfolio Terminal 2 is only the client half: it holds your portfolios and draws the interface, but every price, chart and lookup comes from a server, and that server is the worker. Without one the app has nothing to show — so each user runs their own copy, and this guide walks through creating it.
 
-The worker (`worker.js`) is Portfolio Terminal 2's price backend and, optionally, the proxy for cloud sync via Cloudflare KV and the scheduler behind alert checks and push notifications.
+The worker (`worker.js`) is Portfolio Terminal 2's price backend and, optionally, the proxy for cloud sync via Cloudflare KV and the scheduler behind alert checks, push notifications and daily portfolio snapshots.
 
 ## Choose a path
 
@@ -39,6 +39,12 @@ Lets the worker check your alerts on a schedule and notify you while the app is 
 2. **Add them.** Worker page → **Settings** → **Variables and Secrets**. Add `VAPID_PUBLIC_KEY` as a plaintext **Variable** — it's handed to every client anyway via `/api/push/key`. Add `VAPID_PRIVATE_KEY` as a **Secret**. Optionally add `VAPID_SUBJECT` as `mailto:you@example.com` — push services expect a contact address, and the worker falls back to a placeholder without it.
 3. **Add a cron trigger.** Worker page → **Settings** → **Triggers** → **Cron Triggers** → **Add**. Use `*/5 * * * *`. The cron only wakes the worker; your in-app settings decide which checks actually run, so a frequent trigger is harmless and helps large watchlists finish a round sooner.
 
+### Add daily snapshots (optional)
+
+Records the total value and cost of your active and realized stocks once a day, after the New York close. Requires the KV step and the cron trigger above — the cron is needed even if you skip push.
+
+1. **Add the key.** Worker page → **Settings** → **Variables and Secrets** → **Add**, type **Secret**. Name: `WORKER_ENC_KEY`. Value: any long random string. It encrypts what the worker stores for itself; changing it later makes the recorded history unreadable — keep a copy with Settings → **BACKUP HISTORY** in the app.
+
 Now continue with [connecting the app](#connect-the-app).
 
 ---
@@ -57,12 +63,12 @@ Here `wrangler.toml` is the source of truth: bindings, cron and plaintext variab
    - `id` under `[[kv_namespaces]]` — the namespace ID you just copied. Leave `binding = "PORTFOLIO_KV"` alone; the worker looks it up by that name.
    - `VAPID_PUBLIC_KEY` and `VAPID_SUBJECT` under `[vars]` — your public key and your own `mailto:` address.
 
-   Dropping a feature means dropping its block: remove `[[kv_namespaces]]` if you don't want KV, and `[triggers]` plus the two `[vars]` lines if you don't want push. A stale namespace ID breaks the build outright; a mismatched VAPID key fails quietly, at the first send.
+   Dropping a feature means dropping its block: remove `[[kv_namespaces]]` if you don't want KV, and the two `[vars]` lines if you don't want push; `[triggers]` goes only if you want neither push nor daily snapshots. A stale namespace ID breaks the build outright; a mismatched VAPID key fails quietly, at the first send.
 
 ### Connect and deploy
 
 1. **Import the repository.** Cloudflare dashboard → **Workers & Pages** → **Create** → the import-from-Git option. Authorise Cloudflare's access to GitHub if you haven't before, pick the repository, and confirm. The first build starts immediately.
-2. **Set the secrets.** These aren't in the file, so add them once the worker exists: worker page → **Settings** → **Variables and Secrets** → **Add**, type **Secret**. `API_TOKEN` — any long random string. `VAPID_PRIVATE_KEY` — the private key from step 3, if you set up push. Secrets survive later builds.
+2. **Set the secrets.** These aren't in the file, so add them once the worker exists: worker page → **Settings** → **Variables and Secrets** → **Add**, type **Secret**. `API_TOKEN` — any long random string. `VAPID_PRIVATE_KEY` — the private key from step 3, if you set up push. `WORKER_ENC_KEY` — any long random string, if you want daily snapshots (needs KV and the `[triggers]` block; changing it later makes the recorded history unreadable). Secrets survive later builds.
 
 From here every push to the tracked branch rebuilds and redeploys. To change the cron schedule or the VAPID public key, edit `wrangler.toml` and push — not the dashboard.
 
@@ -78,6 +84,8 @@ Same for both options.
 2. **Cloud sync** (if you set up KV). Settings → **CLOUD STORAGE** → select **Cloudflare KV** → enter any unique **KV Key** (e.g. your username). This key identifies your data slot within the namespace. To check it works, click **↑ OVERWRITE CLOUD** — a clean run means the whole chain is wired.
 3. **Encryption** (optional). Settings → **ENC KEY**, set any password. Portfolio data is then AES-GCM encrypted client-side before it reaches KV — the namespace stores only an opaque blob. The same password must be entered on every device that syncs; if you lose it, the cloud data can't be recovered.
 4. **Push notifications** (if you set up VAPID and cron). Settings → **PUSH NOTIFICATIONS** → enable. Grant the browser's notification permission when asked, then set the check interval, the daily time window, and optionally the movers digest. The **TEST** button confirms delivery straight away. Repeat on every device you want notified.
+
+5. **Daily snapshots** (if you set `WORKER_ENC_KEY`). Nothing to switch on: the next save from the app hands the worker what it needs, and the first snapshot follows that evening after the New York close. To check right away, open `/api/snapshots/preview` with the `X-API-Token` and `X-KV-Key` headers.
 
 Note: the alert record — thresholds and push subscriptions — is stored unencrypted, because the scheduled job has to read it. Your ENC KEY still protects the portfolio data itself; positions, quantities and prices are never written to this record.
 

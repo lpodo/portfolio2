@@ -143,6 +143,16 @@ export default {
 
         const alerts = record.alerts;
         delete record.alerts;
+        // The holdings digest for the daily snapshot (see runSnapshots). It
+        // arrives in plaintext over the authenticated request and is stored
+        // only sealed with WORKER_ENC_KEY; without that secret the feature is
+        // off and the digest is dropped. Absent field: an older build — leave
+        // the stored digest alone.
+        const holdings = record.holdings;
+        delete record.holdings;
+        if (holdings && typeof holdings === 'object' && env.WORKER_ENC_KEY) {
+          await kvPutSealed(env, HOLDINGS_PREFIX + kvKey, 'holdings', holdings);
+        }
 
         // Alerts first: it's the smaller write, so if the pair is interrupted
         // the larger blob is the one left behind, not the alerts.
@@ -176,6 +186,78 @@ export default {
       let { metadata } = await env.PORTFOLIO_KV.getWithMetadata(dataKeyFor(kvKey));
       if (!metadata) ({ metadata } = await env.PORTFOLIO_KV.getWithMetadata(kvKey));
       return json({ updatedAt: metadata?.updatedAt || null });
+    }
+
+    // Daily snapshots: /api/snapshots → GET the history plus where the
+    // snapshot job stands, PUT to restore it from a backup;
+    // /api/snapshots/preview → today's totals valued right now,
+    // written nowhere — for checking the digest without waiting for the close.
+    if (url.pathname === '/api/snapshots' || url.pathname === '/api/snapshots/preview') {
+      const kvKey = request.headers.get('X-KV-Key');
+      if (!kvKey) return json({ error: 'X-KV-Key required' }, 400);
+      if (!env.PORTFOLIO_KV) return json({ error: 'KV not configured' }, 503);
+      if (!env.WORKER_ENC_KEY) return json({ error: 'WORKER_ENC_KEY not set' }, 503);
+      try {
+        // Unreadable holdings (secret changed) mustn't block a restore; the
+        // next save from the app replaces them anyway.
+        let holdings = null;
+        try { holdings = await kvGetSealed(env, HOLDINGS_PREFIX + kvKey, 'holdings'); } catch {}
+        const holdingsInfo = holdings
+          ? { builtAt: holdings.builtAt || null, active: (holdings.active || []).length, realized: (holdings.realized || []).length }
+          : null;
+
+        if (url.pathname === '/api/snapshots/preview') {
+          if (!holdings) return json({ error: 'no holdings digest yet — save from the app once' }, 404);
+          const symbols = snapshotSymbols(holdings);
+          const got = {};
+          const asked = symbols.all.slice(0, SNAP_BUDGET);
+          for (const sym of asked) {
+            try { const q = await getClose(sym); if (q) got[sym] = q; } catch {}
+          }
+          const day = valueHoldings(holdings, sym => got[sym] || null, sym => !!got[sym]);
+          return json(Object.assign({ date: zonedDate(new Date(), SNAP_TZ), holdings: holdingsInfo }, day,
+            symbols.all.length > asked.length ? { notAsked: symbols.all.slice(asked.length) } : {}));
+        }
+
+        // Restore from a backup the app made of GET's `days`. Days in the file
+        // replace the same days here; the rest are kept. A history this key
+        // can't read (WORKER_ENC_KEY changed or lost) is replaced only when the
+        // request says so — a mistyped secret is fixable, an overwrite is not.
+        if (request.method === 'PUT') {
+          let body;
+          try { body = JSON.parse(await request.text()); } catch { return json({ error: 'invalid_json' }, 400); }
+          const incoming = cleanHistoryDays(body && body.days);
+          if (!incoming) return json({ error: 'no valid days in the file' }, 400);
+          const name = HISTORY_PREFIX + kvKey;
+          let hist;
+          try { hist = (await kvGetSealed(env, name, 'history')) || { v: 1, days: {} }; }
+          catch {
+            if (url.searchParams.get('replace') !== '1') return json({ error: 'unreadable_history' }, 409);
+            hist = { v: 1, days: {} };
+          }
+          Object.assign(hist.days, incoming);
+          await kvPutSealed(env, name, 'history', hist);
+          return json({ ok: true, restored: Object.keys(incoming).length, total: Object.keys(hist.days).length });
+        }
+
+        const hist = await kvGetSealed(env, HISTORY_PREFIX + kvKey, 'history');
+        let state = null;
+        try { state = await kvGetSealed(env, SNAPSTATE_PREFIX + kvKey, 'snapstate'); } catch {}
+        return json({
+          days: hist ? hist.days : {},
+          holdings: holdingsInfo,
+          state: state ? {
+            doneDate: state.doneDate || null,
+            pendingDate: state.pendingDate || null,
+            nextTryAt: state.nextTryAt ? new Date(state.nextTryAt).toISOString() : null,
+            lastSnapshotAt: state.lastSnapshotAt ? new Date(state.lastSnapshotAt * 1000).toISOString() : null,
+            lastRun: state.lastRun || null,
+            lastResult: state.lastResult || null
+          } : null
+        });
+      } catch (err) {
+        return json({ error: 'unreadable — was WORKER_ENC_KEY changed? (' + (err.message || err) + ')' }, 500);
+      }
     }
 
     // Profile endpoint: /api/profile?ticker=NVDA → { sector, industry, country }
@@ -397,9 +479,19 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(runAlertChecks(env));
+    ctx.waitUntil(runScheduled(env));
   }
 };
+
+// One cron, two jobs. The daily snapshot comes first: it's due once a day,
+// after the New York close, and needs most of the invocation's 50 external
+// requests — so a tick that fetches closes leaves the alert checks for the
+// next one, five minutes later. Every other tick is the alerts' as before.
+async function runScheduled(env) {
+  let tookTick = false;
+  try { tookTick = await runSnapshots(env, new Date()); } catch {}
+  if (!tookTick) await runAlertChecks(env);
+}
 
 // ── Scheduled alert checks ──────────────────────────────────────────────────
 // Cron fires on a fixed short interval; the per-user settings decide whether
@@ -778,7 +870,7 @@ async function getQuote(ticker) {
       previousClose: meta.chartPreviousClose || null,
       currency: meta.currency || null,
       exchangeName: meta.fullExchangeName || meta.exchangeName || null,
-      shortName: meta.longName || meta.shortName || null,
+      shortName: meta.shortName || null,
       instrumentType: meta.instrumentType || null,
     };
   }
@@ -830,7 +922,7 @@ async function getQuote(ticker) {
         previousClose: meta.chartPreviousClose || null,
         currency: meta.currency || null,
         exchangeName: meta.fullExchangeName || meta.exchangeName || null,
-        shortName: meta.longName || meta.shortName || null,
+        shortName: meta.shortName || null,
         instrumentType: meta.instrumentType || null,
       };
     }
@@ -848,7 +940,7 @@ async function getQuote(ticker) {
     previousClose: meta.chartPreviousClose || null,
     currency: meta.currency || null,
     exchangeName: meta.fullExchangeName || meta.exchangeName || null,
-    shortName: meta.longName || meta.shortName || null,
+    shortName: meta.shortName || null,
     instrumentType: meta.instrumentType || null,
   };
 }
@@ -1126,4 +1218,281 @@ async function sendPush(env, subscription, message) {
     },
     body
   });
+}
+
+// ── Worker-side encryption ──────────────────────────────────────────────────
+// What the worker stores for itself (the holdings digest, the snapshot
+// history, its own bookkeeping) is sealed with WORKER_ENC_KEY, a Secret.
+// One secret, one key per purpose: HKDF with the purpose as its label, so a
+// value sealed for one purpose can't be opened as another, and new uses
+// (alerts, later) don't need a secret of their own. The KV name is bound in
+// as AES-GCM additional data, so a sealed value can't be moved to another key.
+const WORKER_ENC_SALT = new TextEncoder().encode('pt2-worker-enc');
+const workerKeyCache = {};
+
+async function workerKey(env, purpose) {
+  const secret = env.WORKER_ENC_KEY;
+  if (!secret) return null;
+  const hit = workerKeyCache[purpose];
+  if (hit && hit.secret === secret) return hit.key;
+  const raw = await hkdf(WORKER_ENC_SALT, new TextEncoder().encode(secret), new TextEncoder().encode(purpose), 32);
+  const key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+  workerKeyCache[purpose] = { secret, key };
+  return key;
+}
+
+async function kvPutSealed(env, name, purpose, obj) {
+  const key = await workerKey(env, purpose);
+  if (!key) throw new Error('WORKER_ENC_KEY not set');
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv, additionalData: new TextEncoder().encode(name) },
+    key, new TextEncoder().encode(JSON.stringify(obj))
+  );
+  await env.PORTFOLIO_KV.put(name, JSON.stringify({ v: 1, iv: bytesToB64u(iv), ct: bytesToB64u(new Uint8Array(ct)) }));
+}
+
+// Missing → null. Present but unreadable (wrong or changed secret, damage) →
+// throws: a caller about to rewrite the value must not mistake "can't read"
+// for "empty" and overwrite what's there.
+async function kvGetSealed(env, name, purpose) {
+  const raw = await env.PORTFOLIO_KV.get(name);
+  if (raw === null) return null;
+  const key = await workerKey(env, purpose);
+  if (!key) throw new Error('WORKER_ENC_KEY not set');
+  const box = JSON.parse(raw);
+  const plain = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: b64uToBytes(box.iv), additionalData: new TextEncoder().encode(name) },
+    key, b64uToBytes(box.ct)
+  );
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
+// ── Daily snapshot ──────────────────────────────────────────────────────────
+// Once a day after the New York close, value the holdings digest the app sends
+// with every save (see holdingsCloudPayload in the app) and append the totals
+// to the history. The app decides what counts; this side only multiplies by
+// the closing price and the day's FX rate, the way Σ SUMMARY does on screen:
+//   active   value = Σ qty × close × fx      cost = Σ cost × fx
+//   realized value = Σ proceeds × fx         cost = Σ cost × fx
+// all in USD. P&L and return aren't stored: they're value − cost.
+
+const HOLDINGS_PREFIX = 'holdings:';
+const HISTORY_PREFIX = 'history:';
+const SNAPSTATE_PREFIX = 'snapstate:';
+const SNAP_TZ = 'America/New_York';
+const SNAP_FROM_MIN = 16 * 60 + 10;     // after the close, half-days included
+const SNAP_FALLBACK_MIN = 20 * 60;      // from here a missing close takes the last known one
+const SNAP_RETRY_MS = 30 * 60 * 1000;   // between attempts after a failed fetch
+// One request per close. The invocation's 50 external requests are shared
+// with nothing else — a tick that fetches closes skips alert checks — so most
+// of it can go here; KV calls are counted separately.
+const SNAP_BUDGET = 45;
+
+// Called on every tick. Returns true if it spent this tick's request budget,
+// in which case the alert checks wait for the next tick.
+async function runSnapshots(env, now) {
+  if (!env.PORTFOLIO_KV || !env.WORKER_ENC_KEY) return false;
+  const local = zonedParts(now, SNAP_TZ);
+  if (local.minuteOfDay < SNAP_FROM_MIN) return false;
+  const today = zonedDate(now, SNAP_TZ);
+
+  const list = await env.PORTFOLIO_KV.list({ prefix: HOLDINGS_PREFIX });
+  let budget = SNAP_BUDGET;
+  let took = false;
+  for (const entry of list.keys) {
+    if (budget <= 0) break;
+    const userKey = entry.name.slice(HOLDINGS_PREFIX.length);
+    try {
+      const spent = await snapshotOneUser(env, userKey, now, today, local.minuteOfDay, budget);
+      budget -= spent;
+      if (spent) took = true;
+    } catch (err) { /* one user's failure must not stop the rest */ }
+  }
+  return took;
+}
+
+async function snapshotOneUser(env, userKey, now, today, minute, budget) {
+  const stateName = SNAPSTATE_PREFIX + userKey;
+  let state;
+  // Bookkeeping only: unreadable state costs the last known closes, nothing more.
+  try { state = (await kvGetSealed(env, stateName, 'snapstate')) || {}; } catch { state = {}; }
+  if (state.doneDate === today) return 0;
+  if (state.pendingDate === today && state.nextTryAt && now.getTime() < state.nextTryAt) return 0;
+
+  const holdings = await kvGetSealed(env, HOLDINGS_PREFIX + userKey, 'holdings');
+  if (!holdings || holdings.v !== 1) return 0;
+
+  const symbols = snapshotSymbols(holdings);
+  // Closes gathered earlier today carry over: a large portfolio is fetched
+  // over several ticks, and a retry only asks again for what failed.
+  const got = state.pendingDate === today ? (state.got || {}) : {};
+  const failed = {};
+  let spent = 0;
+  for (const sym of symbols.all) {
+    if (got[sym]) continue;
+    if (spent >= budget) break;
+    spent++;
+    let q = null;
+    try { q = await getClose(sym); } catch {}
+    if (q) got[sym] = q; else failed[sym] = true;
+  }
+
+  const missing = symbols.all.filter(s => !got[s]);
+  const notTried = missing.filter(s => !failed[s]);
+  if (notTried.length || (missing.length && minute < SNAP_FALLBACK_MIN)) {
+    // Out of budget → carry on next tick. A failure → try again later; the
+    // ticks in between go back to the alert checks.
+    await kvPutSealed(env, stateName, 'snapstate', Object.assign({}, state, {
+      pendingDate: today,
+      got,
+      nextTryAt: notTried.length ? null : now.getTime() + SNAP_RETRY_MS
+    }));
+    return spent;
+  }
+
+  // Did any market in the portfolio trade since the last snapshot? A close
+  // later than the latest one that snapshot saw means it did — whichever
+  // exchange, whatever its time zone, no holiday calendar involved. FX rates
+  // trade round the clock and don't count. The very first snapshot is taken
+  // unconditionally.
+  const prevAt = numOr(state.lastSnapshotAt, 0);
+  let latest = 0;
+  for (const t of symbols.tickers) if (got[t] && got[t].time > latest) latest = got[t].time;
+  const traded = !prevAt || latest > prevAt;
+
+  // Keep the last known close of everything still held, for the fallback.
+  const lastCloses = {};
+  for (const s of symbols.all) {
+    if (got[s]) lastCloses[s] = got[s];
+    else if (state.lastCloses && state.lastCloses[s]) lastCloses[s] = state.lastCloses[s];
+  }
+
+  const nextState = {
+    doneDate: today,
+    lastSnapshotAt: traded ? latest : prevAt,
+    lastCloses,
+    holdingsBuiltAt: holdings.builtAt || null,
+    lastRun: now.toISOString()
+  };
+
+  if (!traded) {
+    nextState.lastResult = { date: today, note: 'no session since the previous snapshot' };
+    await kvPutSealed(env, stateName, 'snapstate', nextState);
+    return spent;
+  }
+
+  const day = valueHoldings(holdings, sym => got[sym] || (state.lastCloses || {})[sym] || null, sym => !!got[sym]);
+
+  // Read before write: an unreadable history throws here and is left alone
+  // rather than replaced by a history of one day.
+  const histName = HISTORY_PREFIX + userKey;
+  const hist = (await kvGetSealed(env, histName, 'history')) || { v: 1, days: {} };
+  hist.days[today] = day;
+  await kvPutSealed(env, histName, 'history', hist);
+
+  nextState.lastResult = Object.assign({ date: today }, day);
+  await kvPutSealed(env, stateName, 'snapstate', nextState);
+  return spent;
+}
+
+// Everything that needs a close: each held ticker once, and each non-USD
+// currency as its USD pair.
+function snapshotSymbols(holdings) {
+  const tickers = [], currencies = [];
+  for (const a of holdings.active || []) {
+    if (tickers.indexOf(a.ticker) === -1) tickers.push(a.ticker);
+    if (a.currency !== 'USD' && currencies.indexOf(a.currency) === -1) currencies.push(a.currency);
+  }
+  for (const r of holdings.realized || []) {
+    if (r.currency !== 'USD' && currencies.indexOf(r.currency) === -1) currencies.push(r.currency);
+  }
+  const fx = currencies.map(c => c + 'USD=X');
+  return { tickers, fx, all: tickers.concat(fx) };
+}
+
+// closeOf(sym) → { price, time } or null; isFresh(sym) → whether it's today's.
+// A ticker or currency with no price at all is left out of both value and
+// cost, as Σ SUMMARY leaves out a lot it can't price; one valued at an older
+// close is listed as stale.
+function valueHoldings(holdings, closeOf, isFresh) {
+  const stale = [], missing = [];
+  function price(sym) {
+    const c = closeOf(sym);
+    if (!c) { if (missing.indexOf(sym) === -1) missing.push(sym); return null; }
+    if (!isFresh(sym) && stale.indexOf(sym) === -1) stale.push(sym);
+    return c.price;
+  }
+  function fx(code) { return code === 'USD' ? 1 : price(code + 'USD=X'); }
+
+  let av = 0, ac = 0, rv = 0, rc = 0;
+  for (const a of holdings.active || []) {
+    const p = price(a.ticker), r = fx(a.currency);
+    if (p == null || r == null) continue;
+    av += a.qty * p * r;
+    ac += a.cost * r;
+  }
+  for (const x of holdings.realized || []) {
+    const r = fx(x.currency);
+    if (r == null) continue;
+    rv += x.proceeds * r;
+    rc += x.cost * r;
+  }
+  const day = {
+    active: { value: round2(av), cost: round2(ac) },
+    realized: { value: round2(rv), cost: round2(rc) }
+  };
+  if (stale.length) day.stale = stale;
+  if (missing.length) day.missing = missing;
+  return day;
+}
+
+// The regular-session close: no after-hours price, unlike getQuote, which
+// shows the latest trade. Same GBp → GBP normalization, so amounts match the
+// app's. `time` is when that price was set — what the session check reads.
+async function getClose(symbol) {
+  const r = await fetch(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`,
+    { headers: yahooHeaders(), signal: AbortSignal.timeout(QUOTE_TIMEOUT_MS) }
+  );
+  if (!r.ok) return null;
+  const d = await r.json();
+  const meta = d?.chart?.result?.[0]?.meta;
+  if (!meta || typeof meta.regularMarketPrice !== 'number' || !(meta.regularMarketPrice > 0)) return null;
+  const price = meta.currency === 'GBp' ? meta.regularMarketPrice / 100 : meta.regularMarketPrice;
+  return { price, time: numOr(meta.regularMarketTime, 0) };
+}
+
+// YYYY-MM-DD in an IANA zone.
+function zonedDate(date, tz) {
+  const parts = {};
+  for (const p of new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(date)) parts[p.type] = p.value;
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function round2(n) { return Math.round(n * 100) / 100; }
+
+// Days from a restore file, reduced to what a snapshot writes: a date key and
+// numeric value/cost pairs, plus the stale/missing lists if present. Anything
+// else is dropped; null when nothing valid is left.
+function cleanHistoryDays(days) {
+  if (!days || typeof days !== 'object') return null;
+  const num = v => typeof v === 'number' && isFinite(v);
+  const pair = p => p && num(p.value) && num(p.cost) ? { value: p.value, cost: p.cost } : null;
+  const list = l => Array.isArray(l) ? l.filter(x => typeof x === 'string').slice(0, 500) : null;
+  const out = {};
+  for (const date of Object.keys(days)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    const d = days[date] || {};
+    const active = pair(d.active), realized = pair(d.realized);
+    if (!active || !realized) continue;
+    const day = { active, realized };
+    const stale = list(d.stale), missing = list(d.missing);
+    if (stale && stale.length) day.stale = stale;
+    if (missing && missing.length) day.missing = missing;
+    out[date] = day;
+  }
+  return Object.keys(out).length ? out : null;
 }

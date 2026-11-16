@@ -25,7 +25,7 @@ A portfolio tracker for holdings spread across brokers, currencies and asset cla
 | **Repository** | `lpodo/portfolio2` |
 | **App** | PWA — installable on Android/iOS as a home screen app |
 
-The app is only the client half. It stores your portfolios and draws the interface, but every price, chart and lookup comes from a server — browsers can't reach Yahoo Finance directly, so a worker proxies those requests, and optionally holds your synced data and runs the scheduled alert checks. There is no shared instance to sign up for: each user deploys their own copy from the `worker.js` file in this repository, which takes a few minutes.
+The app is only the client half. It stores your portfolios and draws the interface, but every price, chart and lookup comes from a server — browsers can't reach Yahoo Finance directly, so a worker proxies those requests, and optionally holds your synced data and runs the scheduled alert checks and daily snapshots. There is no shared instance to sign up for: each user deploys their own copy from the `worker.js` file in this repository, which takes a few minutes.
 
 ## Table of Contents
 
@@ -107,7 +107,7 @@ Portfolios in the **REALIZED** tab hold closed positions and show their actual r
 
 - No Refresh button — all positions are static (closed).
 - Excluded from the main Σ SUMMARY and from Refresh All.
-- Have a dedicated Σ SUMMARY at the bottom of the REALIZED tab. Same calculation as the main Summary — values in native currency, totals in USD with live FX conversion.
+- Have a dedicated Σ SUMMARY at the bottom of the REALIZED tab. Same calculation as the main Summary — values in native currency, totals in USD with live FX conversion. Its ⋮ menu has **P&L** and **HISTORY** (see [P&L History](#pl-history)).
 
 **Stocks:**
 
@@ -284,11 +284,12 @@ Scope of the filter:
 
 Selected from the portfolio switcher (**Σ SUMMARY** at the bottom of the STOCKS, BONDS, or REALIZED tab). Portfolio-level cross-portfolio view: each row is a portfolio, with totals computed across the portfolios in scope. Refresh on Summary updates all portfolios in scope.
 
-The ⋮ dropdown menu shows three views:
+The ⋮ dropdown menu shows four views:
 
 - **P&L** (default) — NAME / VALUE (in native currency) / P&L / RETURN / SHARE%. Sold lots are split into a separate `(closed)` row for the portfolio, valued at their sale proceeds and carrying no weight; they're totalled in their own **TOTAL CLOSED** bar beneath the main one. Totals are in USD with live FX conversion. Clicking a portfolio name switches to it.
 - **MARKET** — per-portfolio aggregates: PORTFOLIO / [close] / [current] / Δ / Δ%. Uses the same CLOSE/CURRENT mode menus as the regular MARKET view (including historical periods 5D/1M/3M/6M/1Y/5Y); the value in each row is the portfolio's total at the chosen price, over its held lots only, so the rows add up to the totals bar.
 - **CHART** — see [Summary Chart](#summary-chart) — TOTAL or BY PORTFOLIO modes.
+- **HISTORY** — the recorded P&L of all stocks, day by day — see [P&L History](#pl-history).
 
 ## All Positions
 
@@ -415,6 +416,15 @@ In Summary, the dropdown menu → CHART shows two modes selectable via a green d
 
 - **TOTAL** — single line showing the combined value of all active portfolios in USD with FX conversion.
 - **BY PORTFOLIO** — one normalized line per portfolio starting at 0%, each calculated in its own base currency (no USD conversion, so FX effects don't distort relative stock performance). Color-coded with a legend showing the final % change.
+
+### P&L History
+
+Menu → **HISTORY** in both Σ SUMMARY (stocks) and the realized Σ SUMMARY — the same chart in both. It plots the [daily snapshots](#daily-snapshots) the worker records after each New York close, in USD:
+
+- **Area** — realized P&L (sale proceeds − cost), filled from zero.
+- **Line** — total P&L: realized + unrealized. The gap between line and area is the unrealized part. The line is green above the area and red where it dips below it — where unrealized P&L is negative — changing colour exactly at the crossing.
+
+Ranges **1M · 3M · 6M · 1Y · ALL** (remembered; ALL by default). The legend gives the latest day's TOTAL, REALIZED and UNREALIZED, its date, and ↻ to reload. Snapshots cover all stocks, so the filter doesn't apply. The history is fetched from the worker and kept for ten minutes; if the worker can't be reached, the last copy loaded on this device is shown. Requires Cloudflare KV and `WORKER_ENC_KEY` on the worker.
 
 ## Position sets
 
@@ -817,6 +827,20 @@ Backup format:
 }
 ```
 
+The [daily snapshot history](#daily-snapshots) lives on the worker, sealed with `WORKER_ENC_KEY`, and isn't part of this backup. If that secret is lost or changed, the history can no longer be read — so it has its own pair of buttons (Cloudflare KV only):
+
+- **↓ BACKUP HISTORY** — downloads `portfolio-history-YYYY-MM-DD.json` with every recorded day, in plain form.
+- **↑ RESTORE HISTORY** — sends the file's days back to the worker. Days in the file replace the same days on the server; other days are kept. If the server's history can't be read with the current key, a second confirmation offers to replace it entirely.
+
+```json
+{
+  "kind": "pt-snapshot-history",
+  "version": 1,
+  "date": "2026-11-16T...",
+  "days": { "2026-11-13": { "active": { "value": 254310.22, "cost": 201000.00 }, "realized": { "value": 60890.10, "cost": 49800.00 } } }
+}
+```
+
 ## Cloud Sync
 
 Two cloud storage backends are supported. Select in Settings under **CLOUD STORAGE**.
@@ -909,6 +933,8 @@ Market state (`REGULAR` / `PRE` / `POST` / `CLOSED`) is determined from `current
 - `/api/isin?ticker=AAPL` — ISIN lookup. Currently a **stub**: always returns `{ isin: null }`. No free provider supplies ISIN data reliably (Yahoo doesn't return it, Business Insider scrapes are noisy, Twelve Data gates the field behind a paid add-on). The endpoint stays so the frontend contract is unchanged — users enter ISINs manually from the expanded row, and a real provider can be wired in later by editing only this handler. The frontend caches a negative result with the `UNRESOLVED` marker so it won't re-query (see [Ticker data registry](#ticker-data-registry)).
 - `/api/hours?ticker=AAPL` — trading periods for the ticker's exchange (pre / regular / post start & end as Unix timestamps, plus `timezone` and `exchangeName`). Powers the trading-hours popover on the market-state icon. Fetched fresh per click, not cached.
 - `/api/alerts` — GET/PUT the user's server-side alert record: thresholds, check settings, and the last run's diagnostics. Stored in KV under `alerts:<key>` in plaintext (the scheduled job has to read it), separately from the main portfolio blob.
+- `/api/snapshots` — GET: the daily snapshot history (`days`, keyed by New York date), the stored holdings digest's age and size, and where the snapshot job stands (last run, last result, a pending retry). PUT `{ days }`: restore from a backup — days in the body replace the same days, the rest are kept; a history the current key can't read answers `409` unless `?replace=1`. Requires `X-KV-Key`.
+- `/api/snapshots/preview` — today's totals valued at the latest closes right now, written nowhere: a way to check the digest without waiting for the close.
 - `/api/push/key` — returns the worker's VAPID public key, so it isn't embedded in the client.
 - `/api/push/subscribe` — stores (or clears) this device's push subscription in the same `alerts:<key>` record.
 - `/api/push/test` — sends a test notification to every stored subscription.
@@ -930,11 +956,50 @@ Quote fetching is bounded by Cloudflare's per-invocation subrequest limit, so th
 
 Notification state is diffed against the previous run: only alerts that newly started (or newly stopped) holding produce a push. Top-movers digests are computed from quotes accumulated across the slot and sent once the walk is complete, on their own coarser interval.
 
+### Daily snapshots
+
+Once a day, after the New York close, the worker records the total **value** and **cost** of active and realized stocks, in USD. P&L and return are derived (`value − cost`) rather than stored.
+
+**Holdings digest.** The worker can't read the encrypted portfolio, and shouldn't need the app's rules, so with every KV save the app sends a short digest alongside the blob (built by `holdingsCloudPayload`, under the same rules as Σ SUMMARY):
+
+```json
+{
+  "v": 1,
+  "builtAt": "2026-11-15T18:20:31.000Z",
+  "active":   [{ "ticker": "NVDA", "currency": "USD", "qty": 120, "cost": 15234.50 }],
+  "realized": [{ "currency": "EUR", "proceeds": 8000.00, "cost": 7600.00 }]
+}
+```
+
+- **active** — one line per ticker and currency: unsold lots with `qty > 0` from regular portfolios, merged across portfolios; `cost` = Σ `qty × entry`.
+- **realized** — one line per sale currency: every lot in realized portfolios plus sold lots still in regular ones; `proceeds` = Σ `qty × sell price`.
+- Watchlists and foreign portfolios are left out; the filter is ignored. Amounts stay in their own currencies, converted at each day's rate, as Σ SUMMARY converts at today's.
+
+**The snapshot.** From 16:10 New York time, once per New York date:
+
+1. Fetch the regular-session close of every ticker and the USD rate of every other currency — the close, not an after-hours price. A large digest is fetched over several ticks.
+2. If any close failed, retry every 30 minutes. From 20:00 a missing close takes the last known one and the ticker is listed as `stale`; one never priced is left out of value and cost and listed as `missing`.
+3. Check that a market traded: at least one close must be later than the latest close the previous snapshot saw. Weekends and holidays, in any time zone, are skipped with no calendar. The first snapshot is taken unconditionally.
+4. Value: active `Σ qty × close × fx` and `Σ cost × fx`; realized `Σ proceeds × fx` and `Σ cost × fx`. Write the day.
+
+```json
+{ "v": 1, "days": { "2026-11-13": {
+  "active":   { "value": 254310.22, "cost": 201000.00 },
+  "realized": { "value": 60890.10,  "cost": 49800.00 }
+} } }
+```
+
+The snapshot shares the cron with the alert checks. A tick that fetches closes skips the alerts, which resume five minutes later.
+
+**Storage.** `holdings:<key>`, `history:<key>` and `snapstate:<key>` (the job's bookkeeping and last known closes), all sealed with `WORKER_ENC_KEY`. Without that secret the feature is off and the digest isn't stored. The digest is sent only with Cloudflare KV, never to JSONBin.
+
 ### Authentication & security
 
 The worker is protected by a secret token passed in the `X-API-Token` request header. The token is stored as a Cloudflare Secret under `API_TOKEN`, so it can't be read back from the dashboard. To rotate: update `API_TOKEN` in Cloudflare → Settings → Variables and Secrets → Secret, then update it in the app settings.
 
 Web Push requires a VAPID key pair: `VAPID_PUBLIC_KEY` as a plaintext Variable (it's served to clients via `/api/push/key` anyway) and `VAPID_PRIVATE_KEY` as a Secret (used to sign pushes; if unset, checks still run but nothing is sent). An optional `VAPID_SUBJECT` supplies the contact address push services expect.
+
+`WORKER_ENC_KEY` (Secret, any long random string) seals what the worker stores for itself — currently the [daily snapshot](#daily-snapshots) data. Each use gets its own key, derived with HKDF from this one secret with the use as its label. Your ENC KEY is not involved and never leaves your devices. Changing `WORKER_ENC_KEY` makes everything sealed with the old value unreadable; the history is then left untouched rather than overwritten, and can be brought back from a **BACKUP HISTORY** file (see [Backup & Restore](#backup--restore)).
 
 ## Data Model
 
@@ -1119,6 +1184,7 @@ Bond, deposit, cash, and ticker-data (`bondsDb`, `bondPortfolios`, `cashPortfoli
 ### Sync & conflict prevention
 
 - `cloudSave` is called only on structural changes (add/edit/delete position, portfolio changes) — never on price updates.
+- With Cloudflare KV, each save also carries the alerts and the [holdings digest](#daily-snapshots) as sibling fields; the worker splits them off before storing the blob.
 - After every `cloudLoad` or `cloudSave`, the cloud timestamp is stored in `pt_cloud_ts`.
 - Before `cloudSave`, the cloud metadata is checked — if the cloud is newer than `pt_cloud_ts`, save is blocked with an error message prompting the user to sync first.
 - After **RESTORE**, data is immediately pushed to cloud to mark it as the authoritative version.

@@ -35,6 +35,7 @@
       <div onclick="setView('market-total')" id="vmMarketTotal" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">MARKET</div>
       <div onclick="setView('alerts')" id="vmAlerts" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">ALERTS</div>
       <div onclick="setView('chart')" id="vmChart" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">CHART</div>
+      <div onclick="setView('history')" id="vmHistory" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">HISTORY</div>
       <div onclick="setView('fundamentals')" id="vmFundamentals" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">FUNDAMENTALS</div>
       <div onclick="setView('global-weight')" id="vmGlobalWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">WEIGHTS</div>
       <div onclick="setView('weight')" id="vmWeight" style="padding:10px 14px;cursor:pointer;font-size:11px;letter-spacing:2px;white-space:nowrap">WEIGHTS</div>
@@ -337,6 +338,15 @@
     </button>
     <input type="file" id="restoreInput" accept=".json" style="display:none" onchange="restoreData(event)">
   </div>
+  <div style="display:flex;gap:8px;margin-top:8px">
+    <button class="btn btn-green" onclick="backupHistory()" style="flex:1;padding:9px;font-size:11px;letter-spacing:1px">
+      &#8595; BACKUP HISTORY
+    </button>
+    <button class="btn" onclick="document.getElementById('restoreHistoryInput').click()" style="flex:1;padding:9px;font-size:11px;letter-spacing:1px">
+      &#8593; RESTORE HISTORY
+    </button>
+    <input type="file" id="restoreHistoryInput" accept=".json" style="display:none" onchange="restoreHistory(event)">
+  </div>
   <div class="api-status" id="backupStatus"></div>
 
   <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin:14px 0 8px">ANALYTICS CSV</div>
@@ -406,7 +416,7 @@
 // App version, shown bottom-left. Bump on every index.html deploy — this is
 // what the version stamp displays, so a stale stamp after deploy means you're
 // seeing a cached index.html. Independent of sw.js CACHE (different role).
-var APP_VERSION = 'v1.5.113';
+var APP_VERSION = 'v1.5.117';
 // Live status of the two data sources, shown in the bottom-left label.
 // backendOk: last non-cloud backend request (price/fx/isin) succeeded.
 //   Starts true (optimistic — no request made yet). Set by fetchPrice etc.
@@ -616,7 +626,7 @@ function setTitleForCurrentView() {
   // (parallel to the .portfolio-item-meta styling in the switcher list).
   var btn = t.parentNode;
   if (btn && btn.classList) {
-    var isMeta = isCrossPortfolioContext() || viewMode === 'archive-summary' || viewMode === 'bond-summary';
+    var isMeta = isCrossPortfolioContext() || isArchiveSummaryContext() || viewMode === 'bond-summary';
     if (isMeta) btn.classList.add('meta');
     else btn.classList.remove('meta');
   }
@@ -626,7 +636,7 @@ function setTitleForCurrentView() {
     t.textContent = cashPortfolios[currentCashPortfolioId].name;
   } else if (viewMode === 'bond-summary') {
     t.textContent = 'BOND SUMMARY';
-  } else if (viewMode === 'archive-summary') {
+  } else if (isArchiveSummaryContext()) {
     t.textContent = 'REALIZED SUMMARY';
   } else if (isFocusContext()) {
     t.textContent = focusTicker;
@@ -710,7 +720,7 @@ function stalePortfolioColHtml(pid) {
 // Combined, both groups make up the "cross-portfolio context" (not inside any
 // individual portfolio). Bonds/cash/archive-summary are separate contexts and
 // not part of either group.
-var SUMMARY_BY_PORTFOLIO_VIEWS = ['summary', 'summary-market', 'summary-chart'];
+var SUMMARY_BY_PORTFOLIO_VIEWS = ['summary', 'summary-market', 'summary-chart', 'summary-history'];
 var ALL_POSITIONS_VIEWS = ['summary-movers', 'summary-alerts', 'global-weight', 'summary-analytics', 'global-chart', 'global-fundamentals', 'global-main', 'global-calendar'];
 var REALIZED_ALL_POSITIONS_VIEWS = ['realized-main', 'realized-weight', 'realized-analytics'];
 
@@ -2595,7 +2605,7 @@ function renderSwitcher() {
     }
 
     // Archive summary
-    html += '<div class="portfolio-item portfolio-item-meta' + (viewMode === 'archive-summary' ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:8px 14px" onclick="switchToArchiveSummary()">'
+    html += '<div class="portfolio-item portfolio-item-meta' + (isArchiveSummaryContext() ? ' active' : '') + '" style="display:flex;align-items:center;cursor:pointer;border-top:1px solid var(--border);padding:8px 14px" onclick="switchToArchiveSummary()">'
       + '<div style="flex:1"><span class="portfolio-item-name">&#931; SUMMARY</span></div>'
       + '</div>';
     if (foreignArchiveIds.length) {
@@ -2706,10 +2716,12 @@ function renderSwitcher() {
 }
 function switchToArchiveSummary() {
   currentSetId = null; focusTicker = null;  // leaving the set context
-  viewMode = 'archive-summary';
+  // P&L or HISTORY; coming back to the chart keeps it, as Σ SUMMARY does.
+  if (!isArchiveSummaryContext()) viewMode = 'archive-summary';
   setTitleForCurrentView();
-  document.getElementById('viewMenuBtn').disabled = true;
-  document.getElementById('viewMenuBtn').style.opacity = '0.3';
+  document.getElementById('viewMenuBtn').style.display = '';
+  document.getElementById('viewMenuBtn').disabled = false;
+  document.getElementById('viewMenuBtn').style.opacity = '';
   var btn = document.getElementById('refreshAllBtn');
   btn.style.display = 'none';
   closeSwitcher();
@@ -2816,7 +2828,7 @@ function switchPortfolio(id) {
   // Any other cross-portfolio mode or special context (archive-summary,
   // bonds, bond-summary, cash) falls back to 'main' (P&L of the new portfolio).
   // Covers summary-by-portfolio, all-positions, and realized-all-positions.
-  else if (isCrossPortfolioContext() || ['archive-summary','bonds','bond-summary','cash'].indexOf(viewMode) !== -1) viewMode = 'main';
+  else if (isCrossPortfolioContext() || isArchiveSummaryContext() || ['bonds','bond-summary','cash'].indexOf(viewMode) !== -1) viewMode = 'main';
   var btn = document.getElementById('viewMenuBtn');
   var refreshBtn = document.getElementById('refreshAllBtn');
   if (portfolios[id].watchlist) {
@@ -3142,6 +3154,74 @@ function backupData() {
   if (el) { el.textContent = '✓ Backup downloaded'; el.style.color = 'var(--green)'; }
 }
 
+// Daily snapshot history lives on the worker, sealed with WORKER_ENC_KEY —
+// lose or change that secret and the history can't be read. These two keep a
+// copy on your side: the file holds the plain days, and restoring hands them
+// back to the worker to seal again.
+function historyRequest(method, query, body) {
+  var baseUrl = getApiKey() ? getApiKey().replace(/\/+$/, '') : '';
+  var kvKey = getKvKey();
+  if (getCloudBackend() !== 'kv' || !baseUrl || !kvKey) {
+    return Promise.reject(new Error('History lives on the worker — Cloudflare KV only'));
+  }
+  var opts = { method: method, headers: { 'X-API-Token': getToken(), 'X-KV-Key': kvKey } };
+  if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+  return fetch(baseUrl + '/api/snapshots' + (query || ''), opts).then(function(r) {
+    return r.json().catch(function() { return {}; }).then(function(d) { d._status = r.status; return d; });
+  });
+}
+function setBackupStatus(text, color) {
+  var el = document.getElementById('backupStatus');
+  if (el) { el.textContent = text; el.style.color = color; }
+}
+function backupHistory() {
+  setBackupStatus('Loading history...', 'var(--dim)');
+  historyRequest('GET').then(function(d) {
+    if (d._status !== 200) throw new Error(d.error || ('http_' + d._status));
+    var days = d.days || {};
+    var n = Object.keys(days).length;
+    if (!n) { setBackupStatus('✗ No history recorded yet', 'var(--dim)'); return; }
+    var json = JSON.stringify({ kind: 'pt-snapshot-history', version: 1, date: new Date().toISOString(), days: days }, null, 2);
+    var url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'portfolio-history-' + new Date().toISOString().slice(0, 10) + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    setBackupStatus('✓ History downloaded — ' + n + ' days', 'var(--green)');
+  }).catch(function(e) { setBackupStatus('✗ ' + (e && e.message || e), 'var(--red)'); });
+}
+function restoreHistory(event) {
+  var file = event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var data;
+    try { data = JSON.parse(e.target.result); } catch (err) { data = null; }
+    if (!data || data.kind !== 'pt-snapshot-history' || !data.days || typeof data.days !== 'object') {
+      setBackupStatus('✗ Not a history backup file', 'var(--red)');
+      return;
+    }
+    var n = Object.keys(data.days).length;
+    if (!confirm('Restore ' + n + ' days of history? Days in the file replace the same days on the server; other days are kept.')) return;
+    function send(replace) {
+      setBackupStatus('Restoring history...', 'var(--dim)');
+      historyRequest('PUT', replace ? '?replace=1' : '', { days: data.days }).then(function(d) {
+        if (d._status === 409 && !replace) {
+          // The worker can't read what it has — its key was changed or lost.
+          if (confirm('The history on the server can\u2019t be read with the worker\u2019s current key. Replace it entirely with the file?')) send(true);
+          else setBackupStatus('✗ Restore cancelled', 'var(--dim)');
+          return;
+        }
+        if (d._status !== 200) throw new Error(d.error || ('http_' + d._status));
+        setBackupStatus('✓ History restored — ' + d.restored + ' days from file, ' + d.total + ' in total', 'var(--green)');
+      }).catch(function(err) { setBackupStatus('✗ ' + (err && err.message || err), 'var(--red)'); });
+    }
+    send(false);
+  };
+  reader.readAsText(file);
+}
 function restoreData(event) {
   var file = event.target.files[0];
   if (!file) return;
@@ -3499,12 +3579,14 @@ function cloudSaveKV() {
     });
   }
   // Alerts ride alongside the blob in plaintext (see alertsCloudPayload) so the
-  // scheduled worker can evaluate them without the encryption key.
+  // scheduled worker can evaluate them without the encryption key. So does the
+  // holdings digest (see holdingsCloudPayload), which the worker encrypts with
+  // its own key before storing.
   if (encKey) {
     encryptData(JSON.stringify(payload), encKey).then(function(enc) {
-      doSave({ encrypted: enc, alerts: alertsCloudPayload() });
+      doSave({ encrypted: enc, alerts: alertsCloudPayload(), holdings: holdingsCloudPayload() });
     });
-  } else { doSave(Object.assign({}, payload, { alerts: alertsCloudPayload() })); }
+  } else { doSave(Object.assign({}, payload, { alerts: alertsCloudPayload(), holdings: holdingsCloudPayload() })); }
 }
 
 function autoCloudLoad(callback) {
@@ -5486,6 +5568,45 @@ function alertsCloudPayload() {
   return { items: alertStore, settings: alertCheckSettings };
 }
 
+// Holdings digest for the worker's daily snapshot. The worker can't read the
+// (encrypted) portfolios, and shouldn't have to know the app's rules anyway —
+// so the app decides here what counts, under the same rules as Σ SUMMARY, and
+// the worker only multiplies by the closing price and the day's FX rate.
+//   active   — one line per ticker+currency: unsold lots with qty > 0 from
+//              regular portfolios (not watchlists, not realized), merged
+//              across portfolios; cost = Σ qty × entry in that currency.
+//   realized — one line per currency: every lot in realized portfolios plus
+//              sold lots still sitting in regular ones; proceeds = Σ qty ×
+//              sell price, cost = Σ qty × entry. Final amounts — only FX moves.
+// Foreign portfolios aren't yours and are left out; the filter is ignored.
+// Amounts stay in their own currencies: Σ SUMMARY converts at today's rate,
+// so the snapshot must convert at the rate of its own day to match it.
+function holdingsCloudPayload() {
+  var active = {}, realized = {};
+  Object.keys(portfolios).forEach(function(pid) {
+    var pf = portfolios[pid];
+    if (!pf || pf.foreign || pf.watchlist) return;
+    (pf.positions || []).forEach(function(pos) {
+      if (!(pos.qty > 0)) return;
+      var code = getPositionCurrencyCode(pos, pf.currencyCode || 'USD');
+      if (pf.archive || pos.sold) {
+        var sell = getPositionCurrent(pos);
+        if (sell == null) return;   // Σ SUMMARY skips a lot without a price too
+        var r = realized[code] || (realized[code] = { currency: code, proceeds: 0, cost: 0 });
+        r.proceeds += pos.qty * sell;
+        r.cost += pos.qty * pos.entry;
+      } else {
+        var k = pos.ticker + '|' + code;
+        var a = active[k] || (active[k] = { ticker: pos.ticker, currency: code, qty: 0, cost: 0 });
+        a.qty += pos.qty;
+        a.cost += pos.qty * pos.entry;
+      }
+    });
+  });
+  function vals(o) { return Object.keys(o).sort().map(function(k) { return o[k]; }); }
+  return { v: 1, builtAt: new Date().toISOString(), active: vals(active), realized: vals(realized) };
+}
+
 function quickAddAlert(ticker) {
   if (!ticker) return;
   var cond = _alertCondQuick;
@@ -5950,6 +6071,17 @@ function toggleViewMenu() {
     var inAllPositions = isAllPositions();
     var inSummaryByPortfolio = isSummaryByPortfolio();
     var inRealizedAllPositions = isRealizedAllPositions();
+    // The realized summary offers just its P&L and the HISTORY chart.
+    if (isArchiveSummaryContext()) {
+      ['vmMain','vmMarket','vmMarketTotal','vmWeight','vmGlobalWeight','vmChart','vmFundamentals','vmAnalytics','vmAlerts','vmCalendar'].forEach(function(id) {
+        document.getElementById(id).style.display = id === 'vmMain' ? '' : 'none';
+      });
+      document.getElementById('vmHistory').style.display = '';
+      menu.style.display = 'block';
+      return;
+    }
+    // HISTORY — the recorded P&L of all stocks — belongs to the two summaries.
+    document.getElementById('vmHistory').style.display = inSummaryByPortfolio ? '' : 'none';
     var isCrossPortfolio = inAllPositions || inSummaryByPortfolio || inRealizedAllPositions;
     var isWL = !isCrossPortfolio && currentPortfolio() && currentPortfolio().watchlist;
     var isArchive = !isCrossPortfolio && !isWL && currentPortfolio() && currentPortfolio().archive;
@@ -5974,11 +6106,11 @@ function toggleViewMenu() {
 // viewMode. Called from setView and from portfolio/context switches (which
 // change viewMode's default without going through setView).
 function updateViewMenuActive() {
-  ['vmMain','vmMarket','vmMarketTotal','vmWeight','vmGlobalWeight','vmChart','vmFundamentals','vmAnalytics','vmAlerts','vmCalendar'].forEach(function(id) {
+  ['vmMain','vmMarket','vmMarketTotal','vmWeight','vmGlobalWeight','vmChart','vmHistory','vmFundamentals','vmAnalytics','vmAlerts','vmCalendar'].forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.style.color = '';
   });
-  var activeId = viewMode === 'global-calendar' ? 'vmCalendar' : viewMode === 'calendar' ? 'vmCalendar' : viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMarketTotal' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'realized-analytics' ? 'vmAnalytics' : viewMode === 'realized-main' ? 'vmMain' : viewMode === 'summary-alerts' ? 'vmAlerts' : viewMode === 'summary' ? 'vmMain' : viewMode === 'global-main' ? 'vmMain' : viewMode === 'global-fundamentals' ? 'vmFundamentals' : viewMode === 'global-chart' ? 'vmChart' : viewMode === 'global-weight' ? 'vmGlobalWeight' : viewMode === 'realized-weight' ? 'vmGlobalWeight' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'fundamentals' ? 'vmFundamentals' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMarket' : viewMode === 'alerts' ? 'vmAlerts' : 'vmMarket';
+  var activeId = (viewMode === 'summary-history' || viewMode === 'archive-history') ? 'vmHistory' : viewMode === 'archive-summary' ? 'vmMain' : viewMode === 'global-calendar' ? 'vmCalendar' : viewMode === 'calendar' ? 'vmCalendar' : viewMode === 'summary-market' ? 'vmMarket' : viewMode === 'summary-movers' ? 'vmMarketTotal' : viewMode === 'summary-chart' ? 'vmChart' : viewMode === 'summary-analytics' ? 'vmAnalytics' : viewMode === 'realized-analytics' ? 'vmAnalytics' : viewMode === 'realized-main' ? 'vmMain' : viewMode === 'summary-alerts' ? 'vmAlerts' : viewMode === 'summary' ? 'vmMain' : viewMode === 'global-main' ? 'vmMain' : viewMode === 'global-fundamentals' ? 'vmFundamentals' : viewMode === 'global-chart' ? 'vmChart' : viewMode === 'global-weight' ? 'vmGlobalWeight' : viewMode === 'realized-weight' ? 'vmGlobalWeight' : viewMode === 'weight' ? 'vmWeight' : viewMode === 'chart' ? 'vmChart' : viewMode === 'fundamentals' ? 'vmFundamentals' : viewMode === 'analytics' ? 'vmAnalytics' : viewMode === 'main' ? 'vmMain' : viewMode === 'movers' ? 'vmMarket' : viewMode === 'alerts' ? 'vmAlerts' : 'vmMarket';
   var activeEl = document.getElementById(activeId);
   if (activeEl) activeEl.style.color = 'var(--green)';
 }
@@ -5990,10 +6122,14 @@ function setView(mode) {
   // Context-specific remapping. Each context's view menu shows only a
   // restricted subset of mode strings (enforced by toggleViewMenu's
   // visibility), so the off-list cases here are defensive fallbacks.
-  if (isSummaryByPortfolio()) {
-    // Σ Summary by portfolio: P&L / MARKET / CHART
-    viewMode = mode === 'market' ? 'summary-market' :
-               mode === 'chart'  ? 'summary-chart'  :
+  if (isArchiveSummaryContext()) {
+    // Realized summary: P&L / HISTORY
+    viewMode = mode === 'history' ? 'archive-history' : 'archive-summary';
+  } else if (isSummaryByPortfolio()) {
+    // Σ Summary by portfolio: P&L / MARKET / CHART / HISTORY
+    viewMode = mode === 'market'  ? 'summary-market'  :
+               mode === 'chart'   ? 'summary-chart'   :
+               mode === 'history' ? 'summary-history' :
                'summary';
     if (mode === 'market') marketSort = { key: null, dir: -1 };
   } else if (isAllPositions()) {
@@ -8884,6 +9020,188 @@ function loadChartData(range) {
   });
 }
 
+// ── P&L history chart ───────────────────────────────────────────────────────
+// What the worker records once a day after the New York close (see Daily
+// snapshots): value and cost of active and realized stocks, in USD. Drawn as
+// realized P&L — a filled area from zero — under a line of total P&L
+// (realized + unrealized), so the gap between the two is the unrealized part.
+// The same chart in Σ SUMMARY and REALIZED SUMMARY; the filter doesn't apply.
+var _pnlHistory = null;            // { days, at } — last loaded copy
+var PNL_HISTORY_TTL_MS = 10 * 60 * 1000;
+var PNL_HISTORY_RANGES = ['1mo', '3mo', '6mo', '1y', 'all'];
+var PNL_HISTORY_DAYS = { '1mo': 31, '3mo': 92, '6mo': 183, '1y': 366 };
+var PNL_REALIZED_COLOR = '#5b9cf6';
+
+function getPnlHistoryRange() {
+  try { var r = localStorage.getItem('pt_pnl_history_range'); if (PNL_HISTORY_RANGES.indexOf(r) !== -1) return r; } catch (e) {}
+  return 'all';
+}
+function setPnlHistoryRange(r) {
+  try { localStorage.setItem('pt_pnl_history_range', r); } catch (e) {}
+  render();
+}
+
+// Days from the worker, kept for a few minutes: the history changes once a
+// day, so switching views needn't ask again. A failed request falls back to
+// the last copy this device saw.
+function loadPnlHistory(force) {
+  if (!force && _pnlHistory && Date.now() - _pnlHistory.at < PNL_HISTORY_TTL_MS) return Promise.resolve(_pnlHistory.days);
+  return historyRequest('GET').then(function(d) {
+    if (d._status !== 200) throw new Error(d.error || ('http_' + d._status));
+    _pnlHistory = { days: d.days || {}, at: Date.now() };
+    try { localStorage.setItem('pt_pnl_history', JSON.stringify(_pnlHistory.days)); } catch (e) {}
+    return _pnlHistory.days;
+  }).catch(function(err) {
+    var cached = null;
+    try { cached = JSON.parse(localStorage.getItem('pt_pnl_history') || 'null'); } catch (e) {}
+    if (cached) return cached;
+    throw err;
+  });
+}
+function reloadPnlHistory() { _pnlHistory = null; render(); }
+
+function renderPnlHistoryView(area) {
+  var rng = getPnlHistoryRange();
+  area.innerHTML = '<div style="padding:8px 0 4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
+    + PNL_HISTORY_RANGES.map(function(r) {
+        var active = rng === r;
+        return '<button onclick="setPnlHistoryRange(&apos;' + r + '&apos;)" style="font-size:9px;letter-spacing:1px;padding:4px 6px;border:1px solid ' + (active ? 'var(--green)' : 'var(--border)') + ';background:' + (active ? 'var(--bg2)' : 'var(--bg)') + ';color:' + (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-family:var(--font)">' + r.toUpperCase().replace('MO', 'M') + '</button>';
+      }).join('')
+    + '</div>'
+    + '<div id="chartArea" style="min-height:200px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px">Loading...</div>';
+  loadPnlHistory(false).then(function(days) {
+    drawPnlHistoryChart(days, rng);
+  }).catch(function(err) {
+    var el = document.getElementById('chartArea');
+    if (el) el.innerHTML = '<span style="color:var(--red)">' + (err && err.message || err) + '</span>';
+  });
+}
+
+// Days within the range, oldest first, as P&L series.
+function pnlHistorySeries(days, rng) {
+  var dates = Object.keys(days || {}).sort();
+  if (PNL_HISTORY_DAYS[rng]) {
+    var cutoff = new Date(Date.now() - PNL_HISTORY_DAYS[rng] * 86400000).toISOString().slice(0, 10);
+    dates = dates.filter(function(d) { return d >= cutoff; });
+  }
+  var realized = [], unrealized = [], total = [];
+  dates.forEach(function(d) {
+    var day = days[d];
+    var r = day.realized.value - day.realized.cost;
+    var u = day.active.value - day.active.cost;
+    realized.push(r); unrealized.push(u); total.push(r + u);
+  });
+  return { dates: dates, realized: realized, unrealized: unrealized, total: total };
+}
+
+function pnlHistoryLegendHtml(s) {
+  var i = s.dates.length - 1;
+  var lineColor = pnlHistoryLineColor(s.unrealized[i]);
+  function money(v) { return '<span class="' + (v >= 0 ? 'pos' : 'neg') + '">' + (v < 0 ? '&minus;' : '') + '$' + fmtK(Math.abs(v)) + '</span>'; }
+  var item = 'display:inline-flex;align-items:center;gap:5px;white-space:nowrap';
+  return '<div style="font-size:10px;letter-spacing:1px;color:var(--dim);margin-top:6px;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:6px 14px">'
+    + '<span style="' + item + '"><span style="display:inline-block;width:14px;height:2px;background:' + lineColor + '"></span>TOTAL ' + money(s.total[i]) + '</span>'
+    + '<span style="' + item + '"><span style="display:inline-block;width:10px;height:10px;background:' + PNL_REALIZED_COLOR + ';opacity:0.45"></span>REALIZED ' + money(s.realized[i]) + '</span>'
+    + '<span style="' + item + '">UNREALIZED ' + money(s.unrealized[i]) + '</span>'
+    + '<span style="' + item + '">' + s.dates[i] + '</span>'
+    + '<span onclick="reloadPnlHistory()" title="Reload history" style="cursor:pointer;font-size:14px;color:var(--dim);line-height:1">&#8635;</span>'
+    + '</div>';
+}
+
+// The total line is red only where it runs below the area — where unrealized
+// P&L is negative — and green elsewhere, whatever the sign of the total. A
+// segment that crosses the area's edge is split where unrealized hits zero,
+// so the colour changes exactly at the crossing.
+var PNL_LINE_UP = '#00c48c', PNL_LINE_DOWN = '#e05c5c';
+function pnlHistoryLineColor(u) { return u < 0 ? PNL_LINE_DOWN : PNL_LINE_UP; }
+function pnlHistoryTotalLineSvg(s, xp, yp) {
+  var runs = [];            // [{ color, pts: ['x,y', ...] }]
+  function add(color, x, y) {
+    var last = runs[runs.length - 1];
+    var pt = x + ',' + y;
+    if (last && last.color === color) { last.pts.push(pt); return; }
+    // A new run starts where the previous one ended, so the line stays joined.
+    var start = last ? [last.pts[last.pts.length - 1]] : [];
+    runs.push({ color: color, pts: start.concat(pt) });
+  }
+  var n = s.total.length;
+  add(pnlHistoryLineColor(s.unrealized[0]), xp(0), yp(s.total[0]));
+  for (var i = 1; i < n; i++) {
+    var u0 = s.unrealized[i - 1], u1 = s.unrealized[i];
+    if ((u0 < 0) !== (u1 < 0) && u0 !== u1) {
+      var t = u0 / (u0 - u1);
+      add(pnlHistoryLineColor(u0), xp(i - 1 + t), yp(s.total[i - 1] + (s.total[i] - s.total[i - 1]) * t));
+    }
+    add(pnlHistoryLineColor(u1), xp(i), yp(s.total[i]));
+  }
+  return runs.map(function(r) {
+    return '<polyline points="' + r.pts.join(' ') + '" fill="none" stroke="' + r.color + '" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>';
+  }).join('');
+}
+
+function drawPnlHistoryChart(days, rng) {
+  var el = document.getElementById('chartArea');
+  if (!el) return;
+  var s = pnlHistorySeries(days, rng);
+  var n = s.dates.length;
+  if (!n) {
+    el.innerHTML = Object.keys(days || {}).length
+      ? '<span>No days recorded in this period</span>'
+      : '<span>No history yet &mdash; the first snapshot is taken after the New York close</span>';
+    return;
+  }
+  el.style.display = 'block';
+  if (n === 1) {
+    el.innerHTML = '<div style="text-align:center;padding:30px 0 4px;font-size:11px">One day recorded &mdash; the chart starts from the second</div>' + pnlHistoryLegendHtml(s);
+    return;
+  }
+
+  var W = el.offsetWidth || 340;
+  var H = 220;
+  var padL = 62, padR = 12, padT = 16, padB = 32;
+  var w = W - padL - padR, h = H - padT - padB;
+  // Zero always in view: the area is drawn from it.
+  var minV = Math.min.apply(null, [0].concat(s.realized, s.total));
+  var maxV = Math.max.apply(null, [0].concat(s.realized, s.total));
+  var range = maxV - minV || 1;
+  minV -= range * 0.05; maxV += range * 0.05; range = maxV - minV;
+  function xp(i) { return padL + i / (n - 1) * w; }
+  function yp(v) { return padT + (1 - (v - minV) / range) * h; }
+  var y0 = yp(0);
+
+  var realizedPts = s.realized.map(function(v, i) { return xp(i) + ',' + yp(v); }).join(' ');
+  var totalLine = pnlHistoryTotalLineSvg(s, xp, yp);
+
+  var yTicks = '';
+  for (var k = 0; k <= 4; k++) {
+    var v = minV + range * k / 4, y = yp(v);
+    yTicks += '<line x1="' + padL + '" x2="' + (padL + w) + '" y1="' + y + '" y2="' + y + '" stroke="#2a3a4a" stroke-width="1"/>'
+      + '<text x="' + (padL - 5) + '" y="' + (y + 4) + '" text-anchor="end" font-size="9" fill="#6a7a8a" font-family="monospace">' + (v < 0 ? '-' : '') + '$' + fmtK(Math.abs(v)) + '</text>';
+  }
+  // Day/month labels; month/year once the span passes a year.
+  var spanDays = (Date.parse(s.dates[n - 1]) - Date.parse(s.dates[0])) / 86400000;
+  var idxs = [0], step = Math.floor((n - 1) / 3);
+  if (step > 0) for (var j = step; j < n - step / 2; j += step) idxs.push(j);
+  idxs.push(n - 1);
+  var xTicks = idxs.filter(function(v, i, a) { return a.indexOf(v) === i; }).map(function(i) {
+    var p = s.dates[i].split('-');
+    var label = spanDays > 365 ? p[1] + '/' + p[0].slice(2) : p[2] + '/' + p[1];
+    // The last label ends at the plot's edge instead of spilling past it.
+    return '<text x="' + xp(i) + '" y="' + (H - padB + 14) + '" text-anchor="' + (i === n - 1 ? 'end' : 'middle') + '" font-size="9" fill="#6a7a8a" font-family="monospace">' + label + '</text>';
+  }).join('');
+
+  el.style.minHeight = '';
+  el.innerHTML = '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">'
+    + yTicks
+    + '<line x1="' + padL + '" x2="' + (padL + w) + '" y1="' + y0 + '" y2="' + y0 + '" stroke="#6a7a8a" stroke-width="1"/>'
+    + '<polygon points="' + xp(0) + ',' + y0 + ' ' + realizedPts + ' ' + xp(n - 1) + ',' + y0 + '" fill="' + PNL_REALIZED_COLOR + '" fill-opacity="0.28" stroke="none"/>'
+    + '<polyline points="' + realizedPts + '" fill="none" stroke="' + PNL_REALIZED_COLOR + '" stroke-width="1" stroke-opacity="0.7"/>'
+    + totalLine
+    + xTicks
+    + '</svg>'
+    + pnlHistoryLegendHtml(s);
+}
+
 function renderChart(timestamps, values, baseSym, baseCode2, label) {
   var el = document.getElementById('chartArea');
   if (!el) return;
@@ -9282,7 +9600,7 @@ function updateViewMenuBtn() {
   var btn = document.getElementById('viewMenuBtn');
   if (!btn) return;
   var labels = { 'main': 'P&L', 'weight': 'WEIGHTS', 'global-weight': 'WEIGHTS', 'market': 'MARKET', 'movers': 'MARKET', 'chart': 'CHART', 'fundamentals': 'FUNDAMENTALS', 'analytics': 'ANALYTICS', 'alerts': 'ALERTS', 'calendar': 'CALENDAR',
-    'summary': 'P&L', 'summary-market': 'MARKET', 'summary-chart': 'CHART', 'summary-analytics': 'ANALYTICS', 'summary-movers': 'MARKET', 'summary-alerts': 'ALERTS',
+    'summary': 'P&L', 'summary-market': 'MARKET', 'summary-chart': 'CHART', 'summary-history': 'HISTORY', 'archive-history': 'HISTORY', 'archive-summary': 'P&L', 'summary-analytics': 'ANALYTICS', 'summary-movers': 'MARKET', 'summary-alerts': 'ALERTS',
     'realized-weight': 'WEIGHTS', 'realized-analytics': 'ANALYTICS', 'global-chart': 'CHART', 'global-fundamentals': 'FUNDAMENTALS', 'global-main': 'P&L', 'global-calendar': 'CALENDAR' };
   var label = labels[viewMode] || 'P&L';
   if (viewMode === 'main' && currentPortfolio() && currentPortfolio().watchlist) label = 'MARKET';
@@ -9329,7 +9647,10 @@ function updateFilterBtn() {
   // These views aren't about the current stock portfolio, so they decide by
   // what's on screen: realized bonds/deposits, cash and the realized summary
   // are filtered; the active BONDS views aren't.
-  if (viewMode === 'bonds') {
+  // HISTORY is what the worker recorded for all stocks: nothing to filter.
+  if (viewMode === 'summary-history' || viewMode === 'archive-history') {
+    applies = false;
+  } else if (viewMode === 'bonds') {
     var fbp = getBondPortfolios()[currentBondPortfolioId];
     applies = !!(fbp && fbp.archive);
   } else if (viewMode === 'cash' || viewMode === 'archive-summary') {
@@ -9568,7 +9889,7 @@ function render() {
   updateFilterBtn();
   var stockForm = document.getElementById('stockAddForm');
   refreshKnownTickersList();
-  var formHiddenHere = ['bonds','bond-summary','cash','archive-summary'].indexOf(viewMode) !== -1;
+  var formHiddenHere = isArchiveSummaryContext() || ['bonds','bond-summary','cash'].indexOf(viewMode) !== -1;
   if (stockForm) stockForm.style.display = (isCrossPortfolioContext() || formHiddenHere) ? 'none' : '';
   // A set has nothing to add a position to, so its edit bar takes the same slot
   // in the same modes the add form would have appeared in.
@@ -9740,6 +10061,12 @@ function render() {
     return;
   }
 
+  // P&L history chart — the same chart in both summaries.
+  if (viewMode === 'summary-history' || viewMode === 'archive-history') {
+    renderPnlHistoryView(area);
+    return;
+  }
+
   // Summary chart view
   if (viewMode === 'summary-chart') {
     var scRange2 = window.chartRange || '1mo';
@@ -9771,7 +10098,8 @@ function render() {
   var mainEmptyCheck = (viewMode === 'global-main') ? getMainContextPositions() : positions;
   if (!isCrossPortfolioContext()
       && mainEmptyCheck.length === 0
-      && ['cash','bonds','bond-summary','archive-summary'].indexOf(viewMode) === -1) {
+      && !isArchiveSummaryContext()
+      && ['cash','bonds','bond-summary'].indexOf(viewMode) === -1) {
     area.innerHTML = '<div class="empty">NO POSITIONS &mdash; ADD ONE BELOW</div>';
     return;
   }

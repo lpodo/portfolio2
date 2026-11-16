@@ -1040,6 +1040,11 @@ function isAllPositions() {
 function isRealizedAllPositions() {
   return REALIZED_ALL_POSITIONS_VIEWS.indexOf(viewMode) !== -1;
 }
+// The realized summary: its P&L and its HISTORY chart. Like bonds and cash,
+// a context of its own, outside the cross-portfolio groups.
+function isArchiveSummaryContext() {
+  return viewMode === 'archive-summary' || viewMode === 'archive-history';
+}
 function isCrossPortfolioContext() {
   return isSummaryByPortfolio() || isAllPositions() || isRealizedAllPositions();
 }
