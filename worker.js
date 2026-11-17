@@ -214,7 +214,7 @@ export default {
           const notAsked = symbols.all.filter(s => !got[s] && !fetched.failed[s]);
           const day = valueHoldings(holdings, sym => got[sym] || null, sym => !!got[sym]);
           return json(Object.assign({ date: zonedDate(new Date(), SNAP_TZ), holdings: holdingsInfo, requests: fetched.spent }, day,
-            notAsked.length ? { notAsked } : {}));
+            notAsked.length ? { notAsked } : {}, fetched.batchError ? { batchError: fetched.batchError } : {}));
         }
 
         // Restore from a backup the app made of GET's `days`. Days in the file
@@ -1282,7 +1282,7 @@ const SNAP_TZ = 'America/New_York';
 const SNAP_FROM_MIN = 16 * 60 + 10;     // after the close, half-days included
 const SNAP_FALLBACK_MIN = 20 * 60;      // from here a missing close takes the last known one
 const SNAP_RETRY_MS = 30 * 60 * 1000;   // between attempts after a failed fetch
-// Requests per tick: closes come 20 to a request (see fetchCloses), with a
+// Requests per tick: closes come 50 to a request (see fetchCloses), with a
 // one-by-one fallback. The invocation's 50 external requests are shared with
 // nothing else — a tick that fetches closes skips alert checks — so most of it
 // can go here; KV calls are counted separately.
@@ -1442,23 +1442,33 @@ function valueHoldings(holdings, closeOf, isFresh) {
   return day;
 }
 
-// Closes for many symbols within a request budget. Yahoo's spark endpoint
-// returns the same chart meta for up to SPARK_BATCH symbols in one request, so
-// 70 symbols cost 4 requests instead of 70; whatever it leaves out (or all of
-// it, if the endpoint fails) is then asked one by one through the chart
-// endpoint while the budget lasts.
-//   got    — { sym: { price, time } }
-//   failed — symbols asked one by one with no answer
-//   spent  — requests used
+// Closes for many symbols within a request budget. Yahoo's quote endpoint
+// prices up to QUOTE_BATCH symbols in one request (with the same cookie and
+// crumb the fundamentals use), so 70 symbols cost two requests plus the crumb
+// instead of 70; whatever it leaves out — or all of it, if the endpoint fails
+// — is then asked one by one through the chart endpoint while the budget lasts.
+//   got        — { sym: { price, time } }
+//   failed     — symbols asked one by one with no answer
+//   spent      — requests used
+//   batchError — why the batch pass returned nothing, if it didn't
 // A symbol in neither map wasn't reached: the budget ran out first.
-const SPARK_BATCH = 20;
+const QUOTE_BATCH = 50;
 async function fetchCloses(symbols, budget) {
   const got = {}, failed = {};
-  let spent = 0;
-  for (let i = 0; i < symbols.length && spent < budget; i += SPARK_BATCH) {
-    const chunk = symbols.slice(i, i + SPARK_BATCH);
-    spent++;
-    try { Object.assign(got, await getClosesBatch(chunk)); } catch {}
+  let spent = 0, batchError = null;
+  for (let i = 0; i < symbols.length && spent + 1 < budget; i += QUOTE_BATCH) {
+    const chunk = symbols.slice(i, i + QUOTE_BATCH);
+    try {
+      const res = await getClosesBatch(chunk);
+      spent += res.requests;
+      Object.assign(got, res.out);
+      if (res.error && !batchError) batchError = res.error;
+      if (res.error) break;   // the endpoint is refusing: don't spend the rest on it
+    } catch (err) {
+      spent += 1;
+      if (!batchError) batchError = String(err && err.message || err).slice(0, 200);
+      break;
+    }
   }
   for (const sym of symbols) {
     if (got[sym]) continue;
@@ -1468,24 +1478,37 @@ async function fetchCloses(symbols, budget) {
     try { q = await getClose(sym); } catch {}
     if (q) got[sym] = q; else failed[sym] = true;
   }
-  return { got, failed, spent };
+  return { got, failed, spent, batchError };
 }
 
+// One quote request for a list of symbols → { out: { sym: { price, time } },
+// requests, error }. A 401/403 means a stale crumb: fetch a new one and retry
+// once. `requests` counts the crumb's own two requests when it was fetched.
 async function getClosesBatch(symbols) {
-  const r = await fetch(
-    `https://query1.finance.yahoo.com/v8/finance/spark?symbols=${symbols.map(encodeURIComponent).join(',')}&range=1d&interval=1d`,
-    { headers: yahooHeaders(), signal: AbortSignal.timeout(QUOTE_TIMEOUT_MS) }
-  );
-  if (!r.ok) return {};
-  const d = await r.json();
-  const out = {};
-  for (const res of d?.spark?.result || []) {
-    const q = closeFromMeta(res?.response?.[0]?.meta);
-    // Only symbols that were asked for: a renamed or redirected one is left
-    // to the one-by-one pass, which reports it under the name it was given.
-    if (q && res.symbol && symbols.indexOf(res.symbol) !== -1) out[res.symbol] = q;
+  let requests = 0;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const fresh = attempt > 0 || !(crumbCache.crumb && crumbCache.cookie && Date.now() < crumbCache.expires);
+    const { crumb, cookie } = await ensureCrumb(attempt > 0);
+    if (fresh) requests += 2;
+    requests++;
+    const r = await fetch(
+      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols.map(encodeURIComponent).join(',')}` +
+      `&fields=regularMarketPrice,regularMarketTime,currency&crumb=${encodeURIComponent(crumb)}`,
+      { headers: { ...yahooHeaders(), Cookie: cookie }, signal: AbortSignal.timeout(QUOTE_TIMEOUT_MS) }
+    );
+    if ((r.status === 401 || r.status === 403) && attempt === 0) continue;
+    if (!r.ok) return { out: {}, requests, error: `quote HTTP ${r.status}` };
+    const d = await r.json();
+    const out = {};
+    for (const q of d?.quoteResponse?.result || []) {
+      const c = closeFromMeta(q);
+      // Only symbols that were asked for: a renamed one is left to the
+      // one-by-one pass, which reports it under the name it was given.
+      if (c && q.symbol && symbols.indexOf(q.symbol) !== -1) out[q.symbol] = c;
+    }
+    return { out, requests, error: Object.keys(out).length ? null : 'quote returned no prices' };
   }
-  return out;
+  return { out: {}, requests, error: 'quote auth failed after retry' };
 }
 
 // The regular-session close: no after-hours price, unlike getQuote, which
